@@ -65,11 +65,13 @@ def api_key(model: str) -> str:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             return key
+        if os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            return OAUTH_PREFIX + os.environ["ANTHROPIC_AUTH_TOKEN"]  # keyless OAuth bearer token
         if os.environ.get("ANTHROPIC_PROFILE"):
             return ""  # "" = let the SDK resolve the named `ant auth login` profile
         raise JudgeConfigError(
-            f"ANTHROPIC_API_KEY is missing (needed for {model}); or set ANTHROPIC_PROFILE to use "
-            "an `ant auth login` profile"
+            f"ANTHROPIC_API_KEY is missing (needed for {model}); or set ANTHROPIC_AUTH_TOKEN, or "
+            "ANTHROPIC_PROFILE to use an `ant auth login` profile"
         )
     key = os.environ.get("OPENROUTER_API_KEY", "")
     if not key.startswith("sk-or-"):
@@ -134,11 +136,21 @@ def _backoff(attempt: int, status: int | None) -> float:
     return min(cap, 2.0 * 2**attempt) * (0.5 + random.random())
 
 
+OAUTH_PREFIX = "oauth:"  # api_key() marks an OAuth bearer token (ANTHROPIC_AUTH_TOKEN) with this
+
+
 def _make_client(route: str, key: str) -> Any:
     """The ONLY place SDK clients are built (tests monkeypatch this to inject fakes)."""
     if route == "anthropic":
         from anthropic import AsyncAnthropic
 
+        if key.startswith(OAUTH_PREFIX):  # keyless judges: bearer auth + the OAuth beta flag
+            return AsyncAnthropic(
+                auth_token=key[len(OAUTH_PREFIX) :],
+                api_key=None,
+                default_headers={"anthropic-beta": "oauth-2025-04-20"},
+                max_retries=0,
+            )
         if not key:  # an `ant` profile (ANTHROPIC_PROFILE): the SDK reads its OAuth credentials
             return AsyncAnthropic(max_retries=0)
         return AsyncAnthropic(api_key=key, max_retries=0)

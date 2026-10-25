@@ -208,6 +208,11 @@ class RunFamilies(JudgeOptions):
             names = sorted(registry.FAMILIES)
             if not self.include_superseded:
                 names = registry.drop_superseded(names)
+            if os.environ.get(registry.BANK_ROOT_ENV):
+                have = set(readplan.families())  # an adapted set has no bank for ooc families
+                if missing := [n for n in names if n not in have]:
+                    print(f"adapted set: skipping families with no bank: {', '.join(missing)}")
+                names = [n for n in names if n in have]
         else:
             names = list(self.families or [])  # an explicit name runs even if superseded
         for n in names:
