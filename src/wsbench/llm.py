@@ -231,7 +231,7 @@ def anthropic_effort(model: str, reasoning: dict[str, Any] | None) -> dict[str, 
     """The ``output_config`` effort of a structured Anthropic call. No family setting: low effort
     on always-thinking models (the repo default). A family's
     ``reasoning={"anthropic_effort": "default"}`` omits it (the model's own default, as the source
-    instruments of ttt and introspection ran); any other value is passed through. The
+    instrument of introspection ran); any other value is passed through. The
     OpenRouter-style ``effort`` key stays ignored on this route."""
     effort = (reasoning or {}).get("anthropic_effort")
     if effort == "default":

@@ -19,7 +19,6 @@ EXAMPLE = REPO / "examples/readouts/directed_modulation_obscure.jsonl"
 TOY_IDS = "middle_eastern_spice_blend,trickster_figure"
 RENAMES = {
     "introspection_inject": "introspection",
-    "ttt_move": "ttt",
     "cutoff_confab": "knowledge_cutoff",
     "dm_category_default": "directed_modulation_obscure",
 }
@@ -88,8 +87,8 @@ def test_run_accepts_old_family_name(tmp_path):
 
 def test_plan_accepts_old_family_name(tmp_path, real_families):
     out = tmp_path / "plan"
-    assert main(["plan", "families=ttt_move", f"out={out}", "limit=2"]) == 0
-    assert [p.name for p in out.iterdir()] == ["ttt.jsonl"]
+    assert main(["plan", "families=dm_category_default", f"out={out}", "limit=2"]) == 0
+    assert [p.name for p in out.iterdir()] == ["directed_modulation_obscure.jsonl"]
 
 
 def test_text_inversion_accepts_old_family_names(tmp_path, monkeypatch):
@@ -170,3 +169,16 @@ def test_frozen_ati_file_uses_new_keys(real_families):
     for old, new in RENAMES.items():
         assert old not in frozen and new in frozen
         assert ti.subset_entry(new)["ids"] == frozen[new]["ids"]
+
+
+def test_ttt_is_removed_everywhere(real_families):
+    # plan 0017: ttt (formerly ttt_move) was deleted, not superseded
+    from wsbench import readplan
+
+    for name in ("ttt", "ttt_move"):
+        assert name not in registry.FAMILIES
+        assert name not in registry.LEGACY_FAMILY_NAMES
+        assert name not in readplan.families()
+        assert name not in ti.CONSTRUCTION_GATED and name not in ti.STRICTER_PASS_FIELD
+    frozen = json.loads(ti.FROZEN.read_text())
+    assert "ttt" not in frozen and "ttt_move" not in frozen

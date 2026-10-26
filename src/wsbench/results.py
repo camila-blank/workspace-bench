@@ -160,23 +160,29 @@ def macro(
     results: Sequence[FamilyResult],
     superseded: Mapping[str, str] | None = None,
     held_out: Mapping[str, str] | None = None,
+    removed: Mapping[str, str] | None = None,
 ) -> dict:
     """Mean ``value`` over complete pass-rate families; the rest are listed with a reason.
 
     A superseded family (``EvalSpec.superseded_by``; ``superseded`` defaults to the registry's
     map) is always excluded, reason ``"superseded"``, whether or not its successor was run. A
     family with ``EvalSpec.not_in_macro`` (``held_out`` defaults to the registry's map) is
-    excluded with reason ``"not in macro"`` and its stated reason."""
-    if superseded is None or held_out is None:
+    excluded with reason ``"not in macro"`` and its stated reason. A family deleted from the
+    bench (``removed`` defaults to ``registry.REMOVED_FAMILIES``) whose results.json survives in
+    an old run dir is excluded, reason ``"removed"``."""
+    if superseded is None or held_out is None or removed is None:
         from wsbench import registry  # lazy: registry imports this module
 
         superseded = registry.superseded() if superseded is None else superseded
         held_out = registry.not_in_macro() if held_out is None else held_out
+        removed = registry.REMOVED_FAMILIES if removed is None else removed
     included: list[FamilyResult] = []
     excluded: list[dict[str, str]] = []
     skip = adapted_exclusions()
     for r in results:
-        if r.family in superseded:
+        if r.family in removed:
+            excluded.append({"family": r.family, "reason": "removed", "why": removed[r.family]})
+        elif r.family in superseded:
             excluded.append(
                 {"family": r.family, "reason": "superseded", "by": superseded[r.family]}
             )
@@ -256,6 +262,8 @@ def markdown_table(
                     reason = f"metric ({by_family[e['family']].metric})"
                 elif reason == "superseded" and e.get("by"):
                     reason = f"superseded by {e['by']}"
+                elif reason == "removed" and e.get("why"):
+                    reason = f"removed ({e['why']})"
                 elif reason == "not in macro" and e.get("why"):
                     reason = f"not in macro ({e['why']})"
                 lines.append(f"- {e['family']}: {reason}")
