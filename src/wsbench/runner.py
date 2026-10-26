@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from wsbench import llm, mcjudge
+from wsbench import llm, mcjudge, registry
 from wsbench.baselines import text_inversion
 from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
@@ -172,6 +172,13 @@ def run_families(
     runnable: list[tuple[EvalSpec, Path]] = []
     for s in specs:
         readouts = readouts_root / f"{s.name}.jsonl"
+        if not readouts.exists():
+            # a readout file written under a former family key (registry.LEGACY_FAMILY_NAMES)
+            for old in registry.legacy_names(s.name):
+                if (legacy := readouts_root / f"{old}.jsonl").exists():
+                    print(f"{s.name}: no {readouts.name}, reading legacy {legacy.name}")
+                    readouts = legacy
+                    break
         if not readouts.exists():
             msg = f"no readouts at {readouts}"
             print(f"{s.name}: skipped ({msg})")

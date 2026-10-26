@@ -1,4 +1,7 @@
-# dm_category_default
+# directed_modulation_obscure
+
+*Renamed from `dm_category_default` on 2026-10-26 (pure rename; bank, prompts and `prompt_version` unchanged;
+the bank header keeps `"family": "dm_category_default"`; the old name still resolves).*
 
 The model is told to think about its favourite member of a category while it copies an
 unrelated sentence; the lens reads every position where the model writes that sentence. Does it
@@ -35,7 +38,7 @@ floors are in the source README.
 
 ## Read plan
 
-`wsbench plan families=dm_category_default`: render `chat_dm` (the user turn below, then the
+`wsbench plan families=directed_modulation_obscure`: render `chat_dm` (the user turn below, then the
 carrier teacher-forced as the assistant turn under the chat template with thinking off), positions
 `suffix_text` = every token of the carrier (the writing positions; no `<|im_end|>`), layers
 20..60 step 4 (11). The `chat_dm` render produces token ids identical to the source's
@@ -108,9 +111,9 @@ number; the family is in the macro (Camila, 2026-10-25).
 ## Readouts
 
 `{"id": "<item id>", "layer": L, "pos": P, "token": "...", "samples": [...]}` rows at the carrier
-positions; `tokens` rows for a token lens. `examples/readouts/dm_category_default.jsonl` is a toy
+positions; `tokens` rows for a token lens. `examples/readouts/directed_modulation_obscure.jsonl` is a toy
 file (two items, two layers, two positions):
 
 ```
-wsbench judge family=dm_category_default readouts=examples/readouts/dm_category_default.jsonl out=outputs/toy/dm_category_default items=middle_eastern_spice_blend,trickster_figure
+wsbench judge family=directed_modulation_obscure readouts=examples/readouts/directed_modulation_obscure.jsonl out=outputs/toy/directed_modulation_obscure items=middle_eastern_spice_blend,trickster_figure
 ```
