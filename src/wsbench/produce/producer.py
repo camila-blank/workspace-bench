@@ -111,7 +111,7 @@ class Producer:
     def read_spec(self, spec: ReadSpec, *, layers: Iterable[int] | None = None) -> list[Row]:
         """A read-plan row: its own render and positions rule; its layers unless the method has
         fixed ones or the caller overrides. A row whose ``extra.steering`` injects a vector
-        (introspection_inject) is refused: this producer cannot apply the steer."""
+        (introspection) is refused: this producer cannot apply the steer."""
         steer = (spec.extra or {}).get("steering") or {}
         if steer.get("type", "none") != "none":
             raise ValueError(

@@ -108,8 +108,16 @@ def write_results(out_dir: Path, result: FamilyResult) -> Path:
 
 
 def read_results(out_dir: Path) -> FamilyResult:
+    """A stored ``results.json``; a former family key (``registry.LEGACY_FAMILY_NAMES``) is read
+    as the family's current key."""
+    from dataclasses import replace
+
+    from wsbench.registry import canonical
+
     path = Path(out_dir) / "results.json"
-    return FamilyResult.from_json(json.loads(path.read_text(encoding="utf-8")))
+    result = FamilyResult.from_json(json.loads(path.read_text(encoding="utf-8")))
+    family = canonical(result.family)
+    return result if family == result.family else replace(result, family=family)
 
 
 def completeness(

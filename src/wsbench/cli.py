@@ -67,6 +67,19 @@ def _strs(v: object) -> list[str] | None:
     return [str(v)]
 
 
+def _family(name: str) -> str:
+    """A family argument with a former key (``registry.LEGACY_FAMILY_NAMES``) resolved to the
+    current one, saying so on stderr."""
+    new = registry.canonical(name)
+    if new != name:
+        print(f"note: family {name!r} was renamed to {new!r}", file=sys.stderr)
+    return new
+
+
+def _families(names: list[str] | None) -> list[str] | None:
+    return None if names is None else [_family(n) for n in names]
+
+
 def _path(v: object) -> Path:
     if v is None or isinstance(v, bool) or v == "":
         raise ValueError(f"expected a path, got {v!r}")
@@ -153,7 +166,7 @@ class JudgeFamily(JudgeOptions):
 
     def finalize(self) -> None:
         super().finalize()
-        self.family = str(self.family)
+        self.family = _family(str(self.family))
         self.readouts = _path(self.readouts)
         self.out = _path(self.out) if self.out else None
 
@@ -195,7 +208,7 @@ class RunFamilies(JudgeOptions):
         super().finalize()
         self.all = _bool(self.all)
         self.include_superseded = _bool(self.include_superseded)
-        self.families = _strs(self.families)
+        self.families = _families(_strs(self.families))
         self.readouts_root = _path(self.readouts_root)
         self.out = _path(self.out)
         self.family_workers = _int(self.family_workers)
@@ -373,7 +386,7 @@ class Baseline(Command):
         self.out = "outputs/baselines/lucky_guessing"
 
     def finalize(self) -> None:
-        self.families = _strs(self.families) or ["all"]
+        self.families = _families(_strs(self.families)) or ["all"]
         self.variant = _strs(self.variant) or []
         self.draws = _int(self.draws)
         self.seed = _int(self.seed)
@@ -455,7 +468,7 @@ class Capable(Command):
 
     def finalize(self) -> None:
         self.model = str(self.model)
-        self.families = _strs(self.families) or ["all"]
+        self.families = _families(_strs(self.families)) or ["all"]
         self.draws = _int(self.draws)
         self.temperature = float(self.temperature)
         self.threshold = float(self.threshold) or None
@@ -541,7 +554,7 @@ class Plan(Command):
         self.limit = 0
 
     def finalize(self) -> None:
-        self.families = _strs(self.families) or ["all"]
+        self.families = _families(_strs(self.families)) or ["all"]
         self.out = _path(self.out)
         self.limit = _int(self.limit)
 
@@ -588,7 +601,7 @@ class Produce(Command):
     def finalize(self) -> None:
         self.method = str(self.method)
         self.model = str(self.model)
-        self.family = str(self.family or "")
+        self.family = _family(str(self.family or ""))
         self.text = str(self.text or "")
         self.chat = _bool(self.chat)
         p = self.positions
@@ -702,7 +715,7 @@ class TextInversion(Command):
         self.answerer = str(self.answerer)
         self.framing = str(self.framing)
         self.out = _path(self.out) if self.out else text_inversion.OUT
-        self.families = _strs(self.families)
+        self.families = _families(_strs(self.families))
         self.draws = _int(self.draws)
         self.concurrency = _int(self.concurrency)
         self.dst = _path(self.dst) if self.dst else text_inversion.FROZEN

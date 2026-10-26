@@ -1,4 +1,4 @@
-"""ttt_move scoring: the seeded option order, one cell's verdict under the quote rule, the
+"""ttt scoring: the seeded option order, one cell's verdict under the quote rule, the
 gate-only ``ati_pass``, and the per-item best-of-layers row."""
 
 import random

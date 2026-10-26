@@ -1,4 +1,4 @@
-"""The ttt_move verbatim move-quote rule, ported verbatim from the source repo's
+"""The ttt verbatim move-quote rule, ported verbatim from the source repo's
 ``global_workspace.olens_suite.ttt_move.quote`` (the rule is stated in the family README)."""
 
 import re
