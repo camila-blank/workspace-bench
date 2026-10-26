@@ -384,13 +384,11 @@ def _plan(family: str) -> list[ReadSpec]:
                 family,
                 it["id"],
                 "chat",
-                {"kind": "offsets_from_end", "ks": [10, 2, 1]},
+                {"kind": "all_from_end"},
                 GRID,
                 text=it["user"],
-                extra={"sites": ["user_end", "think_close", "reply_start"]},
-                note="user_end (the last user-content token, -10), think_close (the </think> of "
-                "the empty thinking block, -2), reply_start (the last prompt token, -1); only "
-                "reply_start is scored",
+                note="every prompt position as a negative offset (reply_start, the last prompt "
+                "token, is -1); one judge call per item and layer reads all of them together",
             )
             for it in items
         ]
@@ -543,26 +541,6 @@ def _plan(family: str) -> list[ReadSpec]:
                 text=it["prompt"],
                 prefill=header["target_sentence"],
                 note="every token of the prefilled target sentence",
-            )
-            for it in items
-        ]
-    if family == "ttt":
-        _h, items = _bank(family)
-        return [
-            ReadSpec(
-                family,
-                it["id"],
-                "chat",
-                {"kind": "final_token"},
-                GRID,
-                text=it["user_a"],
-                extra={
-                    "read_pos": it["read_pos"],
-                    "n_tokens": it["n_tokens"],
-                    "early_pos": it["early_pos"],
-                },
-                note="the `\\n\\n` after `</think>`, the token before the move (rendering A); "
-                "early_pos is the source's early-site null cell, reported only, never read",
             )
             for it in items
         ]

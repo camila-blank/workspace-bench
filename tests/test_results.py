@@ -174,3 +174,15 @@ def test_macro_excludes_not_in_macro_families():
     assert m["families"] == ["core"]
     assert m["excluded"] == [{"family": "hill", "reason": "not in macro", "why": "hillclimbing"}]
     assert "- hill: not in macro (hillclimbing)" in markdown_table(rs, m)
+
+
+def test_macro_excludes_removed_families():
+    # plan 0017: ttt was deleted; an old run dir's ttt/results.json (or ttt_move/) never counts
+    rs = [_res("ttt", value=0.9), _res("ttt_move", value=0.8), _res("core", value=0.3)]
+    m = macro(rs, superseded={}, held_out={})
+    assert m["families"] == ["core"] and m["value"] == pytest.approx(0.3)
+    assert [(e["family"], e["reason"]) for e in m["excluded"]] == [
+        ("ttt", "removed"),
+        ("ttt_move", "removed"),
+    ]
+    assert "- ttt: removed (removed 2026-10-26" in markdown_table(rs, m)
