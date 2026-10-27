@@ -183,7 +183,7 @@ def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
 
     fake_llm(responder)
     res = judge.run(mk_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[TF]))
-    assert seen == ["TOKEN READOUTS:\nĠransom (2.00) | Ġkidnap (1.00)", "TOKEN READOUTS:\nĠnoise"]
+    assert seen == ["TOKEN READOUTS:\n ransom (2.00) |  kidnap (1.00)", "TOKEN READOUTS:\n noise"]
     assert res.value == 1.0 and len(res.rows) == 1
     assert res.counts["n_unjudged_cells"] == 1 and res.extras["n_api_failed"] == 1
 

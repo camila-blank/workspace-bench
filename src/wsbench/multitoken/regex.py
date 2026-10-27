@@ -70,7 +70,7 @@ SCORER_VERSION = "mt-regex-2026-09-23"  # prose arms: the contract on the sample
 # token arms: the contract on each top-k token AND on the shared summarizer's interpretation of
 # the bag (docs/summarizer.md), as separate samples — Camila 2026-09-23 16:52 ("for the token
 # lenses on mt i thought we were doing an llm summarizer step?")
-SUMMARIZED_SCORER_VERSION = "mt-regex-summarized-2026-09-23"
+SUMMARIZED_SCORER_VERSION = "mt-regex-summarized-decoded-2026-10-27"
 
 # ---------------------------------------------------------------------------------------------
 # olens_sglang/common.py — scaffolding stripped from every sample before scoring

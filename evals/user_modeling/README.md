@@ -258,7 +258,7 @@ invalid}` (row counts; `cannot_tell` excludes the invalid rows), `n_api_failed`,
 ## Token (J-lens) readouts
 
 A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1"`): the bundle is `render_bag(tokens, scores)` for the
+`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is `render_bag(tokens, scores)` for the
 row, one summarizer call per cell, and the interpretation is judged as the cell's single
 sample (`sample_idx = 0`). A cell whose summary fails is skipped (counted in
 `n_unjudged_cells`); an empty string is never judged. With k > 1 prose samples this family

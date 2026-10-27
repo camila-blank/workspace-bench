@@ -1,5 +1,6 @@
 import json
 
+from wsbench.bpe import decode_token
 from wsbench.readouts import (
     Cell,
     convert_gen_dir,
@@ -44,7 +45,7 @@ def test_tokens_file_loads(tmp_path):
     assert rep.kind == "tokens" and rep.n_empty == 1
     assert (
         cells[0].kind == "tokens"
-        and cells[0].tokens == ("Ġw", "x")
+        and cells[0].tokens == (" w", "x")  # decoded at load
         and cells[0].scores == (1.5, 1.0)
     )
     assert cells[1].scores is None
@@ -222,3 +223,30 @@ def test_convert_passes_token_through(tmp_path):
     convert_gen_dir(tmp_path / "gen", out, kind="tokens")
     cells, _ = load_readouts(out)
     assert [c.token for c in cells] == ["'s", None]
+
+
+def test_decode_token_byte_level_bpe():
+    assert decode_token("æĹ¥æľ¬èªŀ") == "日本語"
+    assert decode_token("Ġlanguages") == " languages"
+    assert decode_token(" AI") == " AI"  # Ġ already shown as a space by the producer
+    assert decode_token("ðŁı") == "�"  # part of a character -> U+FFFD
+
+
+def test_token_cells_are_decoded_once_at_load(tmp_path):
+    # 的结果 is πυξίδα, spelled as Qwen's tokenizer + display_tokens write it
+    acute = chr(0xB4)  # the byte-table char for byte 0xB4 (an acute accent, so spelled out)
+    vocab = ["çļĦç»ĵæŀľ", " is", " ÏĢÏħ", "Î¾", f"Î¯Î{acute}Î±"]
+    p = _write(
+        tmp_path / "t.jsonl",
+        [{"id": "a", "layer": 36, "pos": 0, "tokens": vocab, "token": "é", "scores": [1] * 5}],
+    )
+    cells, _ = load_readouts(p)
+    assert cells[0].tokens == ("的结果", " is", " πυ", "ξ", "ίδα")
+    assert cells[0].token == "é"  # the read-site token is already text, left alone
+
+
+def test_plain_ascii_tokens_are_unchanged(tmp_path):
+    row = {"id": "a", "layer": 36, "pos": 0, "tokens": [" chess", "!"]}
+    p = _write(tmp_path / "t.jsonl", [row])
+    cells, _ = load_readouts(p)
+    assert cells[0].tokens == (" chess", "!")

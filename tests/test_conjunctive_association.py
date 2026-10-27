@@ -48,7 +48,7 @@ def test_rendered_prompt_matches_golden():
 
 
 def test_blob_rule(tmp_path):
-    assert norm_token("Ġsnake_case▁x") == "snake case x"
+    assert norm_token(" snake_case\nx") == "snake case x"  # tokens arrive decoded
     cells, _rep = load_readouts(EXAMPLE)
     bags = build_bags(cells)
     assert set(bags) == {(QA, 20), (QA, 36), (QB, 20), (QB, 36)}

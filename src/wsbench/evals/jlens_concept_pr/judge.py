@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from wsbench import registry
+from wsbench.bpe import decode_token
 from wsbench.cache import Cache
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend
@@ -96,38 +97,11 @@ STAGE_TAG = {"a": "A", "b": "B", "foil": "F", "p": "P", "pfoil": "Q"}
 # ------------------------------------------------------------------ items.py (verbatim)
 
 
-def _bytes_to_unicode() -> dict[str, int]:
-    """Inverse of the GPT-2 / Qwen byte-level BPE alphabet (unicode char -> byte)."""
-    bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1))
-    bs += list(range(ord("®"), ord("ÿ") + 1))
-    cs = list(bs)
-    n = 0
-    for b in range(256):
-        if b not in bs:
-            bs.append(b)
-            cs.append(256 + n)
-            n += 1
-    return {chr(c): b for b, c in zip(bs, cs, strict=True)}
-
-
-_UNICODE_TO_BYTE = _bytes_to_unicode()
-
-
 def bpe_display_to_text(tok: str) -> str:
-    """Decode a J-lens unit ``samples`` token (byte-level BPE display form) to readable text.
-
-    ``jlens_eval`` writes ``convert_ids_to_tokens`` strings with ``Ġ``/``▁`` -> space already
-    applied, so CJK / accented tokens arrive as mojibake (``çļĦç»ĵæŀľ`` = 的结果). Every char
-    in the byte alphabet maps back to its byte; anything else (the substituted space) is kept.
-    """
-    out = bytearray()
-    for ch in tok:
-        b = _UNICODE_TO_BYTE.get(ch)
-        if b is None:
-            out.extend(ch.encode("utf-8"))
-        else:
-            out.append(b)
-    return out.decode("utf-8", errors="replace")
+    """Decodes a J-lens reference ``samples`` token (byte-level BPE display form, ``Ġ``/``▁``
+    already a space) to text. The reference files are read here, not through the loader, so
+    they are decoded here once (``wsbench.bpe.decode_token``)."""
+    return decode_token(tok)
 
 
 def foil_pairing(labels_by_group: Mapping[str, Sequence[str]], *, seed: int) -> dict[str, str]:

@@ -107,7 +107,7 @@ contrast (the flipped sibling) / distractor / cannot_tell / invalid / api_fail. 
 ## Token (J-lens) readouts
 
 A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1"`): each (layer, item) bag — the `" | "` blob of `norm_token`'d tokens across positions — is summarized before blobbing, keyed `<id>__L<layer>`. The judge then sees the interpretation
+`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): each (layer, item) bag — the `" | "` blob of `norm_token`'d tokens across positions — is summarized before blobbing, keyed `<id>__L<layer>`. The judge then sees the interpretation
 text in place of the readout. A cell whose summary fails is skipped (counted in
 `n_unjudged_cells`); an empty string is never judged.
 

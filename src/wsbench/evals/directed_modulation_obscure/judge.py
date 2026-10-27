@@ -54,7 +54,7 @@ def cell_samples(cell: Cell) -> list[str]:
     """The strings a cell is matched against, one at a time: prose samples, or each top-k token
     (``Ġ``/``▁`` read as the space they encode). Nothing is joined or stripped."""
     if cell.tokens is not None:
-        return [t.replace("Ġ", " ").replace("▁", " ") for t in cell.tokens]
+        return list(cell.tokens)  # decoded to text (Ġ/▁ as spaces) by the loader
     return list(cell.samples or ())
 
 

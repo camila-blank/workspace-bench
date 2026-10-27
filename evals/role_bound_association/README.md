@@ -161,7 +161,7 @@ Each MC has six lines: five options seeded-shuffled + `cannot tell from the read
 ## Token (J-lens) readouts
 
 A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1"`): the bundle is `render_bag(tokens, scores)` for that row. The judge then sees the interpretation
+`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is `render_bag(tokens, scores)` for that row. The judge then sees the interpretation
 text in place of the readout. A cell whose summary fails is skipped (counted in
 `n_unjudged_cells`); an empty string is never judged.
 

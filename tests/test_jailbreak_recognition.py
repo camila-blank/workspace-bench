@@ -357,8 +357,8 @@ def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
         mk_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[I1], allow_missing=True)
     )
     assert seen == [
-        "TOKEN READOUTS:\nĠjailbreak (2.00) | Ġpersona (1.00)",
-        "TOKEN READOUTS:\nĠnoise",
+        "TOKEN READOUTS:\n jailbreak (2.00) |  persona (1.00)",
+        "TOKEN READOUTS:\n noise",
     ]
     assert res.value == 1.0 and len(res.rows) == 1 and res.rows[0]["n_samples"] == 1
     assert res.counts["n_unjudged_cells"] == 1 and res.extras["n_api_failed"] == 1
