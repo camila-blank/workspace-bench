@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from wsbench import llm, mcjudge, registry
+from wsbench import digest, llm, mcjudge, registry
 from wsbench.baselines import text_inversion
 from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
@@ -51,13 +51,15 @@ class RunOptions(Options, Protocol):
 
 
 def parse_opts(pairs: Sequence[str]) -> dict[str, str]:
-    """``opts=KEY=VALUE,...`` -> dict; a malformed pair is a usage error (exit 2)."""
+    """``opts=KEY=VALUE,...`` -> dict; a malformed pair, or a bad summary-mode option
+    (``aggregate`` / ``summ_*``), is a usage error (exit 2)."""
     out: dict[str, str] = {}
     for p in pairs:
         if "=" not in p:
             fail(f"opts= expects KEY=VALUE pairs, got {p!r}")
         k, v = p.split("=", 1)
         out[k.strip()] = v
+    digest.validate(out)  # a bad summary-mode option exits 2 before any family starts
     return out
 
 
@@ -200,9 +202,12 @@ def run_families(
         runnable.append((s, readouts))
     # a family with a deterministic scorer of record makes no call unless opts=judge=mc
     needs_llm = [s for s, _r in runnable if not s.scorer or opts.get("judge") == "mc"]
-    if needs_llm and not args.dry_run:
+    to_preflight: dict[str, ResolvedJudge] = {s.name: judges[s.name] for s in needs_llm}
+    if runnable and opts.get("aggregate") == "summary":  # every family's digest (plan 0018)
+        to_preflight["digest"] = digest.preflight_judge(opts)
+    if to_preflight and not args.dry_run:
         try:
-            _seed_preflights({s.name: judges[s.name] for s in needs_llm})
+            _seed_preflights(to_preflight)
         except JudgeConfigError as e:
             print(f"judge config error: {e}", file=sys.stderr)
             return [], 3

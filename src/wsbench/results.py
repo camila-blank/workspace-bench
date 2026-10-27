@@ -121,14 +121,23 @@ def read_results(out_dir: Path) -> FamilyResult:
 
 
 def completeness(
-    *, pinned: bool, subset: bool, n_expected: int, n_missing: int, n_unjudged: int, n_empty: int
+    *,
+    pinned: bool,
+    subset: bool,
+    n_expected: int,
+    n_missing: int,
+    n_unjudged: int,
+    n_empty: int,
+    n_items: int | None = None,
 ) -> bool:
+    """The shared rule. Summary mode (plan 0018) passes ``n_items``: its ``n_empty`` counts
+    items, so the 5% empty rule is taken against the items in scope, not the cells."""
     return (
         pinned
         and not subset
         and n_missing == 0
         and n_unjudged == 0
-        and n_empty <= 0.05 * n_expected
+        and n_empty <= 0.05 * (n_expected if n_items is None else n_items)
     )
 
 
@@ -153,6 +162,7 @@ def adapted_exclusions() -> dict[str, str]:
 
 
 ATI_SCOPE = "anti_text_inversion"
+SUMMARY_LEGEND = "† summarize-then-judge (one judged summary per item)"
 ATI_MACRO_MIN_ITEMS = 20  # an ATI family with fewer surviving items is shown, not averaged
 
 
@@ -169,7 +179,9 @@ def macro(
     family with ``EvalSpec.not_in_macro`` (``held_out`` defaults to the registry's map) is
     excluded with reason ``"not in macro"`` and its stated reason. A family deleted from the
     bench (``removed`` defaults to ``registry.REMOVED_FAMILIES``) whose results.json survives in
-    an old run dir is excluded, reason ``"removed"``."""
+    an old run dir is excluded, reason ``"removed"``. In a run with any summary-mode row
+    (``config.aggregate == "summary"``), rows that ran native are excluded, reason
+    ``"native under aggregate=summary"``."""
     if superseded is None or held_out is None or removed is None:
         from wsbench import registry  # lazy: registry imports this module
 
@@ -179,6 +191,8 @@ def macro(
     included: list[FamilyResult] = []
     excluded: list[dict[str, str]] = []
     skip = adapted_exclusions()
+    # a summary-mode run (plan 0018) averages summary rows only, never a blend with native ones
+    summary_run = any(r.config.get("aggregate") == "summary" for r in results)
     for r in results:
         if r.family in removed:
             excluded.append({"family": r.family, "reason": "removed", "why": removed[r.family]})
@@ -198,6 +212,8 @@ def macro(
             excluded.append({"family": r.family, "reason": "incomplete"})
         elif r.value is None:
             excluded.append({"family": r.family, "reason": "no value"})
+        elif summary_run and r.config.get("aggregate") != "summary":
+            excluded.append({"family": r.family, "reason": "native under aggregate=summary"})
         elif r.config.get("scope") == ATI_SCOPE and r.n_items < ATI_MACRO_MIN_ITEMS:
             excluded.append({"family": r.family, "reason": f"n<{ATI_MACRO_MIN_ITEMS} (ATI)"})
         else:
@@ -232,15 +248,20 @@ def markdown_table(
         f"| family | metric | value | 95% CI | n | chance |{extra} judge | pinned | complete |",
         "|---|---|---|---|---|---|" + "---|" * len(cols) + "---|---|---|",
     ]
+    summary_rows = False
     for r in results:
         chance = _fmt(r.chance) + (f" ({r.chance_label})" if r.chance_label else "")
-        lucky = "".join(f" {(floors or {})[c].get(r.family, '—')} |" for c in cols)
+        summ = r.config.get("aggregate") == "summary"
+        summary_rows = summary_rows or summ
+        # a native-mode measured floor is not a floor for a summary-mode number (plan 0018)
+        lucky = "".join(f" {'—' if summ else (floors or {})[c].get(r.family, '—')} |" for c in cols)
         judge = str(r.config.get("judge_model", "?"))
         metric = r.metric if r.higher_is_better else f"{r.metric} (lower is better)"
         k = r.extras.get("n_items_without_readouts")
         n = f"{r.n_items}" + (f" ({k} no readouts)" if isinstance(k, int) and k > 0 else "")
         lines.append(
-            f"| {r.family} | {metric} | {_fmt(r.value)} | {_fmt_ci(r.ci95)} | {n} | "
+            f"| {r.family}{' †' if summ else ''} | {metric} | {_fmt(r.value)} | "
+            f"{_fmt_ci(r.ci95)} | {n} | "
             f"{chance} |{lucky} {judge} | {_yn(r.pinned_instrument)} | {_yn(r.complete)} |"
         )
     if macro_row is not None:
@@ -267,4 +288,7 @@ def markdown_table(
                 elif reason == "not in macro" and e.get("why"):
                     reason = f"not in macro ({e['why']})"
                 lines.append(f"- {e['family']}: {reason}")
+    if summary_rows:
+        lines.append("")
+        lines.append(SUMMARY_LEGEND)
     return "\n".join(lines) + "\n"

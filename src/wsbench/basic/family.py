@@ -4,9 +4,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from wsbench import digest
 from wsbench.banks import exact_targets, item_targets, load_bank
 from wsbench.basic.judge import CellKey, JudgeOutcome, judge_cells
-from wsbench.basic.prompts import FAMILY_RULES, PROMPT_VERSION, forbidden_line
+from wsbench.basic.prompts import DIGEST_TASK_NOTES, FAMILY_RULES, PROMPT_VERSION, forbidden_line
 from wsbench.cache import Cache
 from wsbench.family import pass_rate_result, require_cells, tri_state
 from wsbench.judge_config import JudgeConfig
@@ -61,6 +62,21 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
     expected = [(i, layer) for i in ids for layer in layers]
     missing = [k for k in expected if k not in groups]
     require_cells(name, missing, len(expected), args)
+    if digest.summary_mode(args):
+        return _run_summary(
+            args,
+            name=name,
+            scope=scope,
+            ids=ids,
+            targets=targets,
+            family_rule=family_rule,
+            forbidden=forbidden,
+            cells=cells,
+            rep=rep,
+            groups=groups,
+            n_expected=len(expected),
+            missing=missing,
+        )
 
     spend = Spend()
     with Cache(args.out / "cells.jsonl") as cache:
@@ -110,6 +126,94 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
         chance_label=CHANCE_LABEL,
         config_extra={"layers_judged": layers},
         extras=extras,
+    )
+    return with_readout_count(result, scope, cells)
+
+
+def _run_summary(
+    args: JudgeArgs,
+    *,
+    name: str,
+    scope: list[dict[str, Any]],
+    ids: list[str],
+    targets: dict[str, list[str]],
+    family_rule: str,
+    forbidden: dict[str, str],
+    cells: list[Cell],
+    rep: Any,
+    groups: dict[CellKey, list[Cell]],
+    n_expected: int,
+    missing: list[CellKey],
+) -> FamilyResult:
+    """Summary mode (plan 0018): every item's cells at every layer -> one digest -> one bank
+    judge call. An item with no cells keeps the native missing path (undecided); an item with
+    a missing layer and no pass is undecided; an unsummarized item is undecided."""
+    by_item: dict[str, list[Cell]] = defaultdict(list)
+    for (i, _layer), cs in groups.items():
+        by_item[i].extend(cs)
+    partial = {i for i, _layer in missing}
+    spend = Spend()
+    pre = Preflighter(args.dry_run)
+    with Cache(args.out / "cells.jsonl") as cache:
+        col = digest.collapse(
+            name,
+            {i: by_item[i] for i in ids if by_item.get(i)},
+            args=args,
+            cache=cache,
+            spend=spend,
+            preflight=pre.for_judge(digest.summarizer_judge(args)),
+            task_note=DIGEST_TASK_NOTES.get(name, ""),
+        )
+        source_kind = digest.as_prose(rep)
+        judged = {
+            (i, digest.SUMMARY_LAYER): [c]
+            for i, c in col.cells.items()
+            if i not in col.unsummarized
+        }
+        outcome = judge_cells(
+            judged,
+            targets,
+            family_rule=family_rule,
+            forbidden=forbidden,
+            kind="prose",
+            judge=args.judge,
+            cache=cache,
+            spend=spend,
+            preflight=pre,
+            concurrency=args.concurrency,
+            rpm=args.rpm,
+            dry_run=args.dry_run,
+            summary=col,
+            summary_note=digest.summary_note(args),
+            prompt_version=digest.prompt_version(PROMPT_VERSION, args),
+        )
+    rows = []
+    for i in ids:
+        row = _item_row(i, [digest.SUMMARY_LAYER], judged, targets[i], outcome)
+        if i in col.cells:
+            if i in partial and row["pass"] is False:
+                row["pass"] = None  # a missing layer leaves a non-pass undecided, as native
+            row["n_missing"] = sum(1 for k in missing if k[0] == i)
+            row.update(col.row(i))
+        row.pop("earliest_layer", None)
+        rows.append(row)
+    result = pass_rate_result(
+        name=name,
+        args=args,
+        prompt_version=digest.prompt_version(PROMPT_VERSION, args),
+        rows=rows,
+        cells=cells,
+        rep=rep,
+        n_expected=n_expected,
+        n_missing=len(missing),
+        n_unjudged=outcome.n_unjudged + len(col.unsummarized),
+        n_empty=outcome.n_empty,
+        spend=spend,
+        chance_label=CHANCE_LABEL,
+        config_extra={**digest.config(args, source_kind), "layers_judged": args.layers},
+        extras={"n_calls": outcome.n_calls, "summary": col.extras()},
+        n_items=len(ids),
+        pinned=digest.pinned(args),
     )
     return with_readout_count(result, scope, cells)
 
