@@ -65,8 +65,9 @@ def test_wrong_bridge_composition_and_twins():
     templates = collections.Counter(_key(it).split("-")[0] for it in wb)
     bridges = collections.Counter(it["wikidata"]["B_prime"] for it in wb)
     assert max(templates.values()) <= 20 and max(bridges.values()) <= 4
-    for it in wb:
+    for it, tw in zip(wb, wbt, strict=True):
         assert it["intermediates"] and it["intermediates"] != it["true_intermediates"]
+        assert tw["intermediates"] == it["true_intermediates"] and tw["prompt"] == it["prompt"]
 
 
 def test_knowledge_cutoff_items():
@@ -101,3 +102,14 @@ def test_introspection_bank_unchanged_by_the_refill():
     b = _bank("introspection")
     assert "refill_panel_gate" not in b and "retired_panel_gate" not in b
     assert sum(1 for it in b["items"] if it.get("headline")) == N0["introspection"]
+
+
+def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
+    stale = [
+        f
+        for f, e in frozen.items()
+        if not f.startswith("_")
+        and e.get("gate") == ti.GATE_VERSION
+        and e["bank_sha"] != ti.bank_fingerprint(f)
+    ]
+    assert stale == []

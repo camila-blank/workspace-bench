@@ -23,11 +23,11 @@ EXAMPLE = REPO / "tests/fixtures/directed_modulation_obscure_pre_refill_readouts
 TOY_IDS = "middle_eastern_spice_blend,trickster_figure"
 
 
-@pytest.fixture(autouse=True)
-def _pre_refill_bank(request, monkeypatch):
-    # the toy-id legs read the pre-refill bank; the frozen-file check must see the live bank
-    if request.node.name != "test_frozen_ati_file_uses_new_keys":
-        monkeypatch.setenv("WSB_BANK_FILE_DIRECTED_MODULATION_OBSCURE", str(FIXTURE_BANK))
+@pytest.fixture
+def _pre_refill_bank(monkeypatch):
+    # only the legs that read TOY_IDS / EXAMPLE use the pre-refill bank; everything else
+    # (e.g. the frozen-file check) sees the live bank
+    monkeypatch.setenv("WSB_BANK_FILE_DIRECTED_MODULATION_OBSCURE", str(FIXTURE_BANK))
 
 
 RENAMES = {
@@ -61,6 +61,7 @@ def test_map_and_canonical(real_families):
 # ---------------------------------------------------------------- (a) old names on the CLI
 
 
+@pytest.mark.usefixtures("_pre_refill_bank")
 def test_judge_accepts_old_family_name(tmp_path, capsys):
     out = tmp_path / "j"
     rc = main(
@@ -78,6 +79,7 @@ def test_judge_accepts_old_family_name(tmp_path, capsys):
     assert res.family == "directed_modulation_obscure" and res.value == 0.5
 
 
+@pytest.mark.usefixtures("_pre_refill_bank")
 def test_run_accepts_old_family_name(tmp_path):
     root = tmp_path / "readouts"
     root.mkdir()
@@ -114,6 +116,7 @@ def test_text_inversion_accepts_old_family_names(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- (b) legacy readout file name
 
 
+@pytest.mark.usefixtures("_pre_refill_bank")
 def test_run_reads_legacy_readout_file(tmp_path, capsys):
     root = tmp_path / "readouts"
     root.mkdir()
@@ -133,6 +136,7 @@ def test_run_reads_legacy_readout_file(tmp_path, capsys):
     assert read_results(out / "directed_modulation_obscure").value == 0.5
 
 
+@pytest.mark.usefixtures("_pre_refill_bank")
 def test_run_prefers_new_readout_file(tmp_path, capsys):
     root = tmp_path / "readouts"
     root.mkdir()
@@ -147,6 +151,7 @@ def test_run_prefers_new_readout_file(tmp_path, capsys):
 # ---------------------------------------------------------------- (c) stored results.json
 
 
+@pytest.mark.usefixtures("_pre_refill_bank")
 def test_report_canonicalizes_old_family_in_results(tmp_path, capsys):
     out = tmp_path / "runs"
     rc = main(["judge", "family=directed_modulation_obscure", f"readouts={EXAMPLE}",
