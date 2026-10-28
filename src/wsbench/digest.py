@@ -6,6 +6,7 @@ import dataclasses
 import functools
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,7 +20,7 @@ from wsbench.readouts import Cell, Kind, LoadReport
 from wsbench.registry import JudgeArgs
 
 DIGEST_PROMPT_VERSION = "digest-v2"
-SUMMARY_JUDGE_VERSION = "sj-v4"  # bump on any SUMMARY_NOTE* or family summary-variant edit
+SUMMARY_JUDGE_VERSION = "sj-v5"  # bump on any SUMMARY_NOTE* or family summary-variant edit
 SUMMARY_LAYER = -1  # the sentinel layer of a synthetic summary cell
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "default"
@@ -532,13 +533,29 @@ def evidence_line(span: str, lines: Sequence[Line], where: str = "") -> Line | N
     return None
 
 
+@functools.lru_cache(maxsize=1 << 16)
+def _plain(s: str) -> str:
+    """Casefolded, accent-stripped, whitespace-normalised (the support counter's form)."""
+    s = unicodedata.normalize("NFKD", s.casefold())
+    return " ".join("".join(c for c in s if not unicodedata.combining(c)).split())
+
+
+_ASCII_WORD = re.compile(r"[A-Za-z0-9]")
+
+
 def _key_hits(key: str, ln: Line) -> bool:
-    """``key`` occurs in a bundle line as whole words (normalised case and whitespace); in a
-    token line it must equal one token or a run of whole consecutive tokens."""
+    """``key`` occurs in a bundle line: a token line needs one whole token or a run of whole
+    consecutive tokens; prose needs whole words (accents and case folded) for a Latin-script key,
+    and a plain substring for a key without ASCII letters (CJK and similar scripts have no spaces
+    between words, so word boundaries never match inside running text)."""
     if ln.pieces is not None:
         return _token_level(key, ln.pieces) == 0
-    k = _norm(key)
-    return bool(k) and re.search(r"(?<!\w)" + re.escape(k) + r"(?!\w)", _norm(ln.text)) is not None
+    k, t = _plain(key), _plain(ln.text)
+    if not k:
+        return False
+    if not _ASCII_WORD.search(k):
+        return k in t
+    return re.search(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", t) is not None
 
 
 def support_of(key: str, lines: Sequence[Line]) -> str:
@@ -558,15 +575,19 @@ class Grounded:
     key: str = ""  # the item's key content (verified inside the evidence), or the evidence
 
 
-def ground(result: object, lines: Sequence[Line], max_items: int) -> tuple[list[Grounded], int]:
-    """The digest items whose evidence verifies, and how many were dropped. The key must lie
-    inside the evidence (else the evidence itself is the key); a later item with the same key
-    as an earlier one repeats its content and is dropped (counted)."""
+def ground(
+    result: object, lines: Sequence[Line], max_items: int, duplicates: list[int] | None = None
+) -> tuple[list[Grounded], int]:
+    """The digest items whose evidence verifies, and how many failed the evidence check. The key
+    must lie inside the evidence (else the evidence itself is the key); a later item with the
+    same key as an earlier one repeats its content and is skipped, counted in ``duplicates[0]``
+    (not as an evidence failure)."""
     if not isinstance(result, dict) or not isinstance(result.get("items"), list):
         return [], 0
     kept: list[Grounded] = []
     seen_keys: set[str] = set()
     dropped = 0
+    dup = duplicates if duplicates is not None else [0]
     for it in result["items"][:max_items]:
         d = it if isinstance(it, dict) else {}
         st, ev, key, where = d.get("statement"), d.get("evidence"), d.get("key"), d.get("where")
@@ -580,7 +601,7 @@ def ground(result: object, lines: Sequence[Line], max_items: int) -> tuple[list[
         if not k or not _span_in(k, ev1):
             k = ev1
         if _norm(k) in seen_keys:
-            dropped += 1
+            dup[0] += 1
             continue
         seen_keys.add(_norm(k))
         kept.append(Grounded(_one_line(st), support_of(k, lines), ev1, ln, k))
@@ -721,6 +742,7 @@ def collapse(
         "n_evidence_dropped": 0,
         "n_items_all_dropped": 0,
         "n_digest_zero_nonempty": 0,
+        "n_key_duplicates": 0,
     }
     lines_of: dict[str, list[Line]] = {}
     pending: list[tuple[str, str, str]] = []  # (item id, fp, user)
@@ -798,7 +820,9 @@ def collapse(
             col.diag["n_digest_zero_nonempty"] += 1
             col.empty.add(item_id)
             continue
-        kept, dropped = ground(r, lines_of[item_id], s.max_items)
+        dups = [0]
+        kept, dropped = ground(r, lines_of[item_id], s.max_items, dups)
+        col.diag["n_key_duplicates"] += dups[0]
         col.diag["n_evidence_kept"] += len(kept)
         col.diag["n_evidence_dropped"] += dropped
         if not kept:  # an instrument failure: mark the cached row failed so a rerun re-asks

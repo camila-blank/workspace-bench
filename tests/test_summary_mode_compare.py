@@ -29,7 +29,7 @@ def test_pairing_flags_and_retention():
     native = {"basic_readout": _res("bank-2026-10-10", nat_rows)}
     summary = {
         "basic_readout": _res(
-            "bank-2026-10-10+digest-v2-blind-extractive+sj-v4", summ_rows, "summary"
+            "bank-2026-10-10+digest-v2-blind-extractive+sj-v5", summ_rows, "summary"
         )
     }
     (row,) = cmp.compare(native, summary, {"basic_readout": ["i0", "i1"]})
@@ -46,9 +46,9 @@ def test_incomparable_and_chain_any_of_3():
         ),
     }
     summary = {
-        "basic_readout": _res("bank-NEW+digest-v2-blind-extractive+sj-v4", [], "summary"),
+        "basic_readout": _res("bank-NEW+digest-v2-blind-extractive+sj-v5", [], "summary"),
         "chain_intermediates": _res(
-            "chain-free-2026-09-16+digest-v2-blind-extractive+sj-v4",
+            "chain-free-2026-09-16+digest-v2-blind-extractive+sj-v5",
             [{"id": "a", "pass": True}],
             "summary",
             cells="all",
@@ -63,11 +63,11 @@ def test_incomparable_and_chain_any_of_3():
 def test_base_pairs():
     nat = _res("arith-free-batched-2026-09-23", [], cells="all")
     summ = _res(
-        "arith-free-2026-09-23+digest-v2-blind-extractive+sj-v4", [], "summary", cells="all"
+        "arith-free-2026-09-23+digest-v2-blind-extractive+sj-v5", [], "summary", cells="all"
     )
     assert cmp.check_pair("arithmetic_intermediates", nat, summ) == []
     nat = _res("mt-regex-summarized-2026-09-23", [])
-    summ = _res("mt-regex-2026-09-23+digest-v2-blind-extractive+sj-v4", [], "summary")
+    summ = _res("mt-regex-2026-09-23+digest-v2-blind-extractive+sj-v5", [], "summary")
     assert cmp.check_pair("typo_mt", nat, summ) == []
 
 

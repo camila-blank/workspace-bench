@@ -258,7 +258,7 @@ in `docs/summarizer.md` § Item digest), and the item is judged ONCE on that dig
   `hits_at`, `unjudged_at`, `earliest_layer` and the frozen `layer` / `pos` row fields. Rows gain
   `summary`, `summary_statements`, `summary_evidence`, `summary_truncated`, `summary_state`;
   `extras.summary` holds the digest diagnostics.
-- **Provenance:** `prompt_version` = `arith-free-2026-09-23+digest-v2-<variant>-<render>+sj-v4`
+- **Provenance:** `prompt_version` = `arith-free-2026-09-23+digest-v2-<variant>-<render>+sj-v5`
   (the per-cell version, not the batched one); `config.aggregate = "summary"`,
   `config.summarizer`, `config.source_kind`. Use a separate `out=` dir from any native run.
 

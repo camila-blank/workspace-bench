@@ -268,7 +268,7 @@ def test_options_validated(tmp_path):
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v2-blind-extractive+sj-v4"
+    assert digest.prompt_version("pv", a) == "pv+digest-v2-blind-extractive+sj-v5"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
 
 
@@ -289,11 +289,31 @@ def test_v2_key_support_and_dedupe():
             {"statement": "bad key", "key": "zebra", "where": "", "evidence": "fish tanks"},
         ]
     }
-    kept, dropped = digest.ground(res, lines, 10)
-    assert dropped == 1  # the second "apple" repeats the first item's content
+    dups = [0]
+    kept, dropped = digest.ground(res, lines, 10, dups)
+    assert dropped == 0 and dups == [1]  # the second "apple" repeats the first item's content
     assert [(g.key, g.support) for g in kept] == [
         ("apple", "many"),  # 11 samples contain the word, not the whole clause
         ("aquariums", "one"),
         ("fish tanks", "one"),  # a key not inside the evidence falls back to the evidence
     ]
     assert digest.support_of("app", lines) == "one"  # whole words only
+
+
+def test_v2_cjk_and_accent_keys_and_duplicate_counter():
+    lines = _lines(
+        _prose("a", 20, 1, "我住在北京市"),
+        _prose("a", 24, 1, "他也去了北京。"),
+        _prose("a", 28, 1, "Café de Flore"),
+    )
+    assert digest.support_of("北京", lines) == "few"  # no word boundaries inside CJK text
+    assert digest.support_of("Cafe", lines) == "one"  # accent-folded like the key check
+    res = {
+        "items": [
+            {"statement": "a", "key": "北京", "where": "", "evidence": "我住在北京市"},
+            {"statement": "b", "key": "北京", "where": "", "evidence": "他也去了北京"},
+        ]
+    }
+    dups = [0]
+    kept, dropped = digest.ground(res, lines, 10, dups)
+    assert len(kept) == 1 and dropped == 0 and dups == [1]
