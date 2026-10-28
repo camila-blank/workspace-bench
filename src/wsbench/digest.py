@@ -880,11 +880,12 @@ def collapse(
             model=s.model,
             reasoning=s.reasoning,
             on_result=on_result,
-            concurrency=args.concurrency,
+            concurrency=s.concurrency or args.concurrency,
             rpm=args.rpm,
             max_tokens=MAX_TOKENS,
-            timeout=DIGEST_TIMEOUT,
+            timeout=s.timeout or DIGEST_TIMEOUT,
             spend=spend,
+            **({} if s.fallback == "none" else {"fallbacks": s.fallback}),
         )
     for item_id, _fp, _user in pending:
         r = results.get(item_id)
@@ -1089,7 +1090,7 @@ def _collapse_hierarchical(
     for i in items:
         row = cache.get(
             f"digest:{i}|{layers_tag}|level",
-            _fp("level", s.model, s.reasoning, system, text_of[i]),
+            _fp("level", s.model, s.reasoning, s.fallback, system, text_of[i]),
             include_failed=True,
         )
         level[i] = int(row.get("halvings", 0)) if row else 0
@@ -1171,7 +1172,7 @@ def _collapse_hierarchical(
         k = level[i] + 1
         cache.put(
             f"digest:{i}|{layers_tag}|level",
-            _fp("level", s.model, s.reasoning, system, text_of[i]),
+            _fp("level", s.model, s.reasoning, s.fallback, system, text_of[i]),
             {"result": None, "fallback": kind, "halvings": k},
         )
         level[i] = k
@@ -1252,6 +1253,7 @@ def _collapse_hierarchical(
                 bump(i, failed)
                 continue
             if failed == "failed":
+                last_kind[i] = "failed"
                 col.unsummarized.add(i)
                 done.add(i)
                 continue
@@ -1262,8 +1264,6 @@ def _collapse_hierarchical(
                 continue
             order = {id(ln): j for j, ln in enumerate(lines_of[i])}
             union.sort(key=lambda ln: order.get(id(ln), 0))
-            union_of[i] = union
-            col.chunks[i] = n
             t = _union_render(union, lines_of[i])
             if est_tokens(t) * scale_of[i] > budget0:  # the union itself is too large
                 col.unsummarized.add(i)
@@ -1271,6 +1271,8 @@ def _collapse_hierarchical(
                 col.chunks.pop(i, None)
                 done.add(i)
                 continue
+            union_of[i] = union
+            col.chunks[i] = n
             final_fp[i] = single_fp[i] + _fp("final", n, t)
             finals.append((f"digest:{i}|{layers_tag}|h{k}|final", final_fp[i], render_user(t)))
         res = run_batch(finals)
@@ -1292,15 +1294,7 @@ def _collapse_hierarchical(
             kind = last_kind.get(i) or persisted_kind.get(i)
             if kind in ("refused", "too_long"):
                 col.diag[f"n_digest_{kind}"] += 1
-    col.diag["n_hierarchical_items"] = sum(1 for i in col.chunks if i not in col.unsummarized)
-    for i in items:  # an item any of whose calls a refusal fallback served
-        prefix = f"digest:{i}|{layers_tag}"
-        models = sorted(
-            {m for k, m in served_keys.items() if k == prefix or k.startswith(prefix + "|")}
-        )
-        if models and i not in col.unsummarized:
-            col.served_by[i] = ",".join(models)
-    col.diag["n_fallback_served_items"] = len(col.served_by)
+
     col.diag["max_halvings"] = max([level[i] for i in items], default=0)
 
     # ---- ground the final digests (support counted over the FULL bundle)
@@ -1334,4 +1328,19 @@ def _collapse_hierarchical(
             for g in kept
         ]
         col.cells[i] = dataclasses.replace(col.cells[i], samples=(text,))
+    # provenance, from the chain that produced each item's final digest
+    for i in items:
+        if i in col.unsummarized or i in col.empty or i not in final_key:
+            col.chunks.pop(i, None)
+            continue
+        key = final_key[i][0]
+        chain = [key]
+        if key.endswith("|final"):
+            stem = key[: -len("final")]
+            chain += [k for k in served_keys if k.startswith(stem + "c")]
+        models = sorted({served_keys[k] for k in chain if k in served_keys})
+        if models:
+            col.served_by[i] = ",".join(models)
+    col.diag["n_hierarchical_items"] = len(col.chunks)
+    col.diag["n_fallback_served_items"] = len(col.served_by)
     return col

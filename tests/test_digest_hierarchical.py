@@ -317,3 +317,36 @@ def test_refusal_fallback_is_passed_and_served_model_recorded(tmp_path, fam, mon
     assert col.diag["n_fallback_served_items"] == 1
     col = _run(tmp_path, {"a": _cells("a", 2)})  # cached: provenance survives a rerun
     assert col.row("a")["summary_served_by"] == "claude-opus-4-8"
+
+
+def test_count_tokens_unavailable_falls_back_to_estimate(tmp_path, fam, monkeypatch):
+    def no_count(model, prompts, concurrency=8):
+        raise llm.JudgeConfigError("count_tokens needs an Anthropic model")
+
+    fake = Fake(monkeypatch, tokens_per_char=0.1)
+    monkeypatch.setattr(llm, "count_tokens", no_count)
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert col.summaries["a"] and fake.calls  # estimated size, still digested
+
+
+def test_union_too_large_is_unsummarized(tmp_path, fam, monkeypatch):
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_max", "25")
+    fake = Fake(monkeypatch, tokens_per_char=1.0)
+
+    def every_line(user):
+        lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+        return {
+            "items": [{"statement": "s", "key": "", "where": "", "evidence": ln} for ln in lines]
+        }
+
+    fake.stream_json_orig = fake.stream_json
+
+    def sj(prompts, *, on_result, **kw):
+        for i, (_s, user) in enumerate(prompts):
+            fake.calls.append(user)
+            on_result(i, every_line(user))
+        return Spend()
+
+    monkeypatch.setattr(llm, "stream_json", sj)
+    col = _run(tmp_path, {"a": _cells("a", 6)})
+    assert "a" in col.unsummarized and col.diag["n_digest_too_long"] == 1

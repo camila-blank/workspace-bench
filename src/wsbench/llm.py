@@ -316,14 +316,28 @@ async def _anthropic_once(
         if mark_refusals and stop == "model_context_window_exceeded":
             return TOO_LONG_JSON
         return None
-    text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), None)
+    blocks = list(resp.content)
+    seams = [j for j, b in enumerate(blocks) if getattr(b, "type", None) == "fallback"]
+    if fallbacks is not None and seams:
+        # a mid-output refusal: the declining model's partial text, a fallback seam, then the
+        # serving model's output (which may continue the partial as a prefill)
+        texts = [getattr(b, "text", "") for b in blocks if getattr(b, "type", None) == "text"]
+        after = "".join(
+            getattr(b, "text", "")
+            for b in blocks[seams[-1] + 1 :]
+            if getattr(b, "type", None) == "text"
+        )
+        try:
+            out = _parse_object("".join(texts))
+        except (ValueError, json.JSONDecodeError):
+            out = _parse_object(after)
+        if isinstance(out, dict):
+            out[SERVED_BY] = str(getattr(resp, "model", "") or "fallback")
+        return out
+    text = next((b.text for b in blocks if getattr(b, "type", None) == "text"), None)
     if text is None:
         raise ValueError("response has no text block")
-    out = _parse_object(text)
-    served = getattr(resp, "model", model)
-    if fallbacks is not None and isinstance(out, dict) and served and served != model:
-        out[SERVED_BY] = served
-    return out
+    return _parse_object(text)
 
 
 async def _one(

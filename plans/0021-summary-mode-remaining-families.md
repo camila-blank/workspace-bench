@@ -423,3 +423,19 @@ and exfiltration scenarios.
 - **Instrument note:** Opus 5.5 stays the digest model for everything it accepts. The report states
   the share of fallback-served agentic digests.
 
+**Review round 2 fixes.**
+- The persisted fallback level is fingerprinted with `summ_fallback`, so turning the fallback on
+  re-tries items refused without it.
+- A mid-output refusal (partial text, a `fallback` seam block, the served text) is parsed from the
+  joined text, or from the text after the seam. Fallback service is detected by the seam block.
+- A failed chunk records its own failure kind.
+- `summary_served_by` / `n_hierarchical_items` come from the chain that produced the final digest.
+- The stride path honours `summ_fallback`, `summ_concurrency` and `summ_timeout`.
+
+Known and accepted:
+- Digest cache fingerprints do not include the fallback setting. A later `summ_fallback=none` run
+  reuses fallback-served digests, which their `summary_served_by` labels. Changing the fingerprint
+  would re-bill every agentic digest.
+- With the newest-row-wins cache fix, re-running a published plan 0020 cache re-asks items whose
+  evidence spans all failed. Before the fix those items stayed unsummarized forever by mistake.
+
