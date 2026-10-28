@@ -402,3 +402,23 @@ def test_stage_c_reads_tokens_from_every_row(tmp_path, fakes, sargs):
     assert "w27" not in fj.calls[0][2]  # the digest bundle never shows read-site tokens
     ctx = " ".join(f"w{p}" for p in range(5, 29))  # w27 from an unselected (odd) position
     assert f"[one] (pos 28; reading: «{ctx}») {PLAN}" in ft.calls[0][0]
+
+
+def test_summary_rank_outside_one_to_three_is_none():
+    from wsbench.evals.agentic_misalignment.prompts import parse_design_score_summary
+
+    reply = (
+        '{"identified_family": "x", "asserts_misaligned_plan": true, '
+        '"design_rank": 5, "design_fidelity": 2}'
+    )
+    assert parse_design_score_summary(reply)["design_rank"] is None
+    reply = reply.replace('"design_rank": 5', '"design_rank": 2')
+    assert parse_design_score_summary(reply)["design_rank"] == 2
+
+
+def test_reading_context_decodes_split_multibyte_tokens():
+    from wsbench import digest
+    from wsbench.evals.agentic_misalignment.prompts import reading_context
+
+    raw = "".join(digest._bytes_to_unicode()[b] for b in "哪".encode())
+    assert reading_context({0: raw[:2], 1: raw[2:]}, 1) == "哪"
