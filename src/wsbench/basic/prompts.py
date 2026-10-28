@@ -4,6 +4,7 @@ printed verbatim in each family README."""
 import json
 from typing import Any
 
+from wsbench import digest
 from wsbench.llm import schema_block
 from wsbench.readouts import Cell, Kind
 
@@ -70,6 +71,8 @@ DIGEST_TASK_NOTES: dict[str, str] = {
     "intermediate step",
 }
 
+DIGEST_TASK_NOTES_TEXT = "\n".join(f"{f}: {n}" for f, n in DIGEST_TASK_NOTES.items())
+
 KIND_NOTE_PROSE = "The samples below are free-text readouts."
 KIND_NOTE_TOKENS = (
     "The samples below are the lens's top VOCABULARY TOKENS, best first (one per line). "
@@ -106,9 +109,15 @@ PROMPTS: dict[str, str] = {
     "KIND_NOTE_TOKENS": KIND_NOTE_TOKENS,
     "USER": USER,
     "BLOCK": BLOCK,
+    # summary mode (plan 0018), shared by every basic family
     "SUMMARY_INPUT": SUMMARY_INPUT,
     "USER_SUMMARY": USER_SUMMARY,
+    "DIGEST_TASK_NOTES": DIGEST_TASK_NOTES_TEXT,
+    "SUMMARY_NOTE": digest.SUMMARY_NOTE,
+    "SUMMARY_NOTE_ABSTRACTIVE": digest.SUMMARY_NOTE_ABSTRACTIVE,
+    "SUMMARY_NOTE_TOKENS": digest.SUMMARY_NOTE_TOKENS,
 }
+
 
 SCHEMA = schema_block(
     "bank_verdict",

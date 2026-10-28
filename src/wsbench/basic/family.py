@@ -184,7 +184,7 @@ def _run_summary(
             rpm=args.rpm,
             dry_run=args.dry_run,
             summary=col,
-            summary_note=digest.summary_note(args),
+            summary_note=digest.summary_note(args, source_kind),
             prompt_version=digest.prompt_version(PROMPT_VERSION, args),
         )
     rows = []

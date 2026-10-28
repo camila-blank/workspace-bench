@@ -19,7 +19,7 @@ def first_lines_digest(user: str, k: int = 3) -> dict:
     lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
     return {
         "items": [
-            {"statement": f"STATEMENT-{i}", "support": "many", "evidence": ln}
+            {"statement": f"STATEMENT-{i}", "where": "", "evidence": ln}
             for i, ln in enumerate(lines[:k])
         ]
     }

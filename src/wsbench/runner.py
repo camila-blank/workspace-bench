@@ -96,6 +96,11 @@ def judge_family(
         scope=scope,
     )
     result = spec.run(jargs)
+    if opts.get("aggregate") == "summary" and result.config.get("aggregate") != "summary":
+        if spec.name not in digest.NATIVE_ONLY:
+            fail(f"{spec.name}: aggregate=summary but the family ran native (not hooked)")
+        result.config["aggregate"] = "native"
+        result.extras["summary_mode_note"] = digest.NATIVE_ONLY[spec.name]
     if ati is not None:
         result.config["scope"] = scope
         result.extras["ati_n_bank"] = ati["n_bank"]

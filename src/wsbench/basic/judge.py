@@ -90,7 +90,7 @@ def judge_cells(
     dry_run: bool,
     summary: Collapse | None = None,
     summary_note: str = "",
-    prompt_version: str = PROMPT_VERSION,
+    prompt_version: str | None = None,
 ) -> JudgeOutcome:
     """Judge every (item, layer) group. A group with no text is a negative without a call.
     Unjudged cells (failed calls, or every call under ``dry_run``) are counted, never scored;
@@ -134,7 +134,7 @@ def judge_cells(
         calls,
         schema=SCHEMA,
         judge=judge,
-        prompt_version=prompt_version,
+        prompt_version=PROMPT_VERSION if prompt_version is None else prompt_version,
         cache=cache,
         spend=spend,
         concurrency=concurrency,

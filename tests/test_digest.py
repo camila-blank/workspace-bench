@@ -114,7 +114,37 @@ def test_evidence_token_pieces_never_join():
 
 
 def _result(*items: tuple[str, str, str]) -> dict:
-    return {"items": [{"statement": s, "support": p, "evidence": e} for s, p, e in items]}
+    return {"items": [{"statement": s, "where": w, "evidence": e} for s, w, e in items]}
+
+
+def test_evidence_resolution_prefers_named_group_and_exact_match():
+    lines = _lines(
+        _prose("a", 20, 1, "France or Spain, hard to say"),
+        _prose("a", 50, 1, "the answer is France"),
+        _toks("a", 24, 1, "Ġcatalog", "Ġx"),
+        _toks("a", 52, 1, "Ġcat", "Ġy"),
+    )
+    assert digest.evidence_line("France", lines, "[L50 pos 1]").text == "the answer is France"
+    assert digest.evidence_line("France", lines).text.startswith("France or Spain")
+    assert digest.evidence_line("cat", lines).text == "cat | y"  # whole token beats catalog
+    assert digest.evidence_line("answer is france", lines).text == "the answer is France"
+
+
+def test_support_is_counted_mechanically():
+    cells = [_prose("a", L, 1, "boxing match") for L in (20, 24, 28, 32)] + [
+        _prose("a", 36, 1, "chess")
+    ]
+    lines = _lines(*cells)
+    assert digest.support_of("boxing", lines) == "several"
+    assert digest.support_of("chess", lines) == "one"
+    many = _lines(*[_prose("a", 20, p, "boxing") for p in range(12)])
+    assert digest.support_of("boxing", many) == "many"
+
+
+def test_token_note_only_for_token_sources(tmp_path):
+    a = _args(tmp_path)
+    assert digest.SUMMARY_NOTE_TOKENS not in digest.summary_note(a, "prose")
+    assert digest.summary_note(a, "tokens").endswith(digest.SUMMARY_NOTE_TOKENS)
 
 
 def test_ground_and_renders():
@@ -130,12 +160,10 @@ def test_ground_and_renders():
     )
     assert dropped == 1 and len(kept) == 2
     text, evid = digest.render_summary(kept, "extractive")
-    assert text == "[many] a large orange cat sat"
+    assert text == "[one] a large orange cat sat"
     assert "tiger" not in text and [ln.text for ln in evid] == ["a large orange cat sat"]
     text, _ = digest.render_summary(kept, "abstractive")
-    assert text.splitlines()[0] == (
-        '- a tiger [support: many] — evidence: "a large orange cat sat"'
-    )
+    assert text.splitlines()[0] == ('- a tiger [support: one] — evidence: "a large orange cat sat"')
 
 
 # ---------------------------------------------------------------- collapse
@@ -159,8 +187,8 @@ def scripted(monkeypatch):
 
 def test_collapse_item_states(tmp_path, scripted):
     seen, replies = scripted
-    replies["alpha-sample"] = _result(("alpha", "many", "alpha-sample"))
-    replies["beta-sample"] = _result(("made up", "one", "not there"))  # every item dropped
+    replies["alpha-sample"] = _result(("alpha", "", "alpha-sample"))
+    replies["beta-sample"] = _result(("made up", "", "not there"))  # every item dropped
     replies["gamma-sample"] = {"items": []}  # zero items: empty
     by_item = {
         "a": [_prose("a", 20, 5, "alpha-sample", token="'s")],
@@ -175,7 +203,7 @@ def test_collapse_item_states(tmp_path, scripted):
             "fam", by_item, args=args, cache=cache, spend=Spend(), preflight=None, task_note="t"
         )
     assert len(seen) == 4
-    assert col.cells["a"].samples == ("[many] alpha-sample",)
+    assert col.cells["a"].samples == ("[one] alpha-sample",)
     assert (col.cells["a"].layer, col.cells["a"].pos, col.cells["a"].token) == (-1, 5, "'s")
     assert col.unsummarized == {"b", "d"} and col.empty == {"c", "e"}
     for i in "bcde":
@@ -186,7 +214,7 @@ def test_collapse_item_states(tmp_path, scripted):
 
 def test_collapse_caches_and_fingerprints(tmp_path, scripted):
     seen, replies = scripted
-    replies["alpha"] = _result(("alpha", "many", "alpha"))
+    replies["alpha"] = _result(("alpha", "", "alpha"))
     by_item = {"a": [_prose("a", 20, 1, "alpha")]}
     with Cache(tmp_path / "c.jsonl") as cache:
         for extra in ({}, {}, {"summ_render": "abstractive"}, {"summ_variant": "task"}):
@@ -207,7 +235,7 @@ def test_collapse_caches_and_fingerprints(tmp_path, scripted):
 
 def test_gate_texts_splits_token_lines(tmp_path, scripted):
     _seen, replies = scripted
-    replies["fence"] = _result(("fence", "many", "fence"))
+    replies["fence"] = _result(("fence", "[L20 pos 1]", "fence"))
     by_item = {"a": [_toks("a", 20, 1, "Ġfence", "Ġpost")]}
     with Cache(tmp_path / "c.jsonl") as cache:
         col = digest.collapse(
@@ -221,7 +249,7 @@ def test_gate_texts_splits_token_lines(tmp_path, scripted):
         )
     assert digest.gate_texts(col.cells["a"], col) == ["fence", "post"]
     assert digest.gate_texts(col.cells["a"], col, joined=True) == ["fence", "post", "fence post"]
-    assert col.cells["a"].samples == ("[many] fence | post",)
+    assert col.cells["a"].samples == ("[one] fence | post",)
 
 
 def test_options_validated(tmp_path):
