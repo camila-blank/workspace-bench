@@ -634,3 +634,14 @@ inference. Other-attribute details, value-preserving elaborations, synonyms and 
 a restated value "verbatim_echo". The acceptance check: re-judge, and the remaining
 summary-pass / native-fail items must be few and defensible, with no method-specific skew.
 
+**sj-v5 (final review).** Three changes, all to rendering and wording:
+- Key support counts CJK keys by plain substring; word boundaries never match inside CJK text, so
+  those keys were stuck at `[one]`.
+- The key check and the support count use the same accent folding.
+- Key-duplicate skips get their own counter (`n_key_duplicates`) instead of counting as evidence
+  drops.
+
+user_modeling's basis note now says "quote from the line" (the native 200-character evidence limit
+still applies). Every summary arm of D3 was re-run at sj-v5 with the digests reused, and the
+validation report is generated from those runs.
+
