@@ -1,6 +1,6 @@
 # 0022: summary mode — record rare content, a five-number digest for chain/arithmetic, credit UM synonyms
 
-Status: rev 2 (critique round 1 resolved below; Rev 2 decisions override earlier text). Owner: Camila. Date: 2026-10-28. Issue #108. This builds on plan 0020
+Status: rev 3 (critique rounds 1-2; the Rev 2 and Rev 3 decision sections override earlier text). Owner: Camila. Date: 2026-10-28. Issue #108. This builds on plan 0020
 (`aggregate=summary`, `src/wsbench/digest.py`) and plan 0021 (brew / buggy / agentic, the
 hierarchical overflow). Every rule of those plans holds unless it is restated here. The retained
 rules are: the extractive render, the evidence gate, `gate_texts`, item states, count rules,
@@ -85,14 +85,13 @@ Camila (2026-10-28), after the O-lens big-hit breakdown:
 **Render.**
 - Extractive render: prominent lines first, then rare lines, in one list.
 - The judged text has no tier headers; each line still carries its mechanical `[support]`
-  marker, so a rare line reads `[one]` or `[few]`.
+  marker (counted over the full bundle, so it can exceed `[few]`; Rev 2 #4).
 
 **Judge note.** `SUMMARY_NOTE`'s sentence "picked the most prominent readout samples, most
 prominent first" becomes:
 
-> "picked the most prominent readout samples, most prominent first, followed by samples carrying
-> rare content (content seen in only one or a few samples, which counts as much as prominent
-> content)."
+> "picked the most prominent readout samples, most prominent first, then samples carrying content
+> seen in only one or a few samples" (no equal-weight claim; Rev 2 #4).
 
 Bump `SUMMARY_JUDGE_VERSION` to `sj-v7`. `SUMMARY_NOTE_ABSTRACTIVE` gets the same clause.
 
@@ -165,8 +164,7 @@ crowded one of the old three judge slots in 49/79 lost chain and 58/260 lost ari
 **Nulls under the same rule.** Chain `null_near` and arithmetic `cross` are computed from the same
 kept set (≤5 values), so they measure the chance that five prominent numbers hit a decoy.
 
-Versions: chain and arithmetic summary prompt versions gain a `+num5` tag; the digest fingerprint
-carries `summ_numbers`.
+Versions: the digest fingerprint carries `summ_numbers` (no family tag, Rev 2 #7).
 
 ## Part C: user_modeling — synonyms of a stated value count
 
@@ -291,6 +289,49 @@ but failed in v2, and 20 that still fail.
     two summary runs by item id for the Δ CIs. For families without a null, the doc reports the
     rule-based chance floor beside the rate and flags any family whose v3 − ablation gain exceeds
     0.10 for a manual audit of 10 newly passing items.
+
+## Rev 3 decisions (critique round 2)
+
+1. **Family defaults reach every helper.** Chain and arithmetic pass `family=NAME` to
+   `digest.prompt_version`, `summarizer_judge`, `summary_note`, `config` and `pinned`, so
+   `config.summarizer` stamps `numbers=5, max_rare=0`; tested.
+2. **Judge cap vs key filter.** The judge does not see the keys and evidence lines are whole
+   samples, so `SYSTEM_SUMMARY` says "at most ten" (`MAX_VALUES_SUMMARY = 10`, `SCHEMA_SUMMARY`
+   description likewise; native `SCHEMA`/`SYSTEM` byte-identical, the replace is asserted). Kept =
+   judge values verified in one evidence sample AND written by one of the digest's number keys;
+   the five keys are the bound. `null_near` / `cross` use the same kept set. The top value may
+   instead rest on a quote that contains a key (the route for CJK numerals such as 负五十一).
+3. **Strict number keys.** In numbers mode `ground()` never falls back to the evidence as key: the
+   key must be a single numeral token (`^[-−+]?[0-9０-９][0-9０-９,，.．]*$` after trimming, or a
+   run of CJK numeral characters `[负零一二两三四五六七八九十百千万点]+`) that occurs in its evidence as a
+   whole number (no digit or `.digit` directly before/after). Anything else is a numeral drop.
+4. **Numeral drops are not instrument failures.** `ground()` counts numeral drops separately;
+   when every entry of a numbers digest failed only that check, the item is `empty` (a judged
+   negative, cached), not `unsummarized`. Real evidence failures keep today's rule.
+5. **Restatement bullet.** `DIGEST_SYSTEM_NUMBERS` drops the "at most one restatement item"
+   bullet; its own paragraph ranks numbers seen only inside a restatement after the others.
+6. **Sanctioned test edits (in addition to Rev 2 #6).** The pre-existing arithmetic/chain summary
+   tests in `tests/test_summary_mode_arith_chain.py` pass `extra={..., "summ_numbers": "0"}` so they
+   keep pinning the evidence gate unchanged; their `system ==` assertions use `SYSTEM_SUMMARY`.
+   `tests/test_digest_hierarchical.py::test_plan_0020_fingerprint_unchanged` gets `s.max_rare,
+   s.numbers` after `s.max_items` in its field list (the v3 freeze). The numbers mode gets new
+   tests with keyed fakes.
+7. **UM final wording.** A different word for a stated value (synonym, translation, demonym:
+   Denmark → "Danish") is `inferred_characterization`; the prompt's own word or a form of it
+   (Buddhism → "Buddhist", teacher → "teachers") is `verbatim_echo`; a broader category of an
+   explicitly stated value (Denmark → "Scandinavian") is `verbatim_echo`. Every `.replace` building
+   `UM_ATTRIBUTE_USER_SUMMARY` is asserted.
+8. **Statistics.** Paired item bootstrap (2,000) of Δ(pass − null) v3 vs v2 for chain
+   (`null_near`), arithmetic (`cross`) and DM (distractor rate). Introspection: report pass and its
+   floor of record (max of beta0 / cross / gaussian) for native, v2, v3 and the ablation, no CI
+   (its controls are separate units). Crowding table for chain/arithmetic: pass rate by
+   `answer_in_digest` × distinct numbers across the evidence samples (≤5, 6–15, >15). For every
+   family, v3 − v2 > 0.10 on s3d all-layers triggers the 10-item audit too.
+9. **Budget.** `MAX_TOKENS` 32k lowers agentic's hierarchical budget from 920k to ~904k tokens;
+   accepted (a few more chunked items).
+10. `CHANCE_LABEL_SUMMARY` (chain) says "any kept value" instead of "any-of-3"; the `any_of_3`
+    row field keeps its name. Rare-tier keys never enter `digest_numbers` (chain/arithmetic run
+    `summ_rare=0` anyway).
 
 ## Out of scope
 
