@@ -268,5 +268,32 @@ def test_options_validated(tmp_path):
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v1-blind-extractive+sj-v1"
+    assert digest.prompt_version("pv", a) == "pv+digest-v2-blind-extractive+sj-v2"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
+
+
+def test_v2_key_support_and_dedupe():
+    cells = [_prose("a", L, 1, f"I am thinking of an apple, sample {L}") for L in range(20, 64, 4)]
+    cells.append(_prose("a", 64, 1, "aquariums and fish tanks"))
+    lines = _lines(*cells)
+    res = {
+        "items": [
+            {"statement": "apple", "key": "apple", "where": "", "evidence": "an apple, sample 20"},
+            {
+                "statement": "apple again",
+                "key": "Apple",
+                "where": "",
+                "evidence": "apple, sample 24",
+            },
+            {"statement": "aquariums", "key": "aquariums", "where": "", "evidence": "aquariums"},
+            {"statement": "bad key", "key": "zebra", "where": "", "evidence": "fish tanks"},
+        ]
+    }
+    kept, dropped = digest.ground(res, lines, 10)
+    assert dropped == 1  # the second "apple" repeats the first item's content
+    assert [(g.key, g.support) for g in kept] == [
+        ("apple", "many"),  # 11 samples contain the word, not the whole clause
+        ("aquariums", "one"),
+        ("fish tanks", "one"),  # a key not inside the evidence falls back to the evidence
+    ]
+    assert digest.support_of("app", lines) == "one"  # whole words only

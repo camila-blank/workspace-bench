@@ -165,7 +165,7 @@ instead of `build_blob`'s text. Still **one MC call per item**, keyed `<id>|L-1`
 - **`quote_ok`** (recorded, not enforced) checks the quote against the item's evidence samples
   only (`digest.gate_texts`), never the summarizer's words. `char_cap` does not apply
   (`config.char_cap = null`); the digest has its own cap (`summ_token_cap`).
-- `prompt_version = "comp-v1+digest-v1-<variant>-<render>+sj-v1"`; `config` gains
+- `prompt_version = "comp-v1+digest-v2-<variant>-<render>+sj-v2"`; `config` gains
   `aggregate`, `summarizer`, `source_kind`; `extras.summary` holds the digest diagnostics; item
   rows gain `summary`, `summary_statements`, `summary_evidence`, `summary_truncated`,
   `summary_state`.
@@ -201,7 +201,7 @@ READOUTS:
 The digest note (`summ_render=extractive`, the default); `{note}` below.
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its evidence ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 ### `SUMMARY_NOTE_ABSTRACTIVE`

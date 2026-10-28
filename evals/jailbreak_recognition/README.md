@@ -254,7 +254,7 @@ evidence samples (`digest.gate_texts`; each token of a token line is its own sam
 natively, an unverified quote is flagged, not dropped. Token files skip the per-cell interp-v1
 summarizer. The `by_layer` / `by_pos_idx` profiles and the `rel_slot` row field are omitted.
 `opts=read=punct` narrows the cells that are digested and stays `complete=False`. The prompt version
-is stamped `jb-v1+digest-v1-<variant>-<render>+sj-v1`.
+is stamped `jb-v1+digest-v2-<variant>-<render>+sj-v2`.
 
 Counts: `n_expected_cells` / `n_missing_cells` stay cell-level and equal native; `n_unjudged_cells`
 / `n_empty_cells` count items (`extras.summary.count_units`), and the 5% empty rule is taken against
@@ -302,7 +302,7 @@ the model reads a chat conversation up to the end of the last user turn
 `SUMMARY_NOTE`:
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its evidence ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 `SUMMARY_NOTE_ABSTRACTIVE`:

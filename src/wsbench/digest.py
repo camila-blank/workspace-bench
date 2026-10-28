@@ -5,6 +5,7 @@ passive digest call, and the family judges that one summary once. Spec: plan 001
 import dataclasses
 import functools
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,8 +18,8 @@ from wsbench.llm import Spend, schema_block
 from wsbench.readouts import Cell, Kind, LoadReport
 from wsbench.registry import JudgeArgs
 
-DIGEST_PROMPT_VERSION = "digest-v1"
-SUMMARY_JUDGE_VERSION = "sj-v1"  # bump on any SUMMARY_NOTE* or family summary-variant edit
+DIGEST_PROMPT_VERSION = "digest-v2"
+SUMMARY_JUDGE_VERSION = "sj-v2"  # bump on any SUMMARY_NOTE* or family summary-variant edit
 SUMMARY_LAYER = -1  # the sentinel layer of a synthetic summary cell
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "default"
@@ -53,18 +54,24 @@ asserted, denied or merely mentioned.
 - Do not combine separate readouts into a claim that no single readout makes.
 - Token lists are noisy: ignore byte fragments and formatting debris, but keep every whole word \
 that recurs.
+- Every item must report a different piece of content: never two items about the same thing.
+- Readouts often restate the wording or instructions of the input itself (requests to answer, \
+formatting rules, the question being asked). Give such restatement at most one item, and spend \
+the other items on everything else the readouts say.
 
 Return up to {max_items} items, most prominent first. Each item has: "statement" (one short line \
-in the readouts' own terms), "where" (the [L<layer> pos <index>] header of the group the evidence \
-comes from), and "evidence" (one span copied character for character from ONE sample or ONE \
-token list, that shows the statement; from a token list, copy whole tokens)."""
+in the readouts' own terms), "key" (the one to four words, copied exactly from the evidence, \
+that name this item's content, e.g. a name, number or term), "where" (the [L<layer> pos <index>] \
+header of the group the evidence comes from), and "evidence" (one span copied character for \
+character from ONE sample or ONE token list, that shows the statement and contains the key; from \
+a token list, copy whole tokens)."""
 DIGEST_TASK_LINE = """The readouts come from an eval of this type: {task_note}. Use this only to \
 tell content from noise; do not use it to guess or answer anything."""
 DIGEST_USER = "READOUTS:\n{bundle}"
 SUMMARY_NOTE = """The readout below is a digest of the lens's readouts across every read layer \
 and position: a note-taker who did not see the passage picked the most prominent readout samples, \
-most prominent first, and each line is marked with how many readout samples contain its evidence \
-([many], [several], [few], [one]; counted mechanically). \
+most prominent first, and each line is marked with how many readout samples contain its key \
+content ([many], [several], [few], [one]; counted mechanically). \
 Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). \
 Treat each line as a separate sample: pieces on different lines never combine. Any quote must be \
 copied from inside one line, without the bracketed marker."""
@@ -101,9 +108,10 @@ DIGEST_SCHEMA = schema_block(
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["statement", "where", "evidence"],
+                "required": ["statement", "key", "where", "evidence"],
                 "properties": {
                     "statement": {"type": "string"},
+                    "key": {"type": "string"},
                     "where": {"type": "string"},
                     "evidence": {"type": "string"},
                 },
@@ -524,44 +532,58 @@ def evidence_line(span: str, lines: Sequence[Line], where: str = "") -> Line | N
     return None
 
 
-def support_of(span: str, lines: Sequence[Line]) -> str:
-    """How many bundle samples contain the evidence (exact or normalised; a whole token for a
+def _key_hits(key: str, ln: Line) -> bool:
+    """``key`` occurs in a bundle line as whole words (normalised case and whitespace); in a
+    token line it must equal one token or a run of whole consecutive tokens."""
+    if ln.pieces is not None:
+        return _token_level(key, ln.pieces) == 0
+    k = _norm(key)
+    return bool(k) and re.search(r"(?<!\w)" + re.escape(k) + r"(?!\w)", _norm(ln.text)) is not None
+
+
+def support_of(key: str, lines: Sequence[Line]) -> str:
+    """How many bundle samples contain the item's key content as whole words (a whole token for a
     token line), bucketed: 1 one, 2-3 few, 4-9 several, 10+ many. Mechanical, never the
     summarizer's word."""
-    n = 0
-    for ln in lines:
-        lv = match_level(span, ln)
-        if lv is not None and lv <= 1:
-            n += 1
-    n = max(n, 1)
+    n = max(1, sum(1 for ln in lines if _key_hits(key, ln)))
     return "one" if n == 1 else "few" if n <= 3 else "several" if n <= 9 else "many"
 
 
 @dataclass(frozen=True)
 class Grounded:
     statement: str
-    support: str  # mechanical (support_of)
+    support: str  # mechanical (support_of on the key)
     evidence: str  # the summarizer's span
     line: Line  # the whole bundle sample the span came from
+    key: str = ""  # the item's key content (verified inside the evidence), or the evidence
 
 
 def ground(result: object, lines: Sequence[Line], max_items: int) -> tuple[list[Grounded], int]:
-    """The digest items whose evidence verifies, and how many were dropped."""
+    """The digest items whose evidence verifies, and how many were dropped. The key must lie
+    inside the evidence (else the evidence itself is the key); a later item with the same key
+    as an earlier one repeats its content and is dropped (counted)."""
     if not isinstance(result, dict) or not isinstance(result.get("items"), list):
         return [], 0
     kept: list[Grounded] = []
+    seen_keys: set[str] = set()
     dropped = 0
     for it in result["items"][:max_items]:
-        st = it.get("statement") if isinstance(it, dict) else None
-        ev = it.get("evidence") if isinstance(it, dict) else None
-        where = it.get("where") if isinstance(it, dict) else None
+        d = it if isinstance(it, dict) else {}
+        st, ev, key, where = d.get("statement"), d.get("evidence"), d.get("key"), d.get("where")
         where = where if isinstance(where, str) else ""
         ln = evidence_line(ev, lines, where) if isinstance(ev, str) else None
-        if isinstance(st, str) and st.strip() and ln is not None:
-            ev1 = _one_line(str(ev))
-            kept.append(Grounded(_one_line(st), support_of(ev1, lines), ev1, ln))
-        else:
+        if not (isinstance(st, str) and st.strip() and ln is not None):
             dropped += 1
+            continue
+        ev1 = _one_line(str(ev))
+        k = _one_line(key) if isinstance(key, str) and key.strip() else ""
+        if not k or not _span_in(k, ev1):
+            k = ev1
+        if _norm(k) in seen_keys:
+            dropped += 1
+            continue
+        seen_keys.add(_norm(k))
+        kept.append(Grounded(_one_line(st), support_of(k, lines), ev1, ln, k))
     return kept, dropped
 
 
@@ -789,7 +811,8 @@ def collapse(
         col.summaries[item_id] = text
         col.evidence[item_id] = tuple(evid)
         col.statements[item_id] = [
-            {"statement": g.statement, "support": g.support, "evidence": g.evidence} for g in kept
+            {"statement": g.statement, "key": g.key, "support": g.support, "evidence": g.evidence}
+            for g in kept
         ]
         col.cells[item_id] = dataclasses.replace(col.cells[item_id], samples=(text,))
     return col
