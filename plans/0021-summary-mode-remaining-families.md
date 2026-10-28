@@ -137,13 +137,14 @@ Both are inert on today's files.
 - **No stride.** Agentic never stride-truncates.
 - **Single call where it fits.** Agentic's default `token_cap` is 900k estimated tokens, under
   Opus 5.5's 1M-token context with room for the system prompt and output. When an item's whole
-  bundle (every position × every layer) fits, ONE digest call sees all of it. Measured:
-  - J-lens: 32/32 items fit (max 878k est.);
-  - s3d-am3l: 19/32 fit (median 933k, max 1.26M).
-- **Chunked otherwise.** Only items over the window use `overflow="hierarchical"` with 900k-token
-  chunks: two chunks for every oversized s3d item, each chunk covering all of its positions, then a
-  final digest over the chunks' verified evidence lines. Every position is read by the summarizer
-  either way.
+  bundle (every position × every layer) fits, ONE digest call sees all of it. Measured with real
+  `count_tokens` (rev 4 #1; the heuristic estimate undercounts by 1.25-1.67×), budget 920k after
+  output and margin:
+  - J-lens: 14/32 items fit in one call, 18/32 need 2 chunks (median 1.08M real tokens, max 1.42M);
+  - s3d-am3l: 13/32 fit, 19/32 need 2 chunks (median 1.25M, max 1.67M).
+- **Chunked otherwise.** Items over the window use `overflow="hierarchical"` with chunks sized by
+  real tokens and cut at layer boundaries where possible, then a final digest over the chunks'
+  verified evidence lines. Every position is read by the summarizer either way.
 - **Recorded.** Per item: `summary_hierarchical` and its chunk count.
 - **Call limits.** Agentic digest calls use `timeout` 1800 s and family-level digest concurrency 4,
   since each call is about 0.9M input tokens against the org's 10M tokens/min.
