@@ -217,6 +217,9 @@ async def _openrouter_once(
 # What a free-text call returns for a model refusal when the caller passes mark_refusals=True
 # (agentic Stage A treats a refused position as uninformative; plan 0012, Camila 2026-10-11).
 REFUSED = "\x00refused\x00"
+# What a structured-output call returns for a model refusal when the caller passes
+# mark_refusals=True (the summary-mode digest tells a refusal from a failure; plan 0021)
+REFUSED_JSON: dict[str, Any] = {"\x00refused": True}
 
 # Models that reject thinking={"type": "disabled"} (thinking is always on): a no-thinking call
 # omits the parameter and asks for low effort instead, so the reply budget goes to the answer.
@@ -270,6 +273,7 @@ async def _anthropic_once(
     timeout: float,
     spend: Spend,
     reasoning: dict[str, Any] | None = None,
+    mark_refusals: bool = False,
 ) -> dict[str, Any] | None:
     resp = await client.messages.create(
         timeout=timeout,
@@ -291,7 +295,7 @@ async def _anthropic_once(
     if stop == "refusal":
         spend.refusals += 1
         print(f"  llm refusal: {model}")
-        return None
+        return REFUSED_JSON if mark_refusals else None
     if stop in ("max_tokens", "model_context_window_exceeded"):
         spend.errors += 1
         print(f"  llm error: {model} stop_reason={stop}")
@@ -316,6 +320,7 @@ async def _one(
     timeout: float,
     rpm: float,
     spend: Spend,
+    mark_refusals: bool = False,
 ) -> dict[str, Any] | None:
     # detokenised lens readouts can contain lone surrogates, which both APIs reject every time
     system = system.encode("utf-8", "replace").decode("utf-8")
@@ -334,6 +339,7 @@ async def _one(
                     timeout=timeout,
                     spend=spend,
                     reasoning=reasoning,
+                    mark_refusals=mark_refusals,
                 )
             return await _openrouter_once(
                 client,
@@ -385,6 +391,7 @@ async def stream_json_async(
     max_tokens: int | None = None,
     timeout: float = 180.0,
     spend: Spend | None = None,
+    mark_refusals: bool = False,
 ) -> Spend:
     """Run ``(system, user)`` prompt pairs concurrently, handing each parsed result (or
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
@@ -421,6 +428,7 @@ async def stream_json_async(
                 timeout=timeout,
                 rpm=rpm,
                 spend=spend,
+                mark_refusals=mark_refusals,
             )
         return i, res
 
@@ -458,6 +466,7 @@ def stream_json(
     max_tokens: int | None = None,
     timeout: float = 180.0,
     spend: Spend | None = None,
+    mark_refusals: bool = False,
 ) -> Spend:
     """Synchronous wrapper around :func:`stream_json_async` for the CLI and tests."""
     if _in_running_loop():
@@ -477,8 +486,52 @@ def stream_json(
             max_tokens=max_tokens,
             timeout=timeout,
             spend=spend,
+            mark_refusals=mark_refusals,
         )
     )
+
+
+def count_tokens(
+    model: str, prompts: list[tuple[str, str]], concurrency: int = 8
+) -> list[int | None]:
+    """Real input-token counts of ``(system, user)`` pairs (``messages.count_tokens``, Anthropic
+    route only; ``None`` where a count failed). Used by the summary-mode digest to decide whether a
+    bundle fits the context window (plan 0021)."""
+    if route(model) != "anthropic":
+        raise JudgeConfigError(f"count_tokens needs an Anthropic model, got {model}")
+    if not prompts:
+        return []
+    client = _make_client("anthropic", api_key(model))
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(system: str, user: str) -> int | None:
+        system = system.encode("utf-8", "replace").decode("utf-8")
+        user = user.encode("utf-8", "replace").decode("utf-8")
+        async with sem:
+            for attempt in range(_ATTEMPTS):
+                try:
+                    r = await client.messages.count_tokens(
+                        model=model, system=system, messages=[{"role": "user", "content": user}]
+                    )
+                    return int(r.input_tokens)
+                except Exception as e:
+                    status = getattr(e, "status_code", None)
+                    if status in _TRANSIENT and attempt < _ATTEMPTS - 1:
+                        await _sleep(_backoff(attempt, status))
+                        continue
+                    print(f"  count_tokens error: {type(e).__name__}: {str(e)[:200]}")
+                    return None
+        return None
+
+    async def run() -> list[int | None]:
+        try:
+            return list(await asyncio.gather(*(one(s, u) for s, u in prompts)))
+        finally:
+            await client.close()
+
+    if _in_running_loop():
+        raise JudgeConfigError("count_tokens called inside a running event loop")
+    return asyncio.run(run())
 
 
 async def preflight_async(model: str, reasoning: dict[str, Any] | None) -> None:
