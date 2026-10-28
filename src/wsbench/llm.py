@@ -220,6 +220,9 @@ REFUSED = "\x00refused\x00"
 # What a structured-output call returns for a model refusal when the caller passes
 # mark_refusals=True (the summary-mode digest tells a refusal from a failure; plan 0021)
 REFUSED_JSON: dict[str, Any] = {"\x00refused": True}
+# ... and for a context overflow (stop_reason model_context_window_exceeded, or a 400 "prompt is too
+# long"), also only under mark_refusals=True
+TOO_LONG_JSON: dict[str, Any] = {"\x00too_long": True}
 
 # Models that reject thinking={"type": "disabled"} (thinking is always on): a no-thinking call
 # omits the parameter and asks for low effort instead, so the reply budget goes to the answer.
@@ -299,6 +302,8 @@ async def _anthropic_once(
     if stop in ("max_tokens", "model_context_window_exceeded"):
         spend.errors += 1
         print(f"  llm error: {model} stop_reason={stop}")
+        if mark_refusals and stop == "model_context_window_exceeded":
+            return TOO_LONG_JSON
         return None
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), None)
     if text is None:
@@ -321,11 +326,13 @@ async def _one(
     rpm: float,
     spend: Spend,
     mark_refusals: bool = False,
+    attempts: int | None = None,
 ) -> dict[str, Any] | None:
     # detokenised lens readouts can contain lone surrogates, which both APIs reject every time
     system = system.encode("utf-8", "replace").decode("utf-8")
     user = user.encode("utf-8", "replace").decode("utf-8")
-    for attempt in range(_ATTEMPTS):
+    n_attempts = _ATTEMPTS if attempts is None else max(1, min(attempts, _ATTEMPTS))
+    for attempt in range(n_attempts):
         await _pace(rpm)
         try:
             if route_ == "anthropic":
@@ -365,12 +372,14 @@ async def _one(
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
             )
-            if transient and attempt < _ATTEMPTS - 1:
+            if transient and attempt < n_attempts - 1:
                 spend.retries += 1
                 await _sleep(_backoff(attempt, status))
                 continue
             spend.errors += 1
             print(f"  llm error: {name}: {str(e)[:200]}")
+            if mark_refusals and status == 400 and "prompt is too long" in str(e).lower():
+                return TOO_LONG_JSON
             return None
     return None
 
@@ -392,6 +401,7 @@ async def stream_json_async(
     timeout: float = 180.0,
     spend: Spend | None = None,
     mark_refusals: bool = False,
+    attempts: int | None = None,
 ) -> Spend:
     """Run ``(system, user)`` prompt pairs concurrently, handing each parsed result (or
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
@@ -429,6 +439,7 @@ async def stream_json_async(
                 rpm=rpm,
                 spend=spend,
                 mark_refusals=mark_refusals,
+                attempts=attempts,
             )
         return i, res
 
@@ -467,6 +478,7 @@ def stream_json(
     timeout: float = 180.0,
     spend: Spend | None = None,
     mark_refusals: bool = False,
+    attempts: int | None = None,
 ) -> Spend:
     """Synchronous wrapper around :func:`stream_json_async` for the CLI and tests."""
     if _in_running_loop():
@@ -487,6 +499,7 @@ def stream_json(
             timeout=timeout,
             spend=spend,
             mark_refusals=mark_refusals,
+            attempts=attempts,
         )
     )
 

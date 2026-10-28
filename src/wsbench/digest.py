@@ -31,6 +31,7 @@ DIGEST_TIMEOUT = 900.0  # seconds per call: up to ~150k input tokens at the mode
 VARIANTS = ("blind", "task")
 DEFAULT_VARIANT = "blind"
 RENDERS = ("extractive", "abstractive")
+OVERFLOWS = ("stride", "hierarchical")
 DEFAULT_RENDER = "extractive"
 EFFORTS = ("low", "medium", "high", "default")
 AUX_ROLE = "digest"
@@ -129,12 +130,20 @@ NATIVE_ONLY: dict[str, str] = {
     "hallucination": "native: the metric is per-readout precision, which a summary would change",
     "jlens_concept_pr": "native: precision is measured against the J-lens top-10 at one "
     "(layer, pos); a summary has no reference",
-    "brew_intermediates": "native: the emission-cell count rule and its stir control degenerate "
-    "on a single summary (per-region summaries are a follow-up)",
-    "agentic_misalignment": "native: already summarize-then-judge (Stages A-C); the metric is a "
-    "graded mean, not an OR over cells",
-    "buggy_code": "native: one read cell per item (a read-plan layer pick), so there is nothing to "
-    "pool",
+}
+
+# Per-family digest defaults (plan 0021): applied to any key the run's opts do not set. Agentic
+# bundles are ~100x the other families' (every position x every layer), so the digest keeps more
+# items, sizes by real tokens up to the 1M window, chunks rather than strides, and runs few long
+# calls at a time.
+FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
+    "agentic_misalignment": {
+        "summ_max": "25",
+        "summ_token_cap": "920000",
+        "summ_overflow": "hierarchical",
+        "summ_concurrency": "4",
+        "summ_timeout": "1800",
+    },
 }
 
 
@@ -150,6 +159,9 @@ class Settings:
     max_items: int
     token_cap: int
     decode: bool = True
+    overflow: str = "stride"
+    concurrency: int | None = None  # None: the run's concurrency
+    timeout: float | None = None  # None: DIGEST_TIMEOUT
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -161,6 +173,9 @@ class Settings:
             "max_items": self.max_items,
             "token_cap": self.token_cap,
             "decode": self.decode,
+            "overflow": self.overflow,
+            "concurrency": self.concurrency,
+            "timeout": self.timeout,
         }
 
 
@@ -192,8 +207,17 @@ def _int_opt(args: JudgeArgs, key: str, default: int) -> int:
     return v
 
 
-def settings(args: JudgeArgs) -> Settings:
-    """The digest settings from ``opts=``; an unknown value exits 2."""
+def _with_family(args: JudgeArgs, family: str | None) -> JudgeArgs:
+    defaults = FAMILY_DEFAULTS.get(family or "", {})
+    if not defaults:
+        return args
+    return dataclasses.replace(args, extra={**defaults, **args.extra})
+
+
+def settings(args: JudgeArgs, family: str | None = None) -> Settings:
+    """The digest settings from ``opts=`` over the family's defaults (``FAMILY_DEFAULTS``); an
+    unknown value exits 2."""
+    args = _with_family(args, family)
     effort = _choice(args, "summ_effort", EFFORTS, DEFAULT_EFFORT)
     model = args.extra.get("summ_model") or args.aux_models.get(AUX_ROLE) or DEFAULT_MODEL
     return Settings(
@@ -204,6 +228,11 @@ def settings(args: JudgeArgs) -> Settings:
         max_items=_int_opt(args, "summ_max", DEFAULT_MAX_ITEMS),
         token_cap=_int_opt(args, "summ_token_cap", DEFAULT_TOKEN_CAP),
         decode=_choice(args, "summ_decode", ("true", "false"), "true") == "true",
+        overflow=_choice(args, "summ_overflow", OVERFLOWS, "stride"),
+        concurrency=_int_opt(args, "summ_concurrency", 0) or None
+        if "summ_concurrency" in args.extra
+        else None,
+        timeout=float(_int_opt(args, "summ_timeout", 1)) if "summ_timeout" in args.extra else None,
     )
 
 
@@ -232,6 +261,9 @@ KNOWN_KEYS = frozenset(
         "summ_max",
         "summ_token_cap",
         "summ_decode",
+        "summ_overflow",
+        "summ_concurrency",
+        "summ_timeout",
     }
 )
 
@@ -262,9 +294,9 @@ def preflight_judge(
     )
 
 
-def summarizer_judge(args: JudgeArgs) -> ResolvedJudge:
+def summarizer_judge(args: JudgeArgs, family: str | None = None) -> ResolvedJudge:
     """The digest model as a ResolvedJudge (for the shared Preflighter)."""
-    s = settings(args)
+    s = settings(args, family)
     return dataclasses.replace(
         args.judge, model=s.model, reasoning=s.reasoning, pinned=_default_digest(s)
     )
@@ -274,29 +306,32 @@ def _default_digest(s: Settings) -> bool:
     return s.model == DEFAULT_MODEL and s.reasoning == {"anthropic_effort": DEFAULT_EFFORT}
 
 
-def pinned(args: JudgeArgs) -> bool:
+def pinned(args: JudgeArgs, family: str | None = None) -> bool:
     """Summary-mode instrument identity: the family judge is pinned AND the digest runs the
     default model at the default effort."""
-    return args.judge.pinned and _default_digest(settings(args))
+    return args.judge.pinned and _default_digest(settings(args, family))
 
 
-def prompt_version(pv: str, args: JudgeArgs) -> str:
-    s = settings(args)
+def prompt_version(pv: str, args: JudgeArgs, family: str | None = None) -> str:
+    s = settings(args, family)
     return f"{pv}+{DIGEST_PROMPT_VERSION}-{s.variant}-{s.render}+{SUMMARY_JUDGE_VERSION}"
 
 
-def summary_note(args: JudgeArgs, source_kind: Kind | None = None) -> str:
+def summary_note(
+    args: JudgeArgs, source_kind: Kind | None = None, family: str | None = None
+) -> str:
     """The judge-side note for the active render, plus the token-list rules (one token per
     quote, the rank-1 rule) when the source readouts are token lists."""
-    note = SUMMARY_NOTE if settings(args).render == "extractive" else SUMMARY_NOTE_ABSTRACTIVE
+    render = settings(args, family).render
+    note = SUMMARY_NOTE if render == "extractive" else SUMMARY_NOTE_ABSTRACTIVE
     return note + ("\n" + SUMMARY_NOTE_TOKENS if source_kind == "tokens" else "")
 
 
-def config(args: JudgeArgs, source_kind: Kind | None) -> dict[str, Any]:
+def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None) -> dict[str, Any]:
     """The ``config`` keys every summary-mode result carries."""
     return {
         "aggregate": "summary",
-        "summarizer": settings(args).to_json(),
+        "summarizer": settings(args, family).to_json(),
         "source_kind": source_kind,
     }
 
@@ -576,7 +611,11 @@ class Grounded:
 
 
 def ground(
-    result: object, lines: Sequence[Line], max_items: int, duplicates: list[int] | None = None
+    result: object,
+    lines: Sequence[Line],
+    max_items: int,
+    duplicates: list[int] | None = None,
+    support_lines: Sequence[Line] | None = None,
 ) -> tuple[list[Grounded], int]:
     """The digest items whose evidence verifies, and how many failed the evidence check. The key
     must lie inside the evidence (else the evidence itself is the key); a later item with the
@@ -604,7 +643,7 @@ def ground(
             dup[0] += 1
             continue
         seen_keys.add(_norm(k))
-        kept.append(Grounded(_one_line(st), support_of(k, lines), ev1, ln, k))
+        kept.append(Grounded(_one_line(st), support_of(k, support_lines or lines), ev1, ln, k))
     return kept, dropped
 
 
@@ -648,6 +687,7 @@ class Collapse:
     unsummarized: set[str] = field(default_factory=set)
     empty: set[str] = field(default_factory=set)
     truncated: set[str] = field(default_factory=set)
+    chunks: dict[str, int] = field(default_factory=dict)  # hierarchical items -> chunk count
     diag: dict[str, int] = field(default_factory=dict)
 
     def extras(self) -> dict[str, Any]:
@@ -667,6 +707,8 @@ class Collapse:
             "summary_statements": self.statements.get(item_id, []),
             "summary_evidence": [ln.text for ln in self.evidence.get(item_id, ())],
             "summary_truncated": item_id in self.truncated,
+            "summary_hierarchical": item_id in self.chunks,
+            "summary_chunks": self.chunks.get(item_id, 1),
             "summary_state": (
                 "unsummarized"
                 if item_id in self.unsummarized
@@ -732,7 +774,19 @@ def collapse(
     a digest of zero items -> ``empty``; a failed call, an unparsable result or every item
     failing the evidence check -> ``unsummarized``. Both get a ``("",)`` cell. Cache key
     ``digest:<id>|<layers>``; the render is not fingerprinted (one digest serves both)."""
-    s = settings(args)
+    s = settings(args, name)
+    if s.overflow == "hierarchical":
+        return _collapse_hierarchical(
+            name,
+            cells_by_item,
+            args=args,
+            s=s,
+            cache=cache,
+            spend=spend,
+            preflight=preflight,
+            task_note=task_note,
+            pos=pos,
+        )
     system = render_system(s, task_note)
     layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
     col = Collapse()
@@ -839,4 +893,383 @@ def collapse(
             for g in kept
         ]
         col.cells[item_id] = dataclasses.replace(col.cells[item_id], samples=(text,))
+    return col
+
+
+# ---------------------------------------------------------------- hierarchical overflow (plan 0021)
+
+CONTEXT_WINDOW = 1_000_000  # Opus 5.5 input + output
+CONTEXT_MARGIN = 64_000
+MAX_HALVINGS = 2
+DIGEST_ATTEMPTS = 3  # a 1800 s call must not be retried 12 times
+_UNCOUNTED_RATIO = 1.7  # worst measured real/est ratio, used when a count fails
+
+
+def _fp(*parts: Any) -> str:
+    return fingerprint(DIGEST_PROMPT_VERSION, *parts)
+
+
+def _layer_chunks(groups: Sequence[_Group], scale: float, budget: int) -> list[list[_Group]]:
+    """Consecutive chunks of ``groups`` whose scaled estimated size stays under ``budget``, cut at
+    layer boundaries; a layer is split by groups only when it alone exceeds the budget."""
+    by_layer: list[list[_Group]] = []
+    for g in groups:
+        if by_layer and by_layer[-1][0].layer == g.layer:
+            by_layer[-1].append(g)
+        else:
+            by_layer.append([g])
+
+    def size(gs: Sequence[_Group]) -> float:
+        return est_tokens(_render(gs)) * scale
+
+    chunks: list[list[_Group]] = []
+    cur: list[_Group] = []
+    for layer in by_layer:
+        if cur and size(cur + layer) > budget:
+            chunks.append(cur)
+            cur = []
+        if size(layer) <= budget:
+            cur.extend(layer)
+            continue
+        for g in layer:  # an oversized layer: split by groups
+            if cur and size([*cur, g]) > budget:
+                chunks.append(cur)
+                cur = []
+            cur.append(g)
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _union_render(union: Sequence[Line], full: Sequence[Line]) -> str:
+    """The final-stage bundle: each union sample under its original header, the header carrying
+    the mechanical support of the sample (bundle samples containing it, over the FULL bundle)."""
+    out: list[str] = []
+    for ln in union:
+        sup = support_of(ln.text, full)
+        out.append(f"{ln.where} (support: {sup})")
+        out.append(f"- {ln.text}")
+    return "\n".join(out)
+
+
+def _marker(r: object) -> str | None:
+    if r == llm.REFUSED_JSON:
+        return "refused"
+    if r == llm.TOO_LONG_JSON:
+        return "too_long"
+    return None
+
+
+def _collapse_hierarchical(
+    name: str,
+    cells_by_item: Mapping[str, Sequence[Cell]],
+    *,
+    args: JudgeArgs,
+    s: Settings,
+    cache: Cache,
+    spend: Spend,
+    preflight: Callable[[], None] | None,
+    task_note: str,
+    pos: int | None,
+) -> Collapse:
+    """``collapse`` under ``overflow="hierarchical"``: every item's FULL bundle (no stride). It is
+    sized by real tokens (cached ``count_tokens``); a bundle that fits ``min(token_cap, window)``
+    is ONE digest call. Otherwise it is cut into layer-boundary chunks, each chunk is digested with
+    the same prompt, and a final digest reads the union of the chunks' verified evidence samples
+    (each under its original header with its mechanical support over the full bundle). A refused
+    or too-long call moves the item to chunks at half the budget (at most ``MAX_HALVINGS``); the
+    level is cached, so a rerun never re-sends a known-refused call. Keys:
+    ``digest:<id>|<layers>`` (single), ``…|h<k>|c<i>of<n>`` (chunks), ``…|h<k>|final``,
+    ``…|level`` (the persisted fallback), ``ntok:<id>|<layers>`` (the count)."""
+    system = render_system(s, task_note)
+    layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
+    budget0 = min(s.token_cap, CONTEXT_WINDOW - MAX_TOKENS - CONTEXT_MARGIN)
+    conc = s.concurrency or args.concurrency
+    timeout = s.timeout or DIGEST_TIMEOUT
+    col = Collapse()
+    col.diag = {
+        "n_bundle_tokens_est": 0,
+        "n_evidence_kept": 0,
+        "n_evidence_dropped": 0,
+        "n_items_all_dropped": 0,
+        "n_digest_zero_nonempty": 0,
+        "n_key_duplicates": 0,
+        "n_digest_refused": 0,
+        "n_digest_too_long": 0,
+        "n_chunk_calls": 0,
+        "n_hierarchical_items": 0,
+        "max_halvings": 0,
+    }
+    groups_of: dict[str, list[_Group]] = {}
+    text_of: dict[str, str] = {}
+    lines_of: dict[str, list[Line]] = {}
+    for item_id, cells in cells_by_item.items():
+        if not cells:
+            raise ValueError(f"{name}: collapse() got no cells for {item_id}")
+        last = max(cells, key=lambda c: (c.layer, c.pos))
+        col.cells[item_id] = _synthetic(item_id, last, pos)
+        groups = [
+            g
+            for g in (_group(c, s.decode) for c in sorted(cells, key=lambda c: (c.layer, c.pos)))
+            if g.lines
+        ]
+        if not groups:
+            col.empty.add(item_id)
+            continue
+        groups_of[item_id] = groups
+        text_of[item_id] = _render(groups)
+        lines_of[item_id] = [ln for g in groups for ln in g.lines]
+        col.diag["n_bundle_tokens_est"] += est_tokens(text_of[item_id])
+    items = list(groups_of)
+    if args.dry_run:
+        if items:
+            i0 = items[0]
+            print(f"--- {name} digest prompt for {i0} (model={s.model}, hierarchical) ---")
+            print("[system]")
+            print(system)
+            print("[user]")
+            print(render_user(text_of[i0])[:4000] + "\n…")
+        col.unsummarized.update(items)
+        return col
+
+    # ---- real token counts (cached by bundle text)
+    counts: dict[str, int] = {}
+    need: list[str] = []
+    for i in items:
+        row = cache.get(f"ntok:{i}|{layers_tag}", _fp("ntok", s.model, system, text_of[i]))
+        if row is not None and isinstance((row.get("result") or {}).get("tokens"), int):
+            counts[i] = row["result"]["tokens"]
+        else:
+            need.append(i)
+    if need:
+        got = llm.count_tokens(s.model, [(system, render_user(text_of[i])) for i in need])
+        for i, n in zip(need, got, strict=True):
+            if n is None:
+                counts[i] = int(est_tokens(text_of[i]) * _UNCOUNTED_RATIO)
+                continue
+            counts[i] = n
+            cache.put(
+                f"ntok:{i}|{layers_tag}",
+                _fp("ntok", s.model, system, text_of[i]),
+                {"result": {"tokens": n}},
+            )
+
+    # ---- the persisted fallback level per item
+    level: dict[str, int] = {}
+    for i in items:
+        row = cache.get(
+            f"digest:{i}|{layers_tag}|level", _fp("level", text_of[i]), include_failed=True
+        )
+        level[i] = int(row.get("halvings", 0)) if row else 0
+
+    single_fp = {
+        i: fingerprint(
+            DIGEST_PROMPT_VERSION,
+            s.model,
+            s.reasoning,
+            s.variant,
+            s.max_items,
+            s.token_cap,
+            s.decode,
+            task_note if s.variant == "task" else "",
+            text_of[i],
+        )
+        for i in items
+    }
+    final: dict[str, object] = {}  # item -> final digest result (dict) or None
+    final_lines: dict[str, list[Line]] = {}
+    done: set[str] = set()
+    if preflight is not None:
+        preflight()
+
+    def run_batch(calls: list[tuple[str, str, str]]) -> dict[str, object]:
+        """``calls``: (cache key, fp, user). Cached results are reused; the rest go out at
+        ``conc`` with refusal / too-long markers."""
+        out: dict[str, object] = {}
+        todo: list[tuple[str, str, str]] = []
+        for key, fp, user in calls:
+            row = cache.get(key, fp)
+            if row is not None:
+                out[key] = row.get("result")
+            else:
+                todo.append((key, fp, user))
+        if todo:
+            col.diag["n_chunk_calls"] += sum(1 for k, _f, _u in todo if "|c" in k)
+
+            def on_result(j: int, r: dict | None) -> None:
+                key, fp, _u = todo[j]
+                if _marker(r) is None:
+                    cache.put(key, fp, {"result": r})
+                out[key] = r
+
+            llm.stream_json(
+                [(system, u) for _k, _f, u in todo],
+                schema=DIGEST_SCHEMA,
+                model=s.model,
+                reasoning=s.reasoning,
+                on_result=on_result,
+                concurrency=conc,
+                rpm=args.rpm,
+                max_tokens=MAX_TOKENS,
+                timeout=timeout,
+                spend=spend,
+                mark_refusals=True,
+                attempts=DIGEST_ATTEMPTS,
+            )
+        return out
+
+    def bump(i: str, kind: str) -> None:
+        k = level[i] + 1
+        cache.put(
+            f"digest:{i}|{layers_tag}|level",
+            _fp("level", text_of[i]),
+            {"result": None, "fallback": kind, "halvings": k},
+        )
+        level[i] = k
+
+    print(f"{name} digest (hierarchical): {len(items)} items, budget {budget0} tokens")
+    for _round in range(MAX_HALVINGS + 1):
+        active = [i for i in items if i not in done]
+        if not active:
+            break
+        # single calls: level 0 and the bundle fits
+        singles = [i for i in active if level[i] == 0 and counts[i] <= budget0]
+        res = run_batch(
+            [(f"digest:{i}|{layers_tag}", single_fp[i], render_user(text_of[i])) for i in singles]
+        )
+        for i in singles:
+            r = res.get(f"digest:{i}|{layers_tag}")
+            kind = _marker(r)
+            if kind is not None:
+                col.diag[f"n_digest_{kind}"] += 1
+                bump(i, kind)
+                continue
+            final[i], final_lines[i] = r, lines_of[i]
+            done.add(i)
+        # chunked items: over budget, or pushed down a level
+        chunked = [i for i in active if i not in done and (level[i] > 0 or counts[i] > budget0)]
+        if not chunked:
+            continue
+        plan: dict[str, list[list[_Group]]] = {}
+        calls: list[tuple[str, str, str]] = []
+        for i in chunked:
+            k = level[i]
+            if k > MAX_HALVINGS:
+                continue
+            # a fallback always splits: halve the smaller of the budget and the bundle itself
+            budget = min(budget0, counts[i]) // (2**k) if k > 0 else budget0
+            scale = counts[i] / max(1, est_tokens(text_of[i]))
+            ch = _layer_chunks(groups_of[i], scale, budget)
+            plan[i] = ch
+            n = len(ch)
+            for c_i, gs in enumerate(ch, 1):
+                t = _render(gs)
+                calls.append(
+                    (
+                        f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}",
+                        single_fp[i] + _fp("chunk", c_i, n, t),
+                        render_user(t),
+                    )
+                )
+        res = run_batch(calls)
+        finals: list[tuple[str, str, str]] = []
+        union_of: dict[str, list[Line]] = {}
+        for i, ch in plan.items():
+            k, n = level[i], len(ch)
+            union: list[Line] = []
+            seen: set[int] = set()
+            failed: str | None = None
+            any_items = False
+            for c_i, gs in enumerate(ch, 1):
+                r = res.get(f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}")
+                kind = _marker(r)
+                if kind is not None:
+                    failed = kind
+                    break
+                if not isinstance(r, dict) or not isinstance(r.get("items"), list):
+                    failed = "failed"
+                    break
+                if not r["items"]:
+                    continue  # a chunk with nothing to report contributes nothing
+                any_items = True
+                chunk_lines = [ln for g in gs for ln in g.lines]
+                kept, _dropped = ground(r, chunk_lines, s.max_items)
+                if not kept:
+                    failed = "failed"
+                    break
+                for g in kept:
+                    if id(g.line) not in seen:
+                        seen.add(id(g.line))
+                        union.append(g.line)
+            if failed in ("refused", "too_long"):
+                col.diag[f"n_digest_{failed}"] += 1
+                bump(i, failed)
+                continue
+            if failed == "failed":
+                col.unsummarized.add(i)
+                done.add(i)
+                continue
+            if not any_items:
+                col.empty.add(i)
+                col.diag["n_digest_zero_nonempty"] += 1
+                done.add(i)
+                continue
+            order = {id(ln): j for j, ln in enumerate(lines_of[i])}
+            union.sort(key=lambda ln: order.get(id(ln), 0))
+            union_of[i] = union
+            col.chunks[i] = n
+            t = _union_render(union, lines_of[i])
+            finals.append(
+                (
+                    f"digest:{i}|{layers_tag}|h{k}|final",
+                    single_fp[i] + _fp("final", n, t),
+                    render_user(t),
+                )
+            )
+        res = run_batch(finals)
+        for i, union in union_of.items():
+            r = res.get(f"digest:{i}|{layers_tag}|h{level[i]}|final")
+            kind = _marker(r)
+            if kind is not None:
+                col.diag[f"n_digest_{kind}"] += 1
+                bump(i, kind)
+                col.chunks.pop(i, None)
+                continue
+            final[i], final_lines[i] = r, union
+            done.add(i)
+    for i in items:
+        if i not in done:  # out of halvings
+            col.unsummarized.add(i)
+    col.diag["n_hierarchical_items"] = len(col.chunks)
+    col.diag["max_halvings"] = max([level[i] for i in items], default=0)
+
+    # ---- ground the final digests (support counted over the FULL bundle)
+    for i in items:
+        if i in col.unsummarized or i in col.empty or i not in final:
+            continue
+        r = final[i]
+        if not isinstance(r, dict) or not isinstance(r.get("items"), list):
+            col.unsummarized.add(i)
+            continue
+        if not r["items"]:
+            col.diag["n_digest_zero_nonempty"] += 1
+            col.empty.add(i)
+            continue
+        dups = [0]
+        kept, dropped = ground(r, final_lines[i], s.max_items, dups, support_lines=lines_of[i])
+        col.diag["n_key_duplicates"] += dups[0]
+        col.diag["n_evidence_kept"] += len(kept)
+        col.diag["n_evidence_dropped"] += dropped
+        if not kept:
+            col.diag["n_items_all_dropped"] += 1
+            col.unsummarized.add(i)
+            continue
+        text, evid = render_summary(kept, s.render)
+        col.summaries[i] = text
+        col.evidence[i] = tuple(evid)
+        col.statements[i] = [
+            {"statement": g.statement, "key": g.key, "support": g.support, "evidence": g.evidence}
+            for g in kept
+        ]
+        col.cells[i] = dataclasses.replace(col.cells[i], samples=(text,))
     return col
