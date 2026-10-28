@@ -112,7 +112,7 @@ UM_ATTRIBUTE_SCHEMA: dict = schema_block(
     ["choice", "basis", "evidence", "rationale"],
 )
 
-# summary mode (plan 0018): one call per item on its digest; the "at the position where the
+# summary mode (plan 0020): one call per item on its digest; the "at the position where the
 # model is about to respond" sentence becomes a digest sentence plus the digest note. Rendered
 # with str.replace (render_user_summary), never str.format.
 SUMMARY_CONTEXT_OLD = "The lens output describes what the activation encodes at \
@@ -124,7 +124,7 @@ SUMMARY_CONTEXT = (
     "both.\n\n{summary_note}"
 )
 # a digest pools many readouts, and some lines repeat the prompt: the basis is that of the line
-# the pick rests on, about this attribute only (plan 0018 sj-v2..v4; sj-v4 states native's unwritten
+# the pick rests on, about this attribute only (plan 0020 sj-v2..v4; sj-v4 states native's unwritten
 # test: only a value-bearing addition about THIS attribute counts as inference)
 SUMMARY_BASIS_OLD = (
     "Note the prompt text above is the full context the model saw. If a value appears in it "

@@ -402,7 +402,7 @@ def _run_regex_summary(
     layers: list[int],
     missing: list[tuple[str, int]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): the contract runs once per item on its digest's evidence
+    """Summary mode (plan 0020): the contract runs once per item on its digest's evidence
     samples (``gate_texts(joined=True)``) as the samples of one layer, so the same-layer
     conjunction becomes "every required unit among the evidence samples". The instrument is
     the digest. No cell: undecided (native); a missing layer and no pass, or an unsummarized
@@ -451,7 +451,7 @@ def _run_regex_summary(
         for role, lang in row["first_lang"].items():
             if lang is not None:
                 first_lang[role][lang] += 1
-    # the instrument is the digest (plan 0018 A6): judge_model = the digest model, pinned
+    # the instrument is the digest (plan 0020 A6): judge_model = the digest model, pinned
     # follows the digest, version = the regex contract + the digest suffix
     judge_used = digest.summarizer_judge(args)
     version = digest.prompt_version(SCORER_VERSION, args)
@@ -733,7 +733,7 @@ def _run_mc_summary(
     layers: list[int],
     missing: list[tuple[str, int]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018) on the forced-choice judge: one call per (item, unit) on the
+    """Summary mode (plan 0020) on the forced-choice judge: one call per (item, unit) on the
     item's digest, the quote gated by ``gate_texts``; the item passes when every judged unit is
     correct on the one digest. Item states as in ``_run_regex_summary``; never pinned."""
     spend = Spend()

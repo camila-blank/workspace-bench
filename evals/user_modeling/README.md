@@ -284,7 +284,7 @@ fail. Verdicts are cached append-only in `<out>/cells.jsonl`, keyed by the call 
 fingerprint of `(PROMPT_VERSION, judge model, reasoning, system, user)`; rerunning retries
 only failures.
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the any-(layer, pos, sample) rule above. In summary
 mode, every cell of an item (every read layer × position × sample) goes to ONE passive digest call

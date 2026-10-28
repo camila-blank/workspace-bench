@@ -41,7 +41,7 @@ NOTE_TEXT = "The samples below are independent free-text readouts of the same ac
 NOTE_TOKENS = "The samples below are TOP-10 VOCABULARY TOKENS from a token lens (one per line)."
 SAMPLE = "[sample {n}]\n{sample}"
 
-# summary mode (plan 0018): one digest of every read layer and position replaces the per-cell
+# summary mode (plan 0020): one digest of every read layer and position replaces the per-cell
 # samples; the judge rules are unchanged
 SUMMARY_INPUT_OLD = (
     "A lens turned one internal activation of a language model into text. You get the\n"

@@ -1,4 +1,4 @@
-# 0018: summarize-then-judge (one summary per item, then one judgment)
+# 0020: summarize-then-judge (one summary per item, then one judgment)
 
 Status: rev 6 (critique rounds 1-4; digest-v2 after the D3 audit). Owner: Camila. Date: 2026-10-27. Issue #99.
 
@@ -533,7 +533,7 @@ directed_modulation per-sample calls, about 50k calls per method.
 ## File tree (new / modified)
 
 ```
-plans/0018-summarize-then-judge.md          new (this plan)
+plans/0020-summarize-then-judge.md          new (this plan)
 src/wsbench/digest.py                       new: collapse, bundle, decode_bpe, cap, evidence,
                                             renders, gate_texts, prompts
 src/wsbench/family.py                       span_in (moved from basic/judge.py); pass_rate_result n_items

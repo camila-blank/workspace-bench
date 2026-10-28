@@ -241,7 +241,7 @@ counts as a fail. Verdicts are cached append-only in `<out>/cells.jsonl`, keyed 
 key and a fingerprint of `(PROMPT_VERSION, judge model, reasoning, system, user)`; rerunning
 retries only failures.
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the per-cell grid above. In summary mode, every read
 cell of an item (every layer × every token of the last user turn) goes to ONE passive digest call

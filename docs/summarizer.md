@@ -66,7 +66,7 @@ TOKEN READOUTS:
 }
 ```
 
-# Item digest (`aggregate=summary`, plan 0018)
+# Item digest (`aggregate=summary`, plan 0020)
 
 A second, separate summarizer, used only under the opt-in `opts=aggregate=summary`. It is not the
 per-cell token interpreter above: for one method (a readouts file plus an optional `layers=`

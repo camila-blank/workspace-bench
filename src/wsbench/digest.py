@@ -1,5 +1,5 @@
 """Summary mode (``opts=aggregate=summary``): every cell a family reads for an item goes to ONE
-passive digest call, and the family judges that one summary once. Spec: plan 0018 and
+passive digest call, and the family judges that one summary once. Spec: plan 0020 and
 ``docs/summarizer.md`` § Item digest."""
 
 import dataclasses
@@ -123,7 +123,7 @@ DIGEST_SCHEMA = schema_block(
 )
 
 
-# Families that run native even under aggregate=summary (plan 0018 Part B), with the reason the
+# Families that run native even under aggregate=summary (plan 0020 Part B), with the reason the
 # runner stamps into their result. Every other family must report config.aggregate="summary".
 NATIVE_ONLY: dict[str, str] = {
     "hallucination": "native: the metric is per-readout precision, which a summary would change",

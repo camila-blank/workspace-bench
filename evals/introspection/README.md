@@ -213,7 +213,7 @@ Sample template:
 {sample}
 ```
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the per-cell grid above, unchanged. Use a separate
 `out=` dir per mode.

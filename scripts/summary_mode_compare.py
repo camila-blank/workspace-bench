@@ -1,4 +1,4 @@
-"""Native vs summary mode (plan 0018 D3), per family, for one method: paired rates, a paired
+"""Native vs summary mode (plan 0020 D3), per family, for one method: paired rates, a paired
 bootstrap CI of the difference, retention, and the catastrophe flag.
 
     python scripts/summary_mode_compare.py native=DIR summary=DIR method=LABEL \

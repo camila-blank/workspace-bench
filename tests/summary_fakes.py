@@ -1,4 +1,4 @@
-"""Shared fakes for the summary-mode (plan 0018) family tests: one ``llm.stream_json`` stand-in
+"""Shared fakes for the summary-mode (plan 0020) family tests: one ``llm.stream_json`` stand-in
 that answers digest calls extractively and routes judge calls to a per-test responder."""
 
 import re

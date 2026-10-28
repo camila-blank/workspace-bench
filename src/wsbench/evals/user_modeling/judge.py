@@ -237,7 +237,7 @@ def _run_summary(
     cells: list[Cell],
     rep: LoadReport,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every cell of an item -> one digest -> one MC call. An item
+    """Summary mode (plan 0020): every cell of an item -> one digest -> one MC call. An item
     with no cells, an empty digest and an unsummarized item are fails (whole-scope denominator,
     as natively); unsummarized items and failed calls count as unjudged."""
     by_item: dict[str, list[Cell]] = defaultdict(list)

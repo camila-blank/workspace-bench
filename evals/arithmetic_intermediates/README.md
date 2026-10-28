@@ -226,7 +226,7 @@ For each entry, which number(s) does its output present as a computed value?
 
 ## Summary mode
 
-`opts=aggregate=summary` (plan 0018; opt-in, the default stays `aggregate=native`). **The hook:**
+`opts=aggregate=summary` (plan 0020; opt-in, the default stays `aggregate=native`). **The hook:**
 after the cell selection and the missing-item accounting, every cell the item has — every
 position at every layer in the file — goes to ONE passive digest call (`digest.collapse`, spec
 in `docs/summarizer.md` § Item digest), and the item is judged ONCE on that digest.

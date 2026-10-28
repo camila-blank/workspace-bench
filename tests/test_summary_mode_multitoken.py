@@ -1,4 +1,4 @@
-"""Summary mode (plan 0018) on the multi-token families: the regex contract on one digest per
+"""Summary mode (plan 0020) on the multi-token families: the regex contract on one digest per
 item, and the ``opts=judge=mc`` path with one call per (item, unit)."""
 
 import json

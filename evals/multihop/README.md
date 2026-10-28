@@ -131,7 +131,7 @@ Forbidden-answer line (`FORBIDDEN_TEMPLATE`):
 The input's final answer {answer} is NOT a target: a sample that names only {answer} does not count. A sample that names a target still counts, even beside {answer}.
 ```
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the any-layer rule above. In summary mode, every cell
 of an item (every read layer × position × sample) goes to ONE passive digest call

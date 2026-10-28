@@ -100,7 +100,7 @@ wsbench judge family=multilingual_mt readouts=examples/readouts/multilingual_mt.
 wsbench judge family=multilingual_mt readouts=<arm>.jsonl out=outputs/<arm>/multilingual_mt limit=3
 ```
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`, everything above) is unchanged. Under summary mode, for
 each item, every read cell at every layer the method has (`layers=` selects the method's layers)

@@ -765,6 +765,11 @@ COMMANDS: dict[str, type[Command]] = {
 
 
 def _n_items(spec: EvalSpec) -> str:
+    if spec.item_ids is not None:
+        try:
+            return str(len(spec.item_ids()))
+        except SystemExit:
+            return "?"
     path = registry.REPO_ROOT / spec.bank
     try:
         d = json.loads(path.read_text(encoding="utf-8"))

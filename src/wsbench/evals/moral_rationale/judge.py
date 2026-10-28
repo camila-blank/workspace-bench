@@ -312,7 +312,7 @@ def _run_summary(
     rep: LoadReport,
     contrast: bool,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): an item's selected cells (tail 5 per layer, every layer) -> one
+    """Summary mode (plan 0020): an item's selected cells (tail 5 per layer, every layer) -> one
     digest; committed items get one MC on it, deliberative items one per side on the same
     digest. An item with no cells, an empty digest and an unsummarized item are fails
     (whole-scope denominator, as natively); unsummarized items and items with a failed side call

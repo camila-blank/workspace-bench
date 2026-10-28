@@ -28,7 +28,7 @@ def score(
     summary: dict | None = None,
     pinned: bool | None = None,
 ) -> FamilyResult:
-    """``summary`` (the digest's extras) marks a summary-mode run (plan 0018): one row per item,
+    """``summary`` (the digest's extras) marks a summary-mode run (plan 0020): one row per item,
     ``n_empty`` / ``n_unjudged`` count items, the per-layer diagnostics are omitted and
     ``pinned`` covers the digest too."""
     pinned = args.judge.pinned if pinned is None else pinned

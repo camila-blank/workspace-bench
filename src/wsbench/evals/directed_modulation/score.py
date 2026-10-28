@@ -141,7 +141,7 @@ def score(
     config_extra: dict[str, Any] | None = None,
     n_calls: int | None = None,
 ) -> FamilyResult:
-    """The family result. Summary mode (plan 0018) passes ``summary`` (the digest's
+    """The family result. Summary mode (plan 0020) passes ``summary`` (the digest's
     ``Collapse.extras()``, merged into ``extras.summary``), ``n_items`` (the empty rule's
     denominator), ``pinned`` (``digest.pinned``), the stamped ``prompt_version``, the digest
     ``config_extra`` and ``n_calls``; the denominator rule is unchanged."""

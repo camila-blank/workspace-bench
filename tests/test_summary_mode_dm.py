@@ -1,4 +1,4 @@
-"""Summary mode (plan 0018) on directed_modulation, its obscure variant and the multi-concept
+"""Summary mode (plan 0020) on directed_modulation, its obscure variant and the multi-concept
 family: one judged (or regex-scored) unit per item on the digest, native counts, the gates."""
 
 import json

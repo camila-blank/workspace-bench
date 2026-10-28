@@ -201,7 +201,7 @@ def _run_summary(
     present: set[tuple[str, int]],
     n_missing: int,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): select and account first (done by the caller), then collapse
+    """Summary mode (plan 0020): select and account first (done by the caller), then collapse
     every item's cells into one digest, then score ONE regex pass per item on the digest's
     evidence samples (``gate_texts(joined=True)``), the gold and every distractor alike. No
     readouts: no row, as native. Unsummarized: undecided and unjudged. The instrument is the

@@ -146,7 +146,7 @@ of `(PROMPT_VERSION, judge model, reasoning, system, user)`; rerunning retries o
 
 ## Summary mode
 
-`opts=aggregate=summary` (plan 0018; default `native`, unchanged). The all-layer blob is
+`opts=aggregate=summary` (plan 0020; default `native`, unchanged). The all-layer blob is
 replaced by a digest: every cell of a kept item (every layer, every read position) goes to ONE
 passive digest call (`wsbench.digest.collapse`), and the item's one 11-way MC reads that digest
 instead of `build_blob`'s text. Still **one MC call per item**, keyed `<id>|L-1`.

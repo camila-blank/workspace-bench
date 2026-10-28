@@ -336,7 +336,7 @@ def _run_summary(
     n_expected: int,
     n_missing: int,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every readout's grid cells at every layer -> ONE digest, shared
+    """Summary mode (plan 0020): every readout's grid cells at every layer -> ONE digest, shared
     by every unit that reads that readout (cross units ride on their partner's); one call per
     unit, controls included, so the floors stay paired. A unit whose digest failed has no judged
     cell and is undecided (the native rule); an empty digest names nothing (a judged none)."""

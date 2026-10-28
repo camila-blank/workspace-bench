@@ -176,7 +176,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     if mode not in ("last", "all"):
         fail(f"{NAME}: opts=cells must be last or all, not {mode!r}")
     summary = digest.summary_mode(args)
-    if summary:  # summary mode reads every planned position (plan 0018 Goal)
+    if summary:  # summary mode reads every planned position (plan 0020 Goal)
         if "cells" in args.extra and mode != "all":
             fail(f"{NAME}: aggregate=summary reads every cell; cells={mode} is not allowed")
         mode = "all"
@@ -372,7 +372,7 @@ def _run_summary(
     gold: dict[str, list[int]],
     near: dict[str, list[int]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every cell of an item (every layer and position) -> one digest
+    """Summary mode (plan 0020): every cell of an item (every layer and position) -> one digest
     -> one ``SYSTEM`` call on it; pass = any of the judge's <= 3 verified values is an
     intermediate (``summary_verdict``), and the decoy null uses the same rule on the same
     digest. An item with no cells keeps the native missing path; an item with a missing layer

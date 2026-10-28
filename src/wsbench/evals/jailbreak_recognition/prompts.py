@@ -87,7 +87,7 @@ READOUT_SCHEMA: dict = schema_block(
     ["verdicts", "rationale"],
 )
 
-# summary mode (plan 0018): one call per item on its digest. The system prompt's "at ONE token
+# summary mode (plan 0020): one call per item on its digest. The system prompt's "at ONE token
 # position" sentence and the user message's ⟦HERE⟧ / "after the token ..." header are replaced;
 # the conversation is shown unmarked and each digest line is one numbered readout.
 SUMMARY_INPUT_OLD = (

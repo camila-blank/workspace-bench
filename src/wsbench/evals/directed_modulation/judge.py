@@ -231,7 +231,7 @@ def _run_summary(
     layers: list[int],
     missing: list[tuple[str, int]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every item's cells -> one digest -> ONE judge call per item on
+    """Summary mode (plan 0020): every item's cells -> one digest -> ONE judge call per item on
     it, the evidence gate on the digest's evidence samples. An item with no cells has no row
     (native: undecided when a layer is missing); an unsummarized item is an unjudged row
     (undecided); an empty digest is a negative without a call (native: a blank cell)."""

@@ -155,7 +155,7 @@ def _run_summary(
     cells: list[Cell],
     rep: LoadReport,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every site of an item -> one digest -> the three MCs on it
+    """Summary mode (plan 0020): every site of an item -> one digest -> the three MCs on it
     (the agent/action/patient binding is summary-level). An item with no readouts stays a
     rowless fail; an unsummarized item, or one whose call failed, is a fail counted in
     ``n_unjudged_cells`` (items); an empty one is a fail counted in ``n_empty_cells`` (items)."""

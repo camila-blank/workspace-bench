@@ -144,7 +144,7 @@ Set composition to "full" if you picked a candidate, otherwise "none"."""
 
 CANNOT = "cannot tell from the readout"
 
-# summary mode (plan 0018): one call per item on its digest; USER's opening paragraph changes
+# summary mode (plan 0020): one call per item on its digest; USER's opening paragraph changes
 SUMMARY_INTRO_OLD = """\
 You are analyzing the output of an "oracle lens", an interpretability tool that reads a language \
 model's internal activation at a single token position and describes it in natural language. The \
@@ -228,7 +228,7 @@ def render_user(
     tokens: bool,
     summary_note: str | None = None,
 ) -> str:
-    """One readout row, or (``summary_note`` set, plan 0018) one item's digest under
+    """One readout row, or (``summary_note`` set, plan 0020) one item's digest under
     ``USER_SUMMARY`` with the digest note in place of the single-position framing."""
     if summary_note is not None:
         head = USER_SUMMARY.replace("{summary_note}", summary_note)

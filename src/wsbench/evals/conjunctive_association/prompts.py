@@ -39,7 +39,7 @@ SCHEMA = schema_block(
 QUESTION = "Which of the following does the readout state?\n{listing}"
 USER = "READOUTS:\n{r}\n\n{q}"
 
-# summary mode (plan 0018): one digest per item replaces the all-layer blob
+# summary mode (plan 0020): one digest per item replaces the all-layer blob
 SUMMARY_INPUT_OLD = "(possibly labeled by layer; may contain noise, fragments, or other languages)"
 SUMMARY_INPUT = (
     "(a digest of its readouts across every read layer and position, described in the note "

@@ -118,7 +118,7 @@ file (two items, two layers, two positions):
 wsbench judge family=directed_modulation_obscure readouts=examples/readouts/directed_modulation_obscure.jsonl out=outputs/toy/directed_modulation_obscure items=middle_eastern_spice_blend,trickster_figure
 ```
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode the family
 first selects and accounts for every item's carrier cells (missing cells exactly as native), then

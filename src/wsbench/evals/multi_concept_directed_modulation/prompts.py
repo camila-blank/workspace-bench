@@ -29,7 +29,7 @@ USER = (
     "Answer with the letters of your selections and a quote for each; an empty list means none."
 )
 
-# summary mode (plan 0018): one call per item on its digest, the digest note ahead of USER
+# summary mode (plan 0020): one call per item on its digest, the digest note ahead of USER
 USER_SUMMARY = "{summary_note}\n\n" + USER
 # the task TYPE the digest's `task` variant may be told (never the concepts or the options)
 DIGEST_TASK_NOTE = (
@@ -63,7 +63,7 @@ SCHEMA = schema_block(
 
 
 def render_user(readout: str, options: list[str], summary_note: str | None = None) -> str:
-    """One cell's readout, or (``summary_note`` set, plan 0018) one item's digest under
+    """One cell's readout, or (``summary_note`` set, plan 0020) one item's digest under
     ``USER_SUMMARY``."""
     lines = "\n".join(f"{LETTERS[i]}. {o}" for i, o in enumerate(options))
     head = USER if summary_note is None else USER_SUMMARY.replace("{summary_note}", summary_note)

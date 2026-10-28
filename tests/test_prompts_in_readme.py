@@ -44,7 +44,7 @@ def test_summarizer_prompt_verbatim_in_docs():
         assert any(text in b for b in blocks), name
     doc = (ROOT / "docs/summarizer.md").read_text()
     assert summarizer.SUMMARIZER_PROMPT_VERSION in doc and "interpretation" in doc
-    for name, text in digest.PROMPTS.items():  # plan 0018: the item digest's prompts too
+    for name, text in digest.PROMPTS.items():  # plan 0020: the item digest's prompts too
         assert any(text in b for b in blocks), name
 
 

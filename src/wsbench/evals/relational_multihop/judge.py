@@ -231,7 +231,7 @@ def _run_summary(
     rep: LoadReport,
     selected: list[Cell],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every layer's blank cell of an item -> one digest -> the X and
+    """Summary mode (plan 0020): every layer's blank cell of an item -> one digest -> the X and
     Y MCs on it (X∧Y binding is summary-level). An item with no readouts stays a rowless fail;
     an unsummarized item, or one whose X or Y call failed, is a fail counted in
     ``n_unjudged_cells`` (items); an empty one is a fail counted in ``n_empty_cells`` (items)."""

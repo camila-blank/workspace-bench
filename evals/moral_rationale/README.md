@@ -183,7 +183,7 @@ failure, summary failure); an in-scope item with no judged cell counts as a fail
 Verdicts are cached append-only in `<out>/cells.jsonl`, keyed by the call key and a fingerprint
 of `(PROMPT_VERSION, judge model, reasoning, system, user)`; rerunning retries only failures.
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode, an item's
 selected cells (the last 5 positions at every read layer — the read plan is not widened) go to ONE

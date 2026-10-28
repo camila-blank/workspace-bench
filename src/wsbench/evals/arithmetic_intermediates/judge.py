@@ -470,7 +470,7 @@ def _run_summary(
     tol: dict[str, str],
     nulls: dict[str, list[float]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every cell of an item (every layer and position) -> one digest
+    """Summary mode (plan 0020): every cell of an item (every layer and position) -> one digest
     -> one per-cell ``SYSTEM`` call on it. Values are verified on ``digest.gate_texts`` and the
     paired ``cross`` null is taken from the same kept values. An item with no cells keeps the
     native missing path (undecided); an unsummarized item or a failed call is undecided and

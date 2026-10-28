@@ -233,7 +233,7 @@ def _run_summary(
     kept_bags: dict[tuple[str, int], str],
     n_excluded: int,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every kept item's cells at every layer -> one digest -> the one
+    """Summary mode (plan 0020): every kept item's cells at every layer -> one digest -> the one
     MC. Items missing a layer stay excluded (native rule); an item with no readouts stays a
     rowless fail; an unsummarized item is a fail counted in ``n_unjudged_cells`` (items)."""
     pv = digest.prompt_version(PROMPT_VERSION, args)

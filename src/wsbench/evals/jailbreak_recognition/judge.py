@@ -287,7 +287,7 @@ def _run_summary(
     missing: list,
     regime: str,
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every read cell of an item -> one digest -> one judge call
+    """Summary mode (plan 0020): every read cell of an item -> one digest -> one judge call
     whose numbered readouts are the digest lines. An item with no cells, an empty digest and
     an unsummarized item are fails (whole-scope denominator, as natively); unsummarized items
     and failed calls count as unjudged."""

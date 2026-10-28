@@ -126,7 +126,7 @@ READOUT:
 Answer with the letters of your selections and a quote for each; an empty list means none.
 ```
 
-## Summary mode (`opts=aggregate=summary`, plan 0018)
+## Summary mode (`opts=aggregate=summary`, plan 0020)
 
 Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode, after the
 region labels and the in-sentence cell selection (missing cells counted exactly as native), every

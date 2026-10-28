@@ -145,7 +145,7 @@ def _run_summary(
     n_expected: int,
     missing: list[CellKey],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): every item's cells at every layer -> one digest -> one bank
+    """Summary mode (plan 0020): every item's cells at every layer -> one digest -> one bank
     judge call. An item with no cells keeps the native missing path (undecided); an item with
     a missing layer and no pass is undecided; an unsummarized item is undecided."""
     by_item: dict[str, list[Cell]] = defaultdict(list)

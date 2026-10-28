@@ -1,4 +1,4 @@
-"""Summary mode (plan 0018) reporting: completeness over items, the † marker, floors, the
+"""Summary mode (plan 0020) reporting: completeness over items, the † marker, floors, the
 summary macro, and the runner's native-only stamp."""
 
 from types import SimpleNamespace

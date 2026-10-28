@@ -1,4 +1,4 @@
-"""Summary mode (plan 0018) on arithmetic_intermediates and chain_intermediates: forced
+"""Summary mode (plan 0020) on arithmetic_intermediates and chain_intermediates: forced
 ``cells=all``, one judged digest per item, values verified on evidence samples only."""
 
 import json

@@ -299,7 +299,7 @@ def _run_summary(
     n_expected: int,
     missing: list[tuple[str, int, int]],
 ) -> FamilyResult:
-    """Summary mode (plan 0018): an item's in-sentence cells at every layer -> one digest ->
+    """Summary mode (plan 0020): an item's in-sentence cells at every layer -> one digest ->
     ONE multi-select call per item, controls included (``control_pick_rate`` stays paired); the
     quote gate on the digest's evidence samples. Items with no in-sentence cell keep their
     native reason; a missing cell leaves a non-pass undecided; an unsummarized item is

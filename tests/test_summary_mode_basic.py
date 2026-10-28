@@ -1,4 +1,4 @@
-"""Summary mode (plan 0018) on the shared bank judge: one call per item on the digest."""
+"""Summary mode (plan 0020) on the shared bank judge: one call per item on the digest."""
 
 import json
 from pathlib import Path

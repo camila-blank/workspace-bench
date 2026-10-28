@@ -42,7 +42,7 @@ USER = (
     "answer (for a token list, copy the tokens without their scores), or empty for NONE>"
 )
 
-# summary mode (plan 0018): one digest of every read layer and position replaces the per-layer
+# summary mode (plan 0020): one digest of every read layer and position replaces the per-layer
 # position blocks; the rules are unchanged
 SUMMARY_INPUT_OLD = (
     "decoded at every token position: the readouts below are grouped by position, from the "
