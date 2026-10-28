@@ -337,8 +337,9 @@ def test_qwen_seed_is_small_and_per_item():
 class _FakeTok:
     """Char-level ids; added tokens get their own ids unless split as plain text."""
 
-    added = {"</think>": 900, "<|im_start|>": 901, "<|im_end|>": 902}
-    added_tokens_decoder = {v: SimpleNamespace(content=k) for k, v in added.items()}
+    def __init__(self) -> None:
+        self.added = {"</think>": 900, "<|im_start|>": 901, "<|im_end|>": 902}
+        self.added_tokens_decoder = {v: SimpleNamespace(content=k) for k, v in self.added.items()}
 
     def __call__(self, text, add_special_tokens=False, split_special_tokens=False):
         ids, i = [], 0
