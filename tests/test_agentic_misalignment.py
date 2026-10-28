@@ -122,6 +122,12 @@ def test_templates_match_source_goldens():
         "PARTIAL_PROMPT",
         "DESIGN_SCORE_PROMPT",
         "DESIGN_ACTION_BLOCK",
+        # summary mode (plan 0021 C): printed verbatim in the README like every other prompt
+        "DESIGN_SCORE_PROMPT_SUMMARY",
+        "DIGEST_TASK_NOTE",
+        "SUMMARY_NOTE",
+        "SUMMARY_NOTE_ABSTRACTIVE",
+        "SUMMARY_NOTE_TOKENS",
     }
 
 

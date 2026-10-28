@@ -253,7 +253,7 @@ Opt-in; the default (`aggregate=native`) is the per-layer judge above, unchanged
   (per-layer); `regex_plurality_agreement` compares the pick with the regex plurality over every
   real cell the digest read. The result records `config.aggregate = "summary"`,
   `config.summarizer`, `config.source_kind` and
-  `prompt_version = cutoff-judge-2026-10-26+digest-v2-<variant>-<render>+sj-v5`.
+  `prompt_version = cutoff-judge-2026-10-26+digest-v2-<variant>-<render>+sj-v6`.
 
 The summary-mode system prompt is `SYSTEM` with its input clause replaced by `SUMMARY_INPUT`:
 

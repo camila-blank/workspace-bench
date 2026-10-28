@@ -2,6 +2,7 @@
 alone, then an informed grader scores that inference 1-10 against the ground truth. Printed
 verbatim in the family README."""
 
+from wsbench.digest import SUMMARY_NOTE, SUMMARY_NOTE_ABSTRACTIVE, SUMMARY_NOTE_TOKENS
 from wsbench.llm import schema_block
 
 PROMPT_VERSION = "buggy-score-2026-09-23"
@@ -30,6 +31,12 @@ the program's behaviour.
 Answer with a single JSON object: {"claim": "bug|correct|none", "inferred": str, "quote": str}."""
 
 INFER_USER = "readout samples (k={k}):\n{samples}"
+# summary mode (plan 0021): Stage A reads the item's digest, introduced by the digest note
+INFER_USER_SUMMARY = "{summary_note}\n\nreadout digest:\n{summary}"
+DIGEST_TASK_NOTE = (
+    "the model reads a short program shown bare, with nothing asked; the lens is read at the "
+    "program's last token"
+)
 
 GRADE_SYSTEM = """\
 You grade how closely a description of a program's behaviour, inferred from lens readouts,
@@ -73,6 +80,11 @@ PROMPTS: dict[str, str] = {
     "GRADE_USER": GRADE_USER,
     "CAUSE_LINE": CAUSE_LINE,
     "BUG_LINE": BUG_LINE,
+    "INFER_USER_SUMMARY": INFER_USER_SUMMARY,
+    "SUMMARY_NOTE": SUMMARY_NOTE,
+    "SUMMARY_NOTE_ABSTRACTIVE": SUMMARY_NOTE_ABSTRACTIVE,
+    "SUMMARY_NOTE_TOKENS": SUMMARY_NOTE_TOKENS,
+    "DIGEST_TASK_NOTE": DIGEST_TASK_NOTE,
 }
 
 INFER_SCHEMA = schema_block(
@@ -103,6 +115,10 @@ def cause_of(item: dict) -> str | None:
 def render_infer(samples: list[str]) -> str:
     lines = "\n".join(f"[{i}] {s}" for i, s in enumerate(samples))
     return INFER_USER.replace("{k}", str(len(samples))).replace("{samples}", lines)
+
+
+def render_infer_summary(note: str, summary: str) -> str:
+    return INFER_USER_SUMMARY.replace("{summary_note}", note).replace("{summary}", summary)
 
 
 def render_grade(item: dict, claim: str, inferred: str) -> str:
