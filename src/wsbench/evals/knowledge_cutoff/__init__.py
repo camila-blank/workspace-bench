@@ -20,8 +20,9 @@ SPEC = register(
         metric="pass_rate",
         higher_is_better=True,
         run=judge.run,
-        calls_per_arm="109 x 11 = 1,199 (one call per item and layer, every position in the "
-        "call; ≈ 11k input tokens per call at k = 5 prose samples)",
+        item_ids=judge.item_ids,
+        calls_per_arm="(109 + the nocot items) x 11 ≈ 1.7k (one call per item and layer, every "
+        "position in the call; ≈ 11k input tokens per call at k = 5 prose samples)",
         sources="",
     )
 )
