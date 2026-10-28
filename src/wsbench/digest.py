@@ -3,6 +3,7 @@ passive digest call, and the family judges that one summary once. Spec: plan 001
 ``docs/summarizer.md`` § Item digest."""
 
 import dataclasses
+import functools
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from typing import Any
 
 from wsbench import llm
 from wsbench.cache import Cache, fingerprint
-from wsbench.family import fail, span_in
+from wsbench.family import _fold, fail
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend, schema_block
 from wsbench.readouts import Cell, Kind, LoadReport
@@ -24,6 +25,7 @@ DEFAULT_EFFORT = "default"
 DEFAULT_MAX_ITEMS = 10
 DEFAULT_TOKEN_CAP = 150_000
 MAX_TOKENS = 16_000
+DIGEST_TIMEOUT = 900.0  # seconds per call: up to ~150k input tokens at the model's default effort
 VARIANTS = ("blind", "task")
 DEFAULT_VARIANT = "blind"
 RENDERS = ("extractive", "abstractive")
@@ -212,16 +214,39 @@ def _probe(extra: Mapping[str, str]) -> JudgeArgs:
     )
 
 
+KNOWN_KEYS = frozenset(
+    {
+        "summ_model",
+        "summ_variant",
+        "summ_render",
+        "summ_effort",
+        "summ_max",
+        "summ_token_cap",
+        "summ_decode",
+    }
+)
+
+
 def validate(extra: Mapping[str, str]) -> None:
-    """Fail fast (exit 2) on a bad summary option, before any family runs."""
+    """Fail fast (exit 2) on a bad summary option, before any family runs: an unknown
+    ``summ_*`` key (a typo would otherwise run the default silently) or a bad value."""
+    unknown = sorted(k for k in extra if k.startswith("summ_") and k not in KNOWN_KEYS)
+    if unknown:
+        fail(
+            f"unknown summary option(s): {', '.join(unknown)} "
+            f"(known: {', '.join(sorted(KNOWN_KEYS))})"
+        )
     probe = _probe(extra)
     if summary_mode(probe):
         settings(probe)
 
 
-def preflight_judge(extra: Mapping[str, str]) -> ResolvedJudge:
-    """The digest model as a ResolvedJudge, from ``opts=`` alone (the runner's preflight)."""
-    probe = _probe(extra)
+def preflight_judge(
+    extra: Mapping[str, str], aux_models: Mapping[str, str] | None = None
+) -> ResolvedJudge:
+    """The digest model a family with ``aux_models`` will run, as a ResolvedJudge (the runner's
+    preflight)."""
+    probe = dataclasses.replace(_probe(extra), aux_models=dict(aux_models or {}))
     s = settings(probe)
     return ResolvedJudge(
         model=s.model, reasoning=s.reasoning, pinned=_default_digest(s), source="flag"
@@ -422,8 +447,31 @@ def _stride(firsts: list[_Group], cap: int) -> list[_Group]:
 # ---------------------------------------------------------------- evidence
 
 
+@functools.lru_cache(maxsize=1 << 16)
 def _norm(s: str) -> str:
     return " ".join(s.casefold().split())
+
+
+@functools.lru_cache(maxsize=1 << 16)
+def _lower_ws(s: str) -> str:
+    return " ".join(s.lower().split())
+
+
+@functools.lru_cache(maxsize=1 << 16)
+def _folded(s: str) -> str:
+    return _fold(s)
+
+
+def _span_in(quote: str, sample: str) -> bool:
+    """``family.span_in`` with each line's normal forms computed once per process (a capped
+    bundle holds ~15k lines and every digest item is checked against all of them)."""
+    if quote in sample:
+        return True
+    q = _lower_ws(quote)
+    if q and q in _lower_ws(sample):
+        return True
+    fq = _folded(quote)
+    return bool(fq) and fq in _folded(sample)
 
 
 def _prose_level(span: str, text: str) -> int | None:
@@ -432,7 +480,7 @@ def _prose_level(span: str, text: str) -> int | None:
         return 0
     if _norm(span) and _norm(span) in _norm(text):
         return 1
-    return 2 if span_in(span, text) else None
+    return 2 if _span_in(span, text) else None
 
 
 def _token_level(span: str, pieces: Sequence[str]) -> int | None:
@@ -448,7 +496,7 @@ def _token_level(span: str, pieces: Sequence[str]) -> int | None:
             n = len(parts)
             if any(toks[i : i + n] == parts for i in range(len(toks) - n + 1)):
                 return 0
-    return 2 if any(span_in(span, p) for p in pieces) else None
+    return 2 if any(_span_in(span, p) for p in pieces) else None
 
 
 def match_level(span: str, ln: Line) -> int | None:
@@ -716,6 +764,7 @@ def collapse(
             concurrency=args.concurrency,
             rpm=args.rpm,
             max_tokens=MAX_TOKENS,
+            timeout=DIGEST_TIMEOUT,
             spend=spend,
         )
     for item_id, _fp, _user in pending:

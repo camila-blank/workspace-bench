@@ -190,10 +190,10 @@ def _run_summary(
     rows = []
     for i in ids:
         row = _item_row(i, [digest.SUMMARY_LAYER], judged, targets[i], outcome)
+        row["n_missing"] = sum(1 for k in missing if k[0] == i)  # real layers, not the sentinel
         if i in col.cells:
             if i in partial and row["pass"] is False:
                 row["pass"] = None  # a missing layer leaves a non-pass undecided, as native
-            row["n_missing"] = sum(1 for k in missing if k[0] == i)
             row.update(col.row(i))
         row.pop("earliest_layer", None)
         rows.append(row)

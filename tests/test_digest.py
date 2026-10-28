@@ -264,7 +264,9 @@ def test_options_validated(tmp_path):
     ):
         with pytest.raises(SystemExit):
             digest.validate({"aggregate": "summary", **bad})
-    digest.validate({"summ_variant": "x"})  # native: summary options are not read
+    digest.validate({"summ_variant": "x"})  # native: summary option values are not read
+    with pytest.raises(SystemExit):
+        digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
     assert digest.prompt_version("pv", a) == "pv+digest-v1-blind-extractive+sj-v1"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))

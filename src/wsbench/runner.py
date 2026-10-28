@@ -208,8 +208,9 @@ def run_families(
     # a family with a deterministic scorer of record makes no call unless opts=judge=mc
     needs_llm = [s for s, _r in runnable if not s.scorer or opts.get("judge") == "mc"]
     to_preflight: dict[str, ResolvedJudge] = {s.name: judges[s.name] for s in needs_llm}
-    if runnable and opts.get("aggregate") == "summary":  # every family's digest (plan 0018)
-        to_preflight["digest"] = digest.preflight_judge(opts)
+    if opts.get("aggregate") == "summary":  # every family's digest model (plan 0018)
+        for s, _r in runnable:
+            to_preflight[f"digest:{s.name}"] = digest.preflight_judge(opts, s.judge.aux_models)
     if to_preflight and not args.dry_run:
         try:
             _seed_preflights(to_preflight)
