@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wsbench import registry, summarizer
+from wsbench import digest, registry, summarizer
 
 ROOT = Path(__file__).resolve().parents[1]
 # fences of any length (```` when a prompt itself contains ```), closed by the same run
@@ -44,6 +44,8 @@ def test_summarizer_prompt_verbatim_in_docs():
         assert any(text in b for b in blocks), name
     doc = (ROOT / "docs/summarizer.md").read_text()
     assert summarizer.SUMMARIZER_PROMPT_VERSION in doc and "interpretation" in doc
+    for name, text in digest.PROMPTS.items():  # plan 0020: the item digest's prompts too
+        assert any(text in b for b in blocks), name
 
 
 def test_fence_parser():

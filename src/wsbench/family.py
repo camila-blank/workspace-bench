@@ -1,7 +1,9 @@
 """What every judged family shares: the fatal-exit rule, cell text, the verbatim-quote check,
 rates, the tri-state item rule and the pass-rate result epilogue."""
 
+import re
 import sys
+import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any, NoReturn
@@ -19,6 +21,28 @@ def fail(msg: str) -> NoReturn:
     """A usage or data error: message on stderr, exit 2 (the CLI contract for missing cells)."""
     print(msg, file=sys.stderr)
     raise SystemExit(2)
+
+
+_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
+def _fold(s: str) -> str:
+    """Lowercase, decode literal ``\\uXXXX`` escapes, strip accents, drop non-alphanumerics."""
+    s = _ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), s.lower())
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in s if c.isalnum() and not unicodedata.combining(c))
+
+
+def span_in(quote: str, sample: str) -> bool:
+    """``quote`` is a span of ``sample``: exact, then whitespace- and case-normalised, then folded
+    (punctuation, markdown and accents ignored). Moved from the bank judge (``_in_sample``)."""
+    if quote in sample:
+        return True
+    norm_q = " ".join(quote.lower().split())
+    if norm_q and norm_q in " ".join(sample.lower().split()):
+        return True
+    folded_q = _fold(quote)
+    return bool(folded_q) and folded_q in _fold(sample)
 
 
 def rate(flags: Iterable[bool]) -> float | None:
@@ -92,10 +116,14 @@ def pass_rate_result(
     chance_label: str,
     skipped_extra: int = 0,
     config_extra: dict[str, Any] | None = None,
+    n_items: int | None = None,
+    pinned: bool | None = None,
 ) -> FamilyResult:
     """The epilogue of a pass-rate family: ``rows[*]["pass"]`` is True / False / None, the
     value is the rate over decided rows with a bootstrap CI, ``complete`` follows the shared
-    rule, and ``extras`` gains the decided / undecided counts."""
+    rule, and ``extras`` gains the decided / undecided counts. Summary mode passes ``n_items``
+    (the empty rule's denominator) and ``pinned`` (``digest.pinned``)."""
+    pinned = args.judge.pinned if pinned is None else pinned
     decided = [r for r in rows if r["pass"] is not None]
     passes = [1.0 if r["pass"] else 0.0 for r in decided]
     return FamilyResult(
@@ -109,14 +137,15 @@ def pass_rate_result(
         chance_label=chance_label,
         complete=bool(cells)
         and completeness(
-            pinned=args.judge.pinned,
+            pinned=pinned,
             subset=is_subset(args),
             n_expected=n_expected,
             n_missing=n_missing,
             n_unjudged=n_unjudged,
             n_empty=n_empty,
+            n_items=n_items,
         ),
-        pinned_instrument=args.judge.pinned,
+        pinned_instrument=pinned,
         config=base_config(args, prompt_version, kind=rep.kind or "prose", **(config_extra or {})),
         counts=base_counts(
             n_expected=n_expected,

@@ -120,6 +120,19 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   gated when their items were selected (source G1): the gate writes their whole bank
   (`answerer: "construction"`) and never asks about them.
 
+- Summary mode (`opts=aggregate=summary`, plan 0020, `digest.py`): a hooked family calls
+  `digest.collapse(name, cells_by_item, ...)` AFTER its own cell selection and missing-cell
+  accounting. Items with no cells are not passed; `n_expected` / `n_missing` stay cell-level and
+  `n_empty` / `n_unjudged` become item-level, so pass `n_items` to `completeness`. It then judges
+  the one synthetic cell per item (`layer = digest.SUMMARY_LAYER = -1`, pos/token copied from the
+  item's last cell) with summary-mode prompt variants listed in its `PROMPTS`. Every quote,
+  numeral or regex gate takes `digest.gate_texts(cell, col)` (evidence samples only;
+  `joined=True` for regex). Summary mode never changes a family's denominator rule. Stamp
+  `digest.prompt_version` / `digest.config` / `digest.pinned`. `runner.judge_family` stamps the
+  `digest.NATIVE_ONLY` families native and fails any other family that did not report
+  `config.aggregate = "summary"`. Never bind a module constant (e.g. `PROMPT_VERSION`) as a
+  default argument: tests monkeypatch it.
+
 ## Driver (`runner.py`, `cli.py`)
 - `run all=True|families=a,b readouts_root=DIR out=DIR [family_workers=3] [json=True]` reads
   `DIR/<family>.jsonl` (missing -> `skipped`). Order: parse `opts=` once (bad pair = one exit
