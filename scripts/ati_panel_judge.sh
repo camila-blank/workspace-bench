@@ -31,7 +31,8 @@ print(" ".join(f for f in sys.argv[3:] if s.get(f, {}).get("slot", "opus") == a)
     for f in $fams; do
       [ -s "$root/$f.jsonl" ] || continue
       # one family per process, each in its own out dir (its own judge cache)
-      if [[ " $NATIVE " == *" $f "* ]]; then lay=""; else lay="layers=44"; fi
+      # never leave the line ending in a blank: `xargs -L 1` would join it with the next line
+      if [[ " $NATIVE " == *" $f "* ]]; then lay="native"; else lay="layers=44"; fi
       echo "$f $root $OUT/judged/$a/draw$d/_runs/$f $OUT/judged/$a/draw$d $lay" >> "$jobs_file"
     done
   done
@@ -40,7 +41,8 @@ echo "$(wc -l < "$jobs_file") judge jobs, $JOBS at a time"
 export WSB JUDGE
 # shellcheck disable=SC2016
 xargs -P "$JOBS" -L 1 bash -c '
-  f=$0 root=$1 tmp=$2 dst=$3 lay=${4:-}
+  f=$0 root=$1 tmp=$2 dst=$3 lay=$4
+  [ "$lay" = native ] && lay=""
   if [ -s "$dst/$f/results.json" ]; then exit 0; fi
   mkdir -p "$(dirname "$tmp")"
   $WSB run families="$f" readouts_root="$root" out="$tmp" judge_model="$JUDGE" $lay \
