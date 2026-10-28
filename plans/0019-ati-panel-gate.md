@@ -1,8 +1,21 @@
 # 0019: ATI v2, a four-model panel gate (Qwen × frontier) + refill of the crafted families
 
-Status: rev 4 (folds in plan critique rounds 1-3). Owner: Camila. Date: 2026-10-28. Issue #101.
+Status: rev 5 (folds in plan critique rounds 1-4 and the phase-1 implementation). Owner: Camila. Date: 2026-10-28. Issue #101.
 Supersedes the gate RULE of plan 0014 (answerer, prompt, per-item rule). Plan 0014's flag
 semantics, write policy and per-family adapters are kept unless this plan says otherwise.
+
+## Rev 5: phase-1 implementation notes (binding; override everything below where they differ)
+
+1. **No pre-existing test is changed in phase 1.**
+   - The plan-0014 flat layout (`answers/draw{d}`, `readouts/draw{d}`, `judged/draw{d}`) keeps the old code path verbatim (`_gate_legacy`, `legacy_source`, the old `write_readouts` branch). The plan-0014 `answerer` / `framing` entries, `TEMPLATE`, `OPEN_MODEL_NOTE` and `FRAMINGS` stay (the README keeps them under "History").
+   - The construction-gated mechanism stays, with `CONSTRUCTION_GATED = {}`.
+   - So every Rev 2–4 sanction of an edit to a pre-existing test or fixture in phase 1 (the merge-test `claude_slot` mapping, the `_answers` path change, the template / framing test rewrites, the deletion of the construction tests) is **withdrawn**. Panel behaviour is tested in the new `tests/test_ati_panel.py`.
+2. `gate(answerer=None)`: in panel mode `answerer` (slot key or Claude model id) overrides the slot file. A plain `stage=gate` passes none, so `claude_slot.json` (or `opus`) governs. In the legacy layout, `None` means plan-0014's Opus.
+3. **Phase-2 fixture scoping** (critique round 4):
+   - In `test_legacy_family_names.py` the bank variable is set only in the tests that read `TOY_IDS` / `EXAMPLE`, never module-wide (`test_frozen_ati_file_uses_new_keys` must see the live bank).
+   - `test_knowledge_cutoff.py` gets the same treatment as the other two family tests: an autouse `WSB_BANK_FILE_KNOWLEDGE_CUTOFF` plus `EXAMPLE` pointed at the pre-refill readouts, in addition to the `:28` path change.
+4. **Real-tokenizer test.** `tests/test_ati_panel.py::test_qwen_prompt_ids_on_the_real_tokenizer` skips without `transformers` (the dev env). It was run and passes with transformers 5.17.0 and the cached Qwen3.6-27B tokenizer.
+5. **Modal.** Environment `camila-blank` (default). The `openrouter` secret and the `jlens-hf-cache` volume (with Qwen/Qwen3.6-27B) live there.
 
 ## Rev 4 changes (binding; override Rev 3, Rev 2 and the body where they differ)
 
