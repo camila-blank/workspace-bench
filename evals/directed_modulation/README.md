@@ -200,7 +200,7 @@ digest is a negative without a call (`n_empty_cells` then counts items, the comp
 rule is taken over items). `n_expected_cells` / `n_missing_cells` are the native cell counts.
 `extras.summary` gains the digest diagnostics beside the rates, rows carry `summary`,
 `summary_statements`, `summary_evidence`, and the prompt version is stamped
-`dm-2026-09-16+digest-v2-<variant>-<render>+sj-v2`. Token readouts are no longer judged as a
+`dm-2026-09-16+digest-v2-<variant>-<render>+sj-v3`. Token readouts are no longer judged as a
 bag: the digest is judged with the token note appended to the summary note.
 
 The user message is `USER` with its opening paragraph (the "single token position" framing and

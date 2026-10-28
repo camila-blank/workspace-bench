@@ -615,3 +615,11 @@ Versions are `digest-v2` and `sj-v2`. The `summ_max` decision is re-taken under 
 pre-registered rule (25 iff mean coverage gain ≥ 10 points) on the D2 slice, `blind` only. Every
 summary arm of D3 is re-run under v2. The native arms are unchanged and reused.
 
+**sj-v3 (user_modeling only).** A second audit (`docs/summary_mode_validation.md`) found that the
+Rev 6 basis note dropped the native clause "unless it adds a characterization the prompt did not
+state". As a result, judges labelled specific new content on system-prompt items "echo": "UK" for
+"Europe", "Muslim" for "halal". sj-v3 restores that clause in `SUMMARY_BASIS`, and it is still one
+judge call per digest. Synonyms of a stated label ("mom" for homemaker) are deliberately NOT
+credited: native "inferred" credits them, so that part of the remaining gap is a difference in
+what is measured, recorded for Camila. All other families' judge prompts are unchanged from sj-v2.
+

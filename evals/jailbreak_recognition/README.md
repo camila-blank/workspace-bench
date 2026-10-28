@@ -254,7 +254,7 @@ evidence samples (`digest.gate_texts`; each token of a token line is its own sam
 natively, an unverified quote is flagged, not dropped. Token files skip the per-cell interp-v1
 summarizer. The `by_layer` / `by_pos_idx` profiles and the `rel_slot` row field are omitted.
 `opts=read=punct` narrows the cells that are digested and stays `complete=False`. The prompt version
-is stamped `jb-v1+digest-v2-<variant>-<render>+sj-v2`.
+is stamped `jb-v1+digest-v2-<variant>-<render>+sj-v3`.
 
 Counts: `n_expected_cells` / `n_missing_cells` stay cell-level and equal native; `n_unjudged_cells`
 / `n_empty_cells` count items (`extras.summary.count_units`), and the 5% empty rule is taken against

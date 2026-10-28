@@ -143,7 +143,7 @@ the item is judged ONCE on that digest.
   `named_by_layer`, `kind_by_layer`, `basis_by_layer`. Rows gain `summary`,
   `summary_statements`, `summary_evidence`, `summary_truncated`, `summary_state`;
   `extras.summary` holds the digest diagnostics.
-- **Provenance:** `prompt_version` = `chain-free-2026-09-16+digest-v2-<variant>-<render>+sj-v2`;
+- **Provenance:** `prompt_version` = `chain-free-2026-09-16+digest-v2-<variant>-<render>+sj-v3`;
   `config.aggregate = "summary"`, `config.summarizer`, `config.source_kind`. Use a separate `out=`
   dir from any native run.
 
