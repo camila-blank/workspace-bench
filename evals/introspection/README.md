@@ -237,7 +237,7 @@ Opt-in; the default (`aggregate=native`) is the per-cell grid above, unchanged. 
   `summary_state` (of the unit's readout); `picks` / `hit_cells` carry the synthetic `L-1` cell;
   `earliest_layer` and `extras.headline_per_layer_any_position` are omitted (per-layer). The
   result records `config.aggregate = "summary"`, `config.summarizer`, `config.source_kind` and
-  `prompt_version = ii-grid-2026-10-23+digest-v2-<variant>-<render>+sj-v5`; `extras.summary`
+  `prompt_version = ii-grid-2026-10-23+digest-v2-<variant>-<render>+sj-v6`; `extras.summary`
   holds the digest diagnostics.
 
 The summary-mode system prompt is `SYSTEM` with its input sentence replaced by `SUMMARY_INPUT`:

@@ -191,7 +191,7 @@ passive digest call (`docs/summarizer.md` § Item digest). A committed item gets
 digest; a deliberative item gets one call per side, both on the same digest, and passes only if both
 sides pick the gold (both sides in one summary, not each side at any cell). Token files skip the
 per-cell interp-v1 summarizer. `any_of_grid_floor` is omitted (there is no grid). The prompt version
-is stamped `ec-v3+digest-v2-<variant>-<render>+sj-v5` (`ec-v3+contrast-off+digest-v2-…` under
+is stamped `ec-v3+digest-v2-<variant>-<render>+sj-v6` (`ec-v3+contrast-off+digest-v2-…` under
 `opts=contrast=off`).
 
 Counts: `n_expected_cells` / `n_missing_cells` stay cell-level and equal native; `n_unjudged_cells`

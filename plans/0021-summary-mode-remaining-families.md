@@ -395,3 +395,9 @@ docs/summary_mode_validation.md                          § Plan 0021 families
    - brew `validate` gets the item's options via `Call.meta`. The one retry is a second
      `run_calls` over the invalidated keys; `Cache.get` skips failed rows.
 
+**Sanctioned pre-existing test edit (implementation):** `tests/test_agentic_misalignment.py::test_templates_match_source_goldens`
+asserts the exact set of `PROMPTS` keys. It gains exactly the five new summary-mode keys
+(`DESIGN_SCORE_PROMPT_SUMMARY`, `DIGEST_TASK_NOTE`, `SUMMARY_NOTE`, `SUMMARY_NOTE_ABSTRACTIVE`,
+`SUMMARY_NOTE_TOKENS`), which the plan requires in `PROMPTS`. It stays an exact-set check, and
+every native golden assertion is unchanged.
+
