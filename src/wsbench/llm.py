@@ -223,6 +223,9 @@ REFUSED_JSON: dict[str, Any] = {"\x00refused": True}
 # ... and for a context overflow (stop_reason model_context_window_exceeded, or a 400 "prompt is too
 # long"), also only under mark_refusals=True
 TOO_LONG_JSON: dict[str, Any] = {"\x00too_long": True}
+# key a structured result carries when a server-side refusal fallback served it (the model id)
+SERVED_BY = "\x00served_by"
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # Models that reject thinking={"type": "disabled"} (thinking is always on): a no-thinking call
 # omits the parameter and asks for low effort instead, so the reply budget goes to the answer.
@@ -277,18 +280,26 @@ async def _anthropic_once(
     spend: Spend,
     reasoning: dict[str, Any] | None = None,
     mark_refusals: bool = False,
+    fallbacks: str | None = None,
 ) -> dict[str, Any] | None:
-    resp = await client.messages.create(
-        timeout=timeout,
-        model=model,
-        max_tokens=max_tokens,
-        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user}],
-        output_config={
+    kwargs: dict[str, Any] = {
+        "timeout": timeout,
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        "messages": [{"role": "user", "content": user}],
+        "output_config": {
             "format": {"type": "json_schema", "schema": anthropic_schema(schema["schema"])},
             **anthropic_effort(model, reasoning),
         },
-    )
+    }
+    if fallbacks is None:
+        resp = await client.messages.create(**kwargs)
+    else:  # server-side refusal fallback: a declined request re-runs on a fallback model
+        betas = [FALLBACK_BETA]
+        if getattr(client, "auth_token", None):  # betas= replaces the client's default header
+            betas.append("oauth-2025-04-20")
+        resp = await client.beta.messages.create(**kwargs, betas=betas, fallbacks=fallbacks)
     spend.calls += 1
     usage = getattr(resp, "usage", None)
     if usage is not None:
@@ -308,7 +319,11 @@ async def _anthropic_once(
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), None)
     if text is None:
         raise ValueError("response has no text block")
-    return _parse_object(text)
+    out = _parse_object(text)
+    served = getattr(resp, "model", model)
+    if fallbacks is not None and isinstance(out, dict) and served and served != model:
+        out[SERVED_BY] = served
+    return out
 
 
 async def _one(
@@ -327,6 +342,7 @@ async def _one(
     spend: Spend,
     mark_refusals: bool = False,
     attempts: int | None = None,
+    fallbacks: str | None = None,
 ) -> dict[str, Any] | None:
     # detokenised lens readouts can contain lone surrogates, which both APIs reject every time
     system = system.encode("utf-8", "replace").decode("utf-8")
@@ -347,6 +363,7 @@ async def _one(
                     spend=spend,
                     reasoning=reasoning,
                     mark_refusals=mark_refusals,
+                    fallbacks=fallbacks,
                 )
             return await _openrouter_once(
                 client,
@@ -402,6 +419,7 @@ async def stream_json_async(
     spend: Spend | None = None,
     mark_refusals: bool = False,
     attempts: int | None = None,
+    fallbacks: str | None = None,
 ) -> Spend:
     """Run ``(system, user)`` prompt pairs concurrently, handing each parsed result (or
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
@@ -440,6 +458,7 @@ async def stream_json_async(
                 spend=spend,
                 mark_refusals=mark_refusals,
                 attempts=attempts,
+                fallbacks=fallbacks,
             )
         return i, res
 
@@ -479,6 +498,7 @@ def stream_json(
     spend: Spend | None = None,
     mark_refusals: bool = False,
     attempts: int | None = None,
+    fallbacks: str | None = None,
 ) -> Spend:
     """Synchronous wrapper around :func:`stream_json_async` for the CLI and tests."""
     if _in_running_loop():
@@ -500,6 +520,7 @@ def stream_json(
             spend=spend,
             mark_refusals=mark_refusals,
             attempts=attempts,
+            fallbacks=fallbacks,
         )
     )
 

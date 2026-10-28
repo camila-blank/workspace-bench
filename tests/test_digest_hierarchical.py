@@ -287,3 +287,33 @@ def test_plan_0020_fingerprint_unchanged():
         "",
         "TEXT",
     )
+
+
+def test_refusal_fallback_is_passed_and_served_model_recorded(tmp_path, fam, monkeypatch):
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default")
+    seen_kw: list[dict] = []
+
+    def count_tokens(model, prompts, concurrency=8):
+        return [10 for _ in prompts]
+
+    def stream_json(prompts, *, on_result, **kw):
+        seen_kw.append(kw)
+        for i, (_s, user) in enumerate(prompts):
+            line = next(ln[2:] for ln in user.splitlines() if ln.startswith("- "))
+            on_result(
+                i,
+                {
+                    "items": [{"statement": "s", "key": "", "where": "", "evidence": line}],
+                    llm.SERVED_BY: "claude-opus-4-8",
+                },
+            )
+        return Spend()
+
+    monkeypatch.setattr(llm, "count_tokens", count_tokens)
+    monkeypatch.setattr(llm, "stream_json", stream_json)
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen_kw[0]["fallbacks"] == "default"
+    assert col.row("a")["summary_served_by"] == "claude-opus-4-8"
+    assert col.diag["n_fallback_served_items"] == 1
+    col = _run(tmp_path, {"a": _cells("a", 2)})  # cached: provenance survives a rerun
+    assert col.row("a")["summary_served_by"] == "claude-opus-4-8"

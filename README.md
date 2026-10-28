@@ -414,7 +414,8 @@ Two families run native under it (hallucination, jlens_concept_pr; the reasons a
 adaptations of their own (plan 0021; see their READMEs). Run native and summary
 into separate `out=` dirs. Options: `summ_model`, `summ_variant=blind|task`,
 `summ_render=extractive|abstractive`, `summ_effort`, `summ_max`, `summ_token_cap`,
-`summ_decode`, `summ_overflow=stride|hierarchical`, `summ_concurrency`, `summ_timeout`
+`summ_decode`, `summ_overflow=stride|hierarchical`, `summ_concurrency`, `summ_timeout`,
+`summ_fallback=none|default`
 (per-family defaults in `digest.FAMILY_DEFAULTS`). Details: `docs/summarizer.md` § Item digest and each family README's "Summary
 mode" section.
 

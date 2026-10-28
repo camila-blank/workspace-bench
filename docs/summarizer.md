@@ -129,6 +129,10 @@ removes every pass@layer / pass@position / pass@sample rule. Code: `wsbench/dige
 
   Its bundles are about 100× the other families' (every position × every layer), and Camila asked
   that its summarizer see all positions.
+- **Refusal fallback** (`summ_fallback=none|default`, plan 0021): `default` sends digest calls with
+  the API's server-side refusal fallback, so a declined digest re-runs on a fallback model. Rows
+  record `summary_served_by`. agentic_misalignment defaults to it (Opus 5.5's `cyber` classifier
+  declines most of its bundles); every other family defaults to `none`.
 - **Overflow** (`summ_overflow`):
   - **`stride`** (the default) is the plan 0020 truncation described above.
   - **`hierarchical`** never drops a readout. Each item's FULL bundle is sized by real tokens
