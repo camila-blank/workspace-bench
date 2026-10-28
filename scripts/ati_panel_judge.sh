@@ -42,6 +42,7 @@ export WSB JUDGE
 xargs -P "$JOBS" -L 1 bash -c '
   f=$0 root=$1 tmp=$2 dst=$3 lay=${4:-}
   if [ -s "$dst/$f/results.json" ]; then exit 0; fi
+  mkdir -p "$(dirname "$tmp")"
   $WSB run families="$f" readouts_root="$root" out="$tmp" judge_model="$JUDGE" $lay \
     allow_missing=True > "$tmp.log" 2>&1 || { echo "FAILED $dst/$f (see $tmp.log)"; exit 1; }
   mkdir -p "$dst" && rm -rf "$dst/$f" && cp -r "$tmp/$f" "$dst/$f"
