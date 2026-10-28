@@ -328,10 +328,13 @@ def summary_note(
 
 
 def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None) -> dict[str, Any]:
-    """The ``config`` keys every summary-mode result carries."""
+    """The ``config`` keys every summary-mode result carries (effective concurrency / timeout)."""
+    summ = settings(args, family).to_json()
+    summ["concurrency"] = summ["concurrency"] or args.concurrency
+    summ["timeout"] = summ["timeout"] or DIGEST_TIMEOUT
     return {
         "aggregate": "summary",
-        "summarizer": settings(args, family).to_json(),
+        "summarizer": summ,
         "source_kind": source_kind,
     }
 
@@ -676,6 +679,14 @@ def render_summary(items: Sequence[Grounded], render: str) -> tuple[str, list[Li
 # ---------------------------------------------------------------- collapse
 
 
+def _cached(cache: Cache, key: str, fp: str) -> dict | None:
+    """The newest cached row for (key, fp) if it is a success, else ``None`` (a miss). A failed
+    row written AFTER a success (e.g. every evidence span of that digest failed the check)
+    invalidates it, so a rerun re-asks; ``Cache.get`` alone would return the older success."""
+    row = cache.get(key, fp, include_failed=True)
+    return row if row is not None and row.get("result") is not None else None
+
+
 @dataclass
 class Collapse:
     """The synthetic Cells of one family's summary-mode run, keyed by item id."""
@@ -839,7 +850,7 @@ def collapse(
     results: dict[str, object] = {}
     todo: list[tuple[str, str, str]] = []
     for item_id, fp, user in pending:
-        row = cache.get(f"digest:{item_id}|{layers_tag}", fp)
+        row = _cached(cache, f"digest:{item_id}|{layers_tag}", fp)
         if row is not None:
             results[item_id] = row.get("result")
         else:
@@ -912,33 +923,35 @@ def _fp(*parts: Any) -> str:
 
 def _layer_chunks(groups: Sequence[_Group], scale: float, budget: int) -> list[list[_Group]]:
     """Consecutive chunks of ``groups`` whose scaled estimated size stays under ``budget``, cut at
-    layer boundaries; a layer is split by groups only when it alone exceeds the budget."""
-    by_layer: list[list[_Group]] = []
-    for g in groups:
-        if by_layer and by_layer[-1][0].layer == g.layer:
-            by_layer[-1].append(g)
+    layer boundaries; a layer is split by groups only when it alone exceeds the budget. Sizes are
+    running sums of per-group estimates (linear in the number of groups)."""
+    size_of = [est_tokens(_render([g])) * scale for g in groups]
+    layers: list[list[int]] = []
+    for j, g in enumerate(groups):
+        if layers and groups[layers[-1][0]].layer == g.layer:
+            layers[-1].append(j)
         else:
-            by_layer.append([g])
-
-    def size(gs: Sequence[_Group]) -> float:
-        return est_tokens(_render(gs)) * scale
-
+            layers.append([j])
     chunks: list[list[_Group]] = []
-    cur: list[_Group] = []
-    for layer in by_layer:
-        if cur and size(cur + layer) > budget:
-            chunks.append(cur)
-            cur = []
-        if size(layer) <= budget:
+    cur: list[int] = []
+    cur_size = 0.0
+    for layer in layers:
+        layer_size = sum(size_of[j] for j in layer)
+        if cur and cur_size + layer_size > budget:
+            chunks.append([groups[j] for j in cur])
+            cur, cur_size = [], 0.0
+        if layer_size <= budget:
             cur.extend(layer)
+            cur_size += layer_size
             continue
-        for g in layer:  # an oversized layer: split by groups
-            if cur and size([*cur, g]) > budget:
-                chunks.append(cur)
-                cur = []
-            cur.append(g)
+        for j in layer:  # an oversized layer: split by groups
+            if cur and cur_size + size_of[j] > budget:
+                chunks.append([groups[x] for x in cur])
+                cur, cur_size = [], 0.0
+            cur.append(j)
+            cur_size += size_of[j]
     if cur:
-        chunks.append(cur)
+        chunks.append([groups[j] for j in cur])
     return chunks
 
 
@@ -1000,6 +1013,7 @@ def _collapse_hierarchical(
         "n_chunk_calls": 0,
         "n_hierarchical_items": 0,
         "max_halvings": 0,
+        "n_fallback_events": 0,
     }
     groups_of: dict[str, list[_Group]] = {}
     text_of: dict[str, str] = {}
@@ -1043,7 +1057,12 @@ def _collapse_hierarchical(
         else:
             need.append(i)
     if need:
-        got = llm.count_tokens(s.model, [(system, render_user(text_of[i])) for i in need])
+        try:
+            got: list[int | None] = llm.count_tokens(
+                s.model, [(system, render_user(text_of[i])) for i in need]
+            )
+        except llm.JudgeConfigError:  # a model without count_tokens: the worst-ratio estimate
+            got = [None] * len(need)
         for i, n in zip(need, got, strict=True):
             if n is None:
                 counts[i] = int(est_tokens(text_of[i]) * _UNCOUNTED_RATIO)
@@ -1057,11 +1076,16 @@ def _collapse_hierarchical(
 
     # ---- the persisted fallback level per item
     level: dict[str, int] = {}
+    persisted_kind: dict[str, str] = {}
     for i in items:
         row = cache.get(
-            f"digest:{i}|{layers_tag}|level", _fp("level", text_of[i]), include_failed=True
+            f"digest:{i}|{layers_tag}|level",
+            _fp("level", s.model, s.reasoning, system, text_of[i]),
+            include_failed=True,
         )
         level[i] = int(row.get("halvings", 0)) if row else 0
+        if row and row.get("fallback"):
+            persisted_kind[i] = str(row["fallback"])
 
     single_fp = {
         i: fingerprint(
@@ -1078,6 +1102,10 @@ def _collapse_hierarchical(
         for i in items
     }
     final: dict[str, object] = {}  # item -> final digest result (dict) or None
+    final_key: dict[str, tuple[str, str]] = {}  # item -> (cache key, fp) its final result came from
+    chunk_fp: dict[str, str] = {}
+    final_fp: dict[str, str] = {}
+    scale_of: dict[str, float] = {i: counts[i] / max(1, est_tokens(text_of[i])) for i in items}
     final_lines: dict[str, list[Line]] = {}
     done: set[str] = set()
     if preflight is not None:
@@ -1089,7 +1117,7 @@ def _collapse_hierarchical(
         out: dict[str, object] = {}
         todo: list[tuple[str, str, str]] = []
         for key, fp, user in calls:
-            row = cache.get(key, fp)
+            row = _cached(cache, key, fp)
             if row is not None:
                 out[key] = row.get("result")
             else:
@@ -1119,11 +1147,15 @@ def _collapse_hierarchical(
             )
         return out
 
+    last_kind: dict[str, str] = {}
+
     def bump(i: str, kind: str) -> None:
+        last_kind[i] = kind
+        col.diag["n_fallback_events"] += 1
         k = level[i] + 1
         cache.put(
             f"digest:{i}|{layers_tag}|level",
-            _fp("level", text_of[i]),
+            _fp("level", s.model, s.reasoning, system, text_of[i]),
             {"result": None, "fallback": kind, "halvings": k},
         )
         level[i] = k
@@ -1142,10 +1174,10 @@ def _collapse_hierarchical(
             r = res.get(f"digest:{i}|{layers_tag}")
             kind = _marker(r)
             if kind is not None:
-                col.diag[f"n_digest_{kind}"] += 1
                 bump(i, kind)
                 continue
             final[i], final_lines[i] = r, lines_of[i]
+            final_key[i] = (f"digest:{i}|{layers_tag}", single_fp[i])
             done.add(i)
         # chunked items: over budget, or pushed down a level
         chunked = [i for i in active if i not in done and (level[i] > 0 or counts[i] > budget0)]
@@ -1165,13 +1197,9 @@ def _collapse_hierarchical(
             n = len(ch)
             for c_i, gs in enumerate(ch, 1):
                 t = _render(gs)
-                calls.append(
-                    (
-                        f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}",
-                        single_fp[i] + _fp("chunk", c_i, n, t),
-                        render_user(t),
-                    )
-                )
+                ckey = f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}"
+                chunk_fp[ckey] = single_fp[i] + _fp("chunk", c_i, n, t)
+                calls.append((ckey, chunk_fp[ckey], render_user(t)))
         res = run_batch(calls)
         finals: list[tuple[str, str, str]] = []
         union_of: dict[str, list[Line]] = {}
@@ -1195,7 +1223,9 @@ def _collapse_hierarchical(
                 any_items = True
                 chunk_lines = [ln for g in gs for ln in g.lines]
                 kept, _dropped = ground(r, chunk_lines, s.max_items)
-                if not kept:
+                if not kept:  # every span failed: invalidate the cached chunk so a rerun re-asks
+                    ckey = f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}"
+                    cache.put(ckey, chunk_fp[ckey], {"result": None, "meta": {"raw": r}})
                     failed = "failed"
                     break
                 for g in kept:
@@ -1203,7 +1233,6 @@ def _collapse_hierarchical(
                         seen.add(id(g.line))
                         union.append(g.line)
             if failed in ("refused", "too_long"):
-                col.diag[f"n_digest_{failed}"] += 1
                 bump(i, failed)
                 continue
             if failed == "failed":
@@ -1220,28 +1249,34 @@ def _collapse_hierarchical(
             union_of[i] = union
             col.chunks[i] = n
             t = _union_render(union, lines_of[i])
-            finals.append(
-                (
-                    f"digest:{i}|{layers_tag}|h{k}|final",
-                    single_fp[i] + _fp("final", n, t),
-                    render_user(t),
-                )
-            )
+            if est_tokens(t) * scale_of[i] > budget0:  # the union itself is too large
+                col.unsummarized.add(i)
+                last_kind[i] = "too_long"
+                col.chunks.pop(i, None)
+                done.add(i)
+                continue
+            final_fp[i] = single_fp[i] + _fp("final", n, t)
+            finals.append((f"digest:{i}|{layers_tag}|h{k}|final", final_fp[i], render_user(t)))
         res = run_batch(finals)
         for i, union in union_of.items():
             r = res.get(f"digest:{i}|{layers_tag}|h{level[i]}|final")
             kind = _marker(r)
             if kind is not None:
-                col.diag[f"n_digest_{kind}"] += 1
                 bump(i, kind)
                 col.chunks.pop(i, None)
                 continue
             final[i], final_lines[i] = r, union
+            final_key[i] = (f"digest:{i}|{layers_tag}|h{level[i]}|final", final_fp[i])
             done.add(i)
     for i in items:
         if i not in done:  # out of halvings
             col.unsummarized.add(i)
-    col.diag["n_hierarchical_items"] = len(col.chunks)
+    for i in items:  # per-item refusal / too-long counts, from the final state (rerun-stable)
+        if i in col.unsummarized:
+            kind = last_kind.get(i) or persisted_kind.get(i)
+            if kind in ("refused", "too_long"):
+                col.diag[f"n_digest_{kind}"] += 1
+    col.diag["n_hierarchical_items"] = sum(1 for i in col.chunks if i not in col.unsummarized)
     col.diag["max_halvings"] = max([level[i] for i in items], default=0)
 
     # ---- ground the final digests (support counted over the FULL bundle)
@@ -1261,9 +1296,11 @@ def _collapse_hierarchical(
         col.diag["n_key_duplicates"] += dups[0]
         col.diag["n_evidence_kept"] += len(kept)
         col.diag["n_evidence_dropped"] += dropped
-        if not kept:
+        if not kept:  # every span failed: invalidate the cached final so a rerun re-asks
             col.diag["n_items_all_dropped"] += 1
             col.unsummarized.add(i)
+            key, fp = final_key[i]
+            cache.put(key, fp, {"result": None, "meta": {"raw": r}})
             continue
         text, evid = render_summary(kept, s.render)
         col.summaries[i] = text

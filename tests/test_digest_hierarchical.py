@@ -132,7 +132,9 @@ def test_refused_single_falls_back_to_chunks_and_is_persisted(tmp_path, fam, mon
     first_user = digest.render_user(digest._render([digest._group(c) for c in cells["a"]]))
     fake.exact[first_user] = llm.REFUSED_JSON  # only the whole-bundle call is refused
     col = _run(tmp_path, cells)
-    assert col.diag["n_digest_refused"] == 1 and col.chunks.get("a", 0) >= 2
+    # recovered through chunks: one fallback event, no item lost to a refusal
+    assert col.diag["n_fallback_events"] == 1 and col.diag["n_digest_refused"] == 0
+    assert col.chunks.get("a", 0) >= 2
     assert col.summaries["a"]
     n_before = len(fake.calls)
     _run(tmp_path, cells)
@@ -172,3 +174,116 @@ def test_family_defaults_reach_settings_and_config(tmp_path, fam):
     assert digest.settings(a).overflow == "stride"  # no family: plan 0020 defaults
     override = _args(tmp_path, summ_max="7")
     assert digest.settings(override, FAM).max_items == 7  # opts beat family defaults
+
+
+def test_refused_at_every_level_is_unsummarized_and_counts_are_rerun_stable(
+    tmp_path, fam, monkeypatch
+):
+    fake = Fake(monkeypatch, tokens_per_char=1.0)
+    fake.script["word"] = llm.REFUSED_JSON  # every chunk at every level is refused
+    col = _run(tmp_path, {"a": _cells("a", 6)})
+    assert "a" in col.unsummarized and col.diag["n_digest_refused"] == 1
+    n = len(fake.calls)
+    col = _run(tmp_path, {"a": _cells("a", 6)})
+    assert len(fake.calls) == n  # out of halvings: nothing re-sent
+    assert "a" in col.unsummarized and col.diag["n_digest_refused"] == 1
+
+
+def test_too_long_marker_falls_back(tmp_path, fam, monkeypatch):
+    fake = Fake(monkeypatch, tokens_per_char=0.3)
+    cells = {"a": _cells("a", 4)}
+    first_user = digest.render_user(digest._render([digest._group(c) for c in cells["a"]]))
+    fake.exact[first_user] = llm.TOO_LONG_JSON
+    col = _run(tmp_path, cells)
+    assert col.chunks.get("a", 0) >= 2 and col.summaries["a"]
+    assert col.diag["n_fallback_events"] == 1 and col.diag["n_digest_too_long"] == 0
+
+
+def test_refused_final_moves_down_a_level(tmp_path, fam, monkeypatch):
+    fake = Fake(monkeypatch, tokens_per_char=1.0)
+    fake.script["(support:"] = llm.REFUSED_JSON  # finals are refused, chunks are not
+    col = _run(tmp_path, {"a": _cells("a", 6)})
+    # unsummarized, counted once (as refused, or too long if a halved union outgrew the budget)
+    assert "a" in col.unsummarized
+    assert col.diag["n_digest_refused"] + col.diag["n_digest_too_long"] == 1
+    assert col.diag["n_fallback_events"] >= 1
+
+
+def test_all_dropped_final_is_reasked_on_rerun(tmp_path, fam, monkeypatch):
+    fake = Fake(monkeypatch, tokens_per_char=0.3)
+    bad = {"items": [{"statement": "s", "key": "", "where": "", "evidence": "nowhere at all"}]}
+    fake.script["word"] = bad
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert "a" in col.unsummarized
+    n = len(fake.calls)
+    fake.script.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert len(fake.calls) == n + 1 and col.summaries["a"]  # the failed digest was re-asked
+
+
+def test_stride_path_all_dropped_is_reasked_on_rerun(tmp_path, monkeypatch):
+    seen: list[str] = []
+    replies = {"r": {"items": [{"statement": "s", "key": "", "where": "", "evidence": "nope"}]}}
+
+    def fake_stream_json(prompts, *, on_result, **_kw):
+        for i, (_s, user) in enumerate(prompts):
+            seen.append(user)
+            on_result(i, replies["r"])
+        return Spend()
+
+    monkeypatch.setattr(llm, "stream_json", fake_stream_json)
+    cells = {"a": [Cell("a", 20, 1, ("alpha",), None, None, None)]}
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "basic_readout",
+            cells,
+            args=_args(tmp_path),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+        )
+    assert "a" in col.unsummarized
+    replies["r"] = {"items": [{"statement": "s", "key": "", "where": "", "evidence": "alpha"}]}
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "basic_readout",
+            cells,
+            args=_args(tmp_path),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+        )
+    assert len(seen) == 2 and col.summaries["a"]
+
+
+def test_plan_0020_fingerprint_unchanged():
+    # the stride path fingerprint fields, frozen: a change here re-bills every plan 0020 cache
+    args = _args(Path("/tmp"))
+    s = digest.settings(args, "basic_readout")
+    assert (s.overflow, s.concurrency, s.timeout) == ("stride", None, None)
+    from wsbench.cache import fingerprint
+
+    expected = fingerprint(
+        digest.DIGEST_PROMPT_VERSION,
+        s.model,
+        s.reasoning,
+        s.variant,
+        s.max_items,
+        s.token_cap,
+        s.decode,
+        "",
+        "TEXT",
+    )
+    assert expected == fingerprint(
+        "digest-v2",
+        "claude-opus-5-5",
+        {"anthropic_effort": "default"},
+        "blind",
+        10,
+        150000,
+        True,
+        "",
+        "TEXT",
+    )
