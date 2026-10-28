@@ -146,7 +146,8 @@ def test_panel_gate_entry(tmp_path, fams):
     assert e["pass_at_3"]["qwen"] == 0.6 and e["instrument"] == "v1"
     written = json.loads(dst.read_text())
     assert written["_source"]["gate"] == ti.GATE_VERSION
-    assert written["_source"]["template"] == ti.PANEL_TEMPLATE
+    assert written["_source"]["variant"] == ti.DEFAULT_VARIANT
+    assert written["_source"]["templates"] == {ti.DEFAULT_VARIANT: ti.PANEL_TEMPLATE}
 
 
 def test_unusable_answer_makes_the_draw_undecided(tmp_path, fams):
@@ -467,7 +468,7 @@ def test_bank_file_override_reaches_the_introspection_plan(tmp_path, monkeypatch
 
 def test_panel_template_is_verbatim_in_the_baselines_readme():
     readme = (registry.REPO_ROOT / "evals" / "baselines" / "README.md").read_text()
-    assert ti.PANEL_TEMPLATE in readme
+    assert all(t in readme for t in ti.PANEL_TEMPLATES.values())
 
 
 def test_decide_slots_moves_a_refused_family_to_sonnet(tmp_path):
@@ -532,3 +533,13 @@ def test_stale_prompt_answers_are_ignored(tmp_path):
     msg = ti.append_answers(out, "astra", [old])
     assert "1 rows for another prompt version ignored" in msg
     assert len(ti.pending_requests(out, "astra", draws=1)) == 1
+
+
+def test_variants_share_the_open_model_note_and_set_the_prompt():
+    assert set(ti.PANEL_TEMPLATES) == {"free", "guess"}
+    assert all(t.startswith(ti.OPEN_MODEL_NOTE) for t in ti.PANEL_TEMPLATES.values())
+    row = {"prefix": "Fact: x is"}
+    assert ti.panel_prompt(row) == ti.panel_prompt({**row, "variant": ti.DEFAULT_VARIANT})
+    free, guess = (ti.panel_prompt({**row, "variant": v}) for v in ("free", "guess"))
+    assert free.endswith("in this prompt?") and "single best guess" in guess
+    assert ti.prompt_sha(free) != ti.prompt_sha(guess)

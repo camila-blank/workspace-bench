@@ -716,6 +716,7 @@ class TextInversion(Command):
         self.answerer = ""  # ask: panel key or model id (default plan-0014 Opus); gate: slot
         self.framing = "plain"  # plan-0014 flow only (text_inversion.FRAMINGS)
         self.limit = 0
+        self.variant = ""  # build: panel answer form (free | guess); default guess
         self.roots = None
         self.candidates = False
         self.supersede = None
@@ -730,6 +731,9 @@ class TextInversion(Command):
         self.concurrency = _int(self.concurrency)
         self.dst = _path(self.dst) if self.dst else text_inversion.FROZEN
         self.limit = _int(self.limit)
+        self.variant = str(self.variant or "")
+        if self.variant and self.variant not in text_inversion.PANEL_TEMPLATES:
+            raise ValueError(f"variant must be one of {sorted(text_inversion.PANEL_TEMPLATES)}")
         self.roots = [_path(r) for r in _strs(self.roots)] if self.roots else None
         self.candidates = str(self.candidates).lower() in ("1", "true", "yes")
         sup: dict[str, set[str]] = {}
@@ -741,10 +745,12 @@ class TextInversion(Command):
 
     def execute(self) -> int:
         if self.stage == "build":
+            kw: dict[str, int | str] = {}
             if self.limit:
-                text_inversion.build(self.out, self.families, limit=self.limit)
-            else:
-                text_inversion.build(self.out, self.families)
+                kw["limit"] = self.limit
+            if self.variant:
+                kw["variant"] = self.variant
+            text_inversion.build(self.out, self.families, **kw)
         elif self.stage == "ask":
             n = text_inversion.ask(
                 self.out,
