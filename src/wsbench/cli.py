@@ -735,8 +735,8 @@ class TextInversion(Command):
         sup: dict[str, set[str]] = {}
         for spec in _strs(self.supersede) if self.supersede else []:
             root, ids_file = spec.rsplit(":", 1)
-            ids = Path(ids_file).read_text(encoding="utf-8").split()
-            sup[str(_path(root))] = set(ids)
+            keys = Path(ids_file).read_text(encoding="utf-8").split()  # "family/id" lines
+            sup[str(_path(root))] = set(keys)
         self.supersede = sup
 
     def execute(self) -> int:

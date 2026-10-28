@@ -3,7 +3,7 @@
 # draw, `wsbench run` over the readouts at layer 44 (allow_missing), the native-layer families
 # without `layers=`. All LLM-judged families are judged by Opus 5.5 (the override replaces pins).
 #   OUT=outputs/baselines/text_inversion FAMILIES="a b c" scripts/ati_panel_judge.sh
-# Run with ANTHROPIC_API_KEY unset (ant profile). Resumable: each family's judge cache lives in
+# Run with ANTHROPIC_API_KEY unset and ANTHROPIC_PROFILE=default (the ant profile). Resumable: each family's judge cache lives in
 # its own judged/<answerer>/draw<d>/<family>/ directory.
 set -euo pipefail
 OUT=${OUT:-outputs/baselines/text_inversion}
@@ -20,6 +20,12 @@ for a in $answerers; do
     root="$OUT/readouts/$a/draw$d"
     [ -d "$root" ] || { echo "skip $a draw$d: no readouts (run stage=readouts)"; continue; }
     fams=${FAMILIES:-$(ls "$root" | sed 's/\.jsonl$//' | tr '\n' ' ')}
+    if [[ "$a" == opus || "$a" == sonnet ]] && [ -f "$OUT/claude_slot.json" ]; then
+      # judge a Claude model only on the families whose slot it fills (default slot: opus)
+      fams=$(python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); a=sys.argv[2]
+print(" ".join(f for f in sys.argv[3:] if s.get(f, {}).get("slot", "opus") == a))' \
+        "$OUT/claude_slot.json" "$a" $fams)
+    fi
     layered=() native=()
     for f in $fams; do
       [ -s "$root/$f.jsonl" ] || continue

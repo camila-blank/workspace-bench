@@ -5,7 +5,8 @@ around a user span in which no added/special token can match, so a literal ``<|i
 ``</think>`` inside the shown prompt stays plain text). Modal only generates: one request per
 item with ``n=3`` draws and a per-item seed (``text_inversion.qwen_seed``). Rows are written per
 shard to the ``wsb-ati-answers`` volume as each shard finishes and then appended locally to
-``<out>/answers/qwen/draw{d}.jsonl``. Resumable per (family, id).
+``<out>/answers/qwen/draw{d}.jsonl``. Resumable per (family, id, prompt_sha): every launch first
+pulls the rows already on the volume. Use ``--detach`` for long runs, then rerun to collect.
 
     PYTHONPATH=src modal run scripts/ati_qwen_modal.py [--out ...] [--families a,b] [--shards 8]
 """
@@ -45,8 +46,13 @@ def answer_shard(
     path.parent.mkdir(parents=True, exist_ok=True)
     done = set()
     if path.exists():
-        done = {(r["family"], r["id"]) for r in map(json.loads, path.read_text().splitlines())}
-    todo = [r for r in reqs if (r["family"], r["id"]) not in done]
+        for line in path.read_text().splitlines():
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:  # a partial last line from a killed container
+                continue
+            done.add((r["family"], r["id"], r.get("prompt_sha")))
+    todo = [r for r in reqs if (r["family"], r["id"], r["prompt_sha"]) not in done]
     if not todo:
         return 0
     llm = LLM(MODEL, max_model_len=max_model_len, gpu_memory_utilization=0.90, seed=0)
@@ -72,6 +78,7 @@ def answer_shard(
                     "in_tokens": len(r["ids"]),
                     "out_tokens": len(c.token_ids),
                     "seed": r["seed"],
+                    "prompt_sha": r["prompt_sha"],
                     "error": "" if text else f"empty (finish_reason={c.finish_reason})",
                 }
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -85,20 +92,28 @@ def main(
     families: str = "",
     shards: int = 8,
     draws: int = 3,
-    max_tokens: int = 1024,
+    max_tokens: int = 4096,
 ) -> None:
     from wsbench.baselines import text_inversion as ti
 
     out_p = Path(out)
     fams = {f for f in families.split(",") if f} or None
-    reqs = ti.qwen_requests(out_p, draws, fams)
     run = ti.run_key(out_p)
+    print(
+        ti.append_answers(out_p, "qwen", ti.download_volume_rows("wsb-ati-answers", f"{run}/qwen"))
+    )
+    reqs = ti.qwen_requests(out_p, draws, fams)
     print(f"qwen: {len(reqs)} items pending, run key {run}", flush=True)
     if reqs:
         mml = ti.qwen_max_model_len(reqs, max_tokens)
         k = max(1, min(shards, len(reqs)))
         parts = [reqs[i::k] for i in range(k)]
         args = [(run, i, p, mml, max_tokens, draws) for i, p in enumerate(parts)]
-        print(f"{sum(answer_shard.starmap(args))} items generated (max_model_len {mml})")
+        results = list(answer_shard.starmap(args, return_exceptions=True))
+        errs = [r for r in results if isinstance(r, BaseException)]
+        n = sum(r for r in results if isinstance(r, int))
+        print(f"{n} items generated (max_model_len {mml}); {len(errs)} shard(s) failed")
+        for e in errs:
+            print(f"  shard error: {e!r}"[:500], flush=True)
     rows = ti.download_volume_rows("wsb-ati-answers", f"{run}/qwen")
     print(ti.append_answers(out_p, "qwen", rows), flush=True)
