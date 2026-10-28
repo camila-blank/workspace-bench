@@ -165,7 +165,7 @@ instead of `build_blob`'s text. Still **one MC call per item**, keyed `<id>|L-1`
 - **`quote_ok`** (recorded, not enforced) checks the quote against the item's evidence samples
   only (`digest.gate_texts`), never the summarizer's words. `char_cap` does not apply
   (`config.char_cap = null`); the digest has its own cap (`summ_token_cap`).
-- `prompt_version = "comp-v1+digest-v2-<variant>-<render>+sj-v3"`; `config` gains
+- `prompt_version = "comp-v1+digest-v2-<variant>-<render>+sj-v4"`; `config` gains
   `aggregate`, `summarizer`, `source_kind`; `extras.summary` holds the digest diagnostics; item
   rows gain `summary`, `summary_statements`, `summary_evidence`, `summary_truncated`,
   `summary_state`.

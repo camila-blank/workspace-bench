@@ -84,7 +84,7 @@ def test_arith_one_call_per_item_all_positions(tmp_path, monkeypatch):
     assert rows["addmul-000"]["pass"] is False
     assert "summary_evidence" in rows["sign-062"] and "earliest_layer" not in rows["sign-062"]
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v2-blind-extractive+sj-v3"
+    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v2-blind-extractive+sj-v4"
     assert "per_layer_hit_rate" not in r.extras and r.extras["summary"]["n_items_summarized"] == 3
 
     native = ARITH.run(
@@ -201,7 +201,7 @@ def test_chain_any_of_3_all_positions(tmp_path, monkeypatch):
     assert "layer_protocols" not in r.extras and "null_top1_near" not in r.extras
     assert r.extras["null_near"] == 0.0
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v2-blind-extractive+sj-v3"
+    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v2-blind-extractive+sj-v4"
 
     native = CHAIN.run(
         summary_args(

@@ -19,7 +19,7 @@ from wsbench.readouts import Cell, Kind, LoadReport
 from wsbench.registry import JudgeArgs
 
 DIGEST_PROMPT_VERSION = "digest-v2"
-SUMMARY_JUDGE_VERSION = "sj-v3"  # bump on any SUMMARY_NOTE* or family summary-variant edit
+SUMMARY_JUDGE_VERSION = "sj-v4"  # bump on any SUMMARY_NOTE* or family summary-variant edit
 SUMMARY_LAYER = -1  # the sentinel layer of a synthetic summary cell
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "default"

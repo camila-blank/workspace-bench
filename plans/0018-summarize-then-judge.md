@@ -623,3 +623,14 @@ judge call per digest. Synonyms of a stated label ("mom" for homemaker) are deli
 credited: native "inferred" credits them, so that part of the remaining gap is a difference in
 what is measured, recorded for Camila. All other families' judge prompts are unchanged from sj-v2.
 
+**sj-v4 (user_modeling only), replacing sj-v3.** A leniency audit of sj-v3 found 29 of 33
+summary-pass / native-fail items crediting details native had rejected on the identical cell:
+details about other attributes ("divorced *senior*"), and elaborations that change no value (a
+pet's name, "a research station" for "in Antarctica"). The judge read the clause as "the line has
+an extra detail". The lenient credit was also uneven across methods, because ML-NLA's invented
+persona headers drew more of it. sj-v4 writes down native's unwritten test: only a more specific
+value of THIS attribute (or naming an implied value, or generalizing an implicit cue) counts as
+inference. Other-attribute details, value-preserving elaborations, synonyms and paraphrases leave
+a restated value "verbatim_echo". The acceptance check: re-judge, and the remaining
+summary-pass / native-fail items must be few and defensible, with no method-specific skew.
+
