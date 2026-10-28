@@ -401,3 +401,11 @@ asserts the exact set of `PROMPTS` keys. It gains exactly the five new summary-m
 `SUMMARY_NOTE_TOKENS`), which the plan requires in `PROMPTS`. It stays an exact-set check, and
 every native golden assertion is unchanged.
 
+**Sanctioned test edit (implementation), `tests/test_summary_mode_compare.py` `_RandomLLM`:** the
+fake still draws its 8% failure for every call, so other families' random streams are unchanged,
+but it no longer applies that failure to native `brew` schema calls. Native brew needs all 66
+emission cells of an item judged, so at 8% no item was ever decided and the existing
+`n_true + n_false > 0` assertion could not hold. No assertion is weakened.
+`Collapse.row` gains `summary_evidence_where` (the evidence lines' `[L pos]` headers), so agentic
+retention is computable from rows alone.
+

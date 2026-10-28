@@ -706,6 +706,7 @@ class Collapse:
             "summary": self.summaries.get(item_id, ""),
             "summary_statements": self.statements.get(item_id, []),
             "summary_evidence": [ln.text for ln in self.evidence.get(item_id, ())],
+            "summary_evidence_where": [ln.where for ln in self.evidence.get(item_id, ())],
             "summary_truncated": item_id in self.truncated,
             "summary_hierarchical": item_id in self.chunks,
             "summary_chunks": self.chunks.get(item_id, 1),
