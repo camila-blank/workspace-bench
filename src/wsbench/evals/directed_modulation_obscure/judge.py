@@ -226,7 +226,9 @@ def _run_summary(
         matchers = {o: [unicode_word_matcher(f) for f in fs] for o, fs in option_forms(it).items()}
         miss = [L for L in layers if (it["id"], L) not in present]
         unsummarized = it["id"] in col.unsummarized
-        texts = [] if unsummarized else digest.gate_texts(col.cells[it["id"]], col, joined=True)
+        texts = (
+            [] if unsummarized else digest.gate_texts(col.cells[it["id"]], col)
+        )  # tokens one at a time, as native
         hit = cell_hits(texts, matchers)
         row = item_row(it, {o: {digest.SUMMARY_LAYER: [h]} for o, h in hit.items()}, miss)
         row["pass"] = tri_state(row["option_any_hit"][it["gold"]], bool(miss) or unsummarized)

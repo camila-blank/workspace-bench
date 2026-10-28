@@ -273,6 +273,8 @@ def test_compare_runs_end_to_end(runs):
     for root in runs.values():
         rows = cmp.compare(_results(root, "native"), _results(root, "summary"), {})
         for r in rows:
+            if r.get("problems") == ["not comparable: directed_modulation with missing cells"]:
+                continue  # by design: DM rows cannot rebuild the item rule when cells are missing
             assert r["status"] not in ("extractor mismatch", "incomparable"), r
             if "n" in r and r["family"] in cmp.BINARY_RULES:
                 nat = _results(root, "native")[r["family"]]

@@ -779,9 +779,11 @@ def collapse(
         kept, dropped = ground(r, lines_of[item_id], s.max_items)
         col.diag["n_evidence_kept"] += len(kept)
         col.diag["n_evidence_dropped"] += dropped
-        if not kept:
+        if not kept:  # an instrument failure: mark the cached row failed so a rerun re-asks
             col.diag["n_items_all_dropped"] += 1
             col.unsummarized.add(item_id)
+            fp = next(f for i, f, _u in pending if i == item_id)
+            cache.put(f"digest:{item_id}|{layers_tag}", fp, {"result": None, "meta": {"raw": r}})
             continue
         text, evid = render_summary(kept, s.render)
         col.summaries[item_id] = text

@@ -57,7 +57,16 @@ DM = "directed_modulation"
 CHAIN = "chain_intermediates"
 INTROSPECTION = "introspection"
 # config keys that must match between the two runs (everything but the summary stamp)
-SAME_KEYS = ("layers", "scope", "cells", "items", "limit")
+SAME_KEYS = ("layers", "scope", "cells", "items", "limit", "read")
+# families whose instrument is a regex natively: their summary judge_model is the digest model
+REGEX_FAMILIES = MT_FAMILIES | {"directed_modulation_obscure"}
+# per-call chance where the result does not carry one (summary mode: one judged unit per item)
+PER_CALL_CHANCE: dict[str, float] = {
+    "user_modeling": 1 / 6,
+    "conjunctive_association": 1 / 11,
+    "relational_multihop": 1 / 121,
+    "role_bound_association": (1 / 6) ** 3,
+}
 
 
 class ExtractorError(ValueError):
@@ -312,7 +321,16 @@ def retained(
     if not hits:
         return None
     evid = [digest.decode_bpe(e) for r in summ_rows for e in r.get("summary_evidence") or []]
-    return any(span_in(digest.decode_bpe(q), e) for q in hits for e in evid)
+    return any(_in_evidence(digest.decode_bpe(q), e) for q in hits for e in evid)
+
+
+def _in_evidence(quote: str, sample: str) -> bool:
+    """A token-list evidence line (``" | "``-joined) needs a whole token (normalised equality),
+    as the digest's own token gate; a prose sample a ``span_in`` span."""
+    if " | " in sample:
+        want = " ".join(quote.casefold().split())
+        return bool(want) and want in {" ".join(t.casefold().split()) for t in sample.split(" | ")}
+    return span_in(quote, sample)
 
 
 # ---------------------------------------------------------------- pairing
@@ -345,6 +363,13 @@ def check_pair(fam: str, nat: dict, summ: dict) -> list[str]:
     for k in SAME_KEYS:
         if nat["config"].get(k) != summ["config"].get(k):
             probs.append(f"config {k}: {nat['config'].get(k)!r} != {summ['config'].get(k)!r}")
+    if fam not in REGEX_FAMILIES:  # the same LLM judge on both sides
+        for k in ("judge_model", "reasoning"):
+            if nat["config"].get(k) != summ["config"].get(k):
+                probs.append(f"config {k}: {nat['config'].get(k)!r} != {summ['config'].get(k)!r}")
+    if fam == "directed_modulation" and (nat.get("counts") or {}).get("n_missing_cells"):
+        # rows do not say which items had a missing cell, so the item rule cannot be rebuilt
+        probs.append("not comparable: directed_modulation with missing cells")
     return probs
 
 
@@ -445,6 +470,8 @@ def compare(
         summ_rate = sum(b for _a, b in pairs) / n if n else None
         ci = paired_ci(pairs)
         chance = summ.get("numbers", {}).get("chance")
+        if chance is None:
+            chance = PER_CALL_CHANCE.get(fam)
         flags: list[str] = []
         if n >= MIN_N and nat_rate is not None and summ_rate is not None:
             if summ_rate < 0.5 * nat_rate and ci is not None and ci[1] < 0:
