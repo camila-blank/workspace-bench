@@ -46,16 +46,19 @@ def fetch_zip(source: dict[str, Any]) -> bytes:
     path = _cache_dir() / f"{want}.zip"
     if path.exists():
         blob = path.read_bytes()
-    else:
-        url = f"https://github.com/{source['repo']}/raw/{source['commit']}/{source['zip_path']}"
-        with urllib.request.urlopen(url, timeout=120) as r:  # a pinned https URL
-            blob = bytes(r.read())
+        if hashlib.sha256(blob).hexdigest() == want:
+            return blob
+        path.unlink(missing_ok=True)  # a corrupt / partial cache file: drop it and re-fetch once
+    url = f"https://github.com/{source['repo']}/raw/{source['commit']}/{source['zip_path']}"
+    with urllib.request.urlopen(url, timeout=120) as r:  # a pinned https URL
+        blob = bytes(r.read())
     got = hashlib.sha256(blob).hexdigest()
     if got != want:
-        raise SystemExit(f"knowledge_cutoff: nocot zip sha256 {got} != pinned {want}")
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(blob)
+        raise SystemExit(f"knowledge_cutoff: nocot zip sha256 {got} != pinned {want} ({url})")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".tmp.{os.getpid()}")
+    tmp.write_bytes(blob)
+    os.replace(tmp, path)  # atomic: concurrent shards never read a partial zip
     return blob
 
 
