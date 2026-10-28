@@ -504,7 +504,7 @@ def test_retention_per_family():
 
 
 def test_base_pairs_plan_0021():
-    summ_pv = "am-design-v2+summ-c1+digest-v2-blind-extractive+sj-v6"
+    summ_pv = "am-design-v2+summ-c2+digest-v2-blind-extractive+sj-v6"
     nat = _res("am-narrative-v1+am-design-v2", [])
     assert cmp.check_pair(cmp.AGENTIC, nat, _res(summ_pv, [], "summary")) == []
     # the native base is NOT a valid agentic summary base (the digest replaces Stages A/B)
@@ -712,7 +712,7 @@ def test_agentic_compare_end_to_end_with_retention(tmp_path):
 
     nat = _r(cmp.AGENTIC, rows(False), 0.75, 20,
              config={"prompt_version": "am-narrative-v1+am-design-v2"})  # fmt: skip
-    pv = "am-design-v2+summ-c1+digest-v2-blind-extractive+sj-v6"
+    pv = "am-design-v2+summ-c2+digest-v2-blind-extractive+sj-v6"
     summ = _r(cmp.AGENTIC, rows(True), 1.0, 20,
               config={"prompt_version": pv, "aggregate": "summary"})  # fmt: skip
     (row,) = cmp.compare({cmp.AGENTIC: nat}, {cmp.AGENTIC: summ}, {})
