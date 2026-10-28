@@ -14,7 +14,7 @@ LIMIT=${LIMIT:-0}
 PILOT=${PILOT:-0}
 SHARDS=${SHARDS:-8}
 BIN=${BIN:-/root/.cache/ati-venv/bin}
-GATE_DST=${GATE_DST:-$OUT/gate_candidates.json}
+GATE_DST=${GATE_DST:-$OUT/gate_candidates.json}  # pilot / CANDIDATES=1 only
 export PYTHONPATH=src PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1} ANTHROPIC_PROFILE=default
 unset ANTHROPIC_API_KEY
 W="$BIN/wsbench text-inversion"
@@ -53,6 +53,11 @@ log "readouts"
 $W stage=readouts out="$OUT" > /dev/null
 log "judge"
 OUT="$OUT" WSB="$BIN/wsbench" bash scripts/ati_panel_judge.sh > "$OUT/judge.log" 2>&1
-log "gate (candidates mode -> $GATE_DST)"
-$W stage=gate out="$OUT" dst="$GATE_DST" candidates=True
+if [ "$PILOT" = 1 ] || [ "${CANDIDATES:-0}" = 1 ]; then
+  log "gate (candidates mode -> $GATE_DST)"
+  $W stage=gate out="$OUT" dst="$GATE_DST" candidates=True
+else
+  log "gate -> ${DST:-evals/baselines/anti_text_inversion.json}"
+  $W stage=gate out="$OUT" ${DST:+dst="$DST"}
+fi
 log "done"
