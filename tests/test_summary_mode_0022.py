@@ -442,4 +442,5 @@ def test_review_round2_edge_cases(tmp_path):
     assert digest.summary_note(a, None, "basic_readout") == digest.SUMMARY_NOTE
     assert "only one or a few samples" not in digest.SUMMARY_NOTE_NO_RARE
     basis = um.SUMMARY_BASIS.split("Details about")[0]
-    assert "a synonym, translation or demonym" in basis  # synonyms are in the "only if" list
+    assert "same language (a synonym or demonym)" in basis  # synonyms are in the "only if" list
+    assert "translated into another language (for example 猫" in um.SUMMARY_BASIS  # still echo
