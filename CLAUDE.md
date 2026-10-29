@@ -31,8 +31,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   timeouts, process-wide thread-safe RPM pacer (`rpm=`, default 240), `preflight` fail-fast,
   `Spend` tally. Structured Anthropic calls run at `effort: low` on always-thinking models unless
   the family sets `reasoning={"anthropic_effort": "default"|<level>}` (introspection: its
-  source instrument ran at default effort; knowledge_cutoff sets OpenRouter `{"effort": "low"}`); `resolve` applies a family's reasoning only
-  while the judge stays on the family model's route. A failed
+  source instrument ran at default effort; knowledge_cutoff sets OpenRouter `{"effort": "low"}`); `resolve` keeps only the reasoning keys
+  of the route the judge resolves to (`anthropic_effort` on Anthropic, every other key on
+  OpenRouter; plan 0023), so an Opus judge of knowledge_cutoff gets `None`, not `effort: low`. A failed
   call returns `None` and never scores. `stream_json_async` is the primitive, `stream_json`
   wraps it (`temperature` dropped on the Anthropic route); `stream_text[_async]` is agentic's
   free-text Anthropic-only primitive.

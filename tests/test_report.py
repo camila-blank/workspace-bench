@@ -77,6 +77,7 @@ def test_report_json(tmp_path, capsys):
     assert set(d) == {"families", "macro", "floors"}
     assert [f["family"] for f in d["families"]] == ["a", "hal"]
     assert d["families"][0]["numbers"]["metric"] == "pass_rate"
+    assert d["families"][0]["floor_applies"] is True and d["families"][0]["on_family_judge"] is True
     assert d["macro"]["value"] == 0.5 and d["macro"]["families"] == ["a"]
     assert d["macro"]["excluded"] == [{"family": "hal", "reason": "metric"}]
     summary = (tmp_path / "summary.md").read_text()
@@ -127,6 +128,8 @@ def test_floors_and_macro_follow_the_current_judge_not_the_stored_flag(real_fami
     )
     assert floor_applies(bag) and not on_family_judge(bag)
     assert on_family_judge(_res("typo_mt", config={"judge_model": "regex"}))
+    legacy = _res("association", config={"prompt_version": "bank-2026-10-10"})  # no judge_model
+    assert on_family_judge(legacy)  # falls back to the stored flag
     md = markdown_table([old, new], None, floors={"prompt-only": {"association": "0.320"}})
     rows = [ln for ln in md.splitlines() if ln.startswith("| association")]
     assert "0.320" not in rows[0] and "0.320" in rows[1]
