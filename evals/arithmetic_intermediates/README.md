@@ -226,14 +226,15 @@ For each entry, which number(s) does its output present as a computed value?
 
 ## Summary mode
 
-`opts=aggregate=summary` (plan 0020; opt-in, the default stays `aggregate=native`). **The hook:**
+`aggregate=summary` (plan 0020; the default since plan 0024, `opts=aggregate=native` opts out). **The hook:**
 after the cell selection and the missing-item accounting, every cell the item has — every
 position at every layer in the file — goes to ONE passive digest call (`digest.collapse`, spec
 in `docs/summarizer.md` § Item digest), and the item is judged ONCE on that digest.
 
 - **Every cell, forced.** Summary mode forces `cells=all`: the frozen cell is a sweep-picked best
   cell, and summary mode reads every position and layer. An explicit `opts=cells=frozen` with
-  `aggregate=summary` exits 2. `n_expected` / `n_missing` are counted on the real cells before the
+  `aggregate=summary` exits 2; under the summary default, `cells=frozen` needs
+  `opts=cells=frozen,aggregate=native`. `n_expected` / `n_missing` are counted on the real cells before the
   hook, exactly as native `cells=all`, so `require_cells` behaves as native.
 - **Judged unit:** one call per item with `SYSTEM_SUMMARY` and `USER_SUMMARY` below
   (the `USER`'s input is the digest, preceded by the digest note: `SUMMARY_NOTE`, or

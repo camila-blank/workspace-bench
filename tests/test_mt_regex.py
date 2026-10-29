@@ -277,7 +277,17 @@ def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monke
     out = tmp_path / "out"
     example = REPO / "examples/readouts" / f"{name}.jsonl"
     assert (
-        main(["judge", f"family={name}", f"readouts={example}", f"out={out}", "dry_run=True"]) == 0
+        main(
+            [
+                "judge",
+                "opts=aggregate=native",
+                f"family={name}",
+                f"readouts={example}",
+                f"out={out}",
+                "dry_run=True",
+            ]
+        )
+        == 0
     )
     r = read_results(out)
     assert r.value is None and r.config["judge_model"] == "regex"
@@ -296,7 +306,16 @@ def test_cli_scores_the_toy_file_offline(name, tmp_path, monkeypatch):
     out = tmp_path / "out"
     example = REPO / "examples/readouts" / f"{name}.jsonl"
     assert (
-        main(["judge", f"family={name}", f"readouts={example}", f"out={out}", "allow_missing=True"])
+        main(
+            [
+                "judge",
+                "opts=aggregate=native",
+                f"family={name}",
+                f"readouts={example}",
+                f"out={out}",
+                "allow_missing=True",
+            ]
+        )
         == 0
     )
     r = read_results(out)

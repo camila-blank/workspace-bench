@@ -137,7 +137,7 @@ the sections above were measured on the pre-refill bank (kept byte-for-byte in
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode the family
+The default since plan 0024; `opts=aggregate=native` opts out to the any-cell rule above. In summary mode the family
 first selects and accounts for every item's carrier cells (missing cells exactly as native), then
 hands all of an item's cells (every layer × position × sample) to ONE passive digest call
 (`docs/summarizer.md` § Item digest), then scores the digest ONCE: the same matcher, applied to

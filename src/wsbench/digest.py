@@ -1,6 +1,7 @@
-"""Summary mode (``opts=aggregate=summary``): every cell a family reads for an item goes to ONE
-passive digest call, and the family judges that one summary once. Spec: plan 0020 and
-``docs/summarizer.md`` § Item digest."""
+"""Summary mode (``aggregate=summary``, the benchmark default since plan 0024; opt out with
+``opts=aggregate=native``): every cell a family reads for an item goes to ONE passive digest call,
+and the family judges that one summary once. Spec: plan 0020 and ``docs/summarizer.md`` § Item
+digest."""
 
 import dataclasses
 import functools
@@ -235,8 +236,15 @@ class Settings:
         }
 
 
+# the benchmark default (plan 0024): ``runner.parse_opts`` — the entry of every CLI run — fills it
+# in when ``opts=`` does not set ``aggregate``
+DEFAULT_AGGREGATE = "summary"
+
+
 def summary_mode(args: JudgeArgs) -> bool:
-    """``aggregate=summary`` in ``opts=``; ``native`` (the default) is today's behaviour."""
+    """``aggregate=summary`` in ``args.extra``. A family called directly with a hand-built
+    ``JudgeArgs`` and no ``aggregate`` runs its native rule: the benchmark default
+    (:data:`DEFAULT_AGGREGATE`) is set at the entry, ``runner.parse_opts``, not here."""
     mode = args.extra.get("aggregate", "native")
     if mode not in ("native", "summary"):
         fail(f"aggregate={mode!r}: expected native or summary")

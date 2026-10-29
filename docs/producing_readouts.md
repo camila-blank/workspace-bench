@@ -83,6 +83,10 @@ uv run wsbench run all=True readouts_root=outputs/readouts/mylens out=outputs/ju
 uv run wsbench report dir=outputs/judged/mylens
 ```
 
+Every run is in summary mode by default (plan 0024: each item's readouts go to one passive digest,
+judged once; `docs/summarizer.md` § Item digest). Add `opts=aggregate=native` for the per-cell
+rules, into a separate `out=` dir.
+
 ## Or let the repo produce them
 
 `wsbench.produce` is a small producer over Hugging Face transformers, for anyone who has a GPU

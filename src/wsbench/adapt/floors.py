@@ -97,7 +97,9 @@ def judge(model: str, judge_model: str = "claude-opus-5-5") -> dict:
         res_dir = _dir(model) / "results" / f
         wsb = str(Path(sys.executable).with_name("wsbench"))
         cmd = [wsb, "judge", f"family={f}", f"readouts={rd / f'{f}.jsonl'}", f"out={res_dir}",
-               f"judge_model={judge_model}", f"layers={layer}", "allow_missing=True"]  # fmt: skip
+               f"judge_model={judge_model}", f"layers={layer}", "allow_missing=True",
+               # native: these floors sit beside native atlas bundles (plan 0024)
+               "opts=aggregate=native"]  # fmt: skip
         p = subprocess.run(cmd, env=env, check=False, capture_output=True, text=True)
         res_dir.mkdir(parents=True, exist_ok=True)
         (res_dir / "judge.log").write_text(p.stdout + "\n--- stderr ---\n" + p.stderr)
@@ -110,7 +112,8 @@ def judge(model: str, judge_model: str = "claude-opus-5-5") -> dict:
         out[f] = {"rate": num.get("value"), "ci95": num.get("ci95"), "metric": num.get("metric"),
                   "layer": layer, "judge_model": cfg.get("judge_model") or judge_model,
                   "n_items": res.get("n_items"), "counts": res.get("counts"),
-                  "complete": res.get("complete")}  # fmt: skip
+                  "complete": res.get("complete"),
+                  "aggregate": cfg.get("aggregate") or "native"}  # fmt: skip
     if only and (_dir(model) / "floors.json").exists():  # partial re-measure: keep the others
         prev = json.loads((_dir(model) / "floors.json").read_text())
         out = {**prev.get("families", {}), **out}

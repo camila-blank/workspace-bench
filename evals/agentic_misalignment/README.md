@@ -184,7 +184,7 @@ capture time, so a J-lens arm is smaller. Stages B and C are 32 + a few partial 
 
 ## Summary mode (`opts=aggregate=summary`, plan 0021)
 
-Opt-in; the default (`aggregate=native`) is the three-stage judge above, byte-identical. In
+The default since plan 0024; `opts=aggregate=native` opts out to the three-stage judge above. In
 summary mode **the digest replaces Stages A and B**: there is no per-position describer and no
 consolidator. Per item, every selected position (`opts=stride=N`, default 1, as native) × every
 layer in the file (`layers=` restricts, as native) goes to ONE passive digest unit

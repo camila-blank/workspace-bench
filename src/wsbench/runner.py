@@ -1,5 +1,6 @@
 """``wsbench run``: judge several families concurrently, fail-soft, one preflight per model."""
 
+import json
 import os
 import sys
 from collections.abc import Mapping, Sequence
@@ -52,15 +53,37 @@ class RunOptions(Options, Protocol):
 
 def parse_opts(pairs: Sequence[str]) -> dict[str, str]:
     """``opts=KEY=VALUE,...`` -> dict; a malformed pair, or a bad summary-mode option
-    (``aggregate`` / ``summ_*``), is a usage error (exit 2)."""
+    (``aggregate`` / ``summ_*``), is a usage error (exit 2). ``aggregate`` defaults to
+    ``digest.DEFAULT_AGGREGATE`` (summary, plan 0024); ``opts=aggregate=native`` opts out."""
     out: dict[str, str] = {}
     for p in pairs:
         if "=" not in p:
             fail(f"opts= expects KEY=VALUE pairs, got {p!r}")
         k, v = p.split("=", 1)
         out[k.strip()] = v
+    out.setdefault("aggregate", digest.DEFAULT_AGGREGATE)
     digest.validate(out)  # a bad summary-mode option exits 2 before any family starts
     return out
+
+
+def warn_mode_change(out: Path, aggregate: str, family: str) -> None:
+    """Warn (stderr) when ``out`` already holds a ``results.json`` of the other aggregate mode:
+    rerunning a pre-0024 native out dir under the summary default overwrites it family by family,
+    and the macro then drops the native rows that remain (plan 0024)."""
+    prev = out / "results.json"
+    if not prev.exists():
+        return
+    try:
+        old = json.loads(prev.read_text(encoding="utf-8")).get("config", {}).get("aggregate")
+    except (OSError, ValueError):
+        return
+    old = old or "native"
+    if old != aggregate:
+        print(
+            f"warning: {family}: {prev} is an aggregate={old} result; this run is "
+            f"aggregate={aggregate} and overwrites it (use a separate out= dir to keep both)",
+            file=sys.stderr,
+        )
 
 
 def judge_family(
@@ -77,6 +100,8 @@ def judge_family(
     items are its frozen subset (``text_inversion.subset``, which exits for an ungated or stale
     family) and the result is stamped with the scope."""
     items, scope, ati = args.items, "", None
+    if spec.name not in digest.NATIVE_ONLY:  # those run native under either mode
+        warn_mode_change(out, opts.get("aggregate", "native"), spec.name)
     if getattr(args, "anti_text_inversion", False):
         ati = text_inversion.subset_entry(spec.name)
         items, scope = list(ati["ids"]), text_inversion.SCOPE
@@ -298,5 +323,7 @@ def run_manifest(
         "finished": _iso(finished),
         "families": families,
         "judge_overrides": {"flag": args.judge_model, "env": env.get("WSBENCH_JUDGE_MODEL")},
+        # the effective aggregate mode (plan 0024: summary unless opts=aggregate=native)
+        "aggregate": parse_opts(list(getattr(args, "opt", None) or []))["aggregate"],
         "readouts_root": str(readouts_root),
     }

@@ -71,7 +71,8 @@ TOKEN READOUTS:
 
 # Item digest (`aggregate=summary`, plan 0020)
 
-A second, separate summarizer, used only under the opt-in `opts=aggregate=summary`. It is not the
+A second, separate summarizer, used under `aggregate=summary` — the benchmark default since plan
+0024 (`opts=aggregate=native` opts out). It is not the
 per-cell token interpreter above: for one method (a readouts file plus an optional `layers=`
 selection), **every** cell a family reads for an item (every read layer × position × sample, prose
 or token) goes into ONE call, and the family then judges or scores the single digest ONCE. That

@@ -128,7 +128,7 @@ Answer with the letters of your selections and a quote for each; an empty list m
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode, after the
+The default since plan 0024; `opts=aggregate=native` opts out to the any-cell rule above. In summary mode, after the
 region labels and the in-sentence cell selection (missing cells counted exactly as native), every
 in-sentence cell of an item at every layer goes to ONE passive digest call (`docs/summarizer.md`
 § Item digest; token readouts skip the per-cell summarizer), and the judge makes ONE multi-select

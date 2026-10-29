@@ -681,6 +681,7 @@ def test_cli_dry_run_on_example(tmp_path, capsys, monkeypatch):
     rc = main(
         [
             "judge",
+            "opts=aggregate=native",
             "family=agentic_misalignment",
             f"readouts={EXAMPLE}",
             f"out={tmp_path / 'o'}",

@@ -39,4 +39,12 @@ if __name__ == "__main__":
     llm.preflight = lambda model, reasoning: None  # type: ignore[assignment]
     llm._make_client = _client  # type: ignore[assignment]
     llm.api_key = lambda *a, **k: "cache-only"  # type: ignore[assignment]
-    sys.exit(main(["judge", *sys.argv[1:]]))
+    argv = list(sys.argv[1:])
+    # native unless the user chose a mode: the cache being re-scored is a native cache (plan 0024)
+    if not any(x.startswith("opts=") and "aggregate=" in x for x in argv):
+        opts = [x for x in argv if x.startswith("opts=")]
+        if opts:
+            argv[argv.index(opts[0])] = opts[0] + ",aggregate=native"
+        else:
+            argv.append("opts=aggregate=native")
+    sys.exit(main(["judge", *argv]))

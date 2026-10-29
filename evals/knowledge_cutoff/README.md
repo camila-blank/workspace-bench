@@ -227,7 +227,7 @@ Which option is the model about to give as its answer? Give three fields:
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the per-layer judge above, unchanged. Use a separate
+The default since plan 0024; `opts=aggregate=native` opts out to the per-layer judge above. Use a separate
 `out=` dir per mode.
 
 - **Hook.** After the cells are built and accounted for (`n_expected` / `n_missing` exactly as

@@ -246,7 +246,7 @@ retries only failures.
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the per-cell grid above. In summary mode, every read
+The default since plan 0024; `opts=aggregate=native` opts out to the per-cell grid above. In summary mode, every read
 cell of an item (every layer × every token of the last user turn) goes to ONE passive digest call
 (`docs/summarizer.md` § Item digest), after the missing-cell check and the token check. The judge is
 called ONCE per item: the conversation through the last user turn is shown with no `⟦HERE⟧` marker
