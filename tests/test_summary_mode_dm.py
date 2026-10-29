@@ -216,11 +216,14 @@ def _mcdm_judge(system: str, user: str, schema: dict) -> dict:
     lines = digest_lines(user)
     quote = re.sub(r"^\[\w+\] ", "", lines[0])[:12]
     _o, gold = opts[item]
+    cb = "content_bound"  # plan 0025: every pick carries a basis
     if item == "d-plumber":
-        return {"picks": [{"choice": "ABCDEF"[g], "quote": quote} for g in gold]}
+        return {"picks": [{"choice": "ABCDEF"[g], "quote": quote, "basis": cb} for g in gold]}
     if item == "d-none":
-        return {"picks": [{"choice": "A", "quote": quote}]}
-    return {"picks": [{"choice": "ABCDEF"[gold[0]], "quote": "STATEMENT-0"}]}  # gate rejects
+        return {"picks": [{"choice": "A", "quote": quote, "basis": cb}]}
+    return {  # gate rejects
+        "picks": [{"choice": "ABCDEF"[gold[0]], "quote": "STATEMENT-0", "basis": cb}]
+    }
 
 
 def test_mcdm_one_call_per_item_controls_included(tmp_path, monkeypatch):
@@ -267,3 +270,22 @@ def test_mcdm_missing_cell_and_unsummarized(tmp_path, monkeypatch):
     rows = {x["id"]: x for x in r.rows}
     assert rows["d-plumber"]["pass"] is None and rows["d-plumber"]["reason"] == "unjudged"
     assert rows["d-none"]["summary_state"] == "unsummarized" and not r.complete
+
+
+def test_mcdm_summary_needs_every_concept_in_the_one_call(tmp_path, monkeypatch):
+    """Plan 0025 §1: in summary mode the one judge call per item must credit EVERY dictated
+    concept; d-plumber with two of its three concepts credited fails."""
+    registry.FAMILIES.setdefault(mcdm_pkg.SPEC.name, mcdm_pkg.SPEC)
+
+    def partial(system: str, user: str, schema: dict) -> dict:
+        out = _mcdm_judge(system, user, schema)
+        if len(out.get("picks", [])) == 3:  # d-plumber: drop one of its three concepts
+            out = {"picks": out["picks"][:2]}
+        return out
+
+    FakeLLM.install(monkeypatch, partial)
+    pv = mcdm_prompts.PROMPT_VERSION
+    r = mcdm_pkg.SPEC.run(summary_args(MCDM_EX, tmp_path / "p", pv, items=MCDM_IDS))
+    rows = {x["id"]: x for x in r.rows}
+    assert rows["d-plumber"]["pass"] is False and rows["d-plumber"]["any_concept"] is True
+    assert rows["d-plumber"]["concept_recall"] == pytest.approx(2 / 3)
