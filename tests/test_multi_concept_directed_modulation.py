@@ -405,3 +405,24 @@ def test_verdict_basis_and_the_all_concepts_rule():
         item, (options, [0, 1]), set(), regions, None, one, [], set(), set(), [44]
     )
     assert row["pass"] is False and row["any_concept"] is True and row["concept_recall"] == 0.5
+
+
+def test_invalid_basis_over_selection_and_per_pick_counts():
+    """Review fixes (plan 0025 §1): a missing basis counts in n_invalid; more than three
+    verified picks void the call; a concept picked as narration then as content is credited and
+    its basis_of is content_bound, while pick_bases keeps both picks."""
+    options = ["violin", "jar of honey", "x", "y", "z", "w"]
+    readout = "I was asked about a violin. A violin plays. Honey jar. x y z w"
+    v = judge.verdict({"picks": [{"choice": "A", "quote": "violin plays"}]}, options, [0], readout)
+    assert v["n_invalid"] == 1 and v["own"] == []
+    allsix = [{"choice": c, "quote": "x y z w", "basis": "content_bound"} for c in "ABCDEF"]
+    v = judge.verdict({"picks": allsix}, options, [0, 1], readout)
+    assert v["kind"] == "over_selected" and v["own"] == [] and len(v["pick_bases"]) == 6
+    twice = [
+        {"choice": "A", "quote": "asked about a violin", "basis": "instruction_narration"},
+        {"choice": "A", "quote": "A violin plays", "basis": "content_bound"},
+    ]
+    v = judge.verdict({"picks": twice}, options, [0], readout)
+    assert v["own"] == ["violin"] and v["basis_of"] == {"violin": "content_bound"}
+    assert v["pick_bases"] == [["violin", "instruction_narration"], ["violin", "content_bound"]]
+    assert v["narrated"] == []

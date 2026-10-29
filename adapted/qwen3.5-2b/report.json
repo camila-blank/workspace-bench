@@ -287,7 +287,7 @@
   "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
  },
  "code": {
-  "git": "3eef8a8+dirty",
+  "git": "ed3d9e9+dirty",
   "adapt_sha256": "5c9d376a43e8ab45"
  },
  "read_band": [],

@@ -31,6 +31,8 @@ from .options import option_sets, partner_of
 from .prompts import BASES, DIGEST_TASK_NOTE, PROMPT_VERSION, SCHEMA, SYSTEM, render_user
 from .regions import Region, label_cells
 
+MAX_PICKS = 3  # an item dictates at most three concepts; more verified picks void the call
+
 NAME = "multi_concept_directed_modulation"
 CHANCE_LABEL = (
     "no analytic floor (multi-select over a frozen candidate list); the measured floors are "
@@ -50,12 +52,16 @@ def verdict(
     ``content_bound`` (plan 0025); ``uncredited`` the dictated concepts picked with another basis
     (``narrated`` / ``incidental`` say which); ``false`` the other candidates the readout was said
     to name, whatever the basis. ``basis_of`` maps each verified pick to its basis (a missing or
-    unknown basis is ``invalid`` and never credits). ``kind``: ``hit`` / ``uncredited`` (dictated
-    picks, none as content) / ``false_pick`` / ``none`` / ``invalid`` (no ``picks`` list) /
+    unknown basis is ``invalid``, counts in ``n_invalid`` and never credits; ``pick_bases`` lists
+    every verified pick as [concept, basis]). A call with more than ``MAX_PICKS`` verified picks
+    is ``over_selected``: nothing in it credits (a judge selecting every option would otherwise
+    pass every item). ``kind``: ``hit`` / ``uncredited`` (dictated picks, none as content) /
+    ``false_pick`` / ``none`` / ``invalid`` (no ``picks`` list) / ``over_selected`` /
     ``unavailable`` (no answer; unjudged). Summary mode passes ``gate`` (``digest.gate_texts``):
     the quote must be inside ONE of those samples."""
     empty: dict[str, Any] = {"own": [], "false": [], "uncredited": [], "narrated": [],
-                             "incidental": [], "basis_of": {}, "credited_quotes": []}  # fmt: skip
+                             "incidental": [], "basis_of": {}, "credited_quotes": [],
+                             "pick_bases": []}  # fmt: skip
     if res is None:
         return {"judged": False, "kind": "unavailable", **empty}
     picks = res.get("picks")
@@ -68,6 +74,7 @@ def verdict(
     incidental: list[str] = []
     basis_of: dict[str, str] = {}
     credited_quotes: list[str] = []
+    pick_bases: list[list[str]] = []
     n_unverified = n_invalid = 0
     for p in picks:
         idx = letter_index(p.get("choice") if isinstance(p, dict) else None, options)
@@ -81,9 +88,13 @@ def verdict(
             n_unverified += 1
             continue
         basis = p.get("basis") if isinstance(p, dict) else None
-        basis = basis if basis in BASES else "invalid"
+        if basis not in BASES:
+            basis = "invalid"
+            n_invalid += 1
         concept = options[idx]
-        basis_of.setdefault(concept, basis)
+        pick_bases.append([concept, basis])
+        if basis_of.get(concept) != "content_bound":  # a content pick of a concept wins
+            basis_of[concept] = basis
         if idx not in gold:
             target = false
         elif basis == "content_bound":
@@ -97,6 +108,10 @@ def verdict(
         if concept not in target:
             target.append(concept)
     uncredited = [c for c in uncredited if c not in own]  # credited by another pick wins
+    if len(pick_bases) > MAX_PICKS:
+        return {"judged": True, "kind": "over_selected", **empty, "pick_bases": pick_bases,
+                "false": false, "n_unverified": n_unverified, "n_invalid": n_invalid,
+                "picks": picks}  # fmt: skip
     kind = "hit" if own else ("uncredited" if uncredited else ("false_pick" if false else "none"))
     return {
         "judged": True,
@@ -108,6 +123,7 @@ def verdict(
         "incidental": [c for c in incidental if c not in own],
         "basis_of": basis_of,
         "credited_quotes": credited_quotes,
+        "pick_bases": pick_bases,
         "n_unverified": n_unverified,
         "n_invalid": n_invalid,
         "picks": picks,
@@ -213,7 +229,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                 Call(
                     key=f"{c.id}|L{c.layer:03d}|p{c.pos}",
                     system=SYSTEM,
-                    user=render_user(readout, opts),
+                    user=render_user(readout, opts, tokens=rep.kind == "tokens"),
                     meta={"item": c.id, "layer": c.layer, "pos": c.pos},
                 )
             )
@@ -333,7 +349,7 @@ def _rule_extras(
     concepts_of = {r["id"]: set(r["concepts"]) for r in rows}
     by_basis: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for v in verdicts:
-        for concept, basis in (v.get("basis_of") or {}).items():
+        for concept, basis in v.get("pick_bases") or []:
             if concept in concepts_of.get(v["item"], set()):
                 role = "dictated"
             elif concept in partner_concepts.get(v["item"], set()):
