@@ -229,7 +229,8 @@ def test_decode_token_byte_level_bpe():
     assert decode_token("æĹ¥æľ¬èªŀ") == "日本語"
     assert decode_token("Ġlanguages") == " languages"
     assert decode_token(" AI") == " AI"  # Ġ already shown as a space by the producer
-    assert decode_token("ðŁı") == "�"  # part of a character -> U+FFFD
+    assert decode_token("ðŁı") == "ðŁı"  # part of a character: kept as written
+    assert decode_token("café") == "café"  # already decoded text: kept, not mangled
 
 
 def test_token_cells_are_decoded_once_at_load(tmp_path):

@@ -175,8 +175,7 @@ def coverage(cells: list, evidence: list[str]) -> float | None:
     for c in cells:
         samples = c.samples if c.samples is not None else [" ".join(c.tokens or ())]
         for s in samples:
-            text = digest.decode_bpe(s) if c.tokens is not None else s
-            for w in _words(text):
+            for w in _words(s):  # token cells arrive decoded by the loader
                 n_samples[w] += 1
                 layers[w].add(c.layer)
     recurring = {w for w, n in n_samples.items() if n >= 3 and len(layers[w]) >= 2}
@@ -203,7 +202,7 @@ def selection_bias(cells: list, row: dict) -> float | None:
         if c.samples is not None:
             samples.extend(s for s in c.samples if s.strip())
         else:
-            samples.append(" | ".join(digest.decode_bpe(t) for t in c.tokens or ()))
+            samples.append(" | ".join(c.tokens or ()))
 
     def has(s: str) -> bool:
         return any(span_in(t, s) for t in targets)

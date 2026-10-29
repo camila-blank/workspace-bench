@@ -21,8 +21,13 @@ _U2B = {c: b for b, c in _bytes_to_unicode().items()}
 
 def decode_token(tok: str) -> str:
     """Decodes a byte-level BPE vocabulary string to text, char by char: byte-table chars back
-    to their byte, anything else (e.g. the space that replaced ``Ġ``) to its own UTF-8 bytes.
-    Bytes that are not valid UTF-8 on their own (a token holding part of a character) become
-    U+FFFD. Decoding text that is already decoded mangles Latin-1 letters, so decode once."""
-    raw = b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
-    return raw.decode("utf-8", errors="replace")
+    to their byte, anything else (e.g. the space that replaced ``Ġ``) to its own UTF-8 bytes;
+    ``▁`` reads as a space. A string whose bytes are not valid UTF-8 (text that is already
+    decoded, like ``café``, or a token holding part of a character) is kept as written, with
+    ``Ġ``/``Ċ`` rendered — so a producer that writes decoded text is not mangled."""
+    tok = tok.replace("▁", " ")
+    try:
+        raw = b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return tok.replace("Ġ", " ").replace("Ċ", "\n")

@@ -86,9 +86,10 @@ removes every pass@layer / pass@position / pass@sample rule. Code: `wsbench/dige
   with the family judge pinned.
 - **Bundle.** Cells in `(layer, pos)` order, one `[L<layer> pos <index>]` header each (never the
   read-site token text: the note-taker must not see the prompt). Prose: one `- <sample>` line per
-  sample, whitespace collapsed. Token lists: one line per cell, tokens best first, byte-level BPE
-  decoded (`summ_decode=false` keeps the native `Ġ`-to-space rendering), joined by ` | `, no
-  scores.
+  sample, whitespace collapsed. Token lists: one line per cell, tokens best first, as the loader decoded
+  them (`wsbench.bpe`; the bundle does not decode again), joined by ` | `, no scores.
+  `summ_decode=false` is retired: since 2026-10-29 native judges see decoded tokens too, so the
+  plan-0020 decoding confound it separated no longer exists.
 - **Cap** `summ_token_cap` (default 150,000 estimated tokens: ASCII chars / 4 +
   one per non-ASCII char): over it, sample 1 of every cell, then later samples round-robin; if
   sample 1 alone is over, an even per-layer stride (every layer keeps its first cell). Truncated

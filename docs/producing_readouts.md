@@ -125,8 +125,9 @@ byte-level BPE strings with `Ġ`/`▁` shown as a space (`" led"`, and `"çļĦ�
 `wsbench.readouts.load_readouts` decodes each of those to text once, on load
 (`wsbench.bpe.decode_token`: `"çļĦç»ĵæŀľ"` -> `"的结果"`, `"Ċ"` -> `"\n"`), so every summarizer,
 judge and regex sees text; until 2026-10-27 only hallucination decoded, and non-ASCII tokens
-reached every other family as mojibake. Write the vocabulary strings, not decoded text: decoding
-text that is already decoded mangles Latin-1 letters.
+reached every other family as mojibake. Write the vocabulary strings. A string whose bytes are not
+valid UTF-8 (already-decoded text such as `"café"`, or a token holding part of a character) is
+kept as written, so decoded text survives, but it is the vocabulary strings that are tested.
 `pos` is the index the plan resolves: absolute, except the two rules that count from the end
 because their banks and judges do — `offset_from_end` (some multihop items) and `all_from_end`
 (arithmetic intermediates) — whose rows carry the negative offset (`-8`). A single-layer lens reads at its trained layer whatever the

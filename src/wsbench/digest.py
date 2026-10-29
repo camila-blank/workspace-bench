@@ -199,6 +199,15 @@ def _choice(args: JudgeArgs, key: str, allowed: Sequence[str], default: str) -> 
     return v
 
 
+def _decode_opt(args: JudgeArgs) -> bool:
+    """``summ_decode`` is retired as an ablation: token readouts are decoded once at load
+    (``wsbench.bpe``), so native judges see decoded text too and ``false`` has nothing to undo.
+    ``true`` stays accepted, and stays in the settings fingerprint, so caches still hit."""
+    if args.extra.get("summ_decode", "true") != "true":
+        fail("summ_decode=false is retired: token readouts are decoded at load (wsbench.bpe)")
+    return True
+
+
 def _int_opt(args: JudgeArgs, key: str, default: int) -> int:
     raw = args.extra.get(key)
     if raw is None:
@@ -232,7 +241,7 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
         render=_choice(args, "summ_render", RENDERS, DEFAULT_RENDER),
         max_items=_int_opt(args, "summ_max", DEFAULT_MAX_ITEMS),
         token_cap=_int_opt(args, "summ_token_cap", DEFAULT_TOKEN_CAP),
-        decode=_choice(args, "summ_decode", ("true", "false"), "true") == "true",
+        decode=_decode_opt(args),
         overflow=_choice(args, "summ_overflow", OVERFLOWS, "stride"),
         fallback=_choice(args, "summ_fallback", ("none", "default"), "none"),
         concurrency=_int_opt(args, "summ_concurrency", 0) or None
@@ -353,38 +362,6 @@ def as_prose(rep: LoadReport) -> Kind | None:
     return kind
 
 
-# ---------------------------------------------------------------- byte-level BPE
-
-
-def _bytes_to_unicode() -> dict[int, str]:
-    """GPT-2 byte-level BPE table (Qwen's tokenizer uses the same): byte -> printable char."""
-    bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1))
-    bs += list(range(ord("®"), ord("ÿ") + 1))
-    cs = bs[:]
-    n = 0
-    for b in range(256):
-        if b not in bs:
-            bs.append(b)
-            cs.append(256 + n)
-            n += 1
-    return {b: chr(c) for b, c in zip(bs, cs, strict=True)}
-
-
-_U2B = {c: b for b, c in _bytes_to_unicode().items()}
-
-
-def decode_bpe(tok: str) -> str:
-    """A byte-level BPE vocabulary string as text (byte-table mojibake -> ``哪一个``, ``Ġ``/``▁``
-    -> a space). A string that does not decode to valid UTF-8 (already-decoded text, a split
-    multi-byte character) is kept as written, with ``Ġ``/``Ċ`` rendered."""
-    tok = tok.replace("▁", " ")
-    try:
-        raw = b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return tok.replace("Ġ", " ").replace("Ċ", "\n")
-
-
 # ---------------------------------------------------------------- bundle
 
 TOKEN_SEP = " | "
@@ -410,16 +387,10 @@ def _one_line(s: str) -> str:
     return " ".join(s.split())
 
 
-def native_token(tok: str) -> str:
-    """A token as the native judges see it (``Ġ``/``▁`` -> a space, bytes left encoded)."""
-    return tok.replace("Ġ", " ").replace("▁", " ").replace("Ċ", "\n")
-
-
 def _group(cell: Cell, decode: bool = True) -> _Group:
     header = f"[L{cell.layer} pos {cell.pos}]"
-    if cell.tokens is not None:
-        dec = decode_bpe if decode else native_token
-        toks = tuple(t for t in (_one_line(dec(t)) for t in cell.tokens) if t)
+    if cell.tokens is not None:  # decoded to text by the loader (wsbench.bpe); not again here
+        toks = tuple(t for t in (_one_line(t) for t in cell.tokens) if t)
         lines = (Line(TOKEN_SEP.join(toks), toks, header),) if toks else ()
         return _Group(header, cell.layer, lines)
     samples = (Line(_one_line(s), None, header) for s in (cell.samples or ()) if s.strip())
