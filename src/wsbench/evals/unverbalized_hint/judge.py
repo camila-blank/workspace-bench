@@ -17,6 +17,7 @@ from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend
 from wsbench.mcjudge import Call, Preflighter, run_calls, with_readout_count
 from wsbench.readouts import Cell, expected_cells, load_readouts, missing_cells
+from wsbench.readplan import GRID
 from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 
@@ -488,7 +489,14 @@ def run(args: JudgeArgs) -> FamilyResult:
     positions = {it["id"]: [int(x) for x in it["positions"]] for it in twin_items}
     cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers, positions=positions)
     # a single-layer lens (NLA-RL, L42) is complete over its own layer
-    layers = args.layers if args.layers is not None else rep.layers
+    # a layer-locked lens (one layer, e.g. NLA-RL at L42) is judged on its own layer; any other
+    # file is held to the full GRID, so a file missing a grid layer reports missing cells
+    if args.layers is not None:
+        layers = args.layers
+    elif len(rep.layers) == 1:
+        layers = list(rep.layers)
+    else:
+        layers = list(GRID)
     expected = expected_cells(positions, layers)
     missing = missing_cells(cells, expected)
     require_cells(NAME, missing, len(expected), args)
