@@ -713,13 +713,16 @@ def _cjk_int(t: str) -> int | None:
             return None
         rest = _cjk_int(lo) if lo else 0
         return None if rest is None else h * 10000 + rest
-    total, digit = 0, None
+    total, digit, last_unit = 0, None, 10**9
     for ch in t:
         if ch in _CJK_DIGIT:
             if digit is not None and digit != 0:
                 return None  # two digits in a row ("三四") is not one number
             digit = _CJK_DIGIT[ch]
         elif ch in _CJK_UNIT:
+            if _CJK_UNIT[ch] >= last_unit:
+                return None  # units must fall ("一十一十", "百百" are not numbers)
+            last_unit = _CJK_UNIT[ch]
             total += (1 if digit is None else digit) * _CJK_UNIT[ch]
             digit = None
         else:
@@ -745,6 +748,8 @@ def number_value(key: str) -> float | None:
         return -v if neg else v
     fullwidth = "".join(chr(0xFF10 + d) for d in range(10)) + "\uff0c\uff0e\u2212"
     t = k.translate(str.maketrans(fullwidth, "0123456789,.-"))
+    if "," in t and not re.fullmatch(r"-?\d{1,3}(,\d{3})+(\.\d+)?", t.lstrip("+")):
+        return None  # a comma is a thousands separator only
     try:
         return float(t.replace(",", ""))
     except ValueError:
@@ -760,17 +765,18 @@ def _number_key_ok(key: str, evidence: str) -> bool:
     if k[0] in _CJK_NUMERALS:
         pat = rf"(?<![{_CJK_NUMERALS}]){re.escape(k)}(?![{_CJK_NUMERALS}])"
         return re.search(pat, evidence) is not None
-    before = rf"(?<![{_D}])(?<![{_D}][.\uff0e])"
-    after = rf"(?![{_D}])(?![.\uff0e][{_D}])"
+    before = rf"(?<![{_D}])(?<![{_D}][.,\uff0e\uff0c])"
+    after = rf"(?![{_D}])(?![.,\uff0e\uff0c][{_D}])"
     return re.search(before + re.escape(k) + after, evidence) is not None
 
 
-def has_entries(result: object) -> bool:
-    """A parsed digest result reports something: either tier is non-empty (plan 0022)."""
+def has_entries(result: object, max_rare: int = 1) -> bool:
+    """A parsed digest result reports something: ``items`` is non-empty, or ``rare`` is and the
+    run reads the rare tier (``max_rare > 0``; plan 0022)."""
     if not isinstance(result, dict):
         return False
     rare = result.get("rare")
-    return bool(result.get("items")) or (isinstance(rare, list) and bool(rare))
+    return bool(result.get("items")) or (max_rare > 0 and isinstance(rare, list) and bool(rare))
 
 
 def caps(s: Settings) -> dict[str, Any]:
@@ -1100,7 +1106,7 @@ def collapse(
         if not isinstance(r, dict) or not isinstance(r.get("items"), list):
             col.unsummarized.add(item_id)
             continue
-        if not has_entries(r):
+        if not has_entries(r, s.max_rare):
             col.diag["n_digest_zero_nonempty"] += 1
             col.empty.add(item_id)
             continue
@@ -1440,14 +1446,14 @@ def _collapse_hierarchical(
                 if not isinstance(r, dict) or not isinstance(r.get("items"), list):
                     failed = "failed"
                     break
-                if not has_entries(r):
+                if not has_entries(r, s.max_rare):
                     continue  # a chunk with nothing to report contributes nothing
-                any_items = True
                 chunk_lines = [ln for g in gs for ln in g.lines]
                 nds = [0]
                 kept, dropped = ground(r, chunk_lines, numeral_drops=nds, **caps(s))
                 if not kept and not dropped and nds[0]:
                     continue  # no number in this chunk: contributes nothing
+                any_items = True
                 if not kept:  # every span failed: invalidate the cached chunk so a rerun re-asks
                     ckey = f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}"
                     cache.put(ckey, chunk_fp[ckey], {"result": None, "meta": {"raw": r}})
@@ -1513,7 +1519,7 @@ def _collapse_hierarchical(
         if not isinstance(r, dict) or not isinstance(r.get("items"), list):
             col.unsummarized.add(i)
             continue
-        if not has_entries(r):
+        if not has_entries(r, s.max_rare):
             col.diag["n_digest_zero_nonempty"] += 1
             col.empty.add(i)
             continue

@@ -379,3 +379,51 @@ def test_hierarchical_fingerprint_moves_with_rare_and_numbers(tmp_path, monkeypa
     _collapse(tmp_path, fam, by_item, summ_rare="2")
     _collapse(tmp_path, fam, by_item, summ_numbers="3")
     assert len(calls) == 3
+
+
+def test_review_round1_edge_cases(tmp_path, monkeypatch, scripted):
+    # rare-only reply with the rare tier off is an empty digest, not an instrument failure
+    _seen, replies = scripted
+    replies["only rare"] = {"items": [], "rare": [_entry("only rare 7", "7")]}
+    col = _collapse(tmp_path, "fam", {"a": [_prose("a", 20, 1, "only rare 7")]}, summ_rare="0")
+    assert col.empty == {"a"} and not col.unsummarized
+    assert not digest.has_entries({"items": [], "rare": [_entry("x")]}, 0)
+    # number keys: a comma is a digit boundary; malformed numerals have no value
+    assert not digest._number_key_ok("1", "total 1,234 here")
+    assert digest._number_key_ok("1,234", "total 1,234 here")
+    for bad in ("1,2,3", "一十一十", "百百"):
+        assert digest.number_value(bad) is None, bad
+    assert digest.number_value("一百二十三") == 123
+
+
+def test_hierarchical_numeral_only_chunks_are_empty_without_a_final_call(tmp_path, monkeypatch):
+    fam = "test_0022_hier_num"
+    monkeypatch.setitem(
+        digest.FAMILY_DEFAULTS,
+        fam,
+        {
+            "summ_overflow": "hierarchical",
+            "summ_token_cap": "1000",
+            "summ_numbers": "5",
+            "summ_rare": "0",
+        },
+    )
+    users: list[str] = []
+
+    def stream_json(prompts, *, on_result, **_kw):
+        for i, (_s, user) in enumerate(prompts):
+            users.append(user)
+            lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+            on_result(i, {"items": [_entry(ln, "words") for ln in lines[:1]], "rare": []})
+        return Spend()
+
+    monkeypatch.setattr(llm, "count_tokens", lambda m, p, concurrency=8: [len(u) for _s, u in p])
+    monkeypatch.setattr(llm, "stream_json", stream_json)
+    cells = [
+        Cell("a", 20 + 4 * L, p, (f"words only L{L} p{p} " + "x" * 40,), None, None, None)
+        for L in range(6)
+        for p in range(3)
+    ]
+    col = _collapse(tmp_path, fam, {"a": cells})
+    assert col.empty == {"a"} and not col.unsummarized
+    assert all(u.strip() != "READOUTS:" for u in users)  # no final call on an empty union

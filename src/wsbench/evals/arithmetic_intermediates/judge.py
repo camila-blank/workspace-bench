@@ -120,7 +120,7 @@ def verdict(
     ``cross`` = the fraction of the item's null set whose intermediate some kept value hits.
     ``text`` may be a list of samples (summary mode: ``digest.gate_texts``): a value is then
     verified inside ONE sample, never across two. Summary mode passes ``max_values`` (the
-    numbers digest's five) and ``keys`` (its number keys, plan 0022): a value is then kept only
+    summary cap, ten) and ``keys`` (its number keys, plan 0022): a value is then kept only
     when it equals one key's value (``digest.key_values``); the quote never grants membership."""
     texts = [text] if isinstance(text, str) else list(text)
     if res is None:
