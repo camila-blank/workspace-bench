@@ -85,3 +85,16 @@ def test_report_json(tmp_path, capsys):
     assert main(["report", f"dir={tmp_path}"]) == 0
     out = capsys.readouterr().out
     assert "| a |" in out and "Not in macro:" in out and "wrote" in out
+
+
+def test_floors_only_beside_rows_on_the_familys_own_judge():
+    """Plan 0023: every frozen floor was measured by the family's judge, so a row judged by an
+    override (pinned = no) gets ``—`` in the floor columns and the legend says why."""
+    floors = {"prompt-only": {"pin": "0.300", "over": "0.300"}}
+    rs = [_res("pin"), _res("over", pinned_instrument=False)]
+    md = markdown_table(rs, None, floors=floors)
+    rows = {ln.split("|")[1].strip(): ln for ln in md.splitlines() if ln.startswith("|")}
+    assert "| 0.300 |" in rows["pin"]
+    assert "| — |" in rows["over"] and "0.300" not in rows["over"]
+    assert "Floors are drawn only beside rows judged by the family's own judge" in md
+    assert "Floors are drawn only" not in markdown_table([_res("pin")], None, floors=floors)

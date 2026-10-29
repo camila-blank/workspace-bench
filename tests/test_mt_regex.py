@@ -10,7 +10,7 @@ import pytest
 from wsbench import llm, registry
 from wsbench.banks import load_bank
 from wsbench.cli import main
-from wsbench.judge_config import JudgeConfig, resolve
+from wsbench.judge_config import DEFAULT_JUDGE, JudgeConfig, resolve
 from wsbench.multitoken import family as fam
 from wsbench.multitoken import regex
 from wsbench.multitoken.regex import SCORER_VERSION, SUMMARIZED_SCORER_VERSION, ScoredUnit
@@ -218,7 +218,7 @@ def test_run_regex_tokens_and_the_language_unit(tmp_path, fake_llm, monkeypatch)
     assert row["pass"] is True and row["passing_layers"] == [24]
     assert r.extras["passing_layers_by_source"] == {"bag_only": 1}
     assert r.config["prompt_version"] == SUMMARIZED_SCORER_VERSION
-    assert r.config["judge_model"] == "google/gemini-3.8-flash" and r.pinned_instrument
+    assert r.config["judge_model"] == DEFAULT_JUDGE and r.pinned_instrument
     prose = tmp_path / "p.jsonl"
     prose.write_text(
         json.dumps({"id": it["id"], "layer": 20, "pos": 3, "samples": [concept]}) + "\n"
@@ -339,7 +339,7 @@ def test_tokens_are_summarized_then_matched(tmp_path, fake_llm, monkeypatch):
     assert r.extras["n_calls"] == 2 and len(fake.calls) == 2
     assert r.config["prompt_version"] == SUMMARIZED_SCORER_VERSION
     assert r.config["summarizer"] == "interp-v1-decoded"
-    assert r.config["judge_model"].startswith("google/")
+    assert r.config["judge_model"] == DEFAULT_JUDGE  # the summarizer follows the judge
     assert r.pinned_instrument and r.counts["n_unjudged_cells"] == 0
     # cached: the same bags in the same out dir -> no call, same verdicts
     r2 = fam.run_regex(_args(path, out, items=[it["id"]]), name="multilingual_mt")

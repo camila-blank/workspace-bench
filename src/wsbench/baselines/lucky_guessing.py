@@ -628,15 +628,26 @@ def freeze(run_dir: Path, dst: Path = FROZEN) -> dict[str, Any]:
 
 def floors(dst: Path = FROZEN) -> dict[str, dict[str, Any]]:
     """The frozen lucky-guessing entries whose ``instrument`` matches the family's current judge
-    prompt version; stale entries are dropped (a changed instrument needs a re-measured floor)."""
+    prompt version AND whose guesser ``model`` is the family's judge (the model-free uniform
+    variant passes); stale entries are dropped, so a changed instrument or judge needs a
+    re-measured floor (plan 0023)."""
     if not dst.exists():
         return {}
+    from wsbench.baselines.prompt_only import judge_models
+
     versions = instrument_versions()
+    models = judge_models()
     frozen = json.loads(dst.read_text(encoding="utf-8"))
     out: dict[str, dict[str, Any]] = {}
     for fam, variants in frozen.items():
         current = versions.get(fam)
-        live = {v: e for v, e in variants.items() if current and e.get("instrument") == current}
+        live = {
+            v: e
+            for v, e in variants.items()
+            if current
+            and e.get("instrument") == current
+            and (v == "uniform" or e.get("model") == models.get(fam))
+        }
         if live:
             out[fam] = live
     return out
