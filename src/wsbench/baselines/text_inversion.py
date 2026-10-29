@@ -528,7 +528,8 @@ def draw_verdicts(results_path: Path) -> dict[str, bool | None]:
             s = r.get("score")
             v = None if s is None or not r.get("judged", True) else s >= BUGGY_PASS_SCORE
         elif fam == "directed_modulation":
-            # directed_modulation/score.py STRICT: gold picked AND engaged as content
+            # directed_modulation/score.py present_hit (plan 0028): gold picked as content or
+            # instruction narration
             ok = r.get("pick") == "gold" and r.get("basis") in (  # plan 0028: present
                 "content_bound",
                 "instruction_narration",

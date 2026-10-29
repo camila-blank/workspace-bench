@@ -373,3 +373,13 @@ def test_all_blank_item_fails_rather_than_vanishing(family, tmp_path, monkeypatc
     )
     r = read_results(out)
     assert r.value == 0.0 and r.extras["n_items_decided"] == 1 and fake.calls == []
+
+
+def test_judge_calls_keyed_by_judge_prompt_version():
+    """Plan 0028: DM's judge cache key is unchanged (dm-2026-09-16); the instrument carries
+    +present."""
+    from wsbench.evals.directed_modulation import judge as dmj
+
+    src = __import__("inspect").getsource(dmj)
+    assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
+    assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29"
