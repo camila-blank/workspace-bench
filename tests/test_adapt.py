@@ -76,8 +76,7 @@ def test_every_gated_family_builds_questions_for_its_bank():
         assert all(a.messages or a.prompt for a in asks), name
 
 
-# brew needs global-workspace + the Qwen3.6 tokenizer (not offline); smoked by hand 2026-10-19
-@pytest.mark.parametrize("family", sorted(set(GENERATORS) - {"brew_intermediates"}))
+@pytest.mark.parametrize("family", sorted(GENERATORS))
 def test_generators_lint_clean_at_every_tier(family):
     for tier in GENERATORS[family].tiers:
         items = generate(family, tier.name, 40, 0, set())

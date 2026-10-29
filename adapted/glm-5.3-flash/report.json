@@ -232,20 +232,6 @@
    "target": 27,
    "change": "layers remapped to [31, 37, 39, 42]"
   },
-  "brew_intermediates": {
-   "target": 100,
-   "n_original": 100,
-   "n_original_gated": 100,
-   "n_original_pass": 1,
-   "n_items": 0,
-   "n_new": 0,
-   "n_candidates_gated": 0,
-   "change": "original items only",
-   "freeze_notes": [
-    "read cells re-derived in the subject's render (0 cells, 0 Qwen cross-check mismatches, 1 items without exact cells dropped)"
-   ],
-   "status": "untried"
-  },
   "conjunctive_association": {
    "target": 100,
    "n_original": 100,

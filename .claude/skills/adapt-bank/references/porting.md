@@ -29,7 +29,6 @@
   token index carries over unchanged:
   - multihop `readout.offsets`
   - mt `probe_token_lens`
-  - brew `eval_positions`
   - jailbreak `read.tokens`
   - multi_concept_directed_modulation `last_n 12`
 
@@ -38,15 +37,12 @@
   - `probe_token_lens` (count = min over {s, lower, title} × {bare, leading space}). Then drop
     items whose required unit has no multi-token form left.
   - the multihop `offsets` (`[-2]` when the final token is a bare space)
-  - brew `eval_positions`: done at freeze by `adapt/brew_port.py` (reproduces the frozen Qwen
-    cells 100/100 on the Qwen3.6 tokenizer; Gemma's empty `<|channel>thought\n<channel|>` block
-    plays `</think>`; ChatML without a think block: emit_asst = the `assistant` role token)
   - jailbreak `read.{span, n_tokens, tokens, positions}` (GW c3ff939c `port_jailbreak`)
   - `last_n 12` → the sentence's own token count
   - user_modeling's `from_last_sentence_start` rule, which matches literal `<|im_start|>` /
     `<|im_end|>` and silently falls back to every token. Alias the subject's turn markers.
   - relational `BLANK_TOKEN "'s"`
-- Gemma has no `<think>` block. The arithmetic cells and brew emission offsets assume Qwen's
+- Gemma has no `<think>` block. The arithmetic cells assume Qwen's
   template tail, so re-derive them.
 
 ## Judging an adapted bank
@@ -145,7 +141,7 @@ or keep only `plain` items and report the count.
   works. `'s` is one token: relational unchanged.
 - The template injects a default system prompt ("... no access to any functions.
   <functions></functions>") when none is given, and has NO think block: every offset counted
-  from the end of a Qwen chat render (arithmetic `cell.pos`, brew emissions) moves by the 4-token
+  from the end of a Qwen chat render (arithmetic `cell.pos`) moves by the 4-token
   `<think>\n\n</think>\n\n` tail. Re-derive per item from the OLMo render, never by a constant.
 - Re-stamp with the OLMo tokenizer: `probe_token_lens` for every `*_mt` family (then drop items
   whose required unit lost all multi-token forms, and apply the canonical-name rule), the

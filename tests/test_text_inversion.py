@@ -183,13 +183,13 @@ def test_write_readouts_last_position_unless_all_positions_family(tmp_path):
             "layer": 44,
             "n_tokens": 10,
         },
-        {
-            "family": "brew_intermediates",
-            "id": "b",
+        {  # plan 0029: arithmetic now carries the ALL_POSITIONS branch (brew was retired)
+            "family": "arithmetic_intermediates",
+            "id": "m",
             "positions": [4, 7],
             "tokens": ["p", "q"],
-            "layers": [20, 44],
-            "layer": 44,
+            "layers": [56, 60],
+            "layer": 56,
             "n_tokens": 9,
         },
         {
@@ -217,13 +217,13 @@ def test_write_readouts_last_position_unless_all_positions_family(tmp_path):
         0,
         [
             ("fam", "a", "ok"),
-            ("brew_intermediates", "b", "ok"),
+            ("arithmetic_intermediates", "m", "ok"),
             ("buggy_code", "c", "ok"),
             ("fam", "gone", "refusal"),
         ],
     )
     layers = ti.write_readouts(out, draws=1)
-    assert layers == {"fam": [44], "brew_intermediates": [44], "buggy_code": [60]}
+    assert layers == {"fam": [44], "arithmetic_intermediates": [56, 60], "buggy_code": [60]}
 
     def rows(f):
         path = out / "readouts" / "draw0" / f"{f}.jsonl"
@@ -232,7 +232,12 @@ def test_write_readouts_last_position_unless_all_positions_family(tmp_path):
     assert [(r["id"], r["layer"], r["pos"], r["token"]) for r in rows("fam")] == [
         ("a", 44, -1, "z")
     ]  # last position only; the refused item has no row
-    assert [r["pos"] for r in rows("brew_intermediates")] == [4, 7]
+    assert [(r["layer"], r["pos"]) for r in rows("arithmetic_intermediates")] == [
+        (56, 4),
+        (56, 7),
+        (60, 4),
+        (60, 7),
+    ]  # every position, at the item's own layers
     assert [(r["layer"], r["pos"]) for r in rows("buggy_code")] == [(60, 5)]
 
 

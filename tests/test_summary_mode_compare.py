@@ -163,9 +163,7 @@ class _RandomLLM:
     def stream_json(self, prompts, *, schema, on_result, **_kw) -> Spend:
         for i, (_system, user) in enumerate(prompts):
             failed = self.rng.random() < 0.08
-            # native brew needs EVERY emission cell judged (66 calls an item here), so its
-            # per-cell calls never fail, or no item would ever be decided
-            if failed and schema.get("name") != "brew":
+            if failed:
                 on_result(i, None)  # a failed call
             elif schema.get("name") == "digest":
                 lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
@@ -178,13 +176,6 @@ class _RandomLLM:
             else:
                 fr = [f for f in self.frags if f[:20] in user]
                 res = self._gen(schema["schema"], user, fr)
-                if schema.get("name") == "brew_summary" and isinstance(res, dict):
-                    # ranked: a shuffle of its own named, options only (brew's validate)
-                    m = re.search(r"^Candidate colours: (.*)$", user, flags=re.M)
-                    opts = set(m.group(1).split(", ")) if m else set()
-                    ranked = [c for c in dict.fromkeys(res["named"]) if c in opts]
-                    self.rng.shuffle(ranked)
-                    res["ranked"] = ranked
                 on_result(i, res)
         return Spend()
 
@@ -511,75 +502,10 @@ def test_base_pairs_plan_0021():
     # the native base is NOT a valid agentic summary base (the digest replaces Stages A/B)
     bad = _res("am-narrative-v1+am-design-v2+digest-v3-blind-extractive+sj-v7", [], "summary")
     assert cmp.check_pair(cmp.AGENTIC, nat, bad) != []
-    # brew and buggy keep their native prompt_version as the summary base
-    for fam, pv in ((cmp.BREW, "brew-2026-09-16"), (cmp.BUGGY, "buggy-score-2026-09-23")):
+    # buggy keeps its native prompt_version as the summary base
+    for fam, pv in ((cmp.BUGGY, "buggy-score-2026-09-23"),):
         summ = _res(f"{pv}+digest-v3-blind-extractive+sj-v7", [], "summary")
         assert cmp.check_pair(fam, _res(pv, []), summ) == []
-
-
-def _cell(layer, region, gold, offs, judged=True):
-    return {"layer": layer, "pos": layer, "region": region, "judged": judged, "gold": gold,
-            "offs": offs}  # fmt: skip
-
-
-def _brew_row(i, cells, passed, offs=("red", "teal")):
-    return {"id": i, "gold": "blue", "start": "gray", "answer": "pink", "offs": list(offs),
-            "pass": passed, "emit": {"G": 0} if cells else None, "cells": cells}  # fmt: skip
-
-
-def test_brew_native_count_rule_from_cells():
-    rows = [
-        # K=2: G=2, O=1+1=2 -> 4 > 2 pass; the stir cell naming only offs is ignored
-        _brew_row(
-            "a",
-            [
-                _cell(20, "emit_asst", True, [True, False]),
-                _cell(24, "emit_think", True, [False, True]),
-                _cell(20, "stir", False, [True, True]),
-            ],
-            True,
-        ),
-        # tie: G=1, O=2 -> 2 > 2 fails
-        _brew_row("b", [_cell(20, "emit_asst", True, [True, True])], False),
-        # an unjudged emission cell -> undecided
-        _brew_row(
-            "c",
-            [
-                _cell(20, "emit_asst", True, [False, False]),
-                _cell(24, "emit_colon", False, [False, False], judged=False),
-            ],
-            None,
-        ),
-        # every listed cell judged but pass None: a missing emission cell -> undecided
-        _brew_row("d", [_cell(20, "emit_asst", True, [False, False])], None),
-        # no emission cell at all
-        _brew_row("e", [], None),
-    ]
-    res = _r(cmp.BREW, rows, 0.5, 5)
-    assert cmp.item_verdicts(cmp.BREW, res) == {"a": True, "b": False, "c": None, "d": None,
-                                                "e": None}  # fmt: skip
-    assert cmp.check_extractor(cmp.BREW, res) == []
-    assert cmp.check_extractor(cmp.BREW, {**res, "numbers": {"value": 1.0}}) != []
-
-
-def test_brew_summary_rank_rule():
-    def row(i, ranked, passed=True):
-        return {"id": i, "gold": "blue", "start": "gray", "answer": "pink", "offs": ["red", "teal"],
-                "pass": passed, "emit": {"state": "judged", "ranked": ranked}}  # fmt: skip
-
-    rows = [
-        row("a", ["gray", "blue", "red"]),  # the start colour ranked first is ignored
-        row("b", ["red", "blue"]),  # a named off colour above the gold
-        row("c", []),  # names nothing (an empty or screened digest): a fail
-        row("d", ["pink"]),  # only the answer colour: a fail
-        row("e", None, passed=None),  # unsummarized: undecided, ranked never read
-    ]
-    res = _r(cmp.BREW, rows, 0.25, 5, config={"aggregate": "summary"})
-    assert cmp.item_verdicts(cmp.BREW, res) == {"a": True, "b": False, "c": False, "d": False,
-                                                "e": None}  # fmt: skip
-    assert cmp.check_extractor(cmp.BREW, res) == []
-    # the same rows read as NATIVE need the count-rule fields: a mismatch, not a silent number
-    assert cmp.check_extractor(cmp.BREW, {**res, "config": {}}) != []
 
 
 def _bug(i, src, score, judged=True):
@@ -775,23 +701,7 @@ def test_agentic_retention():
     assert cmp.retained(cmp.AGENTIC, [{"id": "x", "account": "nothing"}], summ, texts) is None
 
 
-def test_brew_retention_and_buggy_na():
-    nat = [{"id": "b", "cells": [
-        {"layer": 20, "pos": 5, "region": "emit_asst", "gold": True},
-        {"layer": 20, "pos": 6, "region": "emit_asst", "gold": False},
-        {"layer": 20, "pos": 9, "region": "stir", "gold": True},
-    ]}]  # fmt: skip
-    texts = {
-        ("b", 20, 5): ["it turns  blue"],
-        ("b", 20, 6): ["it turns red"],
-        ("b", 20, 9): ["stir blue"],
-    }
-    summ = [{"id": "b", "summary_emit": {"summary_evidence": ["it turns blue"]}}]
-    assert cmp.retained(cmp.BREW, nat, summ, texts) is True
-    red = [{"id": "b", "summary_emit": {"summary_evidence": ["it turns red", "stir blue"]}}]
-    assert cmp.retained(cmp.BREW, nat, red, texts) is False  # a non-gold / stir cell's text
-    assert cmp.retained(cmp.BREW, nat, summ) is None  # rows carry no readout text
-    assert cmp.retained(cmp.BREW, [{"id": "b", "cells": []}], summ, texts) is None
+def test_buggy_retention_na():
     assert cmp.retained(cmp.BUGGY, [{"id": "a"}], [{"summary_evidence": ["x"]}]) is None
 
 
