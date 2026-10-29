@@ -586,7 +586,8 @@ def test_um_inferred_matches_the_family_constant():
                 {"id": "b", "pick": "gold", "basis": "explicit_mention"},
                 {"id": "c", "pick": "distractor", "basis": "inferred_characterization"},
             ],
-            {"a": True, "b": False, "c": False},
+            # plan 0019 rev 8 (Camila 2026-10-29): any gold pick is read, whatever the basis
+            {"a": True, "b": True, "c": False},
         ),
         (
             "conjunctive_association",
