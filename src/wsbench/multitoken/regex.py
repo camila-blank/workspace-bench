@@ -6,8 +6,8 @@ again since 2026-09-23 (Camila: "regex on the multitoken please").
 The rules, in the order a cell is scored:
 
 1. **Samples.** A prose cell's samples, or a token lens's top-k strings (each token is one
-   sample, exactly the string the producer wrote — ``Ġ``/``▁`` already rendered as a space,
-   byte-level pieces of non-Latin tokens left as they are, as the source scorer saw them).
+   sample, as the loader decoded it to text — ``wsbench.bpe``; until 2026-10-29 byte-level
+   pieces of non-Latin tokens reached this scorer as mojibake, as the source scorer saw them).
    Chat scaffolding (``<|im_start|>``, ``<|im_end|>``, ``<think>``, ``</think>``,
    ``<explanation>`` tags) is stripped first (``extract_phrase``).
 2. **Units.** ``scored_units``: every ``units[]`` entry of the item; when the bank contract is

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from conftest import tag_of, write_jsonl
 
+from wsbench.bpe import _bytes_to_unicode
 from wsbench.evals.user_modeling import judge, prompts
 from wsbench.evals.user_modeling.judge import build_options, decode_choice
 from wsbench.evals.user_modeling.prompts import CANNOT_TELL, UM_OPTION_SUPPLEMENT
@@ -236,9 +237,10 @@ def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
 
 
 def test_non_ascii_tokens_reach_the_summarizer_decoded_once(tmp_path, fake_llm, mk_args):
-    # "Ã©" is how the producer spells é; ASCII tokens survive a second decode unchanged, so only
-    # a non-ASCII token can tell decoded-once (é) from decoded-twice (U+FFFD) or raw (Ã©)
-    rows = [{"id": A, "layer": 20, "pos": 0, "tokens": ["Ġcaf", "Ã©"], "scores": [2.0, 1.0]}]
+    # the vocab spelling of "Ã©": decoded once it reads "Ã©", decoded twice "é", raw mojibake;
+    # an ASCII token survives a second decode unchanged, so it could not tell these apart
+    vocab = "".join(_bytes_to_unicode()[b] for b in "Ã©".encode())
+    rows = [{"id": A, "layer": 20, "pos": 0, "tokens": ["Ġcaf", vocab], "scores": [2.0, 1.0]}]
     seen: list[str] = []
 
     def responder(system, user):
@@ -251,7 +253,7 @@ def test_non_ascii_tokens_reach_the_summarizer_decoded_once(tmp_path, fake_llm, 
 
     fake_llm(responder)
     judge.run(mk_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[A]))
-    assert seen == ["TOKEN READOUTS:\n caf (2.00) | é (1.00)"]
+    assert seen == ["TOKEN READOUTS:\n caf (2.00) | Ã© (1.00)"]
 
 
 def test_dry_run_prints_and_makes_no_calls(tmp_path, mk_args, capsys, monkeypatch):

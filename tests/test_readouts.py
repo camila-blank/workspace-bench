@@ -231,10 +231,13 @@ def test_decode_token_byte_level_bpe():
     assert decode_token(" AI") == " AI"  # Ġ already shown as a space by the producer
     assert decode_token("ðŁı") == "ðŁı"  # part of a character: kept as written
     assert decode_token("café") == "café"  # already decoded text: kept, not mangled
+    for word in ("się", "děti", "mā", "đi"):  # Latin Extended-A: would decode to controls
+        assert decode_token(word) == word
+    assert decode_token("Ċ") == "\n" and decode_token("ĉ") == "\t"  # vocab whitespace still
 
 
 def test_token_cells_are_decoded_once_at_load(tmp_path):
-    # 的结果 is πυξίδα, spelled as Qwen's tokenizer + display_tokens write it
+    # CJK and Greek tokens, spelled as Qwen's tokenizer + display_tokens write them
     acute = chr(0xB4)  # the byte-table char for byte 0xB4 (an acute accent, so spelled out)
     vocab = ["çļĦç»ĵæŀľ", " is", " ÏĢÏħ", "Î¾", f"Î¯Î{acute}Î±"]
     p = _write(

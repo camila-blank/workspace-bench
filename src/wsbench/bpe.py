@@ -19,15 +19,31 @@ def _bytes_to_unicode() -> dict[int, str]:
 _U2B = {c: b for b, c in _bytes_to_unicode().items()}
 
 
+def to_bytes(tok: str) -> bytes:
+    """A byte-level BPE vocabulary string's bytes: byte-table chars back to their byte, anything
+    else (e.g. the space that replaced ``Ġ``) to its own UTF-8 bytes."""
+    return b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
+
+
+def _control(text: str) -> bool:
+    """A C0/C1 control character other than newline / tab: what already-decoded text with a
+    Latin Extended-A letter (``się``, ``děti``) turns into when decoded again."""
+    return any((ord(c) < 0x20 and c not in "\n\t") or 0x7F <= ord(c) <= 0x9F for c in text)
+
+
 def decode_token(tok: str) -> str:
-    """Decodes a byte-level BPE vocabulary string to text, char by char: byte-table chars back
-    to their byte, anything else (e.g. the space that replaced ``Ġ``) to its own UTF-8 bytes;
-    ``▁`` reads as a space. A string whose bytes are not valid UTF-8 (text that is already
-    decoded, like ``café``, or a token holding part of a character) is kept as written, with
-    ``Ġ``/``Ċ`` rendered — so a producer that writes decoded text is not mangled."""
+    """Decodes a byte-level BPE vocabulary string to text (``▁`` reads as a space). A string
+    that does not decode cleanly is kept as written, with ``Ġ``/``Ċ`` rendered: bytes that are
+    not valid UTF-8 (already-decoded Latin-1 text like ``café``, or a token holding part of a
+    character, which therefore stays as its byte-level spelling) or that decode to a control
+    character (already-decoded ``się``). Already-decoded text that happens to spell valid UTF-8
+    in the byte table (``Ã©``) cannot be told apart and is decoded; producers should write the
+    vocabulary strings (docs/producing_readouts.md)."""
     tok = tok.replace("▁", " ")
     try:
-        raw = b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
-        return raw.decode("utf-8")
+        text = to_bytes(tok).decode("utf-8")
     except UnicodeDecodeError:
+        text = None
+    if text is None or _control(text):
         return tok.replace("Ġ", " ").replace("Ċ", "\n")
+    return text

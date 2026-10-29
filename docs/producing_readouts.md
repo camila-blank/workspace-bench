@@ -124,10 +124,12 @@ banks store (`"\n"`, `" öffnen"`, `"<|im_end|>"`); the ranked `tokens` of a tok
 byte-level BPE strings with `Ġ`/`▁` shown as a space (`" led"`, and `"çļĦç»ĵæŀľ"` for 的结果).
 `wsbench.readouts.load_readouts` decodes each of those to text once, on load
 (`wsbench.bpe.decode_token`: `"çļĦç»ĵæŀľ"` -> `"的结果"`, `"Ċ"` -> `"\n"`), so every summarizer,
-judge and regex sees text; until 2026-10-27 only hallucination decoded, and non-ASCII tokens
-reached every other family as mojibake. Write the vocabulary strings. A string whose bytes are not
-valid UTF-8 (already-decoded text such as `"café"`, or a token holding part of a character) is
-kept as written, so decoded text survives, but it is the vocabulary strings that are tested.
+judge and regex sees text. Until 2026-10-29 only hallucination, jlens_concept_pr's reference
+files and summary mode decoded; every other family saw non-ASCII tokens as mojibake. Write the
+vocabulary strings. A string that does not decode cleanly is kept as written: a token holding
+part of a character stays in its byte-level spelling, and most already-decoded text survives
+(`"café"`, `"się"`), but decoded text that happens to spell valid UTF-8 in the byte table
+(`"Ã©"`) is decoded again.
 `pos` is the index the plan resolves: absolute, except the two rules that count from the end
 because their banks and judges do — `offset_from_end` (some multihop items) and `all_from_end`
 (arithmetic intermediates) — whose rows carry the negative offset (`-8`). A single-layer lens reads at its trained layer whatever the
