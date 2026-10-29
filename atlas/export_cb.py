@@ -740,6 +740,7 @@ def export_model(key: str) -> dict:
                 "n": n_items,
                 "macro": macro,
                 "ati": fam in ati_cb,
+                # rows carry a 1-10 grade (the pre-plan-0030 headline; plan 0030 scores pairs)
                 "scored": fam == "buggy_code",
             }
         )

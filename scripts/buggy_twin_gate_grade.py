@@ -39,7 +39,7 @@ def ask(prompt: str, key: str) -> bool | None:
             )
             text = next(b.text for b in r.content if getattr(b, "type", "") == "text")
             return bool(json.loads(text[text.index("{") : text.rindex("}") + 1])[key])
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             err = e
     print("failed:", err, file=sys.stderr)
     return None
