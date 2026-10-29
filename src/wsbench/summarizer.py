@@ -10,7 +10,7 @@ from wsbench.cache import Cache, fingerprint
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend, schema_block
 
-SUMMARIZER_PROMPT_VERSION = "interp-v1"
+SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"
 
 INTERP_SYSTEM = """You are shown the top-10 token readouts from an interpretability lens at one \
 position inside a language model that was reading a passage you cannot see. Tokens may include \

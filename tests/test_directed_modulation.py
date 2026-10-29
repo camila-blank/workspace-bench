@@ -182,7 +182,7 @@ def test_readout_rows_prose_and_tokens():
     cells = [
         Cell("a", 20, 5, ("x", "", "y"), None, None),
         Cell("a", 20, 6, ("",), None, None),
-        Cell("b", 20, 5, None, ("Ġzeph", "yr", "Ċ"), None),
+        Cell("b", 20, 5, None, (" zeph", "yr", "\n"), None),  # as the loader decodes them
     ]
     rows, n_empty = judge.readout_rows(cells)
     assert n_empty == 1

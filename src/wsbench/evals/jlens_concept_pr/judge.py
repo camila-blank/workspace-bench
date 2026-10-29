@@ -3,7 +3,7 @@
 Port of ``scripts/oracle_lens_evals/jlens_pr/{judge_openrouter,judge_pr,items}.py`` (the judge
 of record) onto the shared client and cache. Three judged stages, one ``run_calls`` batch each:
 
-* Stage A (concept split) on the family judge (Gemini 3.8 Flash in this repo; the source ran
+* Stage A (concept split) on the family judge (Claude Opus 5.5 since plan 0023; the source ran
   it on DeepSeek-V4-Flash, see the README's instrument note): one call per cell with text,
   ``text = concat_samples(samples)``;
 * Stage B (per-token recall grades) on the judge: one call per CONTENT reference token per cell
@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from wsbench import registry
+from wsbench.bpe import to_bytes
 from wsbench.cache import Cache
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend
@@ -96,38 +97,12 @@ STAGE_TAG = {"a": "A", "b": "B", "foil": "F", "p": "P", "pfoil": "Q"}
 # ------------------------------------------------------------------ items.py (verbatim)
 
 
-def _bytes_to_unicode() -> dict[str, int]:
-    """Inverse of the GPT-2 / Qwen byte-level BPE alphabet (unicode char -> byte)."""
-    bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1))
-    bs += list(range(ord("®"), ord("ÿ") + 1))
-    cs = list(bs)
-    n = 0
-    for b in range(256):
-        if b not in bs:
-            bs.append(b)
-            cs.append(256 + n)
-            n += 1
-    return {chr(c): b for b, c in zip(bs, cs, strict=True)}
-
-
-_UNICODE_TO_BYTE = _bytes_to_unicode()
-
-
 def bpe_display_to_text(tok: str) -> str:
-    """Decode a J-lens unit ``samples`` token (byte-level BPE display form) to readable text.
-
-    ``jlens_eval`` writes ``convert_ids_to_tokens`` strings with ``Ġ``/``▁`` -> space already
-    applied, so CJK / accented tokens arrive as mojibake (``çļĦç»ĵæŀľ`` = 的结果). Every char
-    in the byte alphabet maps back to its byte; anything else (the substituted space) is kept.
-    """
-    out = bytearray()
-    for ch in tok:
-        b = _UNICODE_TO_BYTE.get(ch)
-        if b is None:
-            out.extend(ch.encode("utf-8"))
-        else:
-            out.append(b)
-    return out.decode("utf-8", errors="replace")
+    """Decodes a J-lens reference ``samples`` token (byte-level BPE display form, ``Ġ``/``▁``
+    already a space) to text. The reference files are read here, not through the loader, so
+    they are decoded here once; a part-of-a-character token becomes U+FFFD, as the frozen
+    jlens-pr-v2 instrument has always rendered it (not ``decode_token``'s keep-as-written)."""
+    return to_bytes(tok).decode("utf-8", errors="replace")
 
 
 def foil_pairing(labels_by_group: Mapping[str, Sequence[str]], *, seed: int) -> dict[str, str]:
@@ -204,7 +179,7 @@ def n_text_tokens(text: str) -> int:
 
 def extract_judge(args: JudgeArgs) -> ResolvedJudge:
     """Stage A's judge: ``aux_models["extract"]`` if a family ever sets one, else the family
-    judge itself (Camila, 2026-09-16: Stage A runs on Gemini 3.8 Flash like Stages B and P)."""
+    judge itself (Camila, 2026-09-16: Stage A runs on the family judge like Stages B and P)."""
     model = args.aux_models.get("extract")
     if model is None or model == args.judge.model:
         return args.judge

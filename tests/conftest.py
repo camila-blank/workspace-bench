@@ -57,6 +57,45 @@ def real_families():
     return registry.FAMILIES
 
 
+@pytest.fixture(autouse=True)
+def _openrouter_shaped_fakes(monkeypatch):
+    """The default judge is Claude Opus 5.5 (Anthropic route; plan 0023), but the family tests
+    script OpenRouter-shaped fakes (``chat.completions.create``). When such a fake reaches the
+    Anthropic structured-output path, answer through the OpenRouter path instead, so every family
+    test keeps exercising its own logic; the real Anthropic path is tested in ``test_llm.py``
+    with Anthropic-shaped fakes."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    real = llm._anthropic_once
+
+    async def shim(client, system, user, *, schema, model, max_tokens, timeout, spend, **kw):
+        if hasattr(client, "chat") and not hasattr(client, "messages"):
+            return await llm._openrouter_once(
+                client,
+                system,
+                user,
+                schema=schema,
+                model=model,
+                reasoning=None,
+                temperature=None,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                spend=spend,
+            )
+        return await real(
+            client,
+            system,
+            user,
+            schema=schema,
+            model=model,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            spend=spend,
+            **kw,
+        )
+
+    monkeypatch.setattr(llm, "_anthropic_once", shim)
+
+
 collect_ignore = ["golden"]  # data files, never tests
 
 

@@ -30,7 +30,7 @@ shared client and cache without changing the instrument.
   (`n_empty_cells`), not a missing cell.
 - **Call unit:** one call per cell with its first **k = 3** non-empty readouts (`HAL_K`). A
   `tokens` file is first decoded from byte-level BPE (`decode_token`) and each cell's bag goes
-  through the shared summarizer (`docs/summarizer.md`, `interp-v1`, `render_bag` of the
+  through the shared summarizer (`docs/summarizer.md`, `interp-v1-decoded`, `render_bag` of the
   decoded tokens and scores); the interpretation is judged as one readout (**k = 1**). A failed
   summary leaves the cell unjudged.
 - **Labels** (derived in code, never by the judge): every span must be verbatim in **its own**
@@ -63,7 +63,7 @@ shared client and cache without changing the instrument.
 - **Complete** = pinned judge, no `items=` / `limit=` subset, zero missing and unjudged cells,
   empty cells <= 5% of expected. Deviation from the shared rule: **`layers=` is not a subset
   here** — a single-layer lens judged at its one layer is complete, as in the source.
-- **Judge:** `google/gemini-3.8-flash`, reasoning `{"effort": "minimal"}`,
+- **Judge:** `claude-opus-5-5` (the repo default),
   `PROMPT_VERSION = "v5c-chat"` — identical to the source pin, so `pinned_instrument` is true
   under the default. Cost: a full multilayer arm over the five in-house layers 20/36/44/52/60
   is 1,123 x 5 = 5,615 span-judge calls plus the same number of claim-verification calls

@@ -403,13 +403,13 @@ Texts = dict[tuple[str, int, int], list[str]]
 
 
 def _norm_line(s: str) -> str:
-    return " ".join(digest.decode_bpe(s).split())
+    return " ".join(s.split())  # loaded cells and digest evidence: already decoded text
 
 
 def cell_lines(samples: list[str] | None, tokens: list[str] | None) -> list[str]:
     """A readout cell's samples as digest bundle lines (``digest._group``'s rendering)."""
-    if tokens is not None:
-        toks = [t for t in (" ".join(digest.decode_bpe(x).split()) for x in tokens) if t]
+    if tokens is not None:  # loaded cells: decoded by the loader, not again here
+        toks = [t for t in (" ".join(x.split()) for x in tokens) if t]
         return [digest.TOKEN_SEP.join(toks)] if toks else []
     return [" ".join(x.split()) for x in samples or () if x.strip()]
 
@@ -569,8 +569,8 @@ def retained(
     hits = fn(nat_rows)
     if not hits:
         return None
-    evid = [digest.decode_bpe(e) for r in summ_rows for e in r.get("summary_evidence") or []]
-    return any(_in_evidence(digest.decode_bpe(q), e) for q in hits for e in evid)
+    evid = [e for r in summ_rows for e in r.get("summary_evidence") or []]
+    return any(_in_evidence(q, e) for q in hits for e in evid)
 
 
 def _in_evidence(quote: str, sample: str) -> bool:

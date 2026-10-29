@@ -22,7 +22,7 @@ def test_render_bag():
 
 
 def test_prompt_constants():
-    assert SUMMARIZER_PROMPT_VERSION == "interp-v1"
+    assert SUMMARIZER_PROMPT_VERSION == "interp-v1-decoded"
     assert INTERP_SYSTEM.startswith("You are shown the top-10 token readouts")
     assert PROMPTS["INTERP_USER"] == "TOKEN READOUTS:\n{txt}"
 

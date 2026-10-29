@@ -14,7 +14,7 @@ separately the spans that are JUNK; every label is derived here:
 Cells = every row of the readouts file on a bank read site (``items[].sites[].pos``); the
 expected grid is every site of every in-scope item x the selected layers, and a missing cell is
 fatal (exit 2) unless ``allow_missing=True`` (a dry run only reports it). A prose cell is judged on
-its first :data:`HAL_K` non-empty readouts; a ``tokens`` cell is decoded (:func:`decode_token`),
+its first :data:`HAL_K` non-empty readouts; a ``tokens`` cell (decoded to text by the loader) is
 summarised by the shared summarizer and judged as one readout (k = 1). A verdict in which any
 readout parses to ``unjudged`` fails validation and is re-queued by the next run.
 
@@ -81,34 +81,6 @@ def verify_quote(quote: str, haystacks: Iterable[str]) -> bool:
     if len(q) < 3:
         return False
     return any(q in normalize_ws(h) for h in haystacks)
-
-
-# ------------------------------------------------------------------ byte-level BPE -> text
-
-
-def _bytes_to_unicode() -> dict[int, str]:
-    """GPT-2 byte-level BPE table (Qwen's tokenizer uses the same): byte -> printable char."""
-    bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1))
-    bs += list(range(ord("®"), ord("ÿ") + 1))
-    cs = bs[:]
-    n = 0
-    for b in range(256):
-        if b not in bs:
-            bs.append(b)
-            cs.append(256 + n)
-            n += 1
-    return {b: chr(c) for b, c in zip(bs, cs, strict=True)}
-
-
-_U2B = {c: b for b, c in _bytes_to_unicode().items()}
-
-
-def decode_token(tok: str) -> str:
-    """Byte-level BPE vocabulary string -> text, char by char: byte-table chars back to their byte,
-    anything else (e.g. a literal space) to its own UTF-8 bytes. Pre-decoded non-ASCII text that
-    happens to use byte-table characters (Latin-1 letters) is mangled — pass vocabulary strings."""
-    raw = b"".join(bytes([_U2B[ch]]) if ch in _U2B else ch.encode("utf-8") for ch in tok)
-    return raw.decode("utf-8", errors="replace")
 
 
 # ------------------------------------------------------------------ verdicts
@@ -303,7 +275,7 @@ def run(args: JudgeArgs) -> FamilyResult:
             sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
             bundles: dict[str, str] = {}
             for c in nonempty:
-                decoded[c.key] = [decode_token(t) for t in c.tokens or ()]
+                decoded[c.key] = list(c.tokens or ())  # the loader already decoded them
                 bundles[c.key] = render_bag(decoded[c.key], c.scores)
             summ = summarize(
                 bundles,

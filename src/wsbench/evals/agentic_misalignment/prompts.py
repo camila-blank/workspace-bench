@@ -21,12 +21,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from wsbench.bpe import decode_token
 from wsbench.digest import (
     SUMMARY_NOTE,
     SUMMARY_NOTE_ABSTRACTIVE,
     SUMMARY_NOTE_TOKENS,
     Line,
-    decode_bpe,
 )
 
 STAGE_AB_VERSION = "am-narrative-v1"  # Stages A/B (describer, consolidator): unchanged
@@ -374,7 +374,7 @@ def reading_context(tokens_by_pos: Mapping[int, str], pos: int) -> str:
     behind a leading ``…``. :data:`NO_CONTEXT` when no position in the window has a token."""
     window = range(pos - CONTEXT_TOKENS + 1, pos + 1)
     toks = [tokens_by_pos[p] for p in window if p in tokens_by_pos]
-    text = " ".join(decode_bpe("".join(toks)).split())  # join first: a split UTF-8 char decodes
+    text = " ".join(decode_token("".join(toks)).split())  # join first: a split UTF-8 char decodes
     if not text:
         return NO_CONTEXT
     if len(text) > CONTEXT_CHARS:
