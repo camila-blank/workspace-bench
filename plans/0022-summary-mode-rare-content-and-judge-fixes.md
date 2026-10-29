@@ -1,6 +1,6 @@
 # 0022: summary mode — record rare content, a five-number digest for chain/arithmetic, credit UM synonyms
 
-Status: rev 3 (critique rounds 1-2; the Rev 2 and Rev 3 decision sections override earlier text). Owner: Camila. Date: 2026-10-28. Issue #108. This builds on plan 0020
+Status: rev 4 (critique rounds 1-3; the Rev 2-4 decision sections override earlier text). Owner: Camila. Date: 2026-10-28. Issue #108. This builds on plan 0020
 (`aggregate=summary`, `src/wsbench/digest.py`) and plan 0021 (brew / buggy / agentic, the
 hierarchical overflow). Every rule of those plans holds unless it is restated here. The retained
 rules are: the extractive render, the evidence gate, `gate_texts`, item states, count rules,
@@ -332,6 +332,27 @@ but failed in v2, and 20 that still fail.
 10. `CHANCE_LABEL_SUMMARY` (chain) says "any kept value" instead of "any-of-3"; the `any_of_3`
     row field keeps its name. Rare-tier keys never enter `digest_numbers` (chain/arithmetic run
     `summ_rare=0` anyway).
+
+## Rev 4 decisions (critique round 3)
+
+1. **Key membership is numeric.** Every grounded number key has a value (`digest.number_value`:
+   ASCII / fullwidth digits, or a CJK numeral parsed by a small parser — `负` sign, `点` decimal,
+   `十百千万` units; `三四`, a bare `点` / `负` / `万` have no value and are dropped). A judged value
+   is kept only when it EQUALS one key's value (`digest.key_values`); the quote route still only
+   verifies, it never grants membership (supersedes Rev 3 #2's "top value may rest on a quote
+   containing a key"). The CJK whole-number check also rejects an adjacent CJK numeral character
+   (`十` is not a key inside `十四`).
+2. With `summ_numbers=0` (an opt-in override) there is no key filter: kept = verified in one
+   evidence sample, `SYSTEM_SUMMARY` / `MAX_VALUES_SUMMARY = 10` still apply.
+3. `ground()` keeps its 2-tuple; numeral drops go to the `numeral_drops` out-parameter and diag
+   `n_numeral_drops`, NOT to `dropped` / `n_evidence_dropped`. Stride, chunk and final paths:
+   nothing kept, no evidence drop, some numeral drop → empty (a chunk contributes nothing).
+4. One `_digest_fp(s, task_note, text)` builds the stride and hierarchical fingerprints; tests
+   run `collapse` on both paths changing only `summ_rare`, then only `summ_numbers`, and assert a
+   cache miss each time.
+5. Stale text: Part B's "at most five" / `MAX_VALUES_SUMMARY = 5` and Part D's "6th value" are
+   superseded by Rev 3 #2 (cap ten; an 11th value is ignored; a verified key value counts at any
+   rank up to ten).
 
 ## Out of scope
 

@@ -277,7 +277,7 @@ def test_plan_0020_fingerprint_unchanged():
         "TEXT",
     )
     assert expected == fingerprint(
-        "digest-v2",
+        "digest-v3",
         "claude-opus-5-5",
         {"anthropic_effort": "default"},
         "blind",

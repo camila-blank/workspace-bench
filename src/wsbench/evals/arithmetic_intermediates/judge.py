@@ -32,12 +32,15 @@ from wsbench.results import FamilyResult
 from .prompts import (
     DIGEST_TASK_NOTE,
     MAX_VALUES,
+    MAX_VALUES_SUMMARY,
     PROMPT_VERSION,
     PROMPT_VERSION_BATCH,
     SCHEMA,
     SCHEMA_BATCH,
+    SCHEMA_SUMMARY,
     SYSTEM,
     SYSTEM_BATCH,
+    SYSTEM_SUMMARY,
     render_batch_user,
     render_user,
     render_user_summary,
@@ -108,25 +111,33 @@ def verdict(
     tol: str,
     nulls: list[float],
     text: str | Sequence[str],
+    *,
+    max_values: int = MAX_VALUES,
+    keys: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """One judge answer. ``values`` = the judge's ranked numbers, capped at three, kept only when
     verified in the readout. ``hit`` = some kept value within tolerance of the intermediate;
     ``cross`` = the fraction of the item's null set whose intermediate some kept value hits.
     ``text`` may be a list of samples (summary mode: ``digest.gate_texts``): a value is then
-    verified inside ONE sample, never across two."""
+    verified inside ONE sample, never across two. Summary mode passes ``max_values`` (the
+    numbers digest's five) and ``keys`` (its number keys, plan 0022): a value is then kept only
+    when it equals one key's value (``digest.key_values``); the quote never grants membership."""
     texts = [text] if isinstance(text, str) else list(text)
     if res is None:
         return {"judged": False, "kind": "unavailable", "values": [], "hit": False, "cross": None}
     raw = res.get("values")
     named = (
         [float(v) for v in raw if isinstance(v, int | float) and not isinstance(v, bool)][
-            :MAX_VALUES
+            :max_values
         ]
         if isinstance(raw, list)
         else []
     )
     quote = str(res.get("quote", "")).strip()
     kept = [v for k, v in enumerate(named) if any(verified(v, t, quote, top=k == 0) for t in texts)]
+    if keys is not None:  # the numbers digest: a value must EQUAL one key's value
+        allowed = digest.key_values(keys)
+        kept = [v for v in kept if any(abs(a - v) <= 1e-6 * max(1.0, abs(v)) for a in allowed)]
     hit = any(tolerance_ok(v, target, tol) for v in kept)
     cross = (
         sum(any(tolerance_ok(v, n, tol) for v in kept) for n in nulls) / len(nulls)
@@ -456,6 +467,17 @@ def run(args: JudgeArgs) -> FamilyResult:
     return with_readout_count(result, scope, cells)
 
 
+def _answer_in(keys: Sequence[str] | None, answer: object) -> bool | None:
+    """Whether a numbers digest's keys write the item's final answer (never gold)."""
+    if keys is None or answer is None:
+        return None
+    try:
+        a = float(str(answer))
+    except ValueError:
+        return None
+    return any(abs(v - a) <= 1e-6 * max(1.0, abs(a)) for v in digest.key_values(keys))
+
+
 def _run_summary(
     args: JudgeArgs,
     *,
@@ -478,7 +500,7 @@ def _run_summary(
     ids = [it["id"] for it in scope]
     spend = Spend()
     pre = Preflighter(args.dry_run)
-    pv = digest.prompt_version(PROMPT_VERSION, args)
+    pv = digest.prompt_version(PROMPT_VERSION, args, NAME)
     with Cache(args.out / "cells.jsonl") as cache:
         col = digest.collapse(
             NAME,
@@ -486,11 +508,11 @@ def _run_summary(
             args=args,
             cache=cache,
             spend=spend,
-            preflight=pre.for_judge(digest.summarizer_judge(args)),
+            preflight=pre.for_judge(digest.summarizer_judge(args, NAME)),
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, NAME)
         gates: dict[str, list[str]] = {}
         calls: list[Call] = []
         for i, c in col.cells.items():
@@ -502,14 +524,14 @@ def _run_summary(
             calls.append(
                 Call(
                     key=f"{i}|L{digest.SUMMARY_LAYER}",
-                    system=SYSTEM,
+                    system=SYSTEM_SUMMARY,
                     user=render_user_summary(note, (c.samples or ("",))[0]),
                     meta={"item": i},
                 )
             )
         results = run_calls(
             calls,
-            schema=SCHEMA,
+            schema=SCHEMA_SUMMARY,
             judge=args.judge,
             prompt_version=pv,
             cache=cache,
@@ -521,6 +543,7 @@ def _run_summary(
             temperature=0.0,
         )
     called = {c.meta["item"] for c in calls}
+    keys_of = {i: digest.number_keys(args, NAME, col, i) for i in ids}
     rows = []
     n_empty = n_failed = 0
     for i in ids:
@@ -534,7 +557,13 @@ def _run_summary(
             v["cross"] = 0.0 if nulls[i] else None
         else:
             v = verdict(
-                results.get(f"{i}|L{digest.SUMMARY_LAYER}"), target[i], tol[i], nulls[i], gates[i]
+                results.get(f"{i}|L{digest.SUMMARY_LAYER}"),
+                target[i],
+                tol[i],
+                nulls[i],
+                gates[i],
+                max_values=MAX_VALUES_SUMMARY,
+                keys=keys_of[i],
             )
             n_failed += not v["judged"]
         judged = bool(v["judged"])
@@ -559,6 +588,9 @@ def _run_summary(
             "bands": {b: any(tolerance_ok(x, target[i], b) for x in kept) for b in BANDS},
             "basis": v.get("basis"),
             "quote": v.get("quote", ""),
+            # the numbers digest (plan 0022): its keys, and whether the answer took a slot
+            "digest_numbers": keys_of[i],
+            "answer_in_digest": _answer_in(keys_of[i], it.get("answer")),
         }
         if i in col.cells:
             row.update(col.row(i))
@@ -601,7 +633,7 @@ def _run_summary(
         spend=spend,
         chance_label=CHANCE_LABEL,
         config_extra={
-            **digest.config(args, source_kind),
+            **digest.config(args, source_kind, NAME),
             "cells": "all",
             "packaging": "one call per item on its digest",
             "layers_judged": sorted({c.layer for c in cells}),
@@ -626,6 +658,6 @@ def _run_summary(
             "summary": col.extras(),
         },
         n_items=len(ids),
-        pinned=digest.pinned(args),
+        pinned=digest.pinned(args, NAME),
     )
     return with_readout_count(result, scope, cells)
