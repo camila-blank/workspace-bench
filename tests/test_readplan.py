@@ -34,7 +34,8 @@ POEM = [
 
 def test_every_family_plans_and_rows_serialize():
     fams = readplan.families()
-    assert len(fams) == 36  # + 4 (plan 0016), - ttt (0017), + unverbalized_hint, + 2 (0027)
+    assert len(fams) == 35  # + 4 (plan 0016), - ttt (0017), + unverbalized_hint, + 2 (0027),
+    # - brew_intermediates (0029)
     for fam in fams:
         specs = readplan.plan(fam)
         assert specs, fam
@@ -58,9 +59,6 @@ def test_plans_match_the_bank_specs():
     buggy = {s.id: s for s in readplan.plan("buggy_code")}
     assert buggy["py-quantity-refund-credit"].layers == [60]
     assert next(s for s in buggy.values() if s.id.startswith("rust")).layers == [56]
-    brew = readplan.plan("brew_intermediates")[0]
-    assert brew.positions["kind"] == "positions" and len(brew.positions["positions"]) == 24
-    assert brew.prefill == "Answer:" and brew.render == "chat_prefill"
     mcdm = readplan.plan("multi_concept_directed_modulation")[0]
     assert mcdm.layers == [44, 52, 56, 60] and mcdm.positions == {"kind": "last_n", "n": 12}
     conj = readplan.plan("conjunctive_association")[0]

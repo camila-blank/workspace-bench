@@ -42,7 +42,6 @@ GROUPS: list[tuple[str, list[str]]] = [
         "Computational",
         [
             "chain_intermediates",
-            "brew_intermediates",
             "buggy_code",
             "arithmetic_intermediates",
         ],

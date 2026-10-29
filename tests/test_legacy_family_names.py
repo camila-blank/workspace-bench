@@ -209,3 +209,14 @@ def test_ttt_is_removed_everywhere(real_families):
         assert name not in ti.CONSTRUCTION_GATED and name not in ti.STRICTER_PASS_FIELD
     frozen = json.loads(ti.FROZEN.read_text())
     assert "ttt" not in frozen and "ttt_move" not in frozen
+
+
+def test_brew_intermediates_is_removed(real_families):
+    # plan 0029: brew_intermediates was retired; stale results.json stays out of the macro
+    from wsbench import readplan
+
+    assert "brew_intermediates" in registry.REMOVED_FAMILIES
+    assert "brew_intermediates" not in registry.FAMILIES
+    assert "brew_intermediates" not in readplan.families()
+    frozen = json.loads(ti.FROZEN.read_text())
+    assert "brew_intermediates" not in frozen

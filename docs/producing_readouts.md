@@ -40,7 +40,7 @@ Positions rules, all handled by `resolve`:
 | `last_n {n}` | the last `n` tokens |
 | `all` | every token |
 | `all_from_end` | every token, reported as negative offsets `-n..-1` (arithmetic intermediates: the bank and judge count from the end) |
-| `positions {positions}` | explicit indices (brew, hallucination, jailbreak, J-lens precision) |
+| `positions {positions}` | explicit indices (hallucination, jailbreak, J-lens precision) |
 | `line_one_newline` | the newline token that ends line one (poetry) |
 | `from_token {token}` | from the first token with that text through the end (chain's question span) |
 | `from_last_sentence_start` | from the first token of the last user turn's final sentence through the end (user modelling) |

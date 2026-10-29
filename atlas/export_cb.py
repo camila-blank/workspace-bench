@@ -67,7 +67,6 @@ HEADLINE_23 = [
     "user_modeling",
     "buggy_code",
     "chain_intermediates",
-    "brew_intermediates",
     "moral_rationale",
     "arithmetic_intermediates",
 ]

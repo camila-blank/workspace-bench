@@ -188,49 +188,6 @@ def arithmetic(rng: random.Random, knobs: dict[str, Any]) -> dict[str, Any] | No
 # ---------------------------------------------------------------- registry
 
 
-GW_SRC = "/workspace/agam/global-workspace/src"  # brew's generator + positions live there
-
-
-def _gw_brew() -> tuple[Any, Any, Any]:
-    """global-workspace's brew ``sample_item`` and ``resolve_positions`` (the source generator
-    and position rule of the frozen bank), plus the bank's own Qwen3.6 tokenizer."""
-    import functools
-    import sys
-
-    if GW_SRC not in sys.path:
-        sys.path.insert(0, GW_SRC)
-    from global_workspace.olens_suite.brew.item import sample_item
-    from global_workspace.olens_suite.brew.positions import MODEL_ID, resolve_positions
-
-    @functools.cache
-    def tok() -> Any:
-        from transformers import AutoTokenizer
-
-        return AutoTokenizer.from_pretrained(MODEL_ID)
-
-    return sample_item, resolve_positions, tok()
-
-
-def brew(rng: random.Random, knobs: dict[str, Any]) -> dict[str, Any] | None:
-    """One brew item from the source generator (single mode, the knobs' depth/n_rows) with read
-    positions on the Qwen3.6 tokenizer. For any other tokenizer freeze re-derives them in the
-    subject's own render (``brew_port``, cross-checked against these Qwen cells)."""
-    from dataclasses import asdict
-
-    sample_item, resolve_positions, tok = _gw_brew()
-    name = f"brew-ad-r{knobs['n_rows']}d{knobs['depth']}-{rng.randrange(10**9):09d}"
-    it = sample_item(rng, depth=knobs["depth"], n_rows=knobs["n_rows"], name=name, mode="single")
-    if it is None:
-        return None
-    d = asdict(it)
-    d["prompt"] = d.pop("prompt_last")
-    _, regions = resolve_positions(tok, d["prompt"])
-    d["regions"] = {str(k): v for k, v in sorted(regions.items())}
-    d["eval_positions"] = sorted(regions)
-    d["id"] = name
-    return d
-
-
 @dataclass(frozen=True)
 class Tier:
     name: str
@@ -285,16 +242,6 @@ GENERATORS: dict[str, Generator] = {
         dedupe_key="scene_key",
         id_key="id",
         pair_key="scene",
-    ),
-    "brew_intermediates": Generator(
-        "brew_intermediates",
-        brew,
-        [
-            Tier("t0", {"depth": 2, "n_rows": 10}, "original rules (single, depth 2, 10 rows)"),
-            Tier("t1", {"depth": 2, "n_rows": 6}, "6-row colour table"),
-            Tier("t2", {"depth": 2, "n_rows": 5}, "5-row colour table"),
-        ],
-        id_key="id",
     ),
     "arithmetic_intermediates": Generator(
         "arithmetic_intermediates",
