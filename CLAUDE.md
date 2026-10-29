@@ -170,7 +170,7 @@ implements it. Not restated here.
   in `extras`); no `Spend` crosses the family boundary. Cache rows are append-only.
 - README: each family entry is `**<spec.title>** — [link]` followed by exactly three lines
   `- *What it is:*` / `- *Example:*` / `- *Judged by:*`, grouped Basic (single token) · Basic
-  (multi-token) · Computational · Safety · Association · Bag of words · Precision · Logical processing. Credits live in README §Credits and NOTICE.md, one
+  (multi-token) · Computational · Safety · Association · Bag of words · Precision · Model-specific. Credits live in README §Credits and NOTICE.md, one
   bullet per external source; in-house families get no credit line.
 - Style, enforced by review rather than a linter: module docstrings are 1–3 lines (rationale
   goes in the README beside the code, not the file header); no `from __future__ import

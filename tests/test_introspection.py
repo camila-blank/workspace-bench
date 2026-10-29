@@ -195,7 +195,7 @@ def test_missing_cells_are_fatal_without_allow_missing(tmp_path):
 def test_registered_readme_and_dry_run(tmp_path, capsys, monkeypatch):
     from wsbench.evals.introspection import SPEC
 
-    assert SPEC.group == "safety" and SPEC.judge.model == "claude-opus-5-5"
+    assert SPEC.group == "model_specific" and SPEC.judge.model == "claude-opus-5-5"
     assert SPEC.not_in_macro == ""  # in the macro (Camila, 2026-10-25)
     readme = (REPO / "evals/introspection/README.md").read_text(encoding="utf-8")
     assert SYSTEM in readme and PROMPT_VERSION in readme
