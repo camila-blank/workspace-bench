@@ -108,6 +108,10 @@ class EvalSpec:
     # why this family is kept out of the macro (e.g. "hillclimbing: not yet reviewed"); empty =
     # in the macro. It stays in `all` runs and reports, only the macro row skips it.
     not_in_macro: str = ""
+    # the family's item ids when they are not just its read plan's (knowledge_cutoff: the frozen
+    # bank + the ids-only nocot items, whose plan rows need a network fetch). Feeds the ATI
+    # construction entry and `wsbench list`; None = the readplan ids / the bank file's length.
+    item_ids: Callable[[], list[str]] | None = None
 
 
 def register(spec: EvalSpec) -> EvalSpec:

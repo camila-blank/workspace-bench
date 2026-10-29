@@ -96,7 +96,11 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   (item, layer) carries every position's samples (rule `all_from_end`, offset-only headers, no
   prompt text); its `score.py` (the source's per-option span matcher, exclusive longest match)
   now only verifies quotes and feeds diagnostics. A cell whose offsets are not the contiguous
-  `min..-1` run (>= 4) is `partial` and forces `complete=False`.
+  `min..-1` run (>= 4) is `partial` and forces `complete=False`. Plan 0018 adds ids-only nocot
+  items (`evals/knowledge_cutoff/obscure_items.json`, none under `WSB_BANK_ROOT`): their prompt is
+  rendered from nocot-bench's pinned zip by `wsbench.nocot` at plan time only (judge / run / ATI
+  stay offline via `EvalSpec.item_ids`; `WSB_NO_NOCOT=1` drops the nocot rows from the plan, set
+  by `atlas/export_cb.py`); `tests/conftest.py` stubs `nocot.questions` so tests never fetch. Never commit nocot question text or obscure items' real readouts / `cells.jsonl`.
 - `opts=key=value,k2=v2` fills `JudgeArgs.extra`; `aux_models` comes from the family `JudgeConfig`.
   `EvalSpec.calls_per_arm` / `.sources` feed `wsbench list`; every non-empty `sources` must
   appear verbatim in README §Credits and NOTICE.md (`tests/test_readme.py`).
@@ -122,6 +126,19 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `text_inversion.CONSTRUCTION_GATED` (knowledge_cutoff) lists families whose banks were
   gated when their items were selected (source G1): the gate writes their whole bank
   (`answerer: "construction"`) and never asks about them.
+
+- Summary mode (`opts=aggregate=summary`, plan 0020, `digest.py`): a hooked family calls
+  `digest.collapse(name, cells_by_item, ...)` AFTER its own cell selection and missing-cell
+  accounting. Items with no cells are not passed; `n_expected` / `n_missing` stay cell-level and
+  `n_empty` / `n_unjudged` become item-level, so pass `n_items` to `completeness`. It then judges
+  the one synthetic cell per item (`layer = digest.SUMMARY_LAYER = -1`, pos/token copied from the
+  item's last cell) with summary-mode prompt variants listed in its `PROMPTS`. Every quote,
+  numeral or regex gate takes `digest.gate_texts(cell, col)` (evidence samples only;
+  `joined=True` for regex). Summary mode never changes a family's denominator rule. Stamp
+  `digest.prompt_version` / `digest.config` / `digest.pinned`. `runner.judge_family` stamps the
+  `digest.NATIVE_ONLY` families native and fails any other family that did not report
+  `config.aggregate = "summary"`. Never bind a module constant (e.g. `PROMPT_VERSION`) as a
+  default argument: tests monkeypatch it.
 
 ## Driver (`runner.py`, `cli.py`)
 - `run all=True|families=a,b readouts_root=DIR out=DIR [family_workers=3] [json=True]` reads

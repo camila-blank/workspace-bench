@@ -171,3 +171,73 @@ cause ({cause_kind}): {cause}
 bug line: {line}
 
 ```
+
+## Summary mode (`opts=aggregate=summary`, plan 0021)
+
+Opt-in; the default (`aggregate=native`) is the two-stage judge above, unchanged. Summary mode
+reads exactly the native read cell (the max-pos row, the EOF anchor, at the item's read layer or
+the single `layers=L` override; more than one layer still exits 2), passes its samples through
+ONE passive digest call (`docs/summarizer.md` § Item digest), and runs Stage A once on the
+rendered digest instead of on the raw samples. Stage B, the 1-10 rubric, the silent scores and
+the `score` headline are unchanged. The prompt version is stamped
+`buggy-score-2026-09-23+digest-v2-<variant>-<render>+<summary judge version>`.
+
+**Expectation: close to a no-op.** Today's readout files hold one row per item with one sample
+(or one token list), so the digest re-presents that one sample with a `[support]` marker; there
+is nothing to pool. A native-vs-summary comparison on this family measures digest failures
+(dropped or unsummarized items) and the note's wording, not aggregation.
+
+Item states mirror native exactly:
+- an item with no cell keeps the native missing path (fatal unless `allow_missing=True`);
+- an empty digest (a blank cell, or a digest of zero items) is a judged, silent item: it scores
+  1 on a buggy program and 5 on a clean twin, as an empty native cell does, with no call;
+- an unsummarized item (a failed or unparsable digest, or every digest item failing the
+  evidence check) is unjudged: left out of the mean and counted in `n_unjudged_cells`, so the run
+  is not `complete`; a failed Stage A or Stage B call is unjudged, as natively.
+
+No quote gate is added: Stage A's `quote` stays evidence, not a gate. One cell is one item here,
+so the cell-level `n_expected_cells` / `n_missing_cells` equal native and the item-level
+`n_unjudged_cells` / `n_empty_cells` count the same units. `pinned_instrument` additionally needs
+the digest at its default model and effort. Item rows carry `layer = -1`, `read_layer` (the
+native read layer), `summary`, `summary_statements`, `summary_evidence`, `summary_truncated` and
+`summary_state`; `extras.summary` holds the digest diagnostics. Native and summary runs need
+separate `out=` dirs.
+
+Stage A's user message is `INFER_USER_SUMMARY`: the note (`{summary_note}`) then the digest.
+The note is `SUMMARY_NOTE` (or `SUMMARY_NOTE_ABSTRACTIVE` under `summ_render=abstractive`),
+followed by `SUMMARY_NOTE_TOKENS` when the readouts are token lists. `DIGEST_TASK_NOTE` is what
+the digest's `summ_variant=task` is told about this family (the task type only; never the
+program, its source or the bug).
+
+`INFER_USER_SUMMARY`:
+
+```text
+{summary_note}
+
+readout digest:
+{summary}
+```
+
+`DIGEST_TASK_NOTE`:
+
+```text
+the model reads a short program shown bare, with nothing asked; the lens is read at the program's last token
+```
+
+`SUMMARY_NOTE`:
+
+```text
+The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+```
+
+`SUMMARY_NOTE_ABSTRACTIVE`:
+
+```text
+The readout below is a digest of the lens's readouts across every read layer and position, written by a note-taker who did not see the passage. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
+```
+
+`SUMMARY_NOTE_TOKENS`:
+
+```text
+A line whose items are separated by " | " is one ranked list of the lens's top vocabulary tokens, best first, and each token in it is its own sample: a quote from such a line must be exactly one token. A token ranked first among the candidates of its type in such a list is singled out, even if unrelated tokens rank above it; a token ranked below another candidate of its type, in a list made mostly of such candidates, is not.
+```

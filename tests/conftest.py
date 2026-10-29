@@ -27,6 +27,20 @@ def _reset_pacer():
     llm._PACER.reset()
 
 
+@pytest.fixture(autouse=True)
+def _offline_nocot(monkeypatch):
+    """knowledge_cutoff's nocot rows render from nocot-bench's zip (a network fetch, plan 0018):
+    every test gets synthetic question text instead, so plan / produce tests stay offline. The
+    fetch and its checks are tested on a fixture zip in tests/test_knowledge_cutoff_nocot.py."""
+    from wsbench import nocot
+
+    monkeypatch.setattr(
+        nocot,
+        "questions",
+        lambda: {it["id"]: f"synthetic question {it['id']}" for it in nocot.load_obscure()[1]},
+    )
+
+
 @pytest.fixture
 def real_families():
     """Every real family registered, whatever an earlier test cleared: ``load_all`` imports each

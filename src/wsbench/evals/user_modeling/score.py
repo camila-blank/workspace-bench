@@ -39,7 +39,14 @@ def score(
     counts: dict,
     config: dict,
     n_api_failed: int,
+    summary: dict | None = None,
+    n_items_scope: int | None = None,
+    pinned: bool | None = None,
 ) -> FamilyResult:
+    """Native scoring, or summary mode (``summary`` = ``Collapse.extras()``): one row per item,
+    ``pass_at_1`` omitted, the 5% empty rule taken against ``n_items_scope`` items; ``pinned``
+    is ``digest.pinned``."""
+    pinned = args.judge.pinned if pinned is None else pinned
     by_item: dict[str, list[dict]] = defaultdict(list)
     for v in rows:
         by_item[v["id"]].append(v)
@@ -68,7 +75,7 @@ def score(
         )
         for it in scope
     }
-    extras = {
+    extras: dict = {
         "pass_at_1": _rate(sum(f["inferred"] for f in first.values()), n_items),
         "correct": overall["correct"],
         "inferred": overall["inferred"],
@@ -80,6 +87,9 @@ def score(
         "n_api_failed": n_api_failed,
         "seed": SEED,
     }
+    if summary is not None:  # one judged summary per item: pass@1 over samples is meaningless
+        del extras["pass_at_1"]
+        extras["summary"] = summary
     return FamilyResult(
         family="user_modeling",
         metric="pass_rate",
@@ -90,15 +100,16 @@ def score(
         chance=CHANCE,
         chance_label=CHANCE_LABEL,
         complete=completeness(
-            pinned=args.judge.pinned,
+            pinned=pinned,
             subset=is_subset(args),
             n_expected=counts["n_expected_cells"],
             n_missing=0,
             n_unjudged=counts["n_unjudged_cells"],
             n_empty=counts["n_empty_cells"],
+            n_items=n_items_scope,
         )
         and not args.dry_run,
-        pinned_instrument=args.judge.pinned,
+        pinned_instrument=pinned,
         config=config,
         counts=counts,
         extras=extras,

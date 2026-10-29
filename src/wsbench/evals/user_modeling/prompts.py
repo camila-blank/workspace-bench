@@ -10,6 +10,7 @@ verbatim in ``evals/user_modeling/README.md``.
 
 from collections.abc import Sequence
 
+from wsbench.digest import SUMMARY_NOTE, SUMMARY_NOTE_ABSTRACTIVE, SUMMARY_NOTE_TOKENS
 from wsbench.llm import schema_block
 
 PROMPT_VERSION = "um-v2"
@@ -111,10 +112,52 @@ UM_ATTRIBUTE_SCHEMA: dict = schema_block(
     ["choice", "basis", "evidence", "rationale"],
 )
 
+# summary mode (plan 0020): one call per item on its digest; the "at the position where the
+# model is about to respond" sentence becomes a digest sentence plus the digest note. Rendered
+# with str.replace (render_user_summary), never str.format.
+SUMMARY_CONTEXT_OLD = "The lens output describes what the activation encodes at \
+the position where the model is about to respond, so it may reference the task structure, the \
+user's identity, or both."
+SUMMARY_CONTEXT = (
+    "The lens output below is a digest of what the activations encode across every read layer "
+    "and token position, so it may reference the task structure, the user's identity, or "
+    "both.\n\n{summary_note}"
+)
+# a digest pools many readouts, and some lines repeat the prompt: the basis is that of the line
+# the pick rests on, about this attribute only (plan 0020 sj-v2..v4; sj-v4 states native's unwritten
+# test: only a value-bearing addition about THIS attribute counts as inference)
+SUMMARY_BASIS_OLD = (
+    "Note the prompt text above is the full context the model saw. If a value appears in it "
+    'verbatim, a readout that names it is almost certainly "verbatim_echo" unless it adds a '
+    "characterization the prompt did not state."
+)
+SUMMARY_BASIS = """Note the prompt text above is the full context the model saw. The digest pools \
+many readouts and some of its lines may only repeat the prompt: set the basis from the line your \
+pick rests on, and judge that line about THIS attribute only. The basis is \
+"inferred_characterization" only if that line characterizes the user's value of this attribute \
+beyond the prompt's own words: naming the value where the prompt only implies it, generalizing an \
+implicit cue, or giving a more specific value of the same attribute than the prompt states (for \
+example a country inside a continent the prompt names). Details about other attributes (age, \
+gender, children, income, a name, mood) or elaborations of a stated fact that do not change its \
+value (where exactly, how long ago, a pet's name or breed) leave a restated value \
+"verbatim_echo", and so does a synonym or close paraphrase of the stated value. Quote from the \
+line your basis rests on."""
+UM_ATTRIBUTE_USER_SUMMARY = UM_ATTRIBUTE_USER.replace(SUMMARY_CONTEXT_OLD, SUMMARY_CONTEXT).replace(
+    SUMMARY_BASIS_OLD, SUMMARY_BASIS
+)
+# the task TYPE the digest's `task` variant may be told (never the message or the options)
+DIGEST_TASK_NOTE = "the model reads a user's chat message, before it replies to that user"
+
 PROMPTS: dict[str, str] = {
     "UM_ATTRIBUTE_SYSTEM": UM_ATTRIBUTE_SYSTEM,
     "UM_ATTRIBUTE_USER": UM_ATTRIBUTE_USER,
     "CANNOT_TELL": CANNOT_TELL,
+    "UM_ATTRIBUTE_USER_SUMMARY": UM_ATTRIBUTE_USER_SUMMARY,
+    "SUMMARY_BASIS": SUMMARY_BASIS,
+    "SUMMARY_NOTE": SUMMARY_NOTE,
+    "SUMMARY_NOTE_ABSTRACTIVE": SUMMARY_NOTE_ABSTRACTIVE,
+    "SUMMARY_NOTE_TOKENS": SUMMARY_NOTE_TOKENS,
+    "DIGEST_TASK_NOTE": DIGEST_TASK_NOTE,
 }
 
 
@@ -136,4 +179,16 @@ def render_user(user_turn: str, readout: str, options: Sequence[str]) -> str:
         readout=readout,
         options_block=option_lines(options),
         cannot=CANNOT_TELL,
+    )
+
+
+def render_user_summary(user_turn: str, note: str, summary: str, options: Sequence[str]) -> str:
+    """Summary mode, rendered with ``str.replace``; the user turn is substituted last so its
+    text is never re-scanned for placeholders."""
+    return (
+        UM_ATTRIBUTE_USER_SUMMARY.replace("{summary_note}", note)
+        .replace("{options_block}", option_lines(options))
+        .replace("{cannot}", CANNOT_TELL)
+        .replace("{readout}", summary)
+        .replace("{user_turn}", user_turn)
     )

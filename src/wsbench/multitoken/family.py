@@ -14,6 +14,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from wsbench import digest
 from wsbench.banks import load_bank
 from wsbench.cache import Cache, fingerprint
 from wsbench.family import (
@@ -31,7 +32,15 @@ from wsbench.mc import fold, letter_index  # fold is part of this module's publi
 from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_readout_count
 from wsbench.multitoken import regex
 from wsbench.multitoken.options import judged_roles, option_sets
-from wsbench.multitoken.prompts import LETTERS, PROMPT_VERSION, SCHEMA, SYSTEM, render_user
+from wsbench.multitoken.prompts import (
+    DIGEST_TASK_NOTES,
+    LETTERS,
+    PROMPT_VERSION,
+    SCHEMA,
+    SYSTEM,
+    render_user,
+    render_user_summary,
+)
 from wsbench.multitoken.regex import SCORER_VERSION, SUMMARIZED_SCORER_VERSION
 from wsbench.readouts import Cell, load_readouts
 from wsbench.registry import EvalSpec, JudgeArgs, bank_path
@@ -141,6 +150,20 @@ def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
         )
     missing = [(i, layer) for i in ids for layer in layers if (i, layer) not in positions]
     require_cells(name, missing, len(ids) * len(layers), args)
+    if digest.summary_mode(args):
+        return _run_regex_summary(
+            args,
+            name=name,
+            contract=contract,
+            scope=scope,
+            ids=ids,
+            units_of=units_of,
+            cells=cells,
+            rep=rep,
+            positions=positions,
+            layers=layers,
+            missing=missing,
+        )
     previous_mc = _previous_mc(args.out)
     tokens = rep.kind == "tokens"
     spend = Spend()
@@ -339,6 +362,135 @@ def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
     return with_readout_count(result, scope, cells)
 
 
+def _collapse(
+    name: str,
+    args: JudgeArgs,
+    ids: list[str],
+    positions: dict[tuple[str, int], list[Cell]],
+    *,
+    cache: Cache,
+    spend: Spend,
+    pre: Preflighter,
+) -> digest.Collapse:
+    """Summary mode: every item's cells at every read layer -> one digest. Items with no cell
+    are not passed (they keep the native missing path: undecided)."""
+    by_item: dict[str, list[Cell]] = defaultdict(list)
+    for (item_id, _layer), cs in sorted(positions.items()):
+        by_item[item_id].extend(cs)
+    return digest.collapse(
+        name,
+        {i: by_item[i] for i in ids if by_item.get(i)},
+        args=args,
+        cache=cache,
+        spend=spend,
+        preflight=pre.for_judge(digest.summarizer_judge(args)),
+        task_note=DIGEST_TASK_NOTES.get(name, ""),
+    )
+
+
+def _run_regex_summary(
+    args: JudgeArgs,
+    *,
+    name: str,
+    contract: regex.BankContract,
+    scope: list[dict[str, Any]],
+    ids: list[str],
+    units_of: dict[str, list[regex.ScoredUnit]],
+    cells: list[Cell],
+    rep: Any,
+    positions: dict[tuple[str, int], list[Cell]],
+    layers: list[int],
+    missing: list[tuple[str, int]],
+) -> FamilyResult:
+    """Summary mode (plan 0020): the contract runs once per item on its digest's evidence
+    samples (``gate_texts(joined=True)``) as the samples of one layer, so the same-layer
+    conjunction becomes "every required unit among the evidence samples". The instrument is
+    the digest. No cell: undecided (native); a missing layer and no pass, or an unsummarized
+    item: undecided; an empty item (blank cells or a zero-item digest): a fail."""
+    spend = Spend()
+    with Cache(args.out / "cells.jsonl") as cache:
+        col = _collapse(
+            name, args, ids, positions, cache=cache, spend=spend, pre=Preflighter(args.dry_run)
+        )
+    source_kind = digest.as_prose(rep)
+    if args.dry_run:
+        _print_dry_run(name, contract, scope, units_of, positions, layers, missing)
+    partial = {i for i, _layer in missing}
+    rows: list[dict[str, Any]] = []
+    for item_id in ids:
+        units = units_of[item_id]
+        cell = col.cells.get(item_id)
+        hits: dict[int, dict[str, list[str]]] = {}
+        if cell is not None and item_id not in col.unsummarized and not args.dry_run:
+            texts = digest.gate_texts(cell, col, joined=True)
+            samples = [s for s in (regex.extract_phrase(t) for t in texts) if s]
+            hits[digest.SUMMARY_LAYER] = regex.layer_unit_hits(samples, units)
+        res = regex.item_result(hits, units)
+        incomplete = item_id in partial or not hits or args.dry_run
+        row: dict[str, Any] = {
+            "id": item_id,
+            "roles": [u.role for u in units if u.required],
+            "optional_roles": [u.role for u in units if not u.required],
+            "pass": tri_state(res["pass"], incomplete),
+            "unit_hit": res["unit_hit"],
+            "unit_langs": res["unit_langs"],
+            "first_lang": res["first_lang"],
+            "any_hit": res["any_hit"],
+            "missing_layers": [layer for i, layer in missing if i == item_id],
+            "layers": {
+                str(layer): {"hits": h, "empty": item_id in col.empty} for layer, h in hits.items()
+            },
+        }
+        if cell is not None:
+            row.update(col.row(item_id))
+        rows.append(row)
+    decided = [r for r in rows if r["pass"] is not None]
+    roles = sorted({r for row in rows for r in (*row["roles"], *row["optional_roles"])})
+    first_lang: dict[str, Counter[str]] = defaultdict(Counter)
+    for row in decided:
+        for role, lang in row["first_lang"].items():
+            if lang is not None:
+                first_lang[role][lang] += 1
+    # the instrument is the digest (plan 0020 A6): judge_model = the digest model, pinned
+    # follows the digest, version = the regex contract + the digest suffix
+    judge_used = digest.summarizer_judge(args)
+    version = digest.prompt_version(SCORER_VERSION, args)
+    result = pass_rate_result(
+        name=name,
+        args=dataclasses.replace(args, judge=judge_used),
+        prompt_version=version,
+        rows=rows,
+        cells=cells,
+        rep=rep,
+        n_expected=len(ids) * len(layers),
+        n_missing=len(missing),
+        n_unjudged=len(col.unsummarized),
+        n_empty=len(col.empty),
+        spend=spend,
+        chance_label=CHANCE_LABEL,
+        config_extra={
+            **digest.config(args, source_kind),
+            "layers_judged": layers,
+            "scorer": SCORER,
+            "scorer_version": version,
+            "contract": dataclasses.asdict(contract),
+        },
+        extras={
+            "n_calls": spend.calls,
+            "any_hit_rate": rate(row["any_hit"] for row in decided),
+            "unit_any_layer": {
+                r: rate(row["unit_hit"][r] for row in decided if r in row["unit_hit"])
+                for r in roles
+            },
+            "language_of_readout": {r: dict(c) for r, c in sorted(first_lang.items())},
+            "summary": col.extras(),
+        },
+        n_items=len(ids),
+        pinned=judge_used.pinned,
+    )
+    return with_readout_count(result, scope, cells)
+
+
 def _print_dry_run(
     name: str,
     contract: regex.BankContract,
@@ -368,11 +520,16 @@ def _print_dry_run(
 # the forced-choice judge (opts=judge=mc): the instrument from 2026-09-16 to 2026-09-23
 # ---------------------------------------------------------------------------------------------
 def verdict(
-    res: dict[str, Any] | None, gold_idx: int, options: list[str], readout: str
+    res: dict[str, Any] | None,
+    gold_idx: int,
+    options: list[str],
+    readout: str,
+    samples: list[str] | None = None,
 ) -> dict[str, Any]:
     """One judge answer: ``correct`` / ``distractor`` / ``cannot`` / ``invalid``; a correct pick
-    counts only with a verbatim (folded) quote from the readout. ``invalid`` (no lone letter, or
-    a letter past the option list) is judged and negative: the instrument answered, wrongly."""
+    counts only with a verbatim (folded) quote from the readout, or from ONE of ``samples`` when
+    given (summary mode: the digest's evidence samples). ``invalid`` (no lone letter, or a
+    letter past the option list) is judged and negative: the instrument answered, wrongly."""
     if res is None:
         return {"judged": False, "kind": "unavailable", "correct": False}
     idx = letter_index(res.get("choice"), options)
@@ -394,7 +551,8 @@ def verdict(
             "quote_ok": False,
         }
     quote = str(res.get("quote", ""))
-    ok = quote_in(quote, readout)
+    texts = [readout] if samples is None else samples
+    ok = any(quote_in(quote, s) for s in texts)
     kind = "correct" if idx == gold_idx else "distractor"
     return {
         "judged": True,
@@ -427,6 +585,20 @@ def run_mc(args: JudgeArgs, *, name: str) -> FamilyResult:
         )
     missing = [(i, layer) for i in ids for layer in layers if (i, layer) not in positions]
     require_cells(name, missing, len(ids) * len(layers), args)
+    if digest.summary_mode(args):
+        return _run_mc_summary(
+            args,
+            name=name,
+            scope=scope,
+            ids=ids,
+            by_id=by_id,
+            options=options,
+            cells=cells,
+            rep=rep,
+            positions=positions,
+            layers=layers,
+            missing=missing,
+        )
 
     spend = Spend()
     pre = Preflighter(args.dry_run)
@@ -543,6 +715,127 @@ def run_mc(args: JudgeArgs, *, name: str) -> FamilyResult:
             "kinds": dict(kinds),
             "abstain_rate": rate(v["kind"] == "cannot" for v in verdicts if v["judged"]),
         },
+    )
+    return with_readout_count(result, scope, cells)
+
+
+def _run_mc_summary(
+    args: JudgeArgs,
+    *,
+    name: str,
+    scope: list[dict[str, Any]],
+    ids: list[str],
+    by_id: dict[str, dict[str, Any]],
+    options: dict[str, dict[str, tuple[list[str], int]]],
+    cells: list[Cell],
+    rep: Any,
+    positions: dict[tuple[str, int], list[Cell]],
+    layers: list[int],
+    missing: list[tuple[str, int]],
+) -> FamilyResult:
+    """Summary mode (plan 0020) on the forced-choice judge: one call per (item, unit) on the
+    item's digest, the quote gated by ``gate_texts``; the item passes when every judged unit is
+    correct on the one digest. Item states as in ``_run_regex_summary``; never pinned."""
+    spend = Spend()
+    pre = Preflighter(args.dry_run)
+    pv = digest.prompt_version(PROMPT_VERSION, args)
+    with Cache(args.out / "cells.jsonl") as cache:
+        col = _collapse(name, args, ids, positions, cache=cache, spend=spend, pre=pre)
+        source_kind = digest.as_prose(rep)
+        note = digest.summary_note(args, source_kind)
+        calls: list[Call] = []
+        meta: dict[str, tuple[str, str, int, list[str], str, list[str]]] = {}
+        layer = digest.SUMMARY_LAYER
+        for item_id in ids:
+            cell = col.cells.get(item_id)
+            if cell is None or item_id in col.unsummarized or item_id in col.empty:
+                continue
+            readout = (cell.samples or ("",))[0]
+            gate = digest.gate_texts(cell, col)
+            for role, (opts, gold_idx) in options[item_id].items():
+                key = f"{item_id}|L{layer:03d}|{role}"
+                meta[key] = (item_id, role, gold_idx, opts, readout, gate)
+                calls.append(
+                    Call(
+                        key=key,
+                        system=SYSTEM,
+                        user=render_user_summary(readout, note, role, opts),
+                        meta={"item": item_id, "layer": layer, "role": role},
+                    )
+                )
+        results = run_calls(
+            calls,
+            schema=SCHEMA,
+            judge=args.judge,
+            prompt_version=pv,
+            cache=cache,
+            spend=spend,
+            concurrency=args.concurrency,
+            rpm=args.rpm,
+            dry_run=args.dry_run,
+            preflight=pre.for_judge(args.judge),
+            temperature=0.0,
+        )
+    verdicts: list[dict[str, Any]] = []
+    for key, (item_id, role, gold_idx, opts, readout, gate) in meta.items():
+        v = verdict(results.get(key), gold_idx, opts, readout, samples=gate)
+        verdicts.append(
+            {
+                "item": item_id,
+                "layer": layer,
+                "role": role,
+                "gold": options[item_id][role][0][gold_idx],
+                **v,
+            }
+        )
+    unsummarized = {(i, layer) for i in col.unsummarized}
+    empty = {(i, layer) for i in col.empty}
+    rows = []
+    for i in ids:
+        row = _item_row(i, judged_roles(by_id[i]), verdicts, missing, unsummarized, empty)
+        row.pop("earliest_layer")
+        row.pop("passing_layers")
+        if i in col.cells:
+            row.update(col.row(i))
+        rows.append(row)
+    decided = [r for r in rows if r["pass"] is not None]
+    kinds: dict[str, int] = defaultdict(int)
+    for v in verdicts:
+        kinds[v["kind"]] += 1
+    roles = sorted({r for i in ids for r in judged_roles(by_id[i])})
+    unjudged_items = {v["item"] for v in verdicts if not v["judged"]} | col.unsummarized
+    result = pass_rate_result(
+        name=name,
+        # a diagnostic instrument: never pinned, so never complete and never in the macro
+        args=dataclasses.replace(args, judge=dataclasses.replace(args.judge, pinned=False)),
+        prompt_version=pv,
+        rows=rows,
+        cells=cells,
+        rep=rep,
+        n_expected=len(ids) * len(layers),
+        n_missing=len(missing),
+        n_unjudged=len(unjudged_items),
+        n_empty=len(col.empty),
+        spend=spend,
+        chance_label=MC_CHANCE_LABEL,
+        config_extra={
+            **digest.config(args, source_kind),
+            "layers_judged": layers,
+            "instrument_of_record": SCORER_VERSION,
+        },
+        extras={
+            "n_calls": len(calls),
+            "n_unjudged_units": sum(1 for v in verdicts if not v["judged"]),
+            "unit_any_layer": {
+                r: rate(row["unit_correct"][r] for row in decided if r in row["unit_correct"])
+                for r in roles
+            },
+            "kinds": dict(kinds),
+            "abstain_rate": rate(v["kind"] == "cannot" for v in verdicts if v["judged"]),
+            "summary": col.extras(),
+        },
+        n_items=len(ids),
+        pinned=False,
     )
     return with_readout_count(result, scope, cells)
 
