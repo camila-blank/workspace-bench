@@ -426,3 +426,18 @@ def test_invalid_basis_over_selection_and_per_pick_counts():
     assert v["own"] == ["violin"] and v["basis_of"] == {"violin": "content_bound"}
     assert v["pick_bases"] == [["violin", "instruction_narration"], ["violin", "content_bound"]]
     assert v["narrated"] == []
+
+
+def test_naming_both_directions_credits_neither():
+    """Plan 0025 (review): a call that names the item's own binding AND its partner credits
+    nothing for the item (direction_conflict), whatever the partner pick's basis."""
+    options = ["Adam being angry at Betty", "Betty being angry at Adam", "x", "y", "z", "w"]
+    readout = "Adam is angry at Betty. Betty is angry at Adam."
+    both = [
+        {"choice": "A", "quote": "Adam is angry at Betty", "basis": "content_bound"},
+        {"choice": "B", "quote": "Betty is angry at Adam", "basis": "incidental"},
+    ]
+    v = judge.verdict({"picks": both}, options, [0], readout, partner=[1])
+    assert v["kind"] == "direction_conflict" and v["own"] == [] and v["false"] == [options[1]]
+    v = judge.verdict({"picks": both[:1]}, options, [0], readout, partner=[1])
+    assert v["kind"] == "hit" and v["own"] == [options[0]]

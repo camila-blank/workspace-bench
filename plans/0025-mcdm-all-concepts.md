@@ -24,8 +24,13 @@ guesser shown only the option lists 83% of the time (`any_hit`), while plain
   reasons. The region labels and write-compliance gate are retained unchanged.
 - **Binding items** have one dictated concept (the directed relation), so "all" is that one
   concept, credited only as content and only in the stated direction (the judge's existing
-  direction rule is retained). A partner pick still does not block a pass (unchanged; reported
-  as `partner_confusion_rate`).
+  direction rule is retained). **Changed after review (the lucky floor measured 0.66 on
+  one-concept items by picking both directions):** a call that also names the item's binding
+  partner — the reversed relation, or the other fox item's concepts — credits none of the
+  item's concepts (`direction_conflict`), whatever the partner pick's basis; the lucky floor
+  applies the same rule (picks including a partner never pass) and its analytic floor becomes
+  C(n-k-p, 3-k)/C(n, 3). `partner_confusion_rate` is unchanged (any verified partner pick).
+  A call with more than three verified picks is `over_selected` and credits nothing.
 - **The judge stays gold-blind about WHICH options were dictated.** It never sees the item's
   instruction (unchanged), but SYSTEM now shows the instruction FORMAT with the slots blanked
   (`Think about ___. Now write this sentence: "___"`), so a decoded echo of an instruction is

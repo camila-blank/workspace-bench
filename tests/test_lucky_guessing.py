@@ -136,6 +136,8 @@ def test_analytic_floors():
     assert lg.analytic_floor([two]) == pytest.approx(1 / 6)
     # plan 0025: three distinct uniform picks include both golds: C(4, 1) / C(6, 3)
     assert lg.analytic_floor([multi]) == pytest.approx(4 / 20)
+    mate = lg.Item("e", [["x", "y", "z", "w", "v", "u"]], [1], multi=True, meta={"partner": [2]})
+    assert lg.analytic_floor([mate]) == pytest.approx(6 / 20)  # C(4, 2) / C(6, 3)
     dup = lg.Item("d", [["x", "y", "x", "z", "w"]], [1])  # a repeated gold label counts twice
     assert lg.analytic_floor([dup]) == pytest.approx(0.4)
     assert lg.analytic_floor([one, two]) == pytest.approx((0.2 + 1 / 6) / 2)
@@ -171,6 +173,9 @@ def test_score_draw_and_majority():
     assert lg.score_draw({"picks": "2"}, m)["n_picks"] == 0
     assert lg.majority_correct([hit, miss, exact], m) is False
     assert lg.majority_correct([both, miss, exact], m) is True
+    b = lg.Item("b", [["a", "b", "c", "d", "e", "f"]], [1], multi=True, meta={"partner": [2]})
+    assert lg.score_draw({"picks": [1]}, b)["correct"]
+    assert not lg.score_draw({"picks": [1, 2]}, b)["correct"]  # both directions: no pass
     u = lg.uniform_reply(m, "f", 0, 1)["picks"]  # three distinct uniform picks
     assert len(u) == 3 and len(set(u)) == 3
 
