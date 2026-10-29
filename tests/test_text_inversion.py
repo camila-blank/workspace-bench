@@ -73,6 +73,13 @@ def test_draw_verdicts_buggy_threshold(tmp_path):
     assert ti.draw_verdicts(p) == {"a": True, "b": False, "c": None}
 
 
+def test_buggy_code_is_not_gated_since_plan_0030():
+    # plan 0030 §4: a pair-level headline; its plan-0019 entry left the frozen subset
+    assert "buggy_code" in ti.NOT_GATED and "pair-level" in ti.NOT_GATED["buggy_code"]
+    assert "buggy_code" not in ti.gated_families()
+    assert "buggy_code" not in json.loads(ti.FROZEN.read_text(encoding="utf-8"))
+
+
 # ---------------------------------------------------------------- gate
 
 
