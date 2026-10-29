@@ -21,6 +21,7 @@ from wsbench.results import FamilyResult
 from . import score
 from .prompts import (
     DIGEST_TASK_NOTE,
+    JUDGE_PROMPT_VERSION,
     N_DISTRACTORS,
     PROMPT_VERSION,
     SCHEMA,
@@ -183,7 +184,7 @@ def run(args: JudgeArgs) -> FamilyResult:
             calls,
             schema=SCHEMA,
             judge=args.judge,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=JUDGE_PROMPT_VERSION,  # the cache key; the stamp is PROMPT_VERSION
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,
@@ -242,7 +243,8 @@ def _run_summary(
     options = option_sets(bank)
     spend = Spend()
     pre = Preflighter(args.dry_run)
-    pv = digest.prompt_version(PROMPT_VERSION, args)
+    pv = digest.prompt_version(PROMPT_VERSION, args)  # the stamp (instrument)
+    pv_calls = digest.prompt_version(JUDGE_PROMPT_VERSION, args)  # the judge cache key
     with Cache(args.out / "cells.jsonl") as cache:
         col = digest.collapse(
             "directed_modulation",
@@ -281,7 +283,7 @@ def _run_summary(
             calls,
             schema=SCHEMA,
             judge=args.judge,
-            prompt_version=pv,
+            prompt_version=pv_calls,
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,
