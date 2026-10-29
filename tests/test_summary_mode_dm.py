@@ -216,11 +216,14 @@ def _mcdm_judge(system: str, user: str, schema: dict) -> dict:
     lines = digest_lines(user)
     quote = re.sub(r"^\[\w+\] ", "", lines[0])[:12]
     _o, gold = opts[item]
+    cb = "content_bound"  # plan 0025: every pick carries a basis
     if item == "d-plumber":
-        return {"picks": [{"choice": "ABCDEF"[g], "quote": quote} for g in gold]}
+        return {"picks": [{"choice": "ABCDEF"[g], "quote": quote, "basis": cb} for g in gold]}
     if item == "d-none":
-        return {"picks": [{"choice": "A", "quote": quote}]}
-    return {"picks": [{"choice": "ABCDEF"[gold[0]], "quote": "STATEMENT-0"}]}  # gate rejects
+        return {"picks": [{"choice": "A", "quote": quote, "basis": cb}]}
+    return {  # gate rejects
+        "picks": [{"choice": "ABCDEF"[gold[0]], "quote": "STATEMENT-0", "basis": cb}]
+    }
 
 
 def test_mcdm_one_call_per_item_controls_included(tmp_path, monkeypatch):

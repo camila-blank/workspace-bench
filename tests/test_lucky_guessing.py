@@ -67,7 +67,8 @@ def test_lists_match_the_judges_builders():
     assert all(it.n_options == [10, 10] and it.lists[0] == it.lists[1] for it in rel)
     # multi-concept: controls dropped, golds are the dictated concepts
     mc = lg.build_family("multi_concept_directed_modulation")
-    assert len(mc) == 25 and all(it.multi and it.n_options == [6] for it in mc)
+    # plan 0025: 100-item bank, 98 with a gold (2 controls)
+    assert len(mc) == 98 and all(it.multi and it.n_options == [6] for it in mc)
     # brew: one 5-colour list per item, the judge's own seeded shuffle of the bank's candidates
     from wsbench.evals.brew_intermediates.judge import shuffled
 
@@ -133,7 +134,8 @@ def test_analytic_floors():
     multi = lg.Item("c", [["x", "y", "z", "w", "v", "u"]], [1, 2], multi=True)
     assert lg.analytic_floor([one]) == pytest.approx(0.2)
     assert lg.analytic_floor([two]) == pytest.approx(1 / 6)
-    assert lg.analytic_floor([multi]) == pytest.approx(2 / 6)
+    # plan 0025: three distinct uniform picks include both golds: C(4, 1) / C(6, 3)
+    assert lg.analytic_floor([multi]) == pytest.approx(4 / 20)
     dup = lg.Item("d", [["x", "y", "x", "z", "w"]], [1])  # a repeated gold label counts twice
     assert lg.analytic_floor([dup]) == pytest.approx(0.4)
     assert lg.analytic_floor([one, two]) == pytest.approx((0.2 + 1 / 6) / 2)
@@ -155,10 +157,11 @@ def test_score_draw_and_majority():
     assert lg.majority_correct([bad, bad, ok], it) is True  # invalid picks carry no vote
     assert lg.majority_correct([None, None], it) is None
     m = lg.Item("m", [["a", "b", "c", "d", "e", "f"]], [2, 5], multi=True)
-    hit = lg.score_draw({"picks": [5, 1]}, m)
-    assert hit["correct"] and hit["any_hit"] and not hit["exact"] and hit["n_picks"] == 2
-    second = lg.score_draw({"picks": [1, 5]}, m)  # gold only in second place: not a pass
-    assert not second["correct"] and second["any_hit"]
+    # plan 0025: a multi draw passes only when its picks include EVERY gold
+    hit = lg.score_draw({"picks": [5, 1]}, m)  # one gold of two: any_hit, not a pass
+    assert not hit["correct"] and hit["any_hit"] and not hit["exact"] and hit["n_picks"] == 2
+    both = lg.score_draw({"picks": [1, 5, 2]}, m)  # both golds, order irrelevant
+    assert both["correct"] and both["all_hit"] and not both["exact"] and both["n_golds"] == 2
     exact = lg.score_draw({"picks": [2, 5, 5]}, m)
     assert exact["correct"] and exact["exact"] and exact["n_picks"] == 2
     flood = lg.score_draw({"picks": [1, 3, 4, 2, 5, 6]}, m)  # capped at three picks
@@ -166,7 +169,10 @@ def test_score_draw_and_majority():
     miss = lg.score_draw({"picks": [1, 9]}, m)
     assert not miss["correct"] and miss["n_invalid"] == 1
     assert lg.score_draw({"picks": "2"}, m)["n_picks"] == 0
-    assert lg.majority_correct([hit, miss, exact], m) is True
+    assert lg.majority_correct([hit, miss, exact], m) is False
+    assert lg.majority_correct([both, miss, exact], m) is True
+    u = lg.uniform_reply(m, "f", 0, 1)["picks"]  # three distinct uniform picks
+    assert len(u) == 3 and len(set(u)) == 3
 
 
 def test_described_prompt_never_shows_the_item_itself():

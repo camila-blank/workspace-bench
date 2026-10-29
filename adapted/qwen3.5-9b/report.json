@@ -280,9 +280,10 @@
   },
   "multi_concept_directed_modulation": {
    "status": "full",
-   "n_items": 27,
-   "target": 27,
-   "note": "regenerated on the subject before regenerate steps wrote report entries; entry back-filled from the bank file 2026-10-18"
+   "n_items": 100,
+   "target": 100,
+   "note": "regenerated on the subject before regenerate steps wrote report entries; entry back-filled from the bank file 2026-10-18",
+   "change": "layers remapped to [22, 26, 28, 30]"
   }
  },
  "model": "qwen3.5-9b",
@@ -413,8 +414,8 @@
   }
  },
  "code": {
-  "git": "1d2f8da",
-  "adapt_sha256": "ebba0fa06590e1d5"
+  "git": "3eef8a8+dirty",
+  "adapt_sha256": "5c9d376a43e8ab45"
  },
  "read_band": []
 }

@@ -302,13 +302,15 @@
   },
   "multi_concept_directed_modulation": {
    "status": "full",
-   "n_items": 27,
-   "note": "regenerated on the subject; entry back-filled 2026-10-21"
+   "n_items": 100,
+   "note": "regenerated on the subject; entry back-filled 2026-10-21",
+   "target": 100,
+   "change": "layers remapped to [22, 26, 28, 30]"
   }
  },
  "code": {
-  "git": "581f690+dirty",
-  "adapt_sha256": "35681e85cc6322ac"
+  "git": "3eef8a8+dirty",
+  "adapt_sha256": "5c9d376a43e8ab45"
  },
  "model": "olmo-3-7b",
  "label": "OLMo-3-7B-Instruct",
