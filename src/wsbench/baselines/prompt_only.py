@@ -19,6 +19,8 @@ _SUMMARIZER_IGNORED = ("concurrency", "timeout")
 # every time (multi-concept DM scored 1.0): not a floor, never frozen or shown (Agam, 2026-09-16).
 EXCLUDED: dict[str, str] = {
     "multi_concept_directed_modulation": "the prompt dictates the concepts; prompt-only is 1.0",
+    "directed_modulation": "the instruction names the concept and, since plan 0028, narrating it "
+    "counts: prompt-only is 1.0 (2026-10-29, native and summary)",
     "hallucination": "an invention rate, not a bar a lens clears",
     "jlens_concept_pr": "precision against the J-lens top-10, not a bar a lens clears",
 }

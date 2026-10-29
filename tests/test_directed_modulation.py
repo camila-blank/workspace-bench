@@ -270,7 +270,9 @@ def test_cli_run_on_the_toy_file(family, tmp_path, monkeypatch):
     assert s["overall"]["content_bound"] == pytest.approx(2 / 3)  # pos pair + secret (content)
     assert s["pair"]["instruction_narration"] == 0.5  # the neg twin narrates only
     assert s["white_bear"]["delta"] == 1.0
-    assert r.value == pytest.approx(2 / 3) and r.extras["n_items_decided"] == 3
+    # plan 0028: the narrating neg twin now counts (headline = present); content_bound stays 2/3
+    assert s["overall"]["present"] == pytest.approx(1.0)
+    assert r.value == pytest.approx(1.0) and r.extras["n_items_decided"] == 3
     assert (out / "cells.jsonl").exists()
     assert len(r.rows[0]["options"]) == 5  # options drawn from the whole bank, not the subset
     assert main([*argv, "dry_run=True"]) == 0  # no key needed; makes no call
@@ -371,3 +373,13 @@ def test_all_blank_item_fails_rather_than_vanishing(family, tmp_path, monkeypatc
     )
     r = read_results(out)
     assert r.value == 0.0 and r.extras["n_items_decided"] == 1 and fake.calls == []
+
+
+def test_judge_calls_keyed_by_judge_prompt_version():
+    """Plan 0028: DM's judge cache key is unchanged (dm-2026-09-16); the instrument carries
+    +present."""
+    from wsbench.evals.directed_modulation import judge as dmj
+
+    src = __import__("inspect").getsource(dmj)
+    assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
+    assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29"
