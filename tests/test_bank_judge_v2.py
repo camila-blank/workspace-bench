@@ -35,7 +35,9 @@ def test_forbidden_line_is_multihop_only_and_json_quoted():
 
 
 def test_family_rules_and_per_family_prompts():
-    assert set(P.FAMILY_RULES) == {"poetry", "typo"} and {"multihop"} == P.FORBIDDEN_FAMILIES
+    md = {"medical_diagnosis", "medical_diagnosis_alt"}  # plan 0027
+    assert set(P.FAMILY_RULES) == {"poetry", "typo", *md}
+    assert {"multihop", *md} == P.FORBIDDEN_FAMILIES
     assert "misspelled" in P.FAMILY_RULE_TYPO and "Synonyms" in P.FAMILY_RULE_POETRY
     own = {
         "poetry": "FAMILY_RULE_POETRY",
