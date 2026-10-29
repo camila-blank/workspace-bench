@@ -115,8 +115,9 @@ def verdict(
     max_values: int = MAX_VALUES,
     keys: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """One judge answer. ``values`` = the judge's ranked numbers, capped at three, kept only when
-    verified in the readout. ``hit`` = some kept value within tolerance of the intermediate;
+    """One judge answer. ``values`` = the judge's ranked numbers, capped at ``max_values`` (three
+    native), kept only when verified in the readout. ``hit`` = some kept value within tolerance
+    of the intermediate;
     ``cross`` = the fraction of the item's null set whose intermediate some kept value hits.
     ``text`` may be a list of samples (summary mode: ``digest.gate_texts``): a value is then
     verified inside ONE sample, never across two. Summary mode passes ``max_values`` (the
@@ -590,7 +591,9 @@ def _run_summary(
             "quote": v.get("quote", ""),
             # the numbers digest (plan 0022): its keys, and whether the answer took a slot
             "digest_numbers": keys_of[i],
-            "answer_in_digest": _answer_in(keys_of[i], it.get("answer")),
+            "answer_in_digest": _answer_in(keys_of[i], it.get("answer"))
+            if i in col.summaries
+            else None,
         }
         if i in col.cells:
             row.update(col.row(i))

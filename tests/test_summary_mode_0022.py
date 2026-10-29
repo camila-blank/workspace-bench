@@ -427,3 +427,19 @@ def test_hierarchical_numeral_only_chunks_are_empty_without_a_final_call(tmp_pat
     col = _collapse(tmp_path, fam, {"a": cells})
     assert col.empty == {"a"} and not col.unsummarized
     assert all(u.strip() != "READOUTS:" for u in users)  # no final call on an empty union
+
+
+def test_review_round2_edge_cases(tmp_path):
+    assert not digest._number_key_ok("5", "x -5") and digest._number_key_ok("-5", "x -5")
+    assert digest.number_value("三百五") == 350 and digest.number_value("三点") is None
+    lines = _lines("a 5 here", "b 5.0 there")
+    r = {"items": [_entry("a 5 here", "5"), _entry("b 5.0 there", "5.0")], "rare": []}
+    dups = [0]
+    kept, _ = digest.ground(r, lines, 5, dups, numbers=True)
+    assert [g.key for g in kept] == ["5"] and dups[0] == 1  # one number, one slot
+    a = _args(tmp_path)
+    assert digest.summary_note(a, None, "chain_intermediates") == digest.SUMMARY_NOTE_NO_RARE
+    assert digest.summary_note(a, None, "basic_readout") == digest.SUMMARY_NOTE
+    assert "only one or a few samples" not in digest.SUMMARY_NOTE_NO_RARE
+    basis = um.SUMMARY_BASIS.split("Details about")[0]
+    assert "a synonym, translation or demonym" in basis  # synonyms are in the "only if" list
