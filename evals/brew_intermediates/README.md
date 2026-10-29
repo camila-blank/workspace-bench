@@ -157,7 +157,7 @@ Opt-in; the default (`aggregate=native`) is the per-cell judge above, unchanged.
   namespaced `summary_emit`, `summary_stir`, `summary_compute`. The per-cell extras
   (`cell_gold_rate`, `cell_primary_gold_rate`, `cell_off_rate`) are omitted. The result records
   `config.aggregate = "summary"`, `config.summarizer`, `config.source_kind` and
-  `prompt_version = brew-2026-09-16+digest-v2-<variant>-<render>+<summary judge version>`.
+  `prompt_version = brew-2026-09-16+digest-v3-<variant>-<render>+<summary judge version>`.
 
 The summary-mode user turn (`{note}` below, `{readout}` = the whole digest, `{options}` as
 native):
@@ -194,13 +194,13 @@ The digest notes, shared with every hooked family (`wsbench.digest`): `{note}` i
 `SUMMARY_NOTE`:
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 `SUMMARY_NOTE_ABSTRACTIVE`:
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position, written by a note-taker who did not see the passage. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
+The readout below is a digest of the lens's readouts across every read layer and position, written by a note-taker who did not see the passage, most prominent first, then content seen in only one or a few samples. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
 ```
 
 `SUMMARY_NOTE_TOKENS`:

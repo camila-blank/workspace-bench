@@ -259,29 +259,22 @@ def test_stride_path_all_dropped_is_reasked_on_rerun(tmp_path, monkeypatch):
 
 
 def test_plan_0020_fingerprint_unchanged():
-    # the stride path fingerprint fields, frozen: a change here re-bills every plan 0020 cache
+    # the stride path fingerprint fields, frozen (the v3 freeze: plan 0022 added max_rare and
+    # numbers): a change here re-bills every cached digest
     args = _args(Path("/tmp"))
     s = digest.settings(args, "basic_readout")
     assert (s.overflow, s.concurrency, s.timeout) == ("stride", None, None)
     from wsbench.cache import fingerprint
 
-    expected = fingerprint(
-        digest.DIGEST_PROMPT_VERSION,
-        s.model,
-        s.reasoning,
-        s.variant,
-        s.max_items,
-        s.token_cap,
-        s.decode,
-        "",
-        "TEXT",
-    )
+    expected = digest._digest_fp(s, "", "TEXT")
     assert expected == fingerprint(
-        "digest-v2",
+        "digest-v3",
         "claude-opus-5-5",
         {"anthropic_effort": "default"},
         "blind",
         10,
+        15,
+        0,
         150000,
         True,
         "",

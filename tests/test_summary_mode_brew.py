@@ -198,7 +198,7 @@ def test_units_rule_floors_and_stamps(tmp_path, monkeypatch):
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
     pv = digest.prompt_version(bp.PROMPT_VERSION, _args(tmp_path, path), family=judge.NAME)
     assert r.config["prompt_version"] == pv
-    assert pv.startswith(bp.PROMPT_VERSION + "+digest-v2-blind-extractive+")
+    assert pv.startswith(bp.PROMPT_VERSION + "+digest-v3-blind-extractive+")
     assert r.config["summarizer"] == digest.config(_args(tmp_path, path), "prose")["summarizer"]
     # the judge reads the summary-mode turn with the digest note
     user = next(u for n, _s, u in fake.calls if n == "brew_summary")
