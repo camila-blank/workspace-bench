@@ -87,6 +87,7 @@ import sys  # noqa: E402
 import pytest  # noqa: E402
 
 from wsbench import digest, llm, mcjudge, registry  # noqa: E402
+from wsbench.bpe import decode_token  # noqa: E402
 from wsbench.judge_config import resolve  # noqa: E402
 from wsbench.llm import Spend  # noqa: E402
 from wsbench.registry import JudgeArgs  # noqa: E402
@@ -112,7 +113,7 @@ def _frags(path: Path) -> list[str]:
     for line in path.read_text().splitlines():
         r = json.loads(line)
         out += [" ".join(x.split()) for x in r.get("samples") or []]
-        out += [digest.decode_bpe(x).strip() for x in r.get("tokens") or []]
+        out += [decode_token(x).strip() for x in r.get("tokens") or []]
     return [f for f in out if len(f) >= 3]
 
 
@@ -796,5 +797,5 @@ def test_brew_retention_and_buggy_na():
 
 def test_cell_lines_match_the_digest_rendering():
     assert cmp.cell_lines(["  a  b ", "", "c"], None) == ["a b", "c"]
-    assert cmp.cell_lines(None, ["Ġblue", "", "Ġred"]) == ["blue | red"]
+    assert cmp.cell_lines(None, [" blue", "", " red"]) == ["blue | red"]  # loaded: decoded
     assert cmp.cell_lines(None, [""]) == []

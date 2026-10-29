@@ -79,12 +79,6 @@ def test_render_marked_response_uses_the_frozen_offset() -> None:
     )
 
 
-def test_decode_token_byte_level_bpe() -> None:
-    assert hc.decode_token("æĹ¥æľ¬èªŀ") == "日本語"
-    assert hc.decode_token("Ġlanguages") == " languages"
-    assert hc.decode_token(" AI") == " AI"
-
-
 def test_bank_sites_place_the_marker_after_the_site_token() -> None:
     items = load_bank("hallucination")["items"]
     assert len(items) == 149
@@ -456,7 +450,7 @@ def test_topk_rows_are_summarised_then_judged_k1(tmp_path, fake_llm, mk_args):
     assert len(users) == 2 and users[0].startswith("TOKEN READOUTS:\n AI (9.10) |  spouse (8.40)")
     assert len(_verify_calls(fake)) == 1  # the summary is verified as one readout
     assert res.config["kind"] == "tokens" and res.config["k"] == 1
-    assert res.config["summary_prompt_version"] == "interp-v1"
+    assert res.config["summary_prompt_version"] == "interp-v1-decoded"
     row = res.rows[0]
     assert row["samples"] == ["The model is about to say it is an AI with no spouse."]
     assert row["tokens"][:2] == [" AI", " spouse"]

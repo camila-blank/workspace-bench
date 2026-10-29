@@ -152,7 +152,7 @@ option; share read as the opposite side at any cell, and per call).
 ## Token (J-lens) readouts
 
 A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1"`): the bundle is `render_bag(tokens, scores)` for that row (`tok (score)` best first, or `" | "`-joined tokens without scores). The judge then sees the interpretation
+`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is `render_bag(tokens, scores)` for that row (`tok (score)` best first, or `" | "`-joined tokens without scores). The judge then sees the interpretation
 text in place of the readout. A cell whose summary fails is skipped (counted in
 `n_unjudged_cells`); an empty string is never judged.
 

@@ -599,8 +599,8 @@ def test_tokens_kind_goes_straight_to_stage_a(tmp_path, fake_text, am_args):
     fake_text(responder)
     res = judge.run(am_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[RH]))
     assert len(seen) == 1 and READOUT_KIND["jlens"] in seen[0]
-    assert (
-        "layer 20: Ġgreen | test\\n | hack\nlayer 36: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9"
+    assert (  # Ġgreen arrives decoded, as " green" (the bag is stripped)
+        "layer 20: green | test\\n | hack\nlayer 36: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9"
         in seen[0]
     )
     assert "TOKEN READOUTS" not in seen[0]

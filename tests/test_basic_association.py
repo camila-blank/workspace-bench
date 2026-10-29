@@ -274,7 +274,7 @@ def test_prompt_version_bump_re_asks_and_keeps_old_rows(family, tmp_path, monkey
 
 
 def test_tokens_kind_readouts(family, tmp_path, monkeypatch):
-    fake = _install(monkeypatch, FakeJudge({"Ġchess": "chess"}))
+    fake = _install(monkeypatch, FakeJudge({" chess": "chess"}))  # Ġchess, decoded at load
     rows = [
         {"id": "chess", "layer": 20, "pos": 5, "tokens": ["Ġgame", "Ġchess", "Ġclock"]},
         {"id": "chess", "layer": 36, "pos": 5, "tokens": ["Ġsilence", "Ġboard"]},

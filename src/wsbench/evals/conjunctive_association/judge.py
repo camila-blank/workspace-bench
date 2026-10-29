@@ -33,7 +33,7 @@ DEFAULT_CHAR_CAP = 200000  # the full-blob instrument of record (the source defa
 
 # copied from the source repo's latent_eval/score_lens_readouts.py L26-32: applied to every
 # sample, prose included (so AO text loses its underscores and BPE markers).
-BPE_JUNK = re.compile(r"[ĠĊ▁]")
+BPE_JUNK = re.compile(r"[ĠĊ▁]")  # tokens arrive decoded (no-op on them); prose keeps the rule
 
 
 def norm_token(t: str) -> str:

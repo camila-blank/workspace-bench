@@ -98,9 +98,9 @@ class OptionForms:
 
 
 def token_bag_text(tokens: Sequence[str]) -> str:
-    """A token lens's top-k list as ONE sample: tokens stripped and space-joined (byte-level
-    display markers rendered first). Qwen splits digits, so multi-digit numbers never hit."""
-    return " ".join(t.replace("Ġ", " ").replace("▁", " ").strip() for t in tokens)
+    """A token lens's top-k list as ONE sample: tokens (decoded by the loader) stripped and
+    space-joined. Qwen splits digits, so multi-digit numbers never hit."""
+    return " ".join(t.strip() for t in tokens)
 
 
 def strict_win(counts: Mapping[str, int], gold: str) -> bool:

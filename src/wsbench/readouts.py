@@ -6,7 +6,8 @@ One JSONL row per cell::
     {"id": "<item id>", "layer": 36, "pos": 33, "tokens": ["Ġword", "..."], "scores": [10.8, 9.9]}
 
 Either row may carry an optional ``"token": "<read-site token>"`` string. A file is
-all-prose or all-tokens. Malformed lines are counted, never fatal.
+all-prose or all-tokens. Malformed lines are counted, never fatal. ``tokens`` are decoded from
+byte-level BPE to text here, once (``wsbench.bpe``); the read-site ``token`` is already text.
 """
 
 import json
@@ -14,6 +15,8 @@ from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+from wsbench.bpe import decode_token
 
 Kind = Literal["prose", "tokens"]
 SKIP_CATEGORIES = (
@@ -32,7 +35,7 @@ class Cell:
     layer: int
     pos: int
     samples: tuple[str, ...] | None  # prose lens
-    tokens: tuple[str, ...] | None  # top-k token lens (vocab strings, best first)
+    tokens: tuple[str, ...] | None  # top-k token lens (decoded text, best first)
     scores: tuple[float, ...] | None
     token: str | None = None  # the read-site token string, when the producer recorded it
 
@@ -98,7 +101,7 @@ def _parse_row(row: Any) -> Cell | None:
         if not isinstance(sc, list) or len(sc) != len(tokens) or not all(_is_num(v) for v in sc):
             return None
         scores = tuple(float(v) for v in sc)
-    return Cell(id_, layer, pos, None, tuple(tokens), scores, token)
+    return Cell(id_, layer, pos, None, tuple(decode_token(t) for t in tokens), scores, token)
 
 
 def load_readouts(

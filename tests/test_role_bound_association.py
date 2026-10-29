@@ -140,7 +140,7 @@ def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
 
     fake_llm(responder)
     res = judge.run(mk_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[AB]))
-    assert seen == ["TOKEN READOUTS:\nĠMarcus | Ġchased"] and res.value == 1.0
+    assert seen == ["TOKEN READOUTS:\n Marcus |  chased"] and res.value == 1.0
 
 
 def test_dry_run_prints_and_makes_no_calls(tmp_path, mk_args, capsys, monkeypatch):

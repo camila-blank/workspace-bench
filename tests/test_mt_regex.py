@@ -338,7 +338,8 @@ def test_tokens_are_summarized_then_matched(tmp_path, fake_llm, monkeypatch):
     assert r.extras["n_summaries"] == 2 and r.extras["n_summaries_cached"] == 0
     assert r.extras["n_calls"] == 2 and len(fake.calls) == 2
     assert r.config["prompt_version"] == SUMMARIZED_SCORER_VERSION
-    assert r.config["summarizer"] == "interp-v1" and r.config["judge_model"].startswith("google/")
+    assert r.config["summarizer"] == "interp-v1-decoded"
+    assert r.config["judge_model"].startswith("google/")
     assert r.pinned_instrument and r.counts["n_unjudged_cells"] == 0
     # cached: the same bags in the same out dir -> no call, same verdicts
     r2 = fam.run_regex(_args(path, out, items=[it["id"]]), name="multilingual_mt")

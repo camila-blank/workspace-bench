@@ -161,8 +161,8 @@ def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
     fake_llm(responder)
     res = judge.run(mk_args(TOKENS, items=[A]))
     assert seen[0] == (
-        'TOKEN READOUTS:\n[position "\'s"] Ġlandlord (11.20) | Ġsibling (10.40) | '
-        "Ġbrother (6.10) | Ġtenant (5.90)"
+        'TOKEN READOUTS:\n[position "\'s"]  landlord (11.20) |  sibling (10.40) | '
+        " brother (6.10) |  tenant (5.90)"
     )
     assert res.value == 1.0 and res.extras["n_cells_interp_missing"] == 0
     assert len(res.rows) == 2

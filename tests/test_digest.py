@@ -1,14 +1,15 @@
 """digest (summary mode): bundle, cap, decoder, evidence gate, renders, item states, cache."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from wsbench import digest
+from wsbench import bpe, digest
 from wsbench.cache import Cache
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.llm import Spend
-from wsbench.readouts import Cell
+from wsbench.readouts import Cell, load_readouts
 from wsbench.registry import JudgeArgs
 
 
@@ -33,7 +34,8 @@ def _prose(i: str, layer: int, pos: int, *samples: str, token: str | None = None
 
 
 def _toks(i: str, layer: int, pos: int, *tokens: str) -> Cell:
-    return Cell(i, layer, pos, None, tuple(tokens), None, None)
+    """A token cell as the loader builds it: vocab strings decoded (``wsbench.bpe``)."""
+    return Cell(i, layer, pos, None, tuple(bpe.decode_token(t) for t in tokens), None, None)
 
 
 # ---------------------------------------------------------------- bundle
@@ -51,27 +53,31 @@ def test_bundle_order_headers_and_no_token_text():
     assert [ln.text for ln in lines] == ["zeroth", "first", "second line"]
 
 
-MOJIBAKE = "".join(digest._bytes_to_unicode()[b] for b in "哪一个".encode())
+MOJIBAKE = "".join(bpe._bytes_to_unicode()[b] for b in "哪一个".encode())
 
 
-def test_decode_bpe():
-    assert digest.decode_bpe(MOJIBAKE) == "哪一个"
-    assert digest.decode_bpe("Ġathletic") == " athletic"
-    assert digest.decode_bpe("▁word") == " word"
-    assert digest.decode_bpe("café") == "café"  # already decoded text is kept
+def test_decode_token():
+    assert bpe.decode_token(MOJIBAKE) == "哪一个"
+    assert bpe.decode_token("Ġathletic") == " athletic"
+    assert bpe.decode_token("▁word") == " word"
+    assert bpe.decode_token("café") == "café"  # already decoded text is kept
 
 
-def test_token_line_is_decoded_and_scoreless():
-    cell = Cell("a", 20, 1, None, ("Ġfence", "Ġpost", MOJIBAKE), (3.0, 2.0, 1.0), None)
+def test_token_line_is_decoded_and_scoreless(tmp_path):
+    # vocab strings in the file; the loader decodes them, the bundle does not decode again
+    row = {"id": "a", "layer": 20, "pos": 1, "tokens": ["Ġfence", "Ġpost", MOJIBAKE]}
+    (tmp_path / "t.jsonl").write_text(json.dumps(row) + "\n")
+    (cell,), _ = load_readouts(tmp_path / "t.jsonl")
     text, lines, _ = digest.bundle([cell], 10_000)
     assert text == "[L20 pos 1]\n- fence | post | 哪一个"
     assert lines[0].pieces == ("fence", "post", "哪一个")
 
 
-def test_native_token_render_when_decode_off():
-    cell = Cell("a", 20, 1, None, ("Ġfence", MOJIBAKE), None, None)
-    text, _lines, _ = digest.bundle([cell], 10_000, decode=False)
-    assert text == f"[L20 pos 1]\n- fence | {MOJIBAKE}"
+def test_summ_decode_false_is_retired(tmp_path, capsys):
+    assert digest.settings(_args(tmp_path, summ_decode="true")).decode is True
+    with pytest.raises(SystemExit):
+        digest.settings(_args(tmp_path, summ_decode="false"))
+    assert "retired" in capsys.readouterr().err
 
 
 def test_est_tokens_is_script_aware():

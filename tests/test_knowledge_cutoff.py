@@ -124,7 +124,7 @@ def test_exclusive_longest_match_and_contested_spans():
         "nintendo switch": 0,
         "nintendo switch 2": 2,
     }
-    assert token_bag_text(["ĠKirin", " 9100 ", "▁x"]) == "Kirin 9100 x"
+    assert token_bag_text([" Kirin", " 9100 ", " x"]) == "Kirin 9100 x"  # decoded tokens
 
 
 def test_strict_win_ties_lose_and_layer_ties_go_early():

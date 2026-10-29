@@ -8,7 +8,7 @@ import pytest
 from conftest import write_jsonl
 from summary_fakes import FakeLLM, first_lines_digest
 
-from wsbench import digest, llm
+from wsbench import bpe, digest, llm
 from wsbench.evals.agentic_misalignment import SPEC, judge, prompts
 from wsbench.evals.agentic_misalignment.prompts import (
     DESIGN_SCORE_PROMPT_SUMMARY,
@@ -349,7 +349,7 @@ def test_reading_context_window_and_decoding():
     assert prompts.reading_context({0: "Hello", 1: "Ġworld", 2: "ĊĊ", 3: "▁again"}, 3) == (
         "Hello world again"
     )
-    mojibake = "".join(digest._bytes_to_unicode()[b] for b in "哪一个".encode())
+    mojibake = "".join(bpe._bytes_to_unicode()[b] for b in "哪一个".encode())
     assert prompts.reading_context({0: mojibake}, 0) == "哪一个"
     assert prompts.reading_context({}, 5) == prompts.NO_CONTEXT
     long = dict.fromkeys(range(24), "Ġ" + "x" * 30)
@@ -417,8 +417,7 @@ def test_summary_rank_outside_one_to_three_is_none():
 
 
 def test_reading_context_decodes_split_multibyte_tokens():
-    from wsbench import digest
     from wsbench.evals.agentic_misalignment.prompts import reading_context
 
-    raw = "".join(digest._bytes_to_unicode()[b] for b in "哪".encode())
+    raw = "".join(bpe._bytes_to_unicode()[b] for b in "哪".encode())
     assert reading_context({0: raw[:2], 1: raw[2:]}, 1) == "哪"

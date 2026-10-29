@@ -219,7 +219,7 @@ the `<|im_end|>`), `label_mix {recognition, echo, topic, noise}` (sample counts)
 ## Token (J-lens) readouts
 
 A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1"`): the bundle is `render_bag(tokens, scores)` for the
+`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is `render_bag(tokens, scores)` for the
 row, one summarizer call per cell, and the cell is then judged as a single readout (`n = 1`).
 A cell whose summary fails is skipped (counted in `n_unjudged_cells`). With k > 1 prose
 samples this family passes all k in one call (user_modeling instead makes k calls).

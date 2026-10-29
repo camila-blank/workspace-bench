@@ -12,6 +12,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from wsbench.bpe import decode_token
 from wsbench.mc import fold
 
 LEXICONS = {
@@ -37,11 +38,16 @@ def enumerates(sample: str, n: int = 5) -> str | None:
     return None
 
 
+def _samples(r: dict) -> list[str]:
+    """A raw row's samples; tokens decoded as the loader decodes them (judge quotes are text)."""
+    return r.get("samples") or [decode_token(t) for t in r.get("tokens") or []]
+
+
 def readouts(path: Path) -> dict[tuple[str, int], list[str]]:
     out: dict[tuple[str, int], list[str]] = defaultdict(list)
     for line in path.read_text().splitlines():
         r = json.loads(line)
-        out[(r["id"], r["layer"])].extend(r.get("samples") or r.get("tokens") or [])
+        out[(r["id"], r["layer"])].extend(_samples(r))
     return out
 
 
@@ -68,7 +74,7 @@ def readouts_by_pos(path: Path) -> dict[tuple[str, int, int], list[str]]:
     out: dict[tuple[str, int, int], list[str]] = defaultdict(list)
     for line in path.read_text().splitlines():
         r = json.loads(line)
-        out[(r["id"], r["layer"], r["pos"])].extend(r.get("samples") or r.get("tokens") or [])
+        out[(r["id"], r["layer"], r["pos"])].extend(_samples(r))
     return out
 
 

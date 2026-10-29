@@ -29,7 +29,7 @@ from .prompts import (
     render_user,
 )
 
-_BPE_JUNK = re.compile(r"[ĠĊ▁]")
+_BPE_JUNK = re.compile(r"[\r\n]")  # tokens arrive decoded; a newline token reads as a space
 
 
 @dataclass(frozen=True)
