@@ -34,7 +34,7 @@ POEM = [
 
 def test_every_family_plans_and_rows_serialize():
     fams = readplan.families()
-    assert len(fams) == 35  # + the four plan-0016 families, - ttt (plan 0017), + 2 (plan 0026)
+    assert len(fams) == 35  # + the four plan-0016 families, - ttt (plan 0017), + 2 (plan 0027)
     for fam in fams:
         specs = readplan.plan(fam)
         assert specs, fam

@@ -9,7 +9,7 @@ from wsbench.llm import schema_block
 from wsbench.readouts import Cell, Kind
 
 PROMPT_VERSION = "bank-2026-10-10"
-# families added after the shared version was frozen carry their own stamp (plan 0026), so a new
+# families added after the shared version was frozen carry their own stamp (plan 0027), so a new
 # family rule never makes the older families' ATI entries and floors stale
 FAMILY_PROMPT_VERSIONS: dict[str, str] = {
     "medical_diagnosis": "bank-2026-10-29-md",

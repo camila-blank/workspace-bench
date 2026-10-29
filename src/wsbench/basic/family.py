@@ -108,7 +108,7 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
             concurrency=args.concurrency,
             rpm=args.rpm,
             dry_run=args.dry_run,
-            # None (the judge's shared default) unless the family has its own stamp (plan 0026)
+            # None (the judge's shared default) unless the family has its own stamp (plan 0027)
             prompt_version=FAMILY_PROMPT_VERSIONS.get(name),
         )
 

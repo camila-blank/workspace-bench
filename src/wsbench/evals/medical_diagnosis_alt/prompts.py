@@ -1,5 +1,5 @@
 """The prompts this family sends: the bank judge shared by the basic families, plus its own
-family rule and `FORBIDDEN_TEMPLATE` (plan 0026)."""
+family rule and `FORBIDDEN_TEMPLATE` (plan 0027)."""
 
 from wsbench.basic.prompts import (
     FAMILY_RULE_MEDICAL,
