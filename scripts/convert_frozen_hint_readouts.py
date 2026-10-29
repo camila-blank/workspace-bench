@@ -1,5 +1,5 @@
 """Convert the global-workspace frozen unverbalized-hint readouts into the wsbench readout contract
-(plan 0025 fix 8, the validation gate), restricted to each twin's bank positions.
+(plan 0026 fix 8, the validation gate), restricted to each twin's bank positions.
 
     PYTHONPATH=src python scripts/convert_frozen_hint_readouts.py \
         --gw /workspace/gw-cf-influence --out outputs/uvh_frozen

@@ -569,5 +569,5 @@ def run(args: JudgeArgs) -> FamilyResult:
             "pipeline": diag,
         },
     )
-    result.n_items = len(dec)  # the unit is the decided pair (plan 0025 fix 7)
+    result.n_items = len(dec)  # the unit is the decided pair (plan 0026 fix 7)
     return with_readout_count(result, twin_items, cells)
