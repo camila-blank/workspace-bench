@@ -79,10 +79,20 @@ used `judge_model=claude-opus-5-5` as an override; this makes that the instrumen
    `0f5c626`) comes back, with the current `_anthropic_once` keyword passthrough, so the
    OpenRouter-shaped fakes keep driving the family tests; (d) a test that relied on an earlier
    test having loaded the registry takes the existing `real_families` fixture (no assertion
-   change). New tests: every invariant in (2), the lucky model gate and the report rule in (4).
+   change); (e) `test_judge_config`'s "explicit reasoning wins on either route" case
+   (`claude-sonnet-5` + `{"effort": "high"}`) now resolves `None` — the rule change of (2) itself;
+   (f) the `test_results` `_res` fixture's literal judge becomes `DEFAULT_JUDGE` (a row "on the
+   default judge", as it meant). New tests: every invariant in (2), the lucky model gate and
+   the report / macro rules in (4) and (8).
 8. **Side effects, stated.** (a) `pinned` flips: a cached run re-judged under the new default
    (cache hits, no spend) becomes pinned and so can be `complete` and enter the macro; old run
-   dirs keep their stored `pinned_instrument=False` until re-run. Users should stop passing
+   dirs keep their stored flags until re-run. Because those flags are relative to the default at
+   run time (a Gemini-era row stored `pinned=True`), `report` and `macro` decide from the row's
+   recorded `judge_model` against the family's CURRENT judge (`results.on_family_judge`;
+   regex families: the scorer or a summarizer equal to the family judge), not from the flag: a
+   Gemini-era row gets no Opus floor and is excluded from the macro with reason `judge`. Floors
+   also need the family's prompt version (`results.floor_applies`), so arithmetic's frozen-cell
+   floor is never drawn beside its batched `cells=all` instrument. Users should stop passing
    `judge_model=claude-opus-5-5` — it now overrides the Sonnet pins of agentic and jailbreak.
    (b) `wsbench capable`'s grader is the repo judge, so it needs Anthropic credentials too, and a
    `claude-*` answerer's OpenRouter `reasoning_effort` is dropped (cache fingerprint and
