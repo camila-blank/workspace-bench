@@ -193,7 +193,7 @@ def test_dry_run_on_the_toy_file(name, tmp_path, capsys, monkeypatch):
     out = tmp_path / "out"
     example = REPO / "examples/readouts" / f"{name}.jsonl"
     argv = ["judge", f"family={name}", f"readouts={example}", f"out={out}", "dry_run=True"]
-    assert main([*argv, "opts=judge=mc"]) == 0
+    assert main([*argv, "opts=judge=mc,aggregate=native"]) == 0
     r = read_results(out)
     assert r.value is None and r.family == name and not r.pinned_instrument
     assert "[user]" in capsys.readouterr().out

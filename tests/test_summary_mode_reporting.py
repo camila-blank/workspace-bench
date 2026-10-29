@@ -46,6 +46,7 @@ def test_markdown_dagger_floors_and_legend():
     line_b = next(ln for ln in md.splitlines() if ln.startswith("| b |"))
     assert "0.10" not in line_a and "— |" in line_a and "0.20" in line_b
     assert md.rstrip().endswith(SUMMARY_LEGEND)  # plan 0024 reworded the legend
+    assert SUMMARY_LEGEND.startswith("† summarize-then-judge (one judged summary per item")
     assert "†" not in markdown_table([_r("b", 0.4, None)], None)
 
 

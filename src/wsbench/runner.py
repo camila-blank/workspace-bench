@@ -100,7 +100,8 @@ def judge_family(
     items are its frozen subset (``text_inversion.subset``, which exits for an ungated or stale
     family) and the result is stamped with the scope."""
     items, scope, ati = args.items, "", None
-    warn_mode_change(out, opts.get("aggregate", "native"), spec.name)
+    if spec.name not in digest.NATIVE_ONLY:  # those run native under either mode
+        warn_mode_change(out, opts.get("aggregate", "native"), spec.name)
     if getattr(args, "anti_text_inversion", False):
         ati = text_inversion.subset_entry(spec.name)
         items, scope = list(ati["ids"]), text_inversion.SCOPE

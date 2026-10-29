@@ -114,6 +114,11 @@ def freeze(
     summary = modes == {"summary"}
     if dst is None:
         dst = default_dst(run_dir)
+    # a summary run must not overwrite the native floors, nor a native run the summary ones
+    other = FROZEN if summary else FROZEN_SUMMARY
+    if Path(dst).resolve() == other.resolve():
+        mode = "summary" if summary else "native"
+        raise ValueError(f"freeze: {run_dir} is a {mode}-mode run; {dst} holds the other mode's")
     for path in paths:
         r = runs[path]
         if r.family in EXCLUDED:

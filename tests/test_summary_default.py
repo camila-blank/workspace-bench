@@ -233,3 +233,15 @@ def test_unhooked_family_fails_under_the_default(tmp_path, monkeypatch):
         main(argv)
     assert e.value.code == 2
     assert main([*argv, "opts=aggregate=native"]) == 0
+
+
+def test_freeze_refuses_a_dst_of_the_other_mode(tmp_path, monkeypatch, real_families):
+    base = po.instrument_versions()["association"]
+    run = tmp_path / "run"
+    spv = f"{base}+digest-v3-blind-extractive+sj-v7"
+    write_results(run / "association", _result("association", spv, "summary", SUMM))
+    monkeypatch.setattr(po, "FROZEN", tmp_path / "po.json")
+    monkeypatch.setattr(po, "FROZEN_SUMMARY", tmp_path / "po_summary.json")
+    with pytest.raises(ValueError, match="other mode"):
+        po.freeze(run, tmp_path / "po.json")
+    assert "association" in po.freeze(run, tmp_path / "custom.json")  # any other dst is the user's

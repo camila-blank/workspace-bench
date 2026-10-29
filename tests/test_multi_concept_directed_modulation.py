@@ -279,7 +279,8 @@ def test_registered_and_dry_run(tmp_path, capsys, monkeypatch):
     assert SPEC.group == "basic_mt" and SPEC.judge.prompt_version == PROMPT_VERSION
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     out = tmp_path / "out"
-    argv = ["judge", f"family={SPEC.name}", f"readouts={EXAMPLE}", f"out={out}", "dry_run=True"]
+    argv = ["judge", "opts=aggregate=native", f"family={SPEC.name}", f"readouts={EXAMPLE}",
+            f"out={out}", "dry_run=True"]  # fmt: skip
     assert main(argv) == 0
     r = read_results(out)
     assert r.value is None and r.extras["n_items_without_readouts"] == 24
