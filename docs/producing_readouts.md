@@ -125,7 +125,7 @@ byte-level BPE strings with `Ġ`/`▁` shown as a space (`" led"`, and `"çļĦ�
 `wsbench.readouts.load_readouts` decodes each of those to text once, on load
 (`wsbench.bpe.decode_token`: `"çļĦç»ĵæŀľ"` -> `"的结果"`, `"Ċ"` -> `"\n"`), so every summarizer,
 judge and regex sees text. Until 2026-10-29 only hallucination, jlens_concept_pr's reference
-files and summary mode decoded; every other family saw non-ASCII tokens as mojibake. Write the
+files, summary mode and agentic_misalignment's read-site context decoded; every other family saw non-ASCII tokens as mojibake. Write the
 vocabulary strings. A string that does not decode cleanly is kept as written: a token holding
 part of a character stays in its byte-level spelling, and most already-decoded text survives
 (`"café"`, `"się"`), but decoded text that happens to spell valid UTF-8 in the byte table

@@ -234,6 +234,7 @@ def test_decode_token_byte_level_bpe():
     for word in ("się", "děti", "mā", "đi"):  # Latin Extended-A: would decode to controls
         assert decode_token(word) == word
     assert decode_token("Ċ") == "\n" and decode_token("ĉ") == "\t"  # vocab whitespace still
+    assert decode_token("čĊ") == "\r\n"
 
 
 def test_token_cells_are_decoded_once_at_load(tmp_path):

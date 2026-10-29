@@ -26,9 +26,12 @@ def to_bytes(tok: str) -> bytes:
 
 
 def _control(text: str) -> bool:
-    """A C0/C1 control character other than newline / tab: what already-decoded text with a
-    Latin Extended-A letter (``się``, ``děti``) turns into when decoded again."""
-    return any((ord(c) < 0x20 and c not in "\n\t") or 0x7F <= ord(c) <= 0x9F for c in text)
+    """A C0/C1 control character other than whitespace: what already-decoded text with a Latin
+    Extended-A letter (``się``, ``děti``) turns into when decoded again. ``\r`` counts as
+    whitespace: Qwen's vocabulary has real ``\r\n`` tokens (``čĊ``)."""
+    return any(
+        (ord(c) < 0x20 and c not in "\n\t\r\x0b\x0c") or 0x7F <= ord(c) <= 0x9F for c in text
+    )
 
 
 def decode_token(tok: str) -> str:

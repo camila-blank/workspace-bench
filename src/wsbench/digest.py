@@ -389,6 +389,7 @@ def _one_line(s: str) -> str:
 
 def _group(cell: Cell, decode: bool = True) -> _Group:
     header = f"[L{cell.layer} pos {cell.pos}]"
+    # ``decode`` is inert (summ_decode=false is retired); kept so Settings fingerprints still hit
     if cell.tokens is not None:  # decoded to text by the loader (wsbench.bpe); not again here
         toks = tuple(t for t in (_one_line(t) for t in cell.tokens) if t)
         lines = (Line(TOKEN_SEP.join(toks), toks, header),) if toks else ()
