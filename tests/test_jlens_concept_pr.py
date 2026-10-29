@@ -20,12 +20,17 @@ from wsbench.evals.jlens_concept_pr import judge as jj
 from wsbench.evals.jlens_concept_pr import prompts as pp
 from wsbench.evals.jlens_concept_pr import score as ss
 from wsbench.evals.jlens_concept_pr.concept_pr import ItemScore, is_content_token
-from wsbench.judge_config import JudgeConfig, resolve
+from wsbench.judge_config import JudgeConfig, ResolvedJudge, resolve
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples/readouts/jlens_concept_pr.jsonl"
 LABELS = ["chat-dailydialog-0000", "chat-lmsys-0000", "pt-pile-0000"]
 CONCEPTS = ["figurative turn of phrase", "metaphor", "light-hearted aside"]
+
+# Gemini as if it were the family's pinned judge: exercises the OpenRouter route's knobs
+GEMINI_PINNED = ResolvedJudge(
+    model="google/gemini-3.8-flash", reasoning={"effort": "minimal"}, pinned=True, source="family"
+)
 
 
 @pytest.fixture
@@ -388,7 +393,7 @@ def _stage_calls(fake) -> dict[str, list[dict]]:
 
 def test_stage_sequencing_models_and_numbers(tmp_path, fake_llm, jargs):
     fake = fake_llm(_responder)
-    args = jargs(EXAMPLE, items=LABELS)
+    args = jargs(EXAMPLE, items=LABELS, judge=GEMINI_PINNED)
     res = jj.run(args)
     st = _stage_calls(fake)
     # A -> B/foil -> P, in that order; preflight once per (model, reasoning)

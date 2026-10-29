@@ -381,7 +381,7 @@ def test_report_floor_columns(tmp_path, monkeypatch):
     assert table.splitlines()[2].count("|") == head.count("|")
 
 
-def test_prompt_only_floor_from_another_judge_is_not_drawn(tmp_path):
+def test_prompt_only_floor_from_another_judge_is_not_drawn(tmp_path, real_families):
     import json
 
     from wsbench.baselines import prompt_only as po
@@ -393,3 +393,26 @@ def test_prompt_only_floor_from_another_judge_is_not_drawn(tmp_path):
     assert po.floors(dst) == {}
     dst.write_text(json.dumps({"association": {**entry, "judge_model": DEFAULT_JUDGE}}))
     assert set(po.floors(dst)) == {"association"}
+
+
+def test_lucky_floor_from_another_judge_is_not_drawn(tmp_path, real_families):
+    """Plan 0023: a lucky-guessing variant is drawn only when its guesser is the family's judge;
+    the model-free uniform variant always is."""
+    import json
+
+    fam = "user_modeling"
+    inst = lg.instrument_versions()[fam]
+    dst = tmp_path / "lg.json"
+    entry = {"mean": 0.2, "instrument": inst}
+    dst.write_text(
+        json.dumps(
+            {
+                fam: {
+                    "blind": {**entry, "model": "google/gemini-3.8-flash"},
+                    "described": {**entry, "model": DEFAULT_JUDGE},
+                    "uniform": {**entry, "model": "seeded-uniform"},
+                }
+            }
+        )
+    )
+    assert set(lg.floors(dst)[fam]) == {"described", "uniform"}

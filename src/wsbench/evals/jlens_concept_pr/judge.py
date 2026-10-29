@@ -3,7 +3,7 @@
 Port of ``scripts/oracle_lens_evals/jlens_pr/{judge_openrouter,judge_pr,items}.py`` (the judge
 of record) onto the shared client and cache. Three judged stages, one ``run_calls`` batch each:
 
-* Stage A (concept split) on the family judge (Gemini 3.8 Flash in this repo; the source ran
+* Stage A (concept split) on the family judge (Claude Opus 5.5 since plan 0023; the source ran
   it on DeepSeek-V4-Flash, see the README's instrument note): one call per cell with text,
   ``text = concat_samples(samples)``;
 * Stage B (per-token recall grades) on the judge: one call per CONTENT reference token per cell
@@ -179,7 +179,7 @@ def n_text_tokens(text: str) -> int:
 
 def extract_judge(args: JudgeArgs) -> ResolvedJudge:
     """Stage A's judge: ``aux_models["extract"]`` if a family ever sets one, else the family
-    judge itself (Camila, 2026-09-16: Stage A runs on Gemini 3.8 Flash like Stages B and P)."""
+    judge itself (Camila, 2026-09-16: Stage A runs on the family judge like Stages B and P)."""
     model = args.aux_models.get("extract")
     if model is None or model == args.judge.model:
         return args.judge

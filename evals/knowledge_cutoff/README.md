@@ -114,8 +114,9 @@ same coordinates as the former three-site plan.
 ## Judge (one call per item and layer)
 
 All positions of one (item, layer) go into **one** call to the bench default judge
-(`google/gemini-3.8-flash`, unpinned, temperature 0, `reasoning={"effort": "low"}` rather than the
-default `minimal`, since one call weighs every position). Layers are never pooled: each layer is
+(`claude-opus-5-5` since plan 0023, at low effort; on an OpenRouter override such as
+`google/gemini-3.8-flash` it sends temperature 0 and `reasoning={"effort": "low"}` rather than the
+OpenRouter default `minimal`, since one call weighs every position). Layers are never pooled: each layer is
 its own measurement.
 
 - **Reads block.** Positions in ascending order, earliest first. Each is a header `[position −k]`
