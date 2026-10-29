@@ -273,8 +273,10 @@
   },
   "multi_concept_directed_modulation": {
    "status": "full",
-   "n_items": 27,
-   "note": "regenerated on the subject; entry back-filled 2026-10-21"
+   "n_items": 100,
+   "note": "regenerated on the subject; entry back-filled 2026-10-21",
+   "target": 100,
+   "change": "layers remapped to [16, 20, 21, 22]"
   }
  },
  "model": "qwen3.5-2b",
@@ -285,8 +287,8 @@
   "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
  },
  "code": {
-  "git": "1d2f8da",
-  "adapt_sha256": "ebba0fa06590e1d5"
+  "git": "ed3d9e9+dirty",
+  "adapt_sha256": "5c9d376a43e8ab45"
  },
  "read_band": [],
  "drops": {
