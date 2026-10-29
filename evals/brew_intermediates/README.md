@@ -111,7 +111,7 @@ Candidate colours: {options}
 
 ## Summary mode (`opts=aggregate=summary`, plan 0021)
 
-Opt-in; the default (`aggregate=native`) is the per-cell judge above, unchanged. Use a separate
+The default since plan 0024; `opts=aggregate=native` opts out to the per-cell judge above. Use a separate
 `out=` dir per mode.
 
 - **Units.** After the cells are loaded and accounted for (`n_expected` / `n_missing` are

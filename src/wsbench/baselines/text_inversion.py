@@ -493,9 +493,17 @@ def draw_verdicts(results_path: Path) -> dict[str, bool | None]:
     """Per item: pass / fail / undecided for one judged draw. Rows are grouped by item (``id``,
     or ``name`` / ``item``); an item passes if any of its rows passes, is undecided if none
     passes and one is undecided. buggy_code rows pass at ``score >= BUGGY_PASS_SCORE``. For a
-    pass-rate family the decided rate must equal the family's own value (adapter drift guard)."""
+    pass-rate family the decided rate must equal the family's own value (adapter drift guard). A
+    summary-mode result is refused (ValueError): the gate is a native instrument."""
     d = json.loads(results_path.read_text(encoding="utf-8"))
     fam = d["family"]
+    if (d.get("config") or {}).get("aggregate") == "summary":
+        # the gate reads native row shapes and is stamped with the native instrument (plan 0024):
+        # judge the prompt-only readers with opts=aggregate=native
+        raise ValueError(
+            f"{fam}: {results_path} is a summary-mode result; the ATI gate needs native "
+            "verdicts (judge with opts=aggregate=native)"
+        )
     by_item: dict[str, list[bool | None]] = {}
     for r in d.get("rows", []):
         if r.get("excluded_from_rate"):

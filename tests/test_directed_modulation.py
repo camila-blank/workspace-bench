@@ -254,7 +254,13 @@ def test_cli_run_on_the_toy_file(family, tmp_path, monkeypatch):
     fake = FakeJudge(judge.option_sets(items))
     monkeypatch.setattr(llm, "_make_client", lambda route, key: fake)
     out = tmp_path / "out"
-    argv = ["judge", "family=directed_modulation", f"readouts={EXAMPLE}", f"out={out}"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=directed_modulation",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+    ]
     assert main([*argv, "items=dm-pair-00-pos,dm-pair-00-neg,dm-secret-00"]) == 0
     r = read_results(out)
     assert r.n_items == 3 and r.counts["n_expected_cells"] == 7 and r.counts["n_empty_cells"] == 1
@@ -285,6 +291,7 @@ def test_missing_layer_exit_2_and_undecided(family, tmp_path, monkeypatch):
     out = tmp_path / "out"
     argv = [
         "judge",
+        "opts=aggregate=native",
         "family=directed_modulation",
         f"readouts={f}",
         f"out={out}",
@@ -324,6 +331,7 @@ def test_tokens_kind_end_to_end_and_voided(family, tmp_path, monkeypatch):
         main(
             [
                 "judge",
+                "opts=aggregate=native",
                 "family=directed_modulation",
                 f"readouts={f}",
                 f"out={out}",
@@ -352,6 +360,7 @@ def test_all_blank_item_fails_rather_than_vanishing(family, tmp_path, monkeypatc
         main(
             [
                 "judge",
+                "opts=aggregate=native",
                 "family=directed_modulation",
                 f"readouts={f}",
                 f"out={out}",

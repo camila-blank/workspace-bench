@@ -247,7 +247,14 @@ def test_registered_readme_and_dry_run(tmp_path, capsys, monkeypatch):
     assert SYSTEM in readme and SYSTEM_BATCH in readme and PROMPT_VERSION_BATCH in readme
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     out = tmp_path / "out"
-    argv = ["judge", f"family={SPEC.name}", f"readouts={EXAMPLE}", f"out={out}", "dry_run=True"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        f"family={SPEC.name}",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "dry_run=True",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     assert r.value is None and r.extras["n_items_without_readouts"] == 592
@@ -448,7 +455,7 @@ def test_example_file_carries_the_every_position_regime(tmp_path, monkeypatch):
         f"readouts={EXAMPLE}",
         f"out={out}",
         "dry_run=True",
-        "opts=cells=all",
+        "opts=cells=all,aggregate=native",
     ]
     assert main(argv) == 0
     r = read_results(out)

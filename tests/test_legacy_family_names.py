@@ -67,6 +67,7 @@ def test_judge_accepts_old_family_name(tmp_path, capsys):
     rc = main(
         [
             "judge",
+            "opts=aggregate=native",
             "family=dm_category_default",
             f"readouts={EXAMPLE}",
             f"out={out}",
@@ -88,6 +89,7 @@ def test_run_accepts_old_family_name(tmp_path):
     rc = main(
         [
             "run",
+            "opts=aggregate=native",
             "families=dm_category_default",
             f"readouts_root={root}",
             f"out={out}",
@@ -125,6 +127,7 @@ def test_run_reads_legacy_readout_file(tmp_path, capsys):
     rc = main(
         [
             "run",
+            "opts=aggregate=native",
             "families=directed_modulation_obscure",
             f"readouts_root={root}",
             f"out={out}",
@@ -143,7 +146,13 @@ def test_run_prefers_new_readout_file(tmp_path, capsys):
     shutil.copy(EXAMPLE, root / "directed_modulation_obscure.jsonl")
     (root / "dm_category_default.jsonl").write_text("not json\n")  # never read
     out = tmp_path / "run"
-    args = ["run", "families=directed_modulation_obscure", f"readouts_root={root}", f"out={out}"]
+    args = [
+        "run",
+        "opts=aggregate=native",
+        "families=directed_modulation_obscure",
+        f"readouts_root={root}",
+        f"out={out}",
+    ]
     assert main([*args, f"items={TOY_IDS}"]) == 0
     assert "legacy" not in capsys.readouterr().out
 
@@ -154,8 +163,8 @@ def test_run_prefers_new_readout_file(tmp_path, capsys):
 @pytest.mark.usefixtures("_pre_refill_bank")
 def test_report_canonicalizes_old_family_in_results(tmp_path, capsys):
     out = tmp_path / "runs"
-    rc = main(["judge", "family=directed_modulation_obscure", f"readouts={EXAMPLE}",
-               f"out={out / 'dmcd'}", f"items={TOY_IDS}"])  # fmt: skip
+    rc = main(["judge", "opts=aggregate=native", "family=directed_modulation_obscure",
+               f"readouts={EXAMPLE}", f"out={out / 'dmcd'}", f"items={TOY_IDS}"])  # fmt: skip
     assert rc == 0
     path = out / "dmcd" / "results.json"
     stored = json.loads(path.read_text())

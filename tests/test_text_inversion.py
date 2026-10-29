@@ -335,7 +335,14 @@ def test_run_flag_scopes_each_family_and_stamps_results(offline, tmp_path, monke
             json.dumps({"id": "a", "layer": 1, "pos": 0, "samples": ["x"]}) + "\n"
         )
     code = main(
-        ["run", "all=True", f"readouts_root={root}", f"out={out}", "anti_text_inversion=True"]
+        [
+            "run",
+            "opts=aggregate=native",
+            "all=True",
+            f"readouts_root={root}",
+            f"out={out}",
+            "anti_text_inversion=True",
+        ]
     )
     assert code == 2  # the stale family fails (re-gate); the ungated one is only skipped
     assert "ungated" not in seen and "stale" not in seen  # neither reached its judge
@@ -351,7 +358,13 @@ def test_run_flag_scopes_each_family_and_stamps_results(offline, tmp_path, monke
 
 
 def test_flag_and_items_are_exclusive(offline, tmp_path, capsys):
-    argv = ["run", "all=True", f"readouts_root={tmp_path}", f"out={tmp_path}"]
+    argv = [
+        "run",
+        "opts=aggregate=native",
+        "all=True",
+        f"readouts_root={tmp_path}",
+        f"out={tmp_path}",
+    ]
     assert main([*argv, "anti_text_inversion=True", "items=a"]) == 2
     assert "drop items=" in capsys.readouterr().err
 
@@ -400,7 +413,13 @@ def test_judge_command_exit_codes_under_the_flag(offline, tmp_path, monkeypatch,
     monkeypatch.setattr(ti, "subset_entry", entry)
     r = tmp_path / "r.jsonl"
     r.write_text("")
-    base = ["judge", f"readouts={r}", f"out={tmp_path / 'o'}", "anti_text_inversion=True"]
+    base = [
+        "judge",
+        "opts=aggregate=native",
+        f"readouts={r}",
+        f"out={tmp_path / 'o'}",
+        "anti_text_inversion=True",
+    ]
     assert main([*base, "family=ungated"]) == 0
     assert main([*base, "family=stale"]) == 2
     assert "re-gate" in capsys.readouterr().err

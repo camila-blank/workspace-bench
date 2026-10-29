@@ -215,7 +215,7 @@ Sample template:
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the per-cell grid above, unchanged. Use a separate
+The default since plan 0024; `opts=aggregate=native` opts out to the per-cell grid above. Use a separate
 `out=` dir per mode.
 
 - **Hook.** Every unit's grid cells are selected and accounted for first (`n_expected` /

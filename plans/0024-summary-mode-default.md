@@ -1,6 +1,6 @@
 # 0024: summary mode is the default
 
-Status: rev 1 (critique round 1; the Rev 1 decisions section overrides earlier text). Owner: Camila. Date: 2026-10-29. Issue #117. This builds on plans 0020 (summary
+Status: rev 2 (critique rounds 1-2; the Rev 1 / Rev 2 decision sections override earlier text). Owner: Camila. Date: 2026-10-29. Issue #117. This builds on plans 0020 (summary
 mode), 0021 (brew / buggy / agentic), 0022 (digest-v3, the numbers digest, UM synonyms) and 0023
 (Opus 5.5 is the default judge). Every rule of those plans holds unless it is restated here.
 
@@ -145,6 +145,34 @@ history and gain one line saying the default flipped here.
    family (basic_readout on its toy file); "byte-identical" = the whole `results.json` of a
    native-opt-out run equals a pre-0024-default run's, compared on the same fixture (results
    carry no timestamp).
+
+## Rev 2 decisions (critique round 2)
+
+1. `src/wsbench/adapt/floors.py` (adapted-subject floors, beside native atlas bundles) also pins
+   `opts=aggregate=native` and stamps `aggregate` into each `floors.json` family entry.
+2. chain_intermediates forbids `cells=` other than `all` under summary too: its README says
+   `cells=last` needs `aggregate=native` (arithmetic: `cells=frozen`).
+3. **Summary prompt-only floors are judged at ONE layer**, the native entry's. The prompt-only
+   summaries are replicated into every layer file; all eleven copies would mark every line
+   "prominent" and swamp the digest's ranking, so one layer is the floor over what the text says.
+   Recorded with its direction of bias in `evals/baselines/README.md`.
+4. **Freeze checks (summary):** `EXCLUDED` and, in a summary run, `digest.NATIVE_ONLY` families are
+   skipped before the mode check; a summary result must carry `+digest-` in its `prompt_version`
+   and start with the family's current base version plus `+`; subset / no-value refusals as
+   native. `complete` is recorded, not required (a one-layer judging is a layer subset, as for the
+   native floors).
+5. A summary row that has a frozen summary floor withheld (instrument mismatch) shows `—` and sets
+   the override flag; `OVERRIDE_LEGEND` gains the summary-row rule.
+6. The byte-identity test compares `main(["judge", …, "opts=aggregate=native"])` with
+   `SPEC.run(JudgeArgs(extra={}))` written by `write_results` (the family's native fallback), on a
+   regex family's toy file (rows, numbers and counts equal).
+7. Commands in docs that relied on native being implicit (the ATI judging commands in
+   `evals/baselines/README.md`) gain `opts=aggregate=native`.
+8. `calls_per_arm` strings stay the native figures (pinned by each family's `test_registered`);
+   the README Cost paragraph states that summary mode adds one digest call per item, regex
+   families included (supersedes Rev 1 #7's string change).
+9. The six regex multi-token families get no summary prompt-only floor in this PR: their
+   prompt-only summaries (`gen-prompt-only-hard-mt`) are not on the box; documented.
 
 ## Out of scope
 

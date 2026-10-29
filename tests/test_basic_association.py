@@ -130,7 +130,14 @@ def test_quote_gate_is_per_sample():
 def test_dry_run_makes_no_calls_and_scores_nothing(family, tmp_path, monkeypatch, capsys):
     fake = _install(monkeypatch, FakeJudge({}))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "dry_run=True"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "dry_run=True",
+    ]
     assert main(argv) == 0
     assert fake.calls == []
     r = read_results(out)
@@ -143,7 +150,13 @@ def test_dry_run_makes_no_calls_and_scores_nothing(family, tmp_path, monkeypatch
 def test_missing_cells_exit_2_without_allow_missing(family, tmp_path, monkeypatch, capsys):
     _install(monkeypatch, FakeJudge({}))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+    ]
     with pytest.raises(SystemExit) as ei:
         main(argv)
     assert ei.value.code == 2 and "allow_missing" in capsys.readouterr().err
@@ -156,7 +169,13 @@ def test_empty_readouts_are_never_complete(family, tmp_path, monkeypatch):
     _install(monkeypatch, FakeJudge({}))
     empty = _write(tmp_path / "empty.jsonl", [])
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={empty}", f"out={out}"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={empty}",
+        f"out={out}",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     assert r.value is None and r.complete is False and r.counts["n_expected_cells"] == 0
@@ -168,6 +187,7 @@ def test_judge_verdicts_and_cells(family, tmp_path, monkeypatch):
     out = tmp_path / "out"
     argv = [
         "judge",
+        "opts=aggregate=native",
         "family=association",
         f"readouts={EXAMPLE}",
         f"out={out}",
@@ -197,7 +217,14 @@ def test_unverifiable_quote_voids_a_positive(family, tmp_path, monkeypatch):
     fake = FakeJudge({"Two players": "chess"}, quotes={"Two players": "grandmaster"})
     _install(monkeypatch, fake)  # YES on this cell, quoting a word the sample does not contain
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "items=chess",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     layer = r.rows[0]["layers"]["36"]
@@ -206,7 +233,14 @@ def test_unverifiable_quote_voids_a_positive(family, tmp_path, monkeypatch):
 
 def test_failed_calls_are_unjudged_and_retried_from_cache(family, tmp_path, monkeypatch):
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "items=chess",
+    ]
     fake = _install(monkeypatch, FakeJudge({"chess": "chess"}, fail_on="Two players"))
     assert main(argv) == 0
     r = read_results(out)
@@ -225,7 +259,14 @@ def test_undecided_items_leave_the_denominator(family, tmp_path, monkeypatch):
     # chess: L20 fails, L36 is a judged negative -> undecided; nasa: judged negative -> fails
     _install(monkeypatch, FakeJudge({}, fail_on="quiet game"))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "items=chess,nasa"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "items=chess,nasa",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     rows = rows_by_id(r)
@@ -237,7 +278,14 @@ def test_undecided_items_leave_the_denominator(family, tmp_path, monkeypatch):
     rows_ = [{"id": "chess", "layer": 20, "pos": 5, "samples": ["Two players sit in silence."]}]
     partial = _write(tmp_path / "partial.jsonl", rows_)
     _install(monkeypatch, FakeJudge({}))
-    argv = ["judge", "family=association", f"readouts={partial}", f"out={out / 'p'}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={partial}",
+        f"out={out / 'p'}",
+        "items=chess",
+    ]
     assert main([*argv, "layers=20,36", "allow_missing=True"]) == 0
     row = rows_by_id(read_results(out / "p"))["chess"]
     assert row["pass"] is None and row["n_missing"] == 1
@@ -246,14 +294,27 @@ def test_undecided_items_leave_the_denominator(family, tmp_path, monkeypatch):
 def test_all_calls_failing_exits_3(family, tmp_path, monkeypatch):
     _install(monkeypatch, FakeJudge({}, fail_on="targets"))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "items=chess",
+    ]
     assert main(argv) == 3
 
 
 def test_layers_and_limit_restrict_the_grid(family, tmp_path, monkeypatch):
     fake = _install(monkeypatch, FakeJudge({"chess": "chess"}))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+    ]
     assert main([*argv, "limit=2", "layers=20", "allow_missing=True"]) == 0
     r = read_results(out)
     assert r.n_items == 2 and r.config["layers"] == [20]
@@ -266,7 +327,14 @@ def test_prompt_version_bump_re_asks_and_keeps_old_rows(family, tmp_path, monkey
 
     fake = _install(monkeypatch, FakeJudge({"chess": "chess"}))
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={EXAMPLE}", f"out={out}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "items=chess",
+    ]
     assert main(argv) == 0 and len(fake.calls) == 2
     assert main(argv) == 0 and len(fake.calls) == 2  # fully cached
     monkeypatch.setattr(judge_mod, "PROMPT_VERSION", "bank-test-bump")
@@ -282,7 +350,14 @@ def test_tokens_kind_readouts(family, tmp_path, monkeypatch):
     ]
     readouts = _write(tmp_path / "tok.jsonl", rows)
     out = tmp_path / "out"
-    argv = ["judge", "family=association", f"readouts={readouts}", f"out={out}", "items=chess"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=association",
+        f"readouts={readouts}",
+        f"out={out}",
+        "items=chess",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     assert r.config["kind"] == "tokens" and r.value == 1.0 and r.rows[0]["earliest_layer"] == 20
@@ -295,7 +370,14 @@ def test_run_command_scores_the_family(family, tmp_path, monkeypatch):
     root.mkdir()
     (root / "association.jsonl").write_bytes(EXAMPLE.read_bytes())
     out = tmp_path / "run"
-    argv = ["run", "families=association", f"readouts_root={root}", f"out={out}", "limit=2"]
+    argv = [
+        "run",
+        "opts=aggregate=native",
+        "families=association",
+        f"readouts_root={root}",
+        f"out={out}",
+        "limit=2",
+    ]
     assert main([*argv, "allow_missing=True"]) == 0
     assert (out / "association" / "results.json").exists()
     assert "| association |" in (out / "summary.md").read_text()

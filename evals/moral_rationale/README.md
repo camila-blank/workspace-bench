@@ -185,7 +185,7 @@ of `(PROMPT_VERSION, judge model, reasoning, system, user)`; rerunning retries o
 
 ## Summary mode (`opts=aggregate=summary`, plan 0020)
 
-Opt-in; the default (`aggregate=native`) is the any-cell rule above. In summary mode, an item's
+The default since plan 0024; `opts=aggregate=native` opts out to the any-cell rule above. In summary mode, an item's
 selected cells (the last 5 positions at every read layer — the read plan is not widened) go to ONE
 passive digest call (`docs/summarizer.md` § Item digest). A committed item gets ONE MC call on that
 digest; a deliberative item gets one call per side, both on the same digest, and passes only if both

@@ -207,7 +207,14 @@ def test_registered_readme_and_dry_run(tmp_path, capsys, monkeypatch):
     assert SYSTEM in (REPO / "evals/chain_intermediates/README.md").read_text(encoding="utf-8")
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     out = tmp_path / "out"
-    argv = ["judge", f"family={SPEC.name}", f"readouts={EXAMPLE}", f"out={out}", "dry_run=True"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        f"family={SPEC.name}",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "dry_run=True",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     assert r.value is None and r.extras["n_items_without_readouts"] == 117

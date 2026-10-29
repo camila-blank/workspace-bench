@@ -1,6 +1,7 @@
 # Summary mode validation (plan 0020 D2 + D3)
 
-Everything here is the opt-in `opts=aggregate=summary` mode; the default (`native`) is unchanged.
+Everything here is the `aggregate=summary` mode. It was opt-in when these validations ran; plan
+0024 made it the default (`opts=aggregate=native` opts out).
 Every judged number uses `judge_model=claude-opus-5-5` through the `ant` profile, so families with
 another pin (Gemini, Sonnet) show `pinned=False`. That holds in both modes, so each comparison is
 like for like.

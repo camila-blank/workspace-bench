@@ -163,6 +163,8 @@ def judge(subject: str, tag_dir: str, fams: str = ",".join(REGOLD), rpm: str = "
             "judge_model=claude-opus-5-5",
             f"rpm={rpm}",
             "allow_missing=True",
+            # native: re-judges into a dir seeded with native caches, compared to native runs
+            "opts=aggregate=native",
         ]
         if layers:
             cmd.append("layers=" + ",".join(map(str, layers)))

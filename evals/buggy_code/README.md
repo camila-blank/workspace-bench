@@ -174,7 +174,7 @@ bug line: {line}
 
 ## Summary mode (`opts=aggregate=summary`, plan 0021)
 
-Opt-in; the default (`aggregate=native`) is the two-stage judge above, unchanged. Summary mode
+The default since plan 0024; `opts=aggregate=native` opts out to the two-stage judge above. Summary mode
 reads exactly the native read cell (the max-pos row, the EOF anchor, at the item's read layer or
 the single `layers=L` override; more than one layer still exits 2), passes its samples through
 ONE passive digest call (`docs/summarizer.md` § Item digest), and runs Stage A once on the

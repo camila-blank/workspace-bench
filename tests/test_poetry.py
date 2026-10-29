@@ -34,7 +34,14 @@ def test_dry_run_on_the_toy_file(tmp_path, capsys, monkeypatch):
     registry.FAMILIES.setdefault(SPEC.name, SPEC)
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     out = tmp_path / "out"
-    argv = ["judge", "family=poetry", f"readouts={EXAMPLE}", f"out={out}", "dry_run=True"]
+    argv = [
+        "judge",
+        "opts=aggregate=native",
+        "family=poetry",
+        f"readouts={EXAMPLE}",
+        f"out={out}",
+        "dry_run=True",
+    ]
     assert main(argv) == 0
     r = read_results(out)
     assert r.value is None and r.extras["n_items_without_readouts"] == 98

@@ -172,6 +172,7 @@ def test_cli_judge_writes_results(tmp_path, capsys):
     rc = main(
         [
             "judge",
+            "opts=aggregate=native",
             "family=directed_modulation_obscure",
             f"readouts={EXAMPLE}",
             f"out={out}",

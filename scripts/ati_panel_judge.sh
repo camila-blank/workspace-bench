@@ -46,7 +46,7 @@ xargs -P "$JOBS" -L 1 bash -c '
   if [ -s "$dst/$f/results.json" ]; then exit 0; fi
   mkdir -p "$(dirname "$tmp")"
   $WSB run families="$f" readouts_root="$root" out="$tmp" judge_model="$JUDGE" $lay \
-    allow_missing=True > "$tmp.log" 2>&1 || { echo "FAILED $dst/$f (see $tmp.log)"; exit 1; }
+    allow_missing=True opts=aggregate=native > "$tmp.log" 2>&1 || { echo "FAILED $dst/$f (see $tmp.log)"; exit 1; }
   mkdir -p "$dst" && rm -rf "$dst/$f" && cp -r "$tmp/$f" "$dst/$f"
   echo "ok $dst/$f: $(grep -E "pass_rate=|score=" "$tmp.log" | tail -1 | cut -c1-120)"
 ' < "$jobs_file"

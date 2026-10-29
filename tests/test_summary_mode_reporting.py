@@ -8,7 +8,7 @@ import pytest
 from wsbench import digest, runner
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.registry import EvalSpec
-from wsbench.results import FamilyResult, completeness, macro, markdown_table
+from wsbench.results import SUMMARY_LEGEND, FamilyResult, completeness, macro, markdown_table
 
 
 def _r(family: str, value: float, aggregate: str | None) -> FamilyResult:
@@ -45,7 +45,7 @@ def test_markdown_dagger_floors_and_legend():
     line_a = next(ln for ln in md.splitlines() if ln.startswith("| a †"))
     line_b = next(ln for ln in md.splitlines() if ln.startswith("| b |"))
     assert "0.10" not in line_a and "— |" in line_a and "0.20" in line_b
-    assert md.rstrip().endswith("† summarize-then-judge (one judged summary per item)")
+    assert md.rstrip().endswith(SUMMARY_LEGEND)  # plan 0024 reworded the legend
     assert "†" not in markdown_table([_r("b", 0.4, None)], None)
 
 
