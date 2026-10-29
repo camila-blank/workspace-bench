@@ -470,5 +470,6 @@ def test_file_missing_a_grid_layer_reports_missing_cells(tmp_path, monkeypatch):
     items = _toy_bank(tmp_path, monkeypatch, n_pairs=1)
     monkeypatch.setattr(judge, "run_calls", Script({}, {}))
     # two layers present but not the full GRID: held to GRID, so missing cells exit 2
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc:
         judge.run(_args(tmp_path, _write(tmp_path, _grid(items, {})), layers=None))
+    assert exc.value.code == 2

@@ -488,7 +488,6 @@ def run(args: JudgeArgs) -> FamilyResult:
     ids = [it["id"] for it in twin_items]
     positions = {it["id"]: [int(x) for x in it["positions"]] for it in twin_items}
     cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers, positions=positions)
-    # a single-layer lens (NLA-RL, L42) is complete over its own layer
     # a layer-locked lens (one layer, e.g. NLA-RL at L42) is judged on its own layer; any other
     # file is held to the full GRID, so a file missing a grid layer reports missing cells
     if args.layers is not None:
