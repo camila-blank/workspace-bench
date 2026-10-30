@@ -76,7 +76,7 @@ never to default to `summ_render=abstractive`: the abstractive judge reads those
 | typo_mt | 0.00 | 0.00 | 1.00 / 1.00 / 1.00 / 1.00 | — / — / — / — | 0.40 / 0.20 | 1.00 / 1.00 / 1.00 / 1.00 |
 | user_modeling | 0.00 | 0.00 | 0.31 / 0.53 / 0.31 / 0.51 | — / — / — / — | 0.25 / 0.23 | 0.95 / 0.90 / 0.95 / 1.00 |
 | wrong_bridge | 0.00 | 0.00 | 0.99 / 1.00 / 0.99 / 1.00 | 1.34 / 0.99 / 1.25 / 1.07 | 0.32 / 0.17 | 0.45 / 0.45 / 0.45 / 0.45 |
-| wrong_bridge_true | 0.00 | 0.00 | 1.00 / 1.00 / 0.99 / 1.00 | 1.47 / 1.05 / 1.60 / 1.00 | 0.25 / 0.19 | 0.10 / 0.10 / 0.10 / 0.10 |
+| wrong_bridge_true (removed 2026-10-30) | 0.00 | 0.00 | 1.00 / 1.00 / 0.99 / 1.00 | 1.47 / 1.05 / 1.60 / 1.00 | 0.25 / 0.19 | 0.10 / 0.10 / 0.10 / 0.10 |
 
 Columns: unsummarized rate and evidence-drop rate are for b10. Coverage is the share of
 recurring word types (≥ 3 samples, ≥ 2 layers) present in the evidence samples. Selection bias
@@ -258,7 +258,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | directed_modulation_obscure | 78 | 0.31 | 0.14 | [-0.26, -0.09] | — | **summary < 0.5x native (CI excludes 0)** |
 | knowledge_cutoff | 89 | 0.58 | 0.49 | [-0.19, +0.01] | — |  |
 | wrong_bridge | 80 | 0.51 | 0.49 | [-0.06, +0.00] | 0.88 |  |
-| wrong_bridge_true | 80 | 0.17 | 0.17 | [-0.04, +0.04] | 0.79 |  |
+| wrong_bridge_true (removed 2026-10-30) | 80 | 0.17 | 0.17 | [-0.04, +0.04] | 0.79 |  |
 
 #### s3d · L44 (D3c full banks)
 
@@ -267,7 +267,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | directed_modulation_obscure | 78 | 0.09 | 0.08 | [-0.04, +0.00] | — |  |
 | knowledge_cutoff | 89 | 0.21 | 0.17 | [-0.09, -0.01] | — |  |
 | wrong_bridge | 80 | 0.21 | 0.21 | [+0.00, +0.00] | 0.94 |  |
-| wrong_bridge_true | 80 | 0.07 | 0.07 | [+0.00, +0.00] | 0.83 |  |
+| wrong_bridge_true (removed 2026-10-30) | 80 | 0.07 | 0.07 | [+0.00, +0.00] | 0.83 |  |
 
 #### s3d · all layers (introspection, first 150 units)
 
@@ -304,7 +304,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.93 | 0.29 | [-0.76, -0.51] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | wrong_bridge | 66 | 0.52 | 0.48 | [-0.08, +0.00] | 0.88 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### s3d · L44 (ATI subset)
 
@@ -328,7 +328,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.73 | 0.27 | [-0.58, -0.33] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | wrong_bridge | 66 | 0.23 | 0.23 | [+0.00, +0.00] | 1.00 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### ML-NLA · all layers (ATI subset)
 
@@ -353,7 +353,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.91 | 0.24 | [-0.78, -0.55] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | wrong_bridge | 66 | 0.39 | 0.35 | [-0.09, +0.00] | 0.88 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### ML-NLA · L44 (ATI subset)
 
@@ -377,7 +377,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.56 | 0.22 | [-0.47, -0.22] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | wrong_bridge | 66 | 0.15 | 0.17 | [+0.00, +0.05] | 1.00 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### J-lens · all layers (ATI subset)
 
@@ -402,7 +402,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.64 | 0.13 | [-0.64, -0.38] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30, at or below chance** |
 | wrong_bridge | 66 | 0.05 | 0.05 | [+0.00, +0.00] | 1.00 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### J-lens · L44 (ATI subset)
 
@@ -426,7 +426,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | typo_mt | 2 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 | user_modeling | 55 | 0.25 | 0.13 | [-0.25, -0.02] | — | **at or below chance** |
 | wrong_bridge | 66 | 0.05 | 0.05 | [+0.00, +0.00] | 1.00 |  |
-| wrong_bridge_true | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
+| wrong_bridge_true (removed 2026-10-30) | 1 | 0.00 | 0.00 | [+0.00, +0.00] | — | n < 20 |
 
 #### s3d · all layers (full banks), ABSTRACTIVE ablation
 

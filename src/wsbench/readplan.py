@@ -327,10 +327,16 @@ def _final_token_families(family: str, render: str) -> list[ReadSpec]:
     out = []
     for it in items:
         rule = {"kind": "final_token"}
+        item_lite = lite
         spec = it.get("readout") or {}
         if spec.get("kind") in ("final_prompt_token", "last_word_token") and spec.get("offsets"):
             k = -int(spec["offsets"][0])
             rule = {"kind": "final_token"} if k == 1 else {"kind": "offset_from_end", "k": k}
+        elif spec.get("kind") == "all_positions":
+            # every token of the render (wrong_bridge v2, plan 0037); the bank's `lite` key is
+            # the reads=lite site, copied into the plan row (the judge never reads the bank for it)
+            rule = {"kind": "all"}
+            item_lite = dict(spec.get("lite") or FINAL)
         r = it.get("eval_render") or render
         if r == "chat":  # basic_readout's implicit items: the model's own favourite after the stem
             out.append(
@@ -342,12 +348,14 @@ def _final_token_families(family: str, render: str) -> list[ReadSpec]:
                     GRID,
                     text=it["prompt"],
                     prefill=ANSWER_STEM,
-                    lite_positions=lite,
+                    lite_positions=item_lite,
                 )
             )
         else:
             out.append(
-                ReadSpec(family, it["id"], r, rule, GRID, text=it["prompt"], lite_positions=lite)
+                ReadSpec(
+                    family, it["id"], r, rule, GRID, text=it["prompt"], lite_positions=item_lite
+                )
             )
     return out
 
@@ -470,7 +478,6 @@ def _plan(family: str) -> list[ReadSpec]:
         "multilingual_typo",
         "typo_mt",
         "wrong_bridge",
-        "wrong_bridge_true",
     ):
         return _final_token_families(family, "plain")
     if family == "poetry":

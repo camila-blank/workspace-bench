@@ -56,6 +56,10 @@ def _last_option(family: str) -> str:
         _h, items = j.load_bank(registry.bank_path(family))
         opts = j.option_sets(items)[items[0]["id"]][0]
         return p.option_lines(opts).splitlines()[-1]
+    if family == "wrong_bridge":
+        from wsbench.evals.wrong_bridge import judge as j
+
+        return j.shown_options(j.load_items()[0])[-1]
     # the multi-token families: the shared option builder
     from wsbench.banks import load_bank as load_bank_file
     from wsbench.multitoken.options import option_sets

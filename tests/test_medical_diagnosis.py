@@ -185,7 +185,7 @@ def test_spec_prompt_version_rule_and_forbidden_line():
     # plan 0032 §2.8.1: the shared SYSTEM lost its tool names, so the shared version moved too
     # (bank-2026-10-30b); the medical families keep their own stamp beside it
     assert bp.PROMPT_VERSION == "bank-2026-10-30b"
-    for fam in ("multihop", "wrong_bridge", "typo", "poetry", "association"):
+    for fam in ("multihop", "typo", "poetry", "association"):  # wrong_bridge: own PV, plan 0037
         assert spec_of(fam).judge.prompt_version == "bank-2026-10-30b"
         assert fam not in bp.FAMILY_PROMPT_VERSIONS
     it = _items(MAIN)[0]
