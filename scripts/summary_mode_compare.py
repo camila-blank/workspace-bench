@@ -74,9 +74,7 @@ BASIC_FAMILIES = {
     "multilingual",
     "poetry",
     "typo",
-    "wrong_bridge",
-    "wrong_bridge_true",
-}
+}  # wrong_bridge left the bank judge for its own MC judge (plan 0037); wrong_bridge_true removed
 DM = "directed_modulation"
 CHAIN = "chain_intermediates"
 INTROSPECTION = "introspection"

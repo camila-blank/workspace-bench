@@ -24,6 +24,7 @@ CHANGED_BY_FAMILY_PRS: set[str] = {
     "moral_rationale",  # plan 0046: bank v2 + every-position plan
     "association",  # plan 0039: bank v2 + summarize-suffix plan
     "basic_readout",  # plan 0039: v2 bank (question form)
+    "wrong_bridge",  # plan 0037: bank v2 (mc block, all positions)
 }
 
 

@@ -147,9 +147,7 @@ BASIC_TARGET_JUDGES = [
     "multilingual",
     "poetry",
     "typo",
-    "wrong_bridge",
-    "wrong_bridge_true",
-]
+]  # wrong_bridge: its own MC judge with FLAT_TYPES (plan 0037); wrong_bridge_true removed
 
 
 @pytest.mark.parametrize("family", BASIC_TARGET_JUDGES)

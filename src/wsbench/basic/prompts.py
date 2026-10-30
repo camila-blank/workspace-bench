@@ -87,10 +87,6 @@ DIGEST_TASK_NOTES: dict[str, str] = {
     "multilingual": "the model reads a short non-English prompt with a one-word answer",
     "poetry": "the model reads the first line of a rhyming couplet before writing the second",
     "typo": "the model reads a sentence that ends in a misspelled word",
-    "wrong_bridge": "the model reads a factual prompt whose answer needs one silent intermediate "
-    "step",
-    "wrong_bridge_true": "the model reads a factual prompt whose answer needs one silent "
-    "intermediate step",
     "medical_diagnosis": "the model reads a clinical vignette and a question whose answer depends "
     "on a diagnosis it never writes",
     "medical_diagnosis_alt": "the model reads a clinical vignette and a question whose answer "
