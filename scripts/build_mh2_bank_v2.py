@@ -193,6 +193,22 @@ LONE_GIVEN = {
     "ray",
     "tut",
 }
+# the zh renderings of LONE_GIVEN: one rule in both languages (a zh form is a plain substring
+# match, so a lone given name here would credit what the en forms exclude; PR #167 review)
+ZH_LONE_GIVEN = {
+    "理查",
+    "理查德",
+    "约翰",
+    "詹姆斯",
+    "埃米琳",
+    "依纳爵",
+    "安妮",
+    "亚历山大",
+    "吉尔莫",
+    "吉列尔莫",
+    "叶海亚",
+    "凯末尔",
+}
 CATEGORY_WORDS = {
     "the",
     "of",
@@ -301,7 +317,6 @@ ZH_FORMS: dict[str, list[str]] = {
     "Mustafa Kemal Atatürk": [
         "穆斯塔法·凯末尔·阿塔图尔克",
         "穆斯塔法·凯末尔",
-        "凯末尔",
         "阿塔图尔克",
     ],
     "Henri Cartier-Bresson": ["亨利·卡蒂埃-布列松", "卡蒂埃-布列松", "卡蒂埃·布列松"],
@@ -325,7 +340,7 @@ ZH_FORMS: dict[str, list[str]] = {
     "Benjamin Disraeli": ["本杰明·迪斯雷利", "迪斯雷利", "狄斯雷利"],
     "Ayn Rand": ["安·兰德", "艾茵·兰德"],
     "Qin Shi Huang": ["秦始皇", "嬴政", "始皇帝"],
-    "John the Baptist": ["施洗约翰", "施洗者约翰", "叶海亚"],
+    "John the Baptist": ["施洗约翰", "施洗者约翰"],
     "Tutankhamun": ["图坦卡蒙", "图坦卡门"],
     "Thomas Hobbes": ["托马斯·霍布斯", "霍布斯"],
     "Macbeth": ["麦克白"],
@@ -759,6 +774,8 @@ def _zh_problems(it: dict[str, Any], role: str) -> list[str]:
     for form in it["name_forms"][role]["zh"]:
         if len(_CJK.findall(form)) < 2:
             problems.append(f"{it['name']} {role}: zh form {form!r} under 2 CJK characters")
+        if form in ZH_LONE_GIVEN:
+            problems.append(f"{it['name']} {role}: zh form {form!r} is a lone given name")
         for name in dict.fromkeys(n for n, text in others if mc.fold(form) in text):
             problems.append(f"{it['name']} {role}: zh form {form!r} names {name!r}")
     return problems
