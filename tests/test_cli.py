@@ -459,3 +459,44 @@ def test_run_all_skips_superseded_but_names_still_run(stub, readouts, tmp_path, 
     ]
     assert main(argv) == 0
     assert (out / "old" / "results.json").exists()
+
+
+def test_report_json_omits_removed_families(tmp_path, capsys):
+    # plan 0033: a removed family's stale results.json is reported only under macro.excluded
+    from wsbench.judge_config import DEFAULT_JUDGE
+    from wsbench.results import write_results
+
+    def res(family: str, value: float) -> FamilyResult:
+        return FamilyResult(
+            family=family,
+            metric="pass_rate",
+            value=value,
+            ci95=(value, value),
+            n_items=10,
+            higher_is_better=True,
+            chance=0.1,
+            chance_label="1/10",
+            complete=True,
+            pinned_instrument=True,
+            config={"judge_model": DEFAULT_JUDGE, "prompt_version": "v1"},
+            counts={
+                "n_expected_cells": 10,
+                "n_missing_cells": 0,
+                "n_unjudged_cells": 0,
+                "n_empty_cells": 0,
+                "skipped_rows": 0,
+                "spend_usd": 0.0,
+            },
+        )
+
+    write_results(tmp_path / "brew_intermediates", res("brew_intermediates", 0.905))
+    write_results(tmp_path / "core", res("core", 0.3))
+    assert main(["report", f"dir={tmp_path}", "json=True"]) == 0
+    d = json.loads(capsys.readouterr().out)
+    assert [f["family"] for f in d["families"]] == ["core"]
+    brew = [e for e in d["macro"]["excluded"] if e["family"] == "brew_intermediates"]
+    assert [e["reason"] for e in brew] == ["removed"]
+    assert d["macro"]["families"] == ["core"]
+    summary = (tmp_path / "summary.md").read_text()
+    assert "| brew_intermediates |" not in summary and "| core |" in summary
+    assert "- brew_intermediates: removed (" in summary

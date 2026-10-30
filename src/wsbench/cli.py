@@ -410,6 +410,7 @@ class ReportRuns(Command):
                     "on_family_judge": on_family_judge(r),
                 }
                 for r in results
+                if r.family not in registry.REMOVED_FAMILIES  # plan 0033: macro.excluded has it
             ]
             out = {"families": fams, "macro": m, "floors": raw}
             print(json.dumps(out))
@@ -423,6 +424,8 @@ class ReportRuns(Command):
         rows: dict[str, dict[str, object]] = {}
         for p in sorted(self.dir.glob("*/*/results.json")):
             r = read_results(p.parent)
+            if r.family in registry.REMOVED_FAMILIES:  # plan 0033: no floorless stale rows
+                continue
             rows.setdefault(r.family, {})[p.parent.name] = r.value
         tags = sorted({t for d in rows.values() for t in d}, key=lambda t: (t != "all", t))
         lines = ["| family | " + " | ".join(tags) + " |", "|---" * (len(tags) + 1) + "|"]

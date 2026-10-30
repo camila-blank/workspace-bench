@@ -2,8 +2,11 @@
 readout file names under ``run``, in stored results.json files and as ATI subset keys. Offline:
 the run legs use directed_modulation_obscure (regex scorer, never calls a model)."""
 
+import fnmatch
 import json
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -225,3 +228,71 @@ def test_brew_intermediates_is_removed(real_families):
     assert "brew_intermediates" not in readplan.families()
     frozen = json.loads(ti.FROZEN.read_text())
     assert "brew_intermediates" not in frozen
+
+
+# plan 0033: brew_intermediates stays retired. Code and docs may not mention it again outside
+# dated history; bank items and model responses (data JSON) use "brew" as an ordinary word.
+BREW_RE = re.compile(r"brew_|_brew\b|\bbrew\b", re.I)  # not Hebrew / brewed / brewer
+BREW_ALLOW = (
+    "plans/*",
+    "adapted/*/AUDIT*.md",
+    "adapted/*/SET_AUDIT.md",
+    ".claude/skills/adapt-bank/SKILL_AUDIT*.md",
+    ".claude/skills/adapt-bank/SKILL.md",
+    ".claude/skills/adapt-bank/references/pitfalls.md",
+    "src/wsbench/registry.py",
+    "tests/test_legacy_family_names.py",
+    "tests/test_readplan.py",
+    "tests/test_text_inversion.py",
+    "tests/test_results.py",
+    "tests/test_cli.py",
+    "CLAUDE.md",
+    "evals/baselines/README.md",
+)
+DATA_ROOTS = ("evals/", "adapted/", "examples/")
+
+
+def _tracked_files() -> list[str]:
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=REPO, capture_output=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("not a git checkout")
+    return [p for p in out.decode("utf-8").split("\0") if p]
+
+
+def _is_data(path: str) -> bool:
+    if fnmatch.fnmatch(path, "adapted/*/report.json"):
+        return False  # its gate.rule string is prose, not data
+    return path.startswith(DATA_ROOTS) and path.endswith((".json", ".jsonl"))
+
+
+def test_brew_has_no_live_references():
+    files = _tracked_files()
+    assert files, "git ls-files returned nothing"
+    bad_paths = [p for p in files if "brew" in p.lower() and not p.startswith("plans/")]
+    assert not bad_paths, f"brew_intermediates was retired (plan 0029): {bad_paths}"
+    hits = []
+    for path in files:
+        if _is_data(path) or any(fnmatch.fnmatch(path, g) for g in BREW_ALLOW):
+            continue
+        try:
+            text = (REPO / path).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+            continue  # binary, or deleted in the working tree
+        hits += [
+            f"{path}:{i}: {ln.strip()[:120]}"
+            for i, ln in enumerate(text.splitlines(), 1)
+            if BREW_RE.search(ln)
+        ]
+    assert not hits, "brew_intermediates was retired (plan 0029); reword or remove:\n" + "\n".join(
+        hits
+    )
+
+
+def test_brew_guard_regex():
+    for s in ("brew_intermediates", "gen_brew", "BREW_HEAD", "### Brew (colour)", "chain and brew"):
+        assert BREW_RE.search(s), s
+    for s in ("Hebrew", "brewed", "brewer", "Brewster", "home-brewing"):
+        assert not BREW_RE.search(s), s

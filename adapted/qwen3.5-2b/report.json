@@ -271,7 +271,7 @@
  "hf_id": "Qwen/Qwen3.5-2B",
  "n_layers": 24,
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "code": {
   "git": "ed3d9e9+dirty",

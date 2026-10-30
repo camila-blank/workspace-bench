@@ -276,7 +276,7 @@
  "n_layers": 61,
  "read_band": [],
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "drops": {
   "relational_multihop": {

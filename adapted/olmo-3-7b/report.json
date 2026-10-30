@@ -301,7 +301,7 @@
  "hf_id": "allenai/Olmo-3-7B-Instruct",
  "n_layers": 32,
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "read_band": [],
  "drops": {

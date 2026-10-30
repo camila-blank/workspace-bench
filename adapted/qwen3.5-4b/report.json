@@ -268,7 +268,7 @@
  "label": "Qwen3.5-4B",
  "hf_id": "Qwen/Qwen3.5-4B",
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "n_layers": 32,
  "drops": {

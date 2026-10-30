@@ -308,7 +308,7 @@
  "hf_id": "Qwen/Qwen3-8B",
  "n_layers": 36,
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "drops": {
   "multihop_mt": {

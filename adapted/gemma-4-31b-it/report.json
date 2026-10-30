@@ -304,7 +304,7 @@
  "hf_id": "google/gemma-4-31b-it",
  "n_layers": 60,
  "gate": {
-  "rule": "greedy right AND >= 8/10 (10/10 chain, brew)"
+  "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },
  "read_band": [],
  "drops": {
