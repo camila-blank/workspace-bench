@@ -740,7 +740,11 @@ def _plan(family: str) -> list[ReadSpec]:
                 {"kind": "positions", "positions": grid_positions(it["read"])},
                 GRID,
                 messages=prefix_to_last_user(it["messages"]),
-                extra={"n_tokens": it["read"]["n_tokens"]},
+                # plan 0037 J9.1: a negative control is never an ATI candidate
+                extra={
+                    "n_tokens": it["read"]["n_tokens"],
+                    **({"ati_scored": False} if it.get("kind") == "control" else {}),
+                },
                 note="every token of the last user turn, first content token through its "
                 "<|im_end|> (read.span); the bank's n_tokens also closes an empty assistant "
                 "turn, two tokens past the generation prompt and past every read position",

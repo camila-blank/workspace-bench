@@ -27,7 +27,6 @@ PENDING_FAMILY_PR: dict[str, str] = {
     "arithmetic_intermediates": "arithmetic.md (mc.READOUT_PHRASE)",
     "chain_intermediates": "chain.md (mc.READOUT_PHRASE)",
     "conjunctive_association": "conjunctive.md G5",
-    "jailbreak_recognition": "jailbreak.md J8.3",
     "jlens_concept_pr": "jlens_pr.md item 3 / C5",
     "moral_rationale": "moral.md §2.6",
     "multi_concept_directed_modulation": "mcdm.md (mc.TOKEN_NOTE / READOUT_PHRASE)",
