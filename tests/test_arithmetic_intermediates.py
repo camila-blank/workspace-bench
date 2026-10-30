@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import registry
 from wsbench.banks import load_bank
@@ -18,7 +19,6 @@ from wsbench.evals.arithmetic_intermediates.prompts import (
     SYSTEM_BATCH,
 )
 from wsbench.judge_config import JudgeConfig, resolve
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -180,7 +180,7 @@ def test_scripted_run(tmp_path, monkeypatch):
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(x) + "\n" for x in rows))
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -231,12 +231,12 @@ def test_rows_off_the_frozen_cell_are_ignored_and_missing_is_fatal(tmp_path, mon
         "dry_run": False,
     }
     with pytest.raises(SystemExit) as e:
-        judge.run(JudgeArgs(**base))
+        judge.run(native_args(**base))
     assert e.value.code == 2
-    r = judge.run(JudgeArgs(**{**base, "allow_missing": True}))
+    r = judge.run(native_args(**{**base, "allow_missing": True}))
     assert r.counts["n_missing_cells"] == 1 and r.extras["n_rows_off_cell"] == 2
     with pytest.raises(SystemExit):
-        judge.run(JudgeArgs(**{**base, "layers": [56, 60]}))
+        judge.run(native_args(**{**base, "layers": [56, 60]}))
 
 
 def test_registered_readme_and_dry_run(tmp_path, capsys, monkeypatch):
@@ -311,7 +311,7 @@ def test_all_cells_mode_uses_every_row_and_reports_bands(tmp_path, monkeypatch):
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(x) + "\n" for x in rows))
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -337,7 +337,7 @@ def test_all_cells_mode_uses_every_row_and_reports_bands(tmp_path, monkeypatch):
     assert seen[0]["prompt_version"] == PROMPT_VERSION_BATCH and seen[0]["validate"] is not None
     # without the exact cell, only the 5% band is reached
     path.write_text("".join(json.dumps(x) + "\n" for x in rows[:2]))
-    r2 = judge.run(JudgeArgs(**{**args.__dict__, "out": tmp_path / "out2"}))
+    r2 = judge.run(native_args(**{**args.__dict__, "out": tmp_path / "out2"}))
     assert r2.rows[0]["pass"] is False and r2.extras["n_calls"] == 1
     assert r2.rows[0]["bands"] == {"exact": False, "rel5pct": True}
     assert r2.extras["bands"]["rel5pct"] == 1.0 and r2.extras["bands"]["exact"] == 0.0
@@ -407,7 +407,7 @@ def test_batched_replies_are_read_per_entry(tmp_path, monkeypatch):
             for c in calls
         },
     )
-    r = judge.run(JudgeArgs(**base))
+    r = judge.run(native_args(**base))
     row = r.rows[0]
     assert row["pass"] is None and row["n_cells"] == 4 and row["n_unjudged"] == 2
     assert r.counts["n_unjudged_cells"] == 2 and r.extras["n_calls_failed"] == 1
@@ -428,7 +428,7 @@ def test_batched_replies_are_read_per_entry(tmp_path, monkeypatch):
             for c in calls
         },
     )
-    r = judge.run(JudgeArgs(**{**base, "out": tmp_path / "out2"}))
+    r = judge.run(native_args(**{**base, "out": tmp_path / "out2"}))
     assert r.rows[0]["pass"] is True and r.rows[0]["hits_at"] == [(56, -2)]
     assert r.rows[0]["n_unjudged"] == 3 and r.value == 1.0
 

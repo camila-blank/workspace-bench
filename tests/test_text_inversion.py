@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import native_args
 
 from wsbench import llm, mcjudge, readplan, registry
 from wsbench.baselines import text_inversion as ti
@@ -264,7 +265,7 @@ def _args(**kw) -> JudgeArgs:
         "rpm": 1.0,
         "dry_run": False,
     }
-    return JudgeArgs(**{**base, **kw})
+    return native_args(**{**base, **kw})
 
 
 def test_is_subset_ignores_the_ati_scope_items():

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import bpe, digest
 from wsbench.cache import Cache
@@ -14,7 +15,7 @@ from wsbench.registry import JudgeArgs
 
 
 def _args(tmp_path: Path, **extra: str) -> JudgeArgs:
-    return JudgeArgs(
+    return native_args(
         readouts=tmp_path / "r.jsonl",
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version="t")),
@@ -116,7 +117,8 @@ def test_evidence_token_pieces_never_join():
     assert digest.evidence_line("fence post", lines) is None
     assert digest.evidence_line("post", lines) is not None
     assert digest.evidence_line("fence | post", lines) is not None
-    assert digest.evidence_line("post | fence", lines) is None
+    # plan 0032 §2.7.3: tokens of ONE list may be quoted together in any order
+    assert digest.evidence_line("post | fence", lines) is not None
 
 
 def _result(*items: tuple[str, str, str]) -> dict:
@@ -223,7 +225,8 @@ def test_collapse_caches_and_fingerprints(tmp_path, scripted):
     replies["alpha"] = _result(("alpha", "", "alpha"))
     by_item = {"a": [_prose("a", 20, 1, "alpha")]}
     with Cache(tmp_path / "c.jsonl") as cache:
-        for extra in ({}, {}, {"summ_render": "abstractive"}, {"summ_variant": "task"}):
+        # plan 0032 §2.8.2: task is the default variant; blind is the ablation that re-asks
+        for extra in ({}, {}, {"summ_render": "abstractive"}, {"summ_variant": "blind"}):
             digest.collapse(
                 "fam",
                 by_item,
@@ -234,7 +237,7 @@ def test_collapse_caches_and_fingerprints(tmp_path, scripted):
                 task_note="ZEBRA-NOTE",
             )
     assert len(seen) == 2  # cached on repeat and across renders; the variant re-asks
-    assert "ZEBRA-NOTE" in seen[1][0] and "ZEBRA-NOTE" not in seen[0][0]
+    assert "ZEBRA-NOTE" in seen[0][0] and "ZEBRA-NOTE" not in seen[1][0]
     rows = (tmp_path / "c.jsonl").read_text().splitlines()
     assert all('"digest:a|all"' in r for r in rows)
 
@@ -270,11 +273,13 @@ def test_options_validated(tmp_path):
     ):
         with pytest.raises(SystemExit):
             digest.validate({"aggregate": "summary", **bad})
-    digest.validate({"summ_variant": "x"})  # native: summary option values are not read
+    # native: summary option values are not read (plan 0032: summary is the default, so a
+    # native probe says so)
+    digest.validate({"aggregate": "native", "summ_variant": "x"})
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v3-blind-extractive+sj-v7"
+    assert digest.prompt_version("pv", a) == "pv+digest-v4-task-extractive+sj-v8"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
 
 

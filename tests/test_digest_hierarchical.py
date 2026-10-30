@@ -4,6 +4,7 @@ fallback on refusal / too long, cached counts, dry run without network."""
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import digest, llm
 from wsbench.cache import Cache
@@ -16,7 +17,7 @@ FAM = "test_hier_family"
 
 
 def _args(tmp_path: Path, dry: bool = False, **extra: str) -> JudgeArgs:
-    return JudgeArgs(
+    return native_args(
         readouts=tmp_path / "r.jsonl",
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version="t")),
@@ -171,7 +172,8 @@ def test_family_defaults_reach_settings_and_config(tmp_path, fam):
     s = digest.settings(a, FAM)
     assert (s.overflow, s.token_cap, s.max_items) == ("hierarchical", 1000, 5)
     assert digest.config(a, "prose", family=FAM)["summarizer"]["overflow"] == "hierarchical"
-    assert digest.settings(a).overflow == "stride"  # no family: plan 0020 defaults
+    # plan 0032 §2.2.1: hierarchical is the global default (stride is the stamped ablation)
+    assert digest.settings(a).overflow == "hierarchical"
     override = _args(tmp_path, summ_max="7")
     assert digest.settings(override, FAM).max_items == 7  # opts beat family defaults
 
@@ -259,23 +261,24 @@ def test_stride_path_all_dropped_is_reasked_on_rerun(tmp_path, monkeypatch):
 
 
 def test_plan_0020_fingerprint_unchanged():
-    # the stride path fingerprint fields, frozen (the v3 freeze: plan 0022 added max_rare and
+    # the digest fingerprint fields, frozen (the v4 freeze, plan 0032: digest-v4, the task
+    # variant, hierarchical overflow and one 920k cap by default; plan 0022 added max_rare and
     # numbers): a change here re-bills every cached digest
     args = _args(Path("/tmp"))
     s = digest.settings(args, "basic_readout")
-    assert (s.overflow, s.concurrency, s.timeout) == ("stride", None, None)
+    assert (s.overflow, s.concurrency, s.timeout) == ("hierarchical", None, None)
     from wsbench.cache import fingerprint
 
     expected = digest._digest_fp(s, "", "TEXT")
     assert expected == fingerprint(
-        "digest-v3",
+        "digest-v4",
         "claude-opus-5-5",
         {"anthropic_effort": "default"},
-        "blind",
+        "task",
         10,
         15,
         0,
-        150000,
+        920000,
         True,
         "",
         "TEXT",

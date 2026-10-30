@@ -4,13 +4,14 @@ import importlib
 import json
 from pathlib import Path
 
+from conftest import native_args
+
 from wsbench.banks import load_bank
 from wsbench.basic import family as bfam
 from wsbench.basic import judge as bjudge
 from wsbench.basic import prompts as P  # noqa: N812
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.readouts import Cell
-from wsbench.registry import JudgeArgs
 
 REPO = Path(__file__).resolve().parents[1]
 CELL = Cell(id="x", layer=20, pos=3, samples=("a sample",), tokens=None, scores=None)
@@ -66,7 +67,7 @@ def test_family_run_sends_the_items_own_forbidden_answer(tmp_path, monkeypatch):
     rows = [{"id": it["id"], "layer": 20, "pos": 5, "samples": ["something"]}]
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=P.PROMPT_VERSION)),

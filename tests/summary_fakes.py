@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from conftest import native_args
+
 from wsbench import llm
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.llm import Spend
@@ -57,7 +59,7 @@ class FakeLLM:
 
 def summary_args(readouts: Path, out: Path, prompt_version: str, **kw: Any) -> JudgeArgs:
     extra = {"aggregate": "summary", **kw.pop("extra", {})}
-    return JudgeArgs(
+    return native_args(
         readouts=readouts,
         out=out,
         judge=resolve(JudgeConfig(prompt_version=prompt_version)),

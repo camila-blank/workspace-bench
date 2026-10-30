@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import readplan
 from wsbench.evals import knowledge_cutoff
@@ -53,7 +54,7 @@ def _args(readouts: Path, tmp_path: Path, **kw) -> JudgeArgs:
         "dry_run": False,
     }
     base.update(kw)
-    return JudgeArgs(**base)
+    return native_args(**base)
 
 
 def _write(tmp_path: Path, rows: list[dict]) -> Path:

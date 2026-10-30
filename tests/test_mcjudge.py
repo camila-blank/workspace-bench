@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import mcjudge
 from wsbench.cache import Cache
@@ -28,7 +29,7 @@ def _args(**kw) -> JudgeArgs:
         "dry_run": False,
     }
     base.update(kw)
-    return JudgeArgs(**base)
+    return native_args(**base)
 
 
 def test_run_calls_caches_results_and_failures(tmp_path: Path, fake_llm):

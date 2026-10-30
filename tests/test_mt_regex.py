@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import llm, registry
 from wsbench.banks import load_bank
@@ -14,7 +15,6 @@ from wsbench.judge_config import DEFAULT_JUDGE, JudgeConfig, resolve
 from wsbench.multitoken import family as fam
 from wsbench.multitoken import regex
 from wsbench.multitoken.regex import SCORER_VERSION, SUMMARIZED_SCORER_VERSION, ScoredUnit
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -140,7 +140,7 @@ def _args(path, out, **kw):
         "dry_run": False,
     }
     base.update(kw)
-    return JudgeArgs(**base)
+    return native_args(**base)
 
 
 def test_run_regex_prose(tmp_path):

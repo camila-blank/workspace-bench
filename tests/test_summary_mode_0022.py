@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 from summary_fakes import FakeLLM, summary_args
 
 from wsbench import digest, llm, registry
@@ -26,7 +27,7 @@ from wsbench.registry import JudgeArgs
 
 
 def _args(tmp_path: Path, **extra: str) -> JudgeArgs:
-    return JudgeArgs(
+    return native_args(
         readouts=tmp_path / "r.jsonl",
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version="t")),

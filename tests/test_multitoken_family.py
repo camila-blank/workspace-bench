@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import registry
 from wsbench.cli import main
@@ -14,7 +15,6 @@ from wsbench.mc import letter_index
 from wsbench.multitoken import family as fam
 from wsbench.multitoken.options import option_sets
 from wsbench.multitoken.prompts import CANNOT, LETTERS, PROMPT_VERSION
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -158,7 +158,7 @@ def test_run_family_toy_run_with_a_scripted_judge(tmp_path, monkeypatch):
         return out
 
     monkeypatch.setattr(fam, "run_calls", fake_run_calls)
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),

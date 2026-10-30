@@ -160,7 +160,6 @@ def mk_args(tmp_path):
     from pathlib import Path
 
     from wsbench.judge_config import JudgeConfig, resolve
-    from wsbench.registry import JudgeArgs
 
     def make(readouts, **kw):
         base: dict = {
@@ -176,9 +175,27 @@ def mk_args(tmp_path):
             "dry_run": False,
         }
         base.update(kw)
-        return JudgeArgs(**base)
+        return native_args(**base)
 
     return make
+
+
+def native_args(**kw):
+    """``JudgeArgs(**kw)`` that runs the family's NATIVE rule unless ``extra`` sets
+    ``aggregate`` (plan 0032 §2.5.1: summary is the library default for a hand-built JudgeArgs
+    too, so a test that means native says so here)."""
+    from wsbench.registry import JudgeArgs
+
+    kw["extra"] = {"aggregate": "native", **(kw.get("extra") or {})}
+    return JudgeArgs(**kw)
+
+
+def write_sidecar(path, **meta):
+    """The producer's ``<file>.meta.json`` beside a test readouts file (plan 0032 §2.9)."""
+    from wsbench.readouts import write_sidecar as _write
+
+    meta.setdefault("sampling", "prose1")
+    return _write(path, **meta)
 
 
 def write_jsonl(path, rows):

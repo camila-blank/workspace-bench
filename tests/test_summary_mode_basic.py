@@ -35,7 +35,7 @@ def test_one_call_per_item_and_gate(tmp_path, monkeypatch):
     assert list(rows["br-ent-ath-ali"]["layers"]) == ["-1"]
     assert rows["br-ent-ath-ali"]["summary_evidence"][0] == "He is a heavyweight fighter."
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"].startswith(PROMPT_VERSION + "+digest-v3-blind-extractive")
+    assert r.config["prompt_version"].startswith(PROMPT_VERSION + "+digest-v4-task-extractive")
     assert r.counts["n_expected_cells"] == 6 and r.counts["n_missing_cells"] == 0
     assert "layer_protocols" not in r.extras and r.extras["summary"]["n_items_summarized"] == 3
     judged = [u for n, _s, u in fake.calls if n == "bank_verdict"]

@@ -8,6 +8,7 @@ import json
 import zipfile
 
 import pytest
+from conftest import native_args
 
 from wsbench import nocot, readplan
 from wsbench.baselines import text_inversion as ti
@@ -159,7 +160,6 @@ def test_judge_reports_by_source(tmp_path, monkeypatch):
     from wsbench.evals import knowledge_cutoff
     from wsbench.evals.knowledge_cutoff.prompts import LETTERS
     from wsbench.judge_config import resolve
-    from wsbench.registry import JudgeArgs
 
     fz, ob = FROZEN[0], OBSCURE[0]
     rows = []
@@ -183,9 +183,9 @@ def test_judge_reports_by_source(tmp_path, monkeypatch):
         return out
 
     monkeypatch.setattr(judge, "run_calls", run_calls)
-    args = JudgeArgs(readouts=path, out=tmp_path / "o", judge=resolve(knowledge_cutoff.SPEC.judge),
-                     layers=[60], items=[fz["id"], ob["id"]], limit=0, allow_missing=False,
-                     concurrency=1, rpm=1.0, dry_run=False)  # fmt: skip
+    args = native_args(readouts=path, out=tmp_path / "o", judge=resolve(knowledge_cutoff.SPEC.judge),
+                       layers=[60], items=[fz["id"], ob["id"]], limit=0, allow_missing=False,
+                       concurrency=1, rpm=1.0, dry_run=False)  # fmt: skip
     r = judge.run(args)
     assert r.extras["by_source"] == {"cutoff": 1.0, "nocot": 1.0}
     assert {row["id"]: row["source"] for row in r.rows} == {fz["id"]: "cutoff", ob["id"]: "nocot"}

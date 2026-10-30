@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import tag_of, write_jsonl
+from conftest import native_args, tag_of, write_jsonl
 
 from wsbench.evals.conjunctive_association import judge, prompts
 from wsbench.evals.conjunctive_association.judge import (
@@ -210,7 +210,7 @@ def test_char_cap_validation(tmp_path):
     from wsbench.registry import JudgeArgs
 
     def args(v: str) -> JudgeArgs:
-        return JudgeArgs(
+        return native_args(
             readouts=registry.REPO_ROOT / "examples/readouts/conjunctive_association.jsonl",
             out=tmp_path,
             judge=resolve(JudgeConfig()),

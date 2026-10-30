@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import readplan, registry
 from wsbench.banks import load_bank
@@ -195,7 +196,7 @@ def _args(tmp_path: Path, readouts: Path, **kw) -> JudgeArgs:
         "dry_run": False,
         "aux_models": SPEC.judge.aux_models,
     }
-    return JudgeArgs(**(base | kw))
+    return native_args(**(base | kw))
 
 
 FILLER = "A question about taste perception in older adults."  # unscreened

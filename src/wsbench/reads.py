@@ -16,6 +16,7 @@ import functools
 import hashlib
 import json
 import os
+import weakref
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -227,8 +228,8 @@ def load(
     ids: Collection[str] | None = None,
     positions: Mapping[str, Collection[int]] | None = None,
 ) -> tuple[list[Cell], LoadReport]:
-    """Every family's loader (module docstring). The report is also attached to ``args``
-    (``args.reads_report``) so ``mcjudge.base_config`` and the runner stamp ``config.reads``,
+    """Every family's loader (module docstring). The report is also remembered beside ``args``
+    (``report_of(args)``) so ``mcjudge.base_config`` and the runner stamp ``config.reads``,
     ``sampling``, ``sampling_source``, ``reader``, ``reads_checked`` and ``layers_judged``."""
     path = Path(path or args.readouts)
     m = mode(args)
@@ -328,15 +329,27 @@ def _report_only(
     }
 
 
+_REPORTS: dict[int, LoadReport] = {}  # id(args) -> the last load's report (weakly held)
+
+
 def _attach(args: JudgeArgs, rep: LoadReport) -> None:
-    # a plain attribute, not a JudgeArgs field: the report belongs to this run's load only
-    args.reads_report = rep  # type: ignore[attr-defined]
+    """Remember this run's load report beside ``args`` (not a JudgeArgs field, so
+    ``JudgeArgs(**vars(args))`` and ``dataclasses.replace`` keep working)."""
+    key = id(args)
+    if key not in _REPORTS:
+        weakref.finalize(args, _REPORTS.pop, key, None)
+    _REPORTS[key] = rep
+
+
+def report_of(args: JudgeArgs) -> LoadReport | None:
+    """The report of the last ``reads.load(args, …)``, or None."""
+    return _REPORTS.get(id(args))
 
 
 def config_stamps(args: JudgeArgs) -> dict[str, Any]:
     """The ``config`` keys a result carries from its load (``mcjudge.base_config`` and the
     runner call this)."""
-    rep = getattr(args, "reads_report", None)
+    rep = report_of(args)
     m = mode(args)
     if rep is None:
         return {"reads": m, "layers_judged": args.layers}
@@ -351,7 +364,7 @@ def config_stamps(args: JudgeArgs) -> dict[str, Any]:
 
 
 def extras_of(args: JudgeArgs) -> dict[str, Any]:
-    rep = getattr(args, "reads_report", None)
+    rep = report_of(args)
     if rep is None:
         return {}
     return {
@@ -366,5 +379,5 @@ def extras_of(args: JudgeArgs) -> dict[str, Any]:
 
 def incomplete(args: JudgeArgs) -> bool:
     """The load left items partial or requested layers missing (sidecar-enforced only)."""
-    rep = getattr(args, "reads_report", None)
+    rep = report_of(args)
     return rep is not None and bool(rep.partial_ids or rep.layers_missing)

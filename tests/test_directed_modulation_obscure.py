@@ -5,13 +5,13 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import llm, readplan, registry
 from wsbench.cli import main
 from wsbench.evals.directed_modulation_obscure import SPEC, judge
 from wsbench.evals.directed_modulation_obscure.prompts import PROMPT_VERSION, render_user
 from wsbench.judge_config import JudgeConfig, resolve
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -52,7 +52,7 @@ def _args(tmp_path, readouts=EXAMPLE, **kw):
         "rpm": 1.0,
         "dry_run": False,
     }
-    return JudgeArgs(**(base | kw))
+    return native_args(**(base | kw))
 
 
 def test_spec():

@@ -17,7 +17,7 @@ EX = REPO / "examples/readouts/buggy_code.jsonl"
 BUGGY, BUGGY2, CLEAN = "py-quantity-refund-credit", "py-age-underflow", "py-clean-clamped-discount"
 IDS = [BUGGY, BUGGY2, CLEAN]
 TWIN = "py-clean-validated-qty"  # BUGGY's clean twin (plan 0030): items= pulls it in
-SUFFIX = f"+{digest.DIGEST_PROMPT_VERSION}-blind-extractive+{digest.SUMMARY_JUDGE_VERSION}"
+SUFFIX = f"+{digest.DIGEST_PROMPT_VERSION}-task-extractive+{digest.SUMMARY_JUDGE_VERSION}"
 
 
 def _native(path: Path, out: Path, **kw):

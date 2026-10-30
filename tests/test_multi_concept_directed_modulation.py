@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import registry
 from wsbench.banks import load_bank
@@ -25,7 +26,6 @@ from wsbench.evals.multi_concept_directed_modulation.regions import (
 )
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.readouts import convert_read_json, load_readouts
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -240,7 +240,7 @@ def test_toy_run_with_a_scripted_judge(tmp_path, monkeypatch):
         return out
 
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
-    args = JudgeArgs(
+    args = native_args(
         readouts=EXAMPLE,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -273,7 +273,7 @@ def test_rows_without_tokens_are_fatal(tmp_path, monkeypatch):
     rows = [{"id": "d-plumber", "layer": 44, "pos": -1, "samples": ["x"]}]
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -518,7 +518,7 @@ def test_stamp_carries_present_and_the_cache_key_does_not(tmp_path, monkeypatch)
         return {c.key: {"picks": []} for c in calls}
 
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
-    args = JudgeArgs(readouts=EXAMPLE, out=tmp_path / "o",
+    args = native_args(readouts=EXAMPLE, out=tmp_path / "o",
                      judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)), layers=None,
                      items=["d-plumber"], limit=0, allow_missing=False, concurrency=1, rpm=1.0,
                      dry_run=False)  # fmt: skip

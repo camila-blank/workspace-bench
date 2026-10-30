@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import registry
 from wsbench.banks import load_bank
@@ -11,7 +12,6 @@ from wsbench.cli import main
 from wsbench.evals.chain_intermediates import judge
 from wsbench.evals.chain_intermediates.prompts import PROMPT_VERSION, SYSTEM
 from wsbench.judge_config import JudgeConfig, resolve
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -157,7 +157,7 @@ def test_scripted_run_on_the_toy_file(tmp_path, monkeypatch):
         return out
 
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
-    args = JudgeArgs(
+    args = native_args(
         readouts=EXAMPLE,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -183,7 +183,7 @@ def test_scripted_run_on_the_toy_file(tmp_path, monkeypatch):
 
 
 def test_missing_cells_are_fatal_without_allow_missing(tmp_path):
-    args = JudgeArgs(
+    args = native_args(
         readouts=EXAMPLE,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),
@@ -251,7 +251,7 @@ def test_all_cells_mode_scores_every_row(tmp_path, monkeypatch):
     monkeypatch.setattr(judge, "run_calls", fake_run_calls)
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(x) + "\n" for x in rows))
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=PROMPT_VERSION)),

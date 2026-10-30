@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import readplan, registry
 from wsbench.baselines.text_inversion import ati_scored
@@ -12,7 +13,6 @@ from wsbench.cli import main
 from wsbench.evals.introspection import judge
 from wsbench.evals.introspection.prompts import PROMPT_VERSION, SYSTEM, render_user
 from wsbench.judge_config import resolve
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ def _args(tmp_path, **kw):
         "rpm": 1.0,
         "dry_run": False,
     }
-    return JudgeArgs(**{**base, **kw})
+    return native_args(**{**base, **kw})
 
 
 def test_bank_counts_and_renders():
