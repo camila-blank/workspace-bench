@@ -698,3 +698,17 @@ def floors(dst: Path = FROZEN) -> dict[str, dict[str, Any]]:
         if live:
             out[fam] = live
     return out
+
+
+def bar(entry: dict[str, Any]) -> tuple[float, str] | None:
+    """The highest measured no-readout guesser in one family's live entries (``floors()``), as
+    ``(mean, variant)``; the model-free ``uniform`` line is not a guesser. Where a family has the
+    question variant this, not the question guesser alone, is the floor a lens must clear: an
+    options-only guesser with solved examples can beat the question guesser (moral bank v2:
+    described 0.722 > question 0.636; plan 0046 review round 3)."""
+    means = [
+        (float(e["mean"]), v)
+        for v, e in entry.items()
+        if v != "uniform" and isinstance(e, dict) and e.get("mean") is not None
+    ]
+    return max(means) if means else None

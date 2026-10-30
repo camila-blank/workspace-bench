@@ -7,8 +7,9 @@ from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult, bootstrap_ci, completeness
 
 CHANCE_LABEL = (
-    "no analytic chance: every option is about the same dilemma; the floor is the measured "
-    "question+options guesser (lucky_guessing.question) and the prompt-only reader"
+    "no analytic chance: every option is about the same dilemma; the floor is the highest "
+    "measured no-readout guesser (max of lucky_guessing.question / described / blind, "
+    "lucky_guessing.bar) and the prompt-only reader"
 )
 
 
