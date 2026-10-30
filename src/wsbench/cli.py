@@ -313,7 +313,6 @@ class RunFamilies(JudgeOptions):
             print(f"wrote {self.out / 'summary.md'} and {self.out / 'run.json'}")
         return code
 
-
     def _run_each(self, specs: list[EvalSpec]) -> int:
         """``layers=each`` (plan 0032 §2.1.6): per family, the all-layer run into
         ``out/<family>/all/`` and one run per layer present in its file into
@@ -418,7 +417,6 @@ class ReportRuns(Command):
         print(f"macro: value={m['value']} families={m['families']} excluded={m['excluded']}")
         print(f"wrote {self.dir / 'summary.md'}")
         return 0
-
 
     def _by_layer(self) -> int:
         rows: dict[str, dict[str, object]] = {}
