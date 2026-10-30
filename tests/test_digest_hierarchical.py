@@ -424,3 +424,35 @@ def test_union_too_large_is_unsummarized(tmp_path, fam, monkeypatch):
     monkeypatch.setattr(llm, "stream_json", sj)
     col = _run(tmp_path, {"a": _cells("a", 6)})
     assert "a" in col.unsummarized and col.diag["n_digest_too_long"] == 1
+
+
+def test_refusal_model_also_serves_under_stride(tmp_path, fam, monkeypatch):
+    """Review r2: the stride ablation honours ``summ_fallback=default+<model>`` too (it was a
+    silent no-op there): a declined digest is re-run on <model>, recorded as served, cached."""
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_overflow", "stride")
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    seen: list[str] = []
+    monkeypatch.setattr(llm, "stream_json", _refusing_on({"claude-opus-5-5"}, seen))
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
+    assert col.summaries["a"] and "a" not in col.unsummarized
+    assert col.row("a")["summary_served_by"] == "claude-sonnet-5"
+    assert col.extras()["digest_served_by"] == {"claude-sonnet-5": 1}
+    assert col.diag["n_refusal_model_calls"] == 1
+    seen.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})  # cached: no call, provenance survives
+    assert seen == [] and col.row("a")["summary_served_by"] == "claude-sonnet-5"
+
+
+def test_stride_declined_twice_stays_unsummarized(tmp_path, fam, monkeypatch):
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_overflow", "stride")
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    seen: list[str] = []
+    monkeypatch.setattr(
+        llm, "stream_json", _refusing_on({"claude-opus-5-5", "claude-sonnet-5"}, seen)
+    )
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert "a" in col.unsummarized and seen == ["claude-opus-5-5", "claude-sonnet-5"]
+    seen.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})  # a refusal is never cached: re-asked
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
