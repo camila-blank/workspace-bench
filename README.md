@@ -217,8 +217,8 @@ commands with `PYTHONPATH=src`, because the editable install points at the main 
 
 **Chained intermediates** — [`evals/chain_intermediates/README.md`](evals/chain_intermediates/README.md)
 - *What it is:* A two- or three-step arithmetic chain with the start number given last, answered with no chain of thought; the intermediate is computed inside the read window and never written.
-- *Example:* "Halve it, rounding down" three times from 23 → intermediates 11 and 5, answer 2.
-- *Judged by:* one prompt-blind free-recall call per (item, layer) at the last token of the chat render (the assistant onset after the empty think block); the plan's ` What`→end span is the `opts=cells=all` superset. The judge names the values the readout presents as computed; pass = top value is an intermediate at any layer; floor = the magnitude-matched decoy null beside it.
+- *Example:* "Add 3. Add 7." from 28 → intermediate 31, answer 38 (`chain-v2-d2p-0000`). Bank v2 (plan 0038): every intermediate is a multi-digit number in 10..99 (`items_v2.json`; `items.json` is v1).
+- *Judged by:* summary mode (default): every read cell (the start number's last token through the end of the chat render, every layer) goes to one numbers digest, then one prompt-blind 8-option MC call per intermediate (cannot-tell last); a pick counts only when the gold is stated in one evidence sample (any language), is a digest key and is not part of a flat list of numbers. Pass = EVERY intermediate singled out; floor = `null_shuffled` (the same MC on a same-depth partner's digest) and `net` beside it, plus any-slot / per-slot / by-gold-size columns. Native (`opts=aggregate=native`): blind free recall per cell, with the item-level any-cell permutation null.
 
 **Buggy code** — [`evals/buggy_code/README.md`](evals/buggy_code/README.md)
 - *What it is:* Short programs with one verified bug and their clean twins (24 buggy/clean pairs, plus orphan items kept as diagnostics), read at the end of the file with nothing asked; does the lens say there is a bug in the buggy program, and not in its clean twin?
@@ -390,7 +390,7 @@ digest's token lines are also matched space-joined, stamped `+joined-2026-10-30`
 | basic_readout | claude-opus-5-5 | bank-2026-10-30b |
 | basic_readout_mt | regex (no call natively; the digest model under summary mode) | mt-regex-2026-10-30 |
 | buggy_code | claude-opus-5-5 | buggy-pairs-2026-10-29+pair-headline-2026-10-30+eof-all-layers-2026-10-30 (judge calls keyed `buggy-pairs-2026-10-29`; 3 Stage A votes; Stage B 3 votes on buggy pair members claiming a bug) |
-| chain_intermediates | claude-opus-5-5 | chain-free-2026-09-16 |
+| chain_intermediates | claude-opus-5-5 | chain-mc-2026-10-30 (summary MC; native free recall and the ATI gate: chain-free-2026-10-30) |
 | conjunctive_association | claude-opus-5-5 | comp-v1 |
 | knowledge_cutoff | claude-opus-5-5 | cutoff-judge-2026-10-26 (one call per item and layer, every position) |
 | directed_modulation | claude-opus-5-5 | dm-2026-09-16+present-2026-10-29+neutral-2026-10-30b (judge prompts dm-2026-09-16) |
@@ -453,8 +453,8 @@ summarizer), `hierarchical` overflow under one 920k-token cap (no readout is eve
 shared token rule (`mc.token_note`). buggy_code and agentic_misalignment have summary-mode
 adaptations of their own (plan 0021; see their READMEs). Run native and summary
 into separate `out=` dirs (`wsbench run` warns when it overwrites a result of the other mode;
-`run.json` records the mode). `cells=frozen` (arithmetic) / `cells=last` (chain) need
-`aggregate=native`: summary mode reads every cell. Options: `summ_model`, `summ_variant=task|blind`,
+`run.json` records the mode). `cells=frozen` (arithmetic) needs
+`aggregate=native`: summary mode reads every cell (chain's `cells=last` is retired: use `reads=lite`). Options: `summ_model`, `summ_variant=task|blind`,
 `summ_render=extractive|abstractive`, `summ_effort`, `summ_max`, `summ_token_cap` (ablation),
 `summ_overflow=hierarchical|stride`, `summ_concurrency`, `summ_timeout`,
 `summ_fallback=none|default`, `summ_rare`, `summ_numbers`, `summ_lang` (the multilingual families)
@@ -565,7 +565,7 @@ If you use workspace-bench, please cite the repo and the write-up
 
 Judge every arm with `wsbench run` against the frozen floors: the O-lens RL and SFT checkpoints,
 NLA RL and SFT, J-lens, R-Lens, logit lens and template lens. Arithmetic_intermediates
-(permutation), chain_intermediates (decoy) and jlens_concept_pr
+(permutation), chain_intermediates (`null_shuffled` / any-cell permutation) and jlens_concept_pr
 (derangement foil) carry an empirical null; the rest have none yet. The multi-token regex contract
 matches authored forms only, so a paraphrase or a multi-phrase description cannot hit it;
 `opts=judge=mc` is the semantic alternative.

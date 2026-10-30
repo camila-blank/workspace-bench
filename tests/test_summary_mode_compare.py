@@ -246,6 +246,8 @@ def _run_all(root: Path, seed: int) -> None:
             extra = {"aggregate": mode}
             if mode == "native" and fam in CELLS_ALL:
                 extra["cells"] = "all"
+            if mode == "summary" and fam == "chain_intermediates":
+                extra["judge"] = "free"  # plan 0038: the free-recall summary instrument pairs
             with pytest.MonkeyPatch.context() as mp:
                 fake = _RandomLLM(seed, _frags(path))
                 mp.setattr(llm, "stream_json", fake.stream_json)
