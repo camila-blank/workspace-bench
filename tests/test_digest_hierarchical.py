@@ -34,6 +34,9 @@ def _args(tmp_path: Path, dry: bool = False, **extra: str) -> JudgeArgs:
 
 @pytest.fixture
 def fam(monkeypatch):
+    # these tests pin the real-count path: count every bundle (plan 0032 counts only estimates
+    # above 60% of the cap)
+    monkeypatch.setattr(digest, "COUNT_TOKENS_ABOVE", 0.0)
     monkeypatch.setitem(
         digest.FAMILY_DEFAULTS,
         FAM,

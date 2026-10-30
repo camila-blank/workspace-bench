@@ -10,6 +10,7 @@ SPEC = register(
         "multihop_mt",
         "Multihop (multi-token)",
         calls_per_arm="≈ 1.5k",
+        min_full_positions=1,
         superseded_by="multihop_mt_v2",
     )
 )

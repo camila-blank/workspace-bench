@@ -12,5 +12,6 @@ SPEC = register(
         "Medical diagnosis (control)",
         sources=SOURCES,
         not_in_macro=NOT_IN_MACRO,
+        min_full_positions=2,
     )
 )

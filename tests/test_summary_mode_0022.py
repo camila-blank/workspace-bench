@@ -174,6 +174,7 @@ def test_fingerprint_moves_with_rare_and_numbers(tmp_path, scripted):
 
 def test_hierarchical_chunk_with_only_rare_contributes(tmp_path, monkeypatch):
     fam = "test_0022_hier"
+    monkeypatch.setattr(digest, "COUNT_TOKENS_ABOVE", 0.0)  # pin the real-count path
     monkeypatch.setitem(
         digest.FAMILY_DEFAULTS,
         fam,

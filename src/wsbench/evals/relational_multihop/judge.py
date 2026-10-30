@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from wsbench import digest, reads
 from wsbench.cache import Cache
+from wsbench.family import render_bag
 from wsbench.llm import Spend
 from wsbench.mc import CANNOT, listing, seed_int, seeded_shuffle
 from wsbench.mcjudge import (
@@ -22,7 +23,6 @@ from wsbench.mcjudge import (
 from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
-from wsbench.summarizer import aux_judge, render_bag, summarize
 
 from . import prompts, score
 from .prompts import (
@@ -116,17 +116,8 @@ def run(args: JudgeArgs) -> FamilyResult:
     with Cache(args.out / "cells.jsonl") as cache:
         bundles = {c.key: bundle_text(c) for c in nonempty}
         if rep.kind == "tokens":
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                bundles,
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = dict(bundles)
             texts = {k: v for k, v in summ.items() if v is not None}
             n_interp_missing = sum(1 for v in summ.values() if v is None)
         else:

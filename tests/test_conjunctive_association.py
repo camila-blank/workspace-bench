@@ -168,31 +168,6 @@ def test_char_cap_option_and_pick_labels(tmp_path, fake_llm, mk_args):
     assert res.value == 0.0
 
 
-def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
-    rows = [
-        {"id": QA, "layer": 20, "pos": 1, "tokens": ["Ġgrief", "Ġchild_"]},
-        {"id": QA, "layer": 20, "pos": 2, "tokens": ["Ġaccident"]},
-        {"id": QA, "layer": 36, "pos": 1, "tokens": ["Ġmourning"]},
-    ]
-    seen = []
-
-    def responder(system, user):
-        if user.startswith("Return"):
-            return {"a": 1}
-        if user.startswith("TOKEN READOUTS:"):
-            seen.append(user)
-            return {
-                "interpretation": "grief over her child's death" if "grief" in user else "mourning"
-            }
-        assert "READOUTS:\n\n[L20] grief over her child's death\n[L36] mourning\n\n" in user
-        return {"choice": GOLDEN[QA]["gold_pos"], "quote": "grief"}
-
-    fake_llm(responder)
-    res = judge.run(mk_args(write_jsonl(tmp_path / "t.jsonl", rows), items=[QA]))
-    assert seen == ["TOKEN READOUTS:\ngrief | child | accident", "TOKEN READOUTS:\nmourning"]
-    assert res.value == 1.0
-
-
 def test_dry_run_prints_and_makes_no_calls(tmp_path, mk_args, capsys, monkeypatch):
     monkeypatch.setattr("wsbench.llm._make_client", lambda r, k: pytest.fail("no client"))
     res = judge.run(mk_args(EXAMPLE, dry_run=True))

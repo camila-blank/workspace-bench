@@ -4,5 +4,10 @@ from wsbench.multitoken.family import mt_family
 from wsbench.registry import register
 
 SPEC = register(
-    mt_family("basic_readout_mt", "Basic readout (multi-token)", calls_per_arm="≈ 1.5k")
+    mt_family(
+        "basic_readout_mt",
+        "Basic readout (multi-token)",
+        calls_per_arm="≈ 1.5k",
+        min_full_positions=1,
+    )
 )

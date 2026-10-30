@@ -23,7 +23,6 @@ from wsbench.mcjudge import (
 from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
-from wsbench.summarizer import aux_judge, summarize
 
 from . import prompts, score
 from .prompts import COMP_SEED, DIGEST_TASK_NOTE, PROMPT_VERSION, SCHEMA, SYSTEM, SYSTEM_SUMMARY
@@ -108,17 +107,10 @@ def run(args: JudgeArgs) -> FamilyResult:
     pre = Preflighter(args.dry_run)
     with Cache(args.out / "cells.jsonl") as cache:
         if rep.kind == "tokens":
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                {f"{iid}__L{layer:03d}": v for (iid, layer), v in kept_bags.items() if v.strip()},
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = {
+                f"{iid}__L{layer:03d}": v for (iid, layer), v in kept_bags.items() if v.strip()
+            }
             texts: dict[tuple[str, int], str] = {}
             for (iid, layer), v in kept_bags.items():
                 s = summ.get(f"{iid}__L{layer:03d}", "" if not v.strip() else None)

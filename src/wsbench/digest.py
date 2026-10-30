@@ -1548,6 +1548,7 @@ CONTEXT_MARGIN = 64_000
 MAX_HALVINGS = 2
 DIGEST_ATTEMPTS = 3  # a 1800 s call must not be retried 12 times
 _UNCOUNTED_RATIO = 1.7  # worst measured real/est ratio, used when a count fails
+COUNT_TOKENS_ABOVE = 0.6  # real counts (count_tokens) only for estimates above this share of cap
 
 
 def _fp(*parts: Any) -> str:
@@ -1699,6 +1700,11 @@ def _collapse_hierarchical(
             counts[i] = row["result"]["tokens"]
         else:
             need.append(i)
+    # plan 0032 §2.2.3: a bundle whose estimate is well under the budget needs no real count
+    for i in list(need):
+        if est_tokens(text_of[i]) <= COUNT_TOKENS_ABOVE * budget0:
+            counts[i] = est_tokens(text_of[i])
+            need.remove(i)
     if need:
         try:
             got: list[int | None] = llm.count_tokens(

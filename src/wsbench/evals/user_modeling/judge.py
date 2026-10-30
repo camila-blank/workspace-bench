@@ -7,6 +7,7 @@ from typing import Any
 
 from wsbench import digest, reads
 from wsbench.cache import Cache
+from wsbench.family import render_bag
 from wsbench.llm import Spend
 from wsbench.mc import seed_int
 from wsbench.mcjudge import (
@@ -21,7 +22,6 @@ from wsbench.mcjudge import (
 from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
-from wsbench.summarizer import aux_judge, render_bag, summarize
 
 from . import prompts, score
 from .prompts import (
@@ -141,17 +141,10 @@ def run(args: JudgeArgs) -> FamilyResult:
     units: list[tuple[Cell, int, str]] = []  # (cell, sample_idx, readout text)
     with Cache(args.out / "cells.jsonl") as cache:
         if rep.kind == "tokens":
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                {c.key: render_bag(c.tokens or (), c.scores) for c in nonempty},
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = {
+                c.key: render_bag(c.tokens or (), c.scores) for c in nonempty
+            }
             n_summary_failed = sum(1 for v in summ.values() if v is None)
             units = [(c, 0, summ[c.key]) for c in nonempty if summ.get(c.key) is not None]
         else:

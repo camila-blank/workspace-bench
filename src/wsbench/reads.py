@@ -333,21 +333,28 @@ def _report_only(
     }
 
 
-_REPORTS: dict[int, LoadReport] = {}  # id(args) -> the last load's report (weakly held)
+_REPORTS: list[tuple[weakref.ref, LoadReport]] = []  # (args, the last load's report), weakly held
 
 
 def _attach(args: JudgeArgs, rep: LoadReport) -> None:
     """Remember this run's load report beside ``args`` (not a JudgeArgs field, so
-    ``JudgeArgs(**vars(args))`` and ``dataclasses.replace`` keep working)."""
-    key = id(args)
-    if key not in _REPORTS:
-        weakref.finalize(args, _REPORTS.pop, key, None)
-    _REPORTS[key] = rep
+    ``JudgeArgs(**vars(args))`` keeps working). ``dataclasses.replace(args, judge=…)`` copies
+    share ``args.extra`` and ``readouts``, so :func:`report_of` finds the report through them."""
+    _REPORTS[:] = [(r, x) for r, x in _REPORTS if r() is not None and r() is not args]
+    _REPORTS.append((weakref.ref(args), rep))
 
 
 def report_of(args: JudgeArgs) -> LoadReport | None:
-    """The report of the last ``reads.load(args, …)``, or None."""
-    return _REPORTS.get(id(args))
+    """The report of the last ``reads.load`` on ``args`` (or on the args it was copied from)."""
+    for r, rep in reversed(_REPORTS):
+        a = r()
+        if a is args:
+            return rep
+    for r, rep in reversed(_REPORTS):
+        a = r()
+        if a is not None and a.extra is args.extra and a.readouts == args.readouts:
+            return rep
+    return None
 
 
 def config_stamps(args: JudgeArgs) -> dict[str, Any]:

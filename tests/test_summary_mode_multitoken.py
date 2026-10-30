@@ -15,6 +15,8 @@ from wsbench.multitoken.regex import SCORER_VERSION
 HOUR, OCTO = "mlh-ar-hourglass", "mlh-ar-octopus"
 MH = "mh2-coeur-de-lion-brother-charter-q2"
 SUFFIX = "+digest-v4-task-extractive+sj-v8"
+# plan 0032 §2.2.2: multilingual_mt's digest records each evidence span's language (summ_lang)
+ML_SUFFIX = "+digest-v4-task-extractive-lang+sj-v8"
 
 
 def _write(path, rows):
@@ -67,8 +69,8 @@ def test_regex_one_digest_per_item_and_relaxed_conjunction(tmp_path, monkeypatch
     for k in ("n_expected_cells", "n_missing_cells"):
         assert r.counts[k] == native.counts[k]
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"] == SCORER_VERSION + SUFFIX
-    assert r.config["scorer_version"] == SCORER_VERSION + SUFFIX
+    assert r.config["prompt_version"] == SCORER_VERSION + ML_SUFFIX
+    assert r.config["scorer_version"] == SCORER_VERSION + ML_SUFFIX
     assert r.config["judge_model"] == digest.DEFAULT_MODEL and r.pinned_instrument
     assert "layer_protocols" not in r.extras and r.extras["summary"]["n_items_summarized"] == 2
 
@@ -119,7 +121,7 @@ def test_mc_one_call_per_item_unit_and_quote_gate(tmp_path, monkeypatch):
     assert rows[HOUR]["pass"] is True
     assert rows[OCTO]["pass"] is False  # the concept quote is in no evidence sample
     assert rows[OCTO]["layers"]["-1"]["concept"]["quote_ok"] is False
-    assert r.config["prompt_version"] == PROMPT_VERSION + SUFFIX
+    assert r.config["prompt_version"] == PROMPT_VERSION + ML_SUFFIX
     assert r.config["aggregate"] == "summary" and not r.pinned_instrument
 
 

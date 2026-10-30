@@ -16,6 +16,7 @@ from wsbench.family import (
     pass_rate_result,
     quote_in,
     rate,
+    render_bag,
     require_cells,
     tri_state,
 )
@@ -25,7 +26,6 @@ from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_reado
 from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
-from wsbench.summarizer import SUMMARIZER_PROMPT_VERSION, aux_judge, render_bag, summarize
 
 from .options import option_sets, partner_of
 from .prompts import (
@@ -237,17 +237,8 @@ def run(args: JudgeArgs) -> FamilyResult:
             bundles = {
                 c.key: render_bag(c.tokens or (), c.scores) for c in judged_cells if c.tokens
             }
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                bundles,
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = dict(bundles)
             texts = {k: v for k, v in summ.items() if v is not None}
             empty = {(c.id, c.layer, c.pos) for c in judged_cells if not c.tokens}
         else:
@@ -342,7 +333,6 @@ def run(args: JudgeArgs) -> FamilyResult:
         chance_label=CHANCE_LABEL,
         config_extra={
             "layers_judged": layers,
-            "summarizer": SUMMARIZER_PROMPT_VERSION if rep.kind == "tokens" else None,
         },
         extras={
             "n_calls": len(calls),

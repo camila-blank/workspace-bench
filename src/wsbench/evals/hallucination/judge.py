@@ -34,6 +34,7 @@ from typing import Any
 
 from wsbench import reads
 from wsbench.cache import Cache
+from wsbench.family import render_bag
 from wsbench.llm import Spend
 from wsbench.mcjudge import (
     Call,
@@ -47,7 +48,6 @@ from wsbench.mcjudge import (
 from wsbench.readouts import expected_cells, missing_cells
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
-from wsbench.summarizer import SUMMARIZER_PROMPT_VERSION, aux_judge, render_bag, summarize
 
 from .prompts import (
     JUDGE_SCHEMA,
@@ -273,21 +273,12 @@ def run(args: JudgeArgs) -> FamilyResult:
     decoded: dict[str, list[str]] = {}
     with Cache(args.out / "cells.jsonl") as cache:
         if kind == "tokens":
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
             bundles: dict[str, str] = {}
             for c in nonempty:
                 decoded[c.key] = list(c.tokens or ())  # the loader already decoded them
                 bundles[c.key] = render_bag(decoded[c.key], c.scores)
-            summ = summarize(
-                bundles,
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = dict(bundles)
             for c in nonempty:
                 text = summ.get(c.key)
                 if text is not None:
@@ -436,7 +427,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         PROMPT_VERSION,
         kind=kind,
         k=k_arm,
-        summary_prompt_version=SUMMARIZER_PROMPT_VERSION if kind == "tokens" else None,
+        summary_prompt_version=None,  # the J-lens interpretation step is deleted (plan 0032)
         judged_layers=layers,
         verify=verify,
         verify_prompt_version=VERIFY_PROMPT_VERSION if verify else None,
