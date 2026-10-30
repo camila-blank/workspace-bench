@@ -54,15 +54,18 @@ def test_every_family_plans_and_rows_serialize():
 def test_plans_match_the_bank_specs():
     arith = {s.id: s for s in readplan.plan("arithmetic_intermediates")}
     s = arith["addmul-000"]
-    assert s.positions == {"kind": "all_from_end"} and s.layers == [56, 60]
+    # plan 0032 §2.1.2: every family reads GRID; the former grids are the lite layers (Q14)
+    assert s.positions == {"kind": "all_from_end"} and s.layers == readplan.GRID
+    assert s.lite_layers == [56, 60] and s.lite_positions == {"kind": "same"}
     assert s.extra["frozen_cell"] == {"layer": 60, "pos": -8}
     buggy = {s.id: s for s in readplan.plan("buggy_code")}
-    assert buggy["py-quantity-refund-credit"].layers == [60]
-    assert next(s for s in buggy.values() if s.id.startswith("rust")).layers == [56]
+    assert buggy["py-quantity-refund-credit"].layers == readplan.GRID
+    assert buggy["py-quantity-refund-credit"].lite_layers == [60]
+    assert next(s for s in buggy.values() if s.id.startswith("rust")).lite_layers == [56]
     mcdm = readplan.plan("multi_concept_directed_modulation")[0]
-    assert mcdm.layers == [44, 52, 56, 60] and mcdm.positions == {"kind": "last_n", "n": 12}
+    assert mcdm.layers == readplan.GRID and mcdm.positions == {"kind": "last_n", "n": 12}
     conj = readplan.plan("conjunctive_association")[0]
-    assert conj.layers == readplan.SIX and conj.suffix == readplan.SUMMARIZE_SUFFIX
+    assert conj.layers == readplan.GRID and conj.suffix == readplan.SUMMARIZE_SUFFIX
     hal = readplan.plan("hallucination")[0]
     assert hal.render == "captured" and hal.extra["input_ids"] and hal.positions["positions"]
     multihop = readplan.plan("multihop")
@@ -72,7 +75,7 @@ def test_plans_match_the_bank_specs():
     jb = readplan.plan("jailbreak_recognition")[0]
     span = jb.positions["positions"]
     assert jb.render == "chat_context" and jb.messages[-1]["role"] == "user"
-    assert jb.layers == readplan.FIVE
+    assert jb.layers == readplan.GRID
     implicit = next(s for s in readplan.plan("basic_readout") if s.render == "chat_prefill")
     assert implicit.prefill == readplan.ANSWER_STEM
     assert span[0] == 3 and span[-1] == 745 and len(span) == 743  # every token of the last turn

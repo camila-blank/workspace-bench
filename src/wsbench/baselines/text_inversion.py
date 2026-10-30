@@ -989,6 +989,12 @@ def _row_dict(row: Any) -> dict[str, Any]:
     d = dataclasses.asdict(row) if dataclasses.is_dataclass(row) else dict(vars(row))
     d.pop("layers", None)  # WSB_BANK_ROOT remaps layers; the guard is about the items
     d.pop("note", None)  # prose written in readplan.py, not bank data
+    # plan 0032 §2.6.9: the lite site and the reads flag never enter bank_sha, so a lite-rule
+    # edit (or a reads=lite plan) keeps every untouched family's fingerprint
+    for k in ("lite_positions", "lite_layers", "reads"):
+        d.pop(k, None)
+    if isinstance(d.get("extra"), dict) and "reads" in d["extra"]:
+        d["extra"] = {k: v for k, v in d["extra"].items() if k != "reads"}
     return d
 
 
