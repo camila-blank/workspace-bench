@@ -32,6 +32,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from wsbench import reads
 from wsbench.cache import Cache
 from wsbench.llm import Spend
 from wsbench.mcjudge import (
@@ -43,7 +44,7 @@ from wsbench.mcjudge import (
     run_calls,
     with_readout_count,
 )
-from wsbench.readouts import expected_cells, load_readouts, missing_cells
+from wsbench.readouts import expected_cells, missing_cells
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
 from wsbench.summarizer import SUMMARIZER_PROMPT_VERSION, aux_judge, render_bag, summarize
@@ -246,7 +247,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     by_id = {it["id"]: it for it in scope}
     sites = {it["id"]: {int(s["pos"]): s for s in it["sites"]} for it in scope}
     positions = {iid: list(ps) for iid, ps in sites.items()}
-    cells, rep = load_readouts(args.readouts, layers=args.layers, positions=positions)
+    cells, rep = reads.load(args, FAMILY, positions=positions)
     layers = sorted(args.layers) if args.layers else rep.layers
     expected = expected_cells(positions, layers)
     missing = missing_cells(cells, expected)

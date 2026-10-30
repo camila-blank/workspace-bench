@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.banks import load_bank
 from wsbench.cache import Cache, fingerprint
 from wsbench.family import (
@@ -42,7 +42,7 @@ from wsbench.multitoken.prompts import (
     render_user_summary,
 )
 from wsbench.multitoken.regex import SCORER_VERSION, SUMMARIZED_SCORER_VERSION
-from wsbench.readouts import Cell, load_readouts
+from wsbench.readouts import Cell
 from wsbench.registry import EvalSpec, JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
@@ -137,7 +137,7 @@ def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
         units_of = {it["id"]: regex.scored_units(it, contract) for it in scope}
     except ValueError as e:
         fail(f"{name}: bank violates its own contract: {e}")
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, name, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     positions: dict[tuple[str, int], list[Cell]] = defaultdict(list)
     for c in cells:
@@ -572,7 +572,7 @@ def run_mc(args: JudgeArgs, *, name: str) -> FamilyResult:
     ids = [it["id"] for it in scope]
     by_id = {it["id"]: it for it in scope}
     options = option_sets(items)  # over the whole bank, never the scored subset
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, name, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     positions: dict[tuple[str, int], list[Cell]] = defaultdict(list)
     for c in cells:

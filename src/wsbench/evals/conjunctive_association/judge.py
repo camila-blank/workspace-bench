@@ -3,7 +3,7 @@
 import re
 from collections import defaultdict
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.cache import Cache
 from wsbench.family import fail
 from wsbench.llm import Spend
@@ -20,7 +20,7 @@ from wsbench.mcjudge import (
     run_calls,
     with_readout_count,
 )
-from wsbench.readouts import Cell, LoadReport, load_readouts
+from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
 from wsbench.summarizer import aux_judge, summarize
@@ -85,7 +85,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         fail(f"opts=char_cap must be >= 1 (got {char_cap})")
     bank = load_bank(FAMILY)
     scope = item_scope(bank, args)
-    cells, rep = load_readouts(args.readouts, ids=[it["id"] for it in scope], layers=args.layers)
+    cells, rep = reads.load(args, FAMILY, ids=[it["id"] for it in scope])
     layers = rep.layers
     bags = build_bags(cells)
     by_item: dict[str, dict[int, str]] = defaultdict(dict)

@@ -9,14 +9,14 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.cache import Cache
 from wsbench.family import fail, mean, pass_rate_result, rate, require_cells, tri_state
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend
 from wsbench.mcjudge import Preflighter, item_scope, with_readout_count
 from wsbench.multitoken.regex import unicode_word_matcher
-from wsbench.readouts import Cell, load_readouts
+from wsbench.readouts import Cell
 from wsbench.registry import REPO_ROOT, JudgeArgs, bank_path
 from wsbench.results import FamilyResult, bootstrap_ci
 
@@ -142,7 +142,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         fail(f"{NAME}: {len(bad)} bank items whose user turn is not the template (first {bad[0]})")
     scope = item_scope(items, args)
     ids = [it["id"] for it in scope]
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, NAME, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     present = {(c.id, c.layer) for c in cells}
     missing = [(i, L) for i in ids for L in layers if (i, L) not in present]

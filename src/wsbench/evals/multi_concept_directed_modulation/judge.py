@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.banks import load_bank
 from wsbench.cache import Cache
 from wsbench.family import (
@@ -22,7 +22,7 @@ from wsbench.family import (
 from wsbench.llm import Spend
 from wsbench.mc import letter_index
 from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_readout_count
-from wsbench.readouts import Cell, LoadReport, load_readouts
+from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 from wsbench.summarizer import SUMMARIZER_PROMPT_VERSION, aux_judge, render_bag, summarize
@@ -183,7 +183,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         - {str(c) for c in it.get("concepts") or []}
         for it in items
     }
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, NAME, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
 
     # the write window per item, from the rows' tokens (any layer), in forward order

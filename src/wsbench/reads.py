@@ -249,7 +249,11 @@ def load(
     else:
         sampling = "tokens10" if rep.kind == "tokens" else "prose1"
         source = "default"
-    cells, diag = normalize(cells, sampling)
+    normed, diag = normalize(cells, sampling)
+    if source != "default":
+        cells = normed
+    # a sidecar-less file without sampling= is judged as it is (report-only, like the span
+    # check): the counts say what the declared rule would trim; campaign files always declare
     rep.sampling, rep.sampling_source = sampling, source
     rep.n_samples_trimmed = diag["n_samples_trimmed"]
     rep.n_packed_ambiguous = diag["n_packed_ambiguous"]

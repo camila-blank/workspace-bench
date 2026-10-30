@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from wsbench import registry
+from wsbench import reads, registry
 from wsbench.bpe import to_bytes
 from wsbench.cache import Cache
 from wsbench.judge_config import ResolvedJudge
@@ -40,7 +40,7 @@ from wsbench.mcjudge import (
     run_calls,
     with_readout_count,
 )
-from wsbench.readouts import Cell, expected_cells, load_readouts, missing_cells
+from wsbench.readouts import Cell, expected_cells, missing_cells
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
 
@@ -205,7 +205,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     family_of = {it["id"]: it["family"] for it in items}
     pos_of = {it["id"]: it["pos"] for it in items}
     positions = {it["id"]: [it["pos"]] for it in scope}
-    cells, rep = load_readouts(args.readouts, layers=args.layers, positions=positions)
+    cells, rep = reads.load(args, FAMILY, positions=positions)
     if rep.kind == "tokens":
         print(f"[{FAMILY}] judges prose readouts only (the J-lens is the reference, not an arm)")
         raise SystemExit(2)

@@ -4,7 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.banks import exact_targets, item_targets, load_bank
 from wsbench.basic.judge import CellKey, JudgeOutcome, judge_cells
 from wsbench.basic.prompts import (
@@ -19,7 +19,7 @@ from wsbench.family import pass_rate_result, require_cells, tri_state
 from wsbench.judge_config import JudgeConfig
 from wsbench.llm import Spend
 from wsbench.mcjudge import Preflighter, item_scope, with_readout_count
-from wsbench.readouts import Cell, load_readouts
+from wsbench.readouts import Cell
 from wsbench.registry import EvalSpec, JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
@@ -71,7 +71,7 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
     targets = {it["id"]: targets_of(it) for it in scope}
     family_rule = FAMILY_RULES.get(name, "")
     forbidden = {it["id"]: forbidden_line(name, it) for it in scope}
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, name, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     groups = group_cells(cells)
     expected = [(i, layer) for i in ids for layer in layers]

@@ -154,7 +154,8 @@ def finalize_reads(args: JudgeArgs, result: FamilyResult) -> None:
     if isinstance(pv, str):
         result.config["prompt_version"] = reads.stamp(pv, reads.mode(args))
     for k, v in reads.extras_of(args).items():
-        result.extras.setdefault(k, v)
+        if v:  # only what the load found (a clean load adds nothing, as a direct call)
+            result.extras.setdefault(k, v)
     summ = result.extras.get("summary")
     truncated = result.extras.get("summary_complete") is False or (
         isinstance(summ, dict) and summ.get("summary_complete") is False

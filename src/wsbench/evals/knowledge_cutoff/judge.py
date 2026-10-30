@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from wsbench import digest, nocot
+from wsbench import digest, nocot, reads
 from wsbench.cache import Cache
 from wsbench.family import (
     cell_text,
@@ -22,7 +22,7 @@ from wsbench.family import (
 )
 from wsbench.llm import Spend
 from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_readout_count
-from wsbench.readouts import Cell, load_readouts
+from wsbench.readouts import Cell
 from wsbench.registry import BANK_ROOT_ENV, JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 
@@ -119,7 +119,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     scope = item_scope(load_items(), args)
     ids = [it["id"] for it in scope]
     by_id = {it["id"]: it for it in scope}
-    loaded, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    loaded, rep = reads.load(args, NAME, ids=ids)
     # every position is a negative offset (plan rule all_from_end); anything else is off-plan
     cells = [c for c in loaded if c.pos < 0]
     n_off_plan = len(loaded) - len(cells)
