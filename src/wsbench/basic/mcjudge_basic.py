@@ -14,14 +14,17 @@ widened to word boundaries; a CJK form followed by a demonym / language suffix n
 AND, for a ``number`` bridge,
 the quote is not supported only by number-flood lines (``digest.number_flood``, whole samples
 only) AND not only by ranked token lists that also hold another shown option (the shared token
-note, held in code for token lines). ``cannot_tell`` / ``distractor`` / ``invalid`` fail; a
-failed call is undecided.
+note, held in code for token lines by :func:`_holds_other`: a ``number`` bridge compares by
+value, so ``eight`` / 八 is the shown option 8; other types match the option string and its
+bank-listed ``distractor_aliases``, so 法国 is France). ``cannot_tell`` / ``distractor`` /
+``invalid`` fail; a failed call is undecided.
 Summary mode (default): one call per item on its digest. Native: one call per (item, layer),
 any-layer pass, with ``mcjudge.layer_pick_columns`` beside the number."""
 
 import importlib
 import re
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -212,6 +215,32 @@ def _in_context(quote: str, ln: digest.Line, forms: list[str], value: int | None
     return False
 
 
+def _holds_other(pieces: Sequence[str], others: list[str], block: dict[str, Any]) -> bool:
+    """A token list holds another shown option. A ``number`` bridge compares by value, in any
+    script (``eight`` and 八 are the shown option 8). Other types match each option's string
+    and its listed ``distractor_aliases`` (法国 is France), per token with the CJK suffix guard;
+    a one-character CJK form only as the whole token (马 is horse, 马来西亚 is not); a
+    multi-word form also over the list joined ("North | America")."""
+    if block.get("bridge_type") == "number":
+        values = {v for o in others if (v := numerals.word_value(o)) is not None}
+        return any(numerals.numbers_in(t) & values for t in pieces)
+    listed = block.get("distractor_aliases", {})
+    forms = [f for o in others for f in (o, *listed.get(o, ()))]
+    toks = [mc.fold(t).strip() for t in pieces]
+    for f in forms:
+        ff = mc.fold(f).strip()
+        if not ff:
+            continue
+        if len(ff) == 1 and mc._CJK.match(ff):
+            hit = ff in toks
+        else:
+            hit = any(_form_bounded(t, [f]) for t in pieces)
+            hit = hit or (" " in ff and _form_bounded(" ".join(pieces), [f]))
+        if hit:
+            return True
+    return False
+
+
 def verdict(
     result: dict[str, Any] | None,
     shown: list[str],
@@ -259,8 +288,7 @@ def verdict(
     # also holds another shown option singles out none of them
     others = [o for k, o in enumerate(shown[:-1]) if k != gold_idx]
     multi = bool(support) and all(
-        ln.pieces is not None and any(mc.form_in(t, [o]) for t in ln.pieces for o in others)
-        for ln in support
+        ln.pieces is not None and _holds_other(ln.pieces, others, block) for ln in support
     )
     out.update({"quote_ok": q_ok, "form_ok": f_ok, "number_flood": flood, "multi_option": multi})
     out["correct"] = q_ok and f_ok and not flood and not multi
