@@ -115,23 +115,26 @@ def mcdm(model: str) -> dict:
     tok, bank = _tok(model), json.loads(frozen_bank_path(fam).read_text())
     sent = bank["target_sentence"]
     n_sent = len(tok(sent, add_special_tokens=False)["input_ids"])
-    ids = _chat(tok, [{"role": "user", "content": bank["items"][0]["prompt"]}], prefill=sent)
-    if tok.decode(ids[-n_sent:]) != sent:
-        raise SystemExit(f"mcdm: the render's last {n_sent} tokens are not the target sentence")
+    for it in bank["items"]:  # every prompt, the bank v2 entity items included (plan 0034)
+        ids = _chat(tok, [{"role": "user", "content": it["prompt"]}], prefill=sent)
+        if tok.decode(ids[-n_sent:]) != sent:
+            raise SystemExit(
+                f"mcdm: {it['name']}: the render's last {n_sent} tokens are not the target "
+                "sentence"
+            )
     bank["last_n"] = n_sent  # read every token of the prefilled sentence (12 under Qwen)
-    s = get(model)
-    old = bank["layers"]
-    bank["layers"] = remap_layers(old, s.n_layers, s.read_band)  # snapped to the lens's layers
+    # plan 0032 §2.1.2 / 0034 G2: the family reads readplan.GRID, remapped by depth in `plan`;
+    # the bank stores no layers of its own
+    bank.pop("layers", None)
     bank["adapt"] = {
         "model": model,
         "frozen": str(dt.date.today()),
         "render": "re-rendered with "
         f"the subject's tokenizer + template: the prefilled sentence is {n_sent} tokens, "
         f"read offsets -{n_sent}..-1",
-        "layers": f"{old} -> {bank['layers']} ({s.n_layers} blocks)",
     }
     store.write_json(store.model_dir(model) / f"{fam}.json", bank)
-    return {"n": len(bank["items"]), "layers": bank["layers"]}
+    return {"n": len(bank["items"]), "last_n": n_sent}
 
 
 def carry(model: str, families: list[str] | None = None) -> None:
