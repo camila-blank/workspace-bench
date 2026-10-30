@@ -323,7 +323,7 @@ def test_prompt_only_freeze_and_floors(tmp_path):
     # saturated; only jlens_concept_pr (and the leaving hallucination) stay excluded
     mc = registry.FAMILIES["multi_concept_directed_modulation"]
     write_results(run / mc.name, result(mc.name, mc.judge.prompt_version, value=1.0))
-    assert po.freeze(run, dst)[mc.name]["saturated"] is True
+    assert po.freeze(run, tmp_path / "po_mc.json")[mc.name]["saturated"] is True
     (run / mc.name / "results.json").unlink()
     # a stale instrument is refused at freeze time and dropped at read time
     write_results(run / "typo_mt", result("typo_mt", "old-version"))
