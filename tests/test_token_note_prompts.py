@@ -137,7 +137,6 @@ def test_quote_from_one_list_verifies_across_tokens():
 
 
 BASIC_TARGET_JUDGES = [
-    "association",
     "basic_readout",
     "medical_diagnosis",
     "medical_diagnosis_alt",

@@ -1,8 +1,11 @@
-# Read sites for the association families (conjunctive, role-bound)
+# Read sites for the association families (association, conjunctive, role-bound)
 
 Since 2026-09-22 the readouts files of `conjunctive_association` and `role_bound_association` are
 produced from a **summarize-prompt render**, read only at the prompt's suffix and the chat tail.
-This page is the producer contract; the judges are unchanged.
+This page is the producer contract; the judges are unchanged. Since plan 0039 (bank v2,
+2026-10-30) `association` reads the same render and the same 19 sites (its scene is the item's
+`prompt`), replacing its former plain-render final token; Camila: "make sure that ALL token
+positions from the summary sentence are being read and fed to the summarizer".
 
 ## Why
 
@@ -19,7 +22,7 @@ loophole.
 
 ```
 <|im_start|>user
-{stimulus}
+{stimulus}   (association: {prompt})
 
 Summarize the preceding story in one sentence.<|im_end|>
 <|im_start|>assistant
@@ -39,7 +42,7 @@ The 19 positions from the first suffix token through the end of the render, at t
 layers `readplan.GRID` = 20 / 24 / … / 60 (`layers=all` reads every model layer, 64 on
 Qwen3.6-27B; plan 0032 / 0037). The measurements below predate the GRID change and were taken at
 the former six layers 20 / 28 / 36 / 44 / 52 / 60. Lite (`reads=lite`) reads the final site only
-(`final_token`, the `\n\n` after `</think>`) until the pre-registered lite-site procedure
+(`final_token`, the `\n\n` after `</think>`; association has no per-site numbers yet) until the pre-registered lite-site procedure
 (`scripts/lite_site_table.py`, gpu runbook R4d) freezes a rule into `evals/<family>/lite_rule.json`:
 
 | rel (from end) | token | conjunctive single-site pass | role-bound per-cell pass |

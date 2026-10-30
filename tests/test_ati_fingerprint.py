@@ -22,6 +22,7 @@ CHANGED_BY_FAMILY_PRS: set[str] = {
     "user_modeling",  # plan 0043: full plan reads every position (re-judge at gpu R8)
     "knowledge_cutoff",  # plan 0044: bank v2 (cs01301 out)
     "moral_rationale",  # plan 0046: bank v2 + every-position plan
+    "association",  # plan 0039: bank v2 + summarize-suffix plan
 }
 
 
