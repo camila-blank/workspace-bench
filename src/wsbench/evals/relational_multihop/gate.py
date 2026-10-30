@@ -159,6 +159,7 @@ def order_gate(
     statements: Sequence[Line],
     gold: tuple[str, str],
     rivals: Sequence[tuple[str, str]],
+    prominence: Sequence[Line] | None = None,
 ) -> str:
     """The gold pick's mechanical gate over the unit's statements (bullets):
 
@@ -168,7 +169,12 @@ def order_gate(
       none;
     - ``"rival_prominent"``: some rival chain is stated in at least as many statements as the
       gold — the prompt's "most bullets/lines, a tie is cannot tell" rule, enforced;
-    - ``"pass"`` otherwise."""
+    - ``"pass"`` otherwise.
+
+    ``prominence`` (default ``statements``) = the statements that rule counts over. Summary mode
+    passes every loaded cell's statements: its digest keeps ONE sample line per entry (support
+    shown as [many]/[one]), so counting the digest's lines would tie a gold seen in many samples
+    with a rival seen once."""
     fq = fold_quote(quote)
     if not fq or "|" in fq:
         return "order"
@@ -187,8 +193,9 @@ def order_gate(
         break
     if not found:
         return "two_chains" if found_two else "order"
-    n_gold = count_units(statements, gold)
-    if any(count_units(statements, r) >= n_gold for r in rivals):
+    pool = statements if prominence is None else prominence
+    n_gold = count_units(pool, gold)
+    if any(count_units(pool, r) >= n_gold for r in rivals):
         return "rival_prominent"
     return "pass"
 

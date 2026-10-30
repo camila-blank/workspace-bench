@@ -397,6 +397,44 @@ def test_two_chains_in_one_bullet_single_out_none(tmp_path, monkeypatch):
     assert res.rows[0]["pass"] is True
 
 
+@pytest.mark.parametrize(
+    ("n_gold", "n_rev", "gate_", "ok"), [(5, 1, "pass", True), (1, 5, "rival_prominent", False)]
+)
+def test_summary_prominence_counts_samples_not_digest_lines(
+    tmp_path, monkeypatch, n_gold, n_rev, gate_, ok
+):
+    """Summary mode: the digest keeps ONE sample line per entry ([many] vs [one] support), so
+    the rival-prominence rule counts every loaded cell's statements, not the digest's lines: a
+    gold seen 5x beside a reversed chain seen once passes; the reverse still fails."""
+    _register()
+    gold_s, rev_s = (
+        "Riley is Avery's landlord's sibling.",
+        "maybe Riley is Avery's sibling's landlord.",
+    )
+    texts = [gold_s] * n_gold + [rev_s] * n_rev
+    rows = [
+        {"id": A, "layer": 36 + 4 * k, "pos": 20, "token": "'s", "samples": [t]}
+        for k, t in enumerate(texts)
+    ]
+    path = write_jsonl(tmp_path / "r.jsonl", rows)
+
+    def dig(user):
+        ent = [
+            {"statement": "gold", "key": "landlord's sibling", "where": "", "evidence": gold_s},
+            {"statement": "rev", "key": "sibling's landlord", "where": "", "evidence": rev_s},
+        ]
+        top, rare = (ent[:1], ent[1:]) if n_gold > n_rev else (ent[1:], ent[:1])
+        return {"items": top, "rare": rare}
+
+    FakeLLM.install(monkeypatch, _scripted(lambda u: (_gold(A), "landlord's sibling")), digest=dig)
+    res = SPEC.run(
+        summary_args(
+            path, tmp_path / "o", prompts.PROMPT_VERSION, items=[A], extra={"reads": "lite"}
+        )
+    )
+    assert res.rows[0]["gate"] == gate_ and res.rows[0]["pass"] is ok
+
+
 def test_s_final_bare_apostrophe_links():
     """ "boss' sister-in-law" is a chain (a bare apostrophe after an s-final word)."""
     t = digest.fold_quote("Emery is the boss' sister-in-law")

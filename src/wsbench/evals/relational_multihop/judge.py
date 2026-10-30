@@ -189,14 +189,21 @@ def gate1(quote: str, lines: list[Line], statements: list[Line]) -> str:
     return "verified"
 
 
-def evaluate(r: dict | None, opts: Options, lines: list[Line], statements: list[Line]) -> dict:
-    """One unit's verdict fields from its (final) judge answer."""
+def evaluate(
+    r: dict | None,
+    opts: Options,
+    lines: list[Line],
+    statements: list[Line],
+    prominence: list[Line] | None = None,
+) -> dict:
+    """One unit's verdict fields from its (final) judge answer. ``prominence``: the statements the
+    order gate's rival-prominence rule counts over (``gate.order_gate``; default ``statements``)."""
     choice, quote = choice_of(r), quote_of(r)
     cls = pick_class(choice, opts)
     g1 = gate1(quote, lines, statements) if cls not in ("cannot_tell", "invalid") else ""
     g = g1
     if cls == "gold" and g1 == "verified":
-        g = gate.order_gate(quote, statements, opts.gold_chain, opts.rivals)
+        g = gate.order_gate(quote, statements, opts.gold_chain, opts.rivals, prominence)
     return {
         "choice": choice,
         "gold_pos": opts.gold,
@@ -234,6 +241,7 @@ class _Unit:
     user: str
     lines: list[Line]
     statements: list[Line]
+    prominence: list[Line] | None = None  # summary: every loaded cell's statements
 
 
 def _judge_units(
@@ -279,7 +287,7 @@ def _judge_units(
         r = first.get(f"{u.key}:R")
         if r is None:
             continue
-        v = evaluate(r, opts[u.id], u.lines, u.statements)
+        v = evaluate(r, opts[u.id], u.lines, u.statements, u.prominence)
         if v["pick_class"] == "gold" and v["gate"] in (
             "quote_rejected",
             "unverified_bullet",
@@ -425,6 +433,7 @@ def _run_summary(
                     _summary_key(i), i, c.layer, c.pos,
                     prompts.render_question(readout, listing(opts[i].shown), token_note),
                     lines, digest.statement_lines(lines, live),
+                    digest.statement_lines(digest.native_lines(live), live),
                 )
             )  # fmt: skip
         answers = _judge_units(units, opts, args, pv, cache, spend, pre)
@@ -438,7 +447,7 @@ def _run_summary(
             n_api_failed += 1
         u = by_unit.get(i)
         v = (
-            evaluate(r, opts[i], u.lines, u.statements)
+            evaluate(r, opts[i], u.lines, u.statements, u.prominence)
             if u is not None and r is not None
             else evaluate(None, opts[i], [], [])
         )
