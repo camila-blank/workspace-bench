@@ -5,12 +5,21 @@ of record) onto the shared client and cache. Three judged stages, one ``run_call
 
 * Stage A (concept split) on the family judge (Claude Opus 5.5 since plan 0023; the source ran
   it on DeepSeek-V4-Flash, see the README's instrument note): one call per cell with text,
-  ``text = concat_samples(samples)``;
+  ``text = readouts.bulleted(samples)`` (the shared one-string join; the samples per cell are
+  the declared sampling's, ``reads.load`` normalizes them);
 * Stage B (per-token recall grades) on the judge: one call per CONTENT reference token per cell
-  with concepts; the ``foil`` pass grades the same concepts against a seeded within-family
-  derangement partner's tokens (keys ``:F..``) and runs by default;
+  with concepts (junk tokens — U+FFFD fragments, special tags — are not content, plan 0042); the
+  ``foil`` pass grades the same concepts against a seeded within-family derangement partner's
+  tokens (keys ``:F..``) and runs by default;
 * Stage P (per-concept precision, T = 0) on the judge: one call per 60-concept chunk with the
-  cell's full content-token set; ``pfoil`` (keys ``:Q..``) only with ``opts=stage_p_foil=1``.
+  cell's full content-token set; the ``pfoil`` pass (keys ``:Q..``, the family's floor) runs by
+  default since plan 0042; ``opts=stage_p_foil=0`` turns it off, and the foil precision then
+  reads ``None`` ("not measured"), never 0.0.
+
+Layers (plan 0042 C3): with no ``layers=``, the judged layers are the file's layers that have a
+reference J-lens file (the rest are listed in ``extras.layers_without_reference``); an explicit
+``layers=`` naming a layer without a reference exits 2. ``opts=headline_layer=N`` picks the
+headline layer (it must be judged).
 
 A cell is (label, layer, eval position) — exactly one eval position per label per the manifest.
 An ABSENT cell is missing (fatal without ``allow_missing=True``); a PRESENT-but-empty cell scores
@@ -40,7 +49,7 @@ from wsbench.mcjudge import (
     run_calls,
     with_readout_count,
 )
-from wsbench.readouts import Cell, expected_cells, missing_cells
+from wsbench.readouts import Cell, bulleted, expected_cells, missing_cells
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
 
@@ -54,7 +63,6 @@ from .prompts import (
     STAGE_B_SYSTEM,
     STAGE_P_SCHEMA,
     STAGE_P_SYSTEM,
-    concat_samples,
     parse_stage_a,
     parse_stage_b,
     parse_stage_p,
@@ -74,11 +82,16 @@ REF_DIR = BANK_DIR / "gen-jlens-pr-jlens"
 
 
 def bank_dir() -> Path:
-    """``$WSB_BANK_ROOT/jlens_concept_pr/`` for an adapted bank (the subject's own manifest and
-    J-lens reference; an error if missing, never the 27B's), else the frozen bank directory."""
+    """The bank directory (``manifest.json`` + ``gen-jlens-pr-jlens/``). Precedence is the shared
+    one (``registry.bank_path``): ``$WSB_BANK_FILE_JLENS_CONCEPT_PR`` (a ``manifest.json``; its
+    directory is the bank) > ``$WSB_BANK_ROOT/jlens_concept_pr/`` for an adapted bank (the
+    subject's own manifest and J-lens reference; an error if missing, never the 27B's — this
+    family's bank is a directory, not ``<root>/<family>.json``) > the registered bank."""
+    if os.environ.get(registry.BANK_FILE_ENV_PREFIX + FAMILY.upper()):
+        return registry.bank_path(FAMILY).parent
     root = os.environ.get(registry.BANK_ROOT_ENV)
     if not root:
-        return BANK_DIR
+        return BANK_DIR  # == REPO_ROOT / SPEC.bank.parent
     base = Path(root) if Path(root).is_absolute() else registry.REPO_ROOT / root
     d = base / FAMILY
     if not (d / "manifest.json").exists():
@@ -188,6 +201,60 @@ def extract_judge(args: JudgeArgs) -> ResolvedJudge:
     )
 
 
+def judged_layers(
+    args: JudgeArgs, file_layers: Sequence[int], labels: Sequence[str]
+) -> tuple[list[int], list[int]]:
+    """``(judged, without_reference)`` (plan 0042 C3). A layer is judgeable when every scoped
+    label has a reference file at it. An explicit ``layers=`` list must be all judgeable (exit 2
+    before any call); with no ``layers=`` the file's non-judgeable layers are dropped and listed
+    (a 64-layer producer file runs without pre-filtering). No judgeable layer at all exits 2."""
+
+    def ok(layer: int) -> bool:
+        return all(reference_path(lab, layer).exists() for lab in labels)
+
+    if args.layers:
+        layers = sorted(set(args.layers))
+        bad = [L for L in layers if not ok(L)]
+        if bad:
+            print(f"[{FAMILY}] no reference J-lens file for layers {bad} under {ref_dir()}")
+            raise SystemExit(2)
+        return layers, []
+    layers = sorted(set(file_layers))
+    judged = [L for L in layers if ok(L)]
+    dropped = [L for L in layers if not ok(L)]
+    if dropped:
+        print(
+            f"[{FAMILY}] WARNING: no reference J-lens file for file layers {dropped} under "
+            f"{ref_dir()}: not judged (extras.layers_without_reference)"
+        )
+    if not judged:
+        print(f"[{FAMILY}] no file layer {layers} has a reference J-lens file under {ref_dir()}")
+        raise SystemExit(2)
+    return judged, dropped
+
+
+def headline_opt(args: JudgeArgs, layers: Sequence[int]) -> int | None:
+    """``opts=headline_layer=N`` (must be a judged layer, else exit 2); ``None`` = the default
+    rule (the single judged layer, else L44, else no headline)."""
+    raw = args.extra.get("headline_layer")
+    if raw in (None, ""):
+        return None
+    try:
+        hl = int(str(raw))
+    except ValueError:
+        print(f"[{FAMILY}] headline_layer={raw!r}: not an integer")
+        raise SystemExit(2) from None
+    if hl not in layers:
+        print(f"[{FAMILY}] headline_layer={hl} is not a judged layer {list(layers)}")
+        raise SystemExit(2)
+    return hl
+
+
+def foil_on(args: JudgeArgs) -> bool:
+    """The Stage-P foil (the family's floor) runs unless ``opts=stage_p_foil=0`` (plan 0042)."""
+    return str(args.extra.get("stage_p_foil", "1")) != "0"
+
+
 def _valid(parse: Callable[..., Any], *parse_args: Any) -> bool:
     try:
         parse(*parse_args)
@@ -206,14 +273,13 @@ def run(args: JudgeArgs) -> FamilyResult:
     pos_of = {it["id"]: it["pos"] for it in items}
     positions = {it["id"]: [it["pos"]] for it in scope}
     cells, rep = reads.load(args, FAMILY, positions=positions)
-    if rep.kind == "tokens":
+    if rep.kind == "tokens" or rep.sampling == "tokens10":
         print(f"[{FAMILY}] judges prose readouts only (the J-lens is the reference, not an arm)")
         raise SystemExit(2)
-    layers = sorted(args.layers) if args.layers else rep.layers
-    bad = sorted({L for L in layers for it in scope if not reference_path(it["id"], L).exists()})
-    if bad:
-        print(f"[{FAMILY}] no reference J-lens file for layers {bad} under {ref_dir()}")
-        raise SystemExit(2)
+    layers, no_ref = judged_layers(args, rep.layers, [it["id"] for it in scope])
+    cells = [c for c in cells if c.layer in layers]
+    rep.layers = layers  # the shared config.layers_judged stamp is the judged set
+    headline = headline_opt(args, layers)
     expected = expected_cells(positions, layers)
     missing = missing_cells(cells, expected)
     print(
@@ -229,7 +295,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         if not args.allow_missing and not args.dry_run:
             raise SystemExit(2)
     fmap = foil_map(items)
-    pfoil = args.extra.get("stage_p_foil") == "1"
+    pfoil = foil_on(args)
     ref_cache: dict[tuple[str, int], list[str]] = {}
 
     def ref(label: str, layer: int) -> list[str]:
@@ -261,7 +327,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         for c in cells:
             if c.empty:
                 continue
-            text = concat_samples(c.samples or ())
+            text = bulleted(c.samples or ())
             texts[c.key] = text
             calls["a"].append(
                 Call(
@@ -294,6 +360,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                 src = c.id if stage == "b" else partner(c)
                 if src is None:
                     continue
+                content = [t for t in ref(src, c.layer) if is_content_token(t)]
                 for ti, tok in enumerate(ref(src, c.layer)):
                     if not is_content_token(tok):
                         continue
@@ -301,8 +368,14 @@ def run(args: JudgeArgs) -> FamilyResult:
                         Call(
                             stage_key(c.key, stage, ti),
                             STAGE_B_SYSTEM,
-                            render_stage_b(tok, cs),
-                            {"cell": c.key, "stage": stage, "token_idx": ti, "token": tok},
+                            render_stage_b(tok, cs, content),
+                            {
+                                "cell": c.key,
+                                "stage": stage,
+                                "token_idx": ti,
+                                "token": tok,
+                                "tokens": content,
+                            },
                         )
                     )
         b_all = calls["b"] + calls["foil"]
@@ -345,6 +418,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                                 "chunk": ci,
                                 "offset": offset,
                                 "concepts": part,
+                                "tokens": toks,
                             },
                         )
                     )
@@ -356,7 +430,9 @@ def run(args: JudgeArgs) -> FamilyResult:
                 judge=args.judge,
                 prompt_version=PROMPT_VERSION,
                 preflight=pre.for_judge(args.judge),
-                validate=lambda call, r: _valid(parse_stage_p, r, call.meta["concepts"]),
+                validate=lambda call, r: _valid(
+                    parse_stage_p, r, call.meta["concepts"], call.meta["tokens"]
+                ),
                 temperature=STAGE_P_TEMPERATURE,
                 max_tokens=MAX_TOKENS,
                 **common,
@@ -390,7 +466,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                     "key": call.key,
                     "chunk": call.meta["chunk"],
                     "offset": call.meta["offset"],
-                    "support": parse_stage_p(r, call.meta["concepts"]),
+                    "support": parse_stage_p(r, call.meta["concepts"], call.meta["tokens"]),
                 }
             )
     reject_rate = {
@@ -431,7 +507,6 @@ def run(args: JudgeArgs) -> FamilyResult:
         extract_model=a_judge.model,
         stage_p_temperature=STAGE_P_TEMPERATURE,
         stage_p_foil=pfoil,
-        judged_layers=layers,
     )
     return with_readout_count(
         score.score(
@@ -443,6 +518,9 @@ def run(args: JudgeArgs) -> FamilyResult:
             reject_rate=reject_rate,
             counts_base=counts_base,
             config=config,
+            foil_precision_measured=pfoil,
+            headline=headline,
+            layers_without_reference=no_ref,
         ),
         scope,
         cells,

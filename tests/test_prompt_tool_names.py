@@ -24,7 +24,6 @@ TOOL = re.compile(
 # unverbalized_hint, medical_diagnosis{,_alt}).
 PENDING_FAMILY_PR: dict[str, str] = {
     "conjunctive_association": "conjunctive.md G5",
-    "jlens_concept_pr": "jlens_pr.md item 3 / C5",
     "moral_rationale": "moral.md §2.6",
     "relational_multihop": "relational_multihop.md C3(b)",
     "role_bound_association": "role_bound.md",
