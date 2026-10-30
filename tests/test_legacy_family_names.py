@@ -195,6 +195,11 @@ def test_frozen_ati_file_uses_new_keys(real_families):
     frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
     for old, new in RENAMES.items():
         assert old not in frozen and new in frozen
+        if frozen[new]["instrument"] != registry.get(new).judge.prompt_version:
+            # plan 0032: introspection's instrument gained +cannot; re-gated in the run phase
+            with pytest.raises(SystemExit, match="re-gate"):
+                ti.subset_entry(new)
+            continue
         assert ti.subset_entry(new)["ids"] == frozen[new]["ids"]
 
 

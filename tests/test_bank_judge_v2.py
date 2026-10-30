@@ -6,6 +6,7 @@ from pathlib import Path
 
 from conftest import native_args
 
+from wsbench import mc
 from wsbench.banks import load_bank
 from wsbench.basic import family as bfam
 from wsbench.basic import judge as bjudge
@@ -50,7 +51,10 @@ def test_family_rules_and_per_family_prompts():
         extra = set(mod.PROMPTS) - set(P.PROMPTS)
         assert extra == ({own[f]} if f in own else set()), f
         assert set(P.PROMPTS) <= set(mod.PROMPTS)
-    assert "ranked first among the candidates of its type" in P.KIND_NOTE_TOKENS
+    # plan 0032 §2.7 (decision Q4): the rank-1 exception is deleted; the native token note is
+    # the shared mc.TOKEN_NOTE, and only pieces of DIFFERENT samples never combine
+    assert "ranked first among the candidates of its type" not in P.KIND_NOTE_TOKENS
+    assert P.KIND_NOTE_TOKENS == mc.TOKEN_NOTE
     assert "overrides the rules" in P.SYSTEM and "NEVER combine" in P.SYSTEM
 
 

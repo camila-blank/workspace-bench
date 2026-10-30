@@ -382,4 +382,7 @@ def test_judge_calls_keyed_by_judge_prompt_version():
 
     src = __import__("inspect").getsource(dmj)
     assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
-    assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29"
+    # plan 0032 §2.8.1: the tool-free prompt text adds +neutral to the instrument
+    assert prompts.PROMPT_VERSION == (
+        prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29+neutral-2026-10-30"
+    )
