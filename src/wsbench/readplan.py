@@ -454,25 +454,47 @@ def plan(family: str, *, layers: LayersArg = None, reads: str = "full") -> list[
     return specs
 
 
+MULTILINGUAL_ALL_POSITIONS = (
+    "multilingual",
+    "multilingual_mt",
+    "multilingual_multihop",
+    "multilingual_typo",
+)
+
+
 def _plan(family: str) -> list[ReadSpec]:
     """The read plan for one family, one ReadSpec per bank item."""
     if family in (
         "association",
         "basic_readout",
         "multihop",
-        "multilingual",
         "typo",
         "basic_readout_mt",
         "multihop_mt",
         "multihop_mt_v2",
-        "multilingual_mt",
-        "multilingual_multihop",
-        "multilingual_typo",
         "typo_mt",
         "wrong_bridge",
         "wrong_bridge_true",
     ):
         return _final_token_families(family, "plain")
+    if family in MULTILINGUAL_ALL_POSITIONS:
+        # plan 0040 B4 (Camila 2026-10-30: "Read on all positions and give all this to the judge
+        # (final position only for fast/lite)"): every prompt position by default, the final
+        # prompt token under reads=lite
+        _h, items = _bank(family)
+        return [
+            ReadSpec(
+                family,
+                it["id"],
+                "plain",
+                {"kind": "all"},
+                GRID,
+                text=it["prompt"],
+                note="every prompt position (plain render); reads=lite: the final prompt token",
+                lite_positions=dict(FINAL),
+            )
+            for it in items
+        ]
     if family == "poetry":
         from wsbench.capable.questions import CONTINUE
 

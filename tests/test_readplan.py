@@ -3,6 +3,8 @@ CLI writes one JSONL per family."""
 
 import json
 
+import pytest
+
 from wsbench import readplan
 from wsbench.cli import main
 
@@ -181,3 +183,20 @@ def test_offsets_from_end_reports_each_negative_offset():
     assert readplan.resolve({"kind": "offsets_from_end", "ks": [60, 1]}, toks) == [
         -1
     ]  # out of range dropped
+
+
+@pytest.mark.parametrize(
+    "family", ["multilingual", "multilingual_mt", "multilingual_multihop", "multilingual_typo"]
+)
+def test_multilingual_families_read_all_positions(family):
+    """Plan 0033 B4: every prompt position by default, the final prompt token under reads=lite."""
+    from wsbench.readplan import lite_select, plan, resolve
+
+    toks = ["a", "b", "c", "d", "e"]
+    for spec in plan(family)[:5]:
+        assert spec.render == "plain"
+        full = resolve(spec.positions, toks)
+        assert full == [0, 1, 2, 3, 4]
+        assert lite_select(full, spec.lite_positions) == [4]
+    lite = plan(family, reads="lite")[0]
+    assert resolve(lite.positions, toks) == [4]

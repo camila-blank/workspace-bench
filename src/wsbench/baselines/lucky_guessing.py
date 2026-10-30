@@ -73,6 +73,10 @@ DESCRIPTIONS: dict[str, str] = {
         "which multi-token entities a two- or three-hop factual prompt passes through on the way "
         "to its answer"
     ),
+    "multilingual": (
+        "which one-word answer a short non-English prompt leads to (as its English meaning), and "
+        "which language the prompt is written in"
+    ),
     "multilingual_mt": (
         "which concept a short non-English sentence is about, and which language it is written in"
     ),
@@ -251,6 +255,7 @@ BUILDERS: dict[str, Callable[[], list[Item]]] = {
     "directed_modulation": _directed_modulation,
     "multihop_mt": _multitoken("multihop_mt"),
     "multihop_mt_v2": _multitoken("multihop_mt_v2"),
+    "multilingual": _multitoken("multilingual"),  # plan 0040: the mc+regex MC roles
     "multilingual_mt": _multitoken("multilingual_mt"),
     "typo_mt": _multitoken("typo_mt"),
     "basic_readout_mt": _multitoken("basic_readout_mt"),

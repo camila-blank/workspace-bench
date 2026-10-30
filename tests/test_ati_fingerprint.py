@@ -11,7 +11,15 @@ from wsbench.baselines import text_inversion as ti
 FROZEN = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
 # families whose bank or full read plan this campaign changes, so their bank_sha moves and they
 # are re-gated in the run phase (gpu.md G13); none of them changes in the infra PR itself
-CHANGED_BY_FAMILY_PRS: set[str] = set()
+CHANGED_BY_FAMILY_PRS: set[str] = {
+    # plan 0040: v2 banks (units, natural forms, names-only language units) and the
+    # all-positions read plan; prompts and the last read position are unchanged, so the
+    # re-gate is re-judge only (test_multilingual.py::test_multilingual_panel_prompt_sha_...)
+    "multilingual",
+    "multilingual_mt",
+    "multilingual_multihop",
+    "multilingual_typo",
+}
 
 
 def _panel_families() -> list[str]:
