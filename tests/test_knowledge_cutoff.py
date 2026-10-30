@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import native_args
+from conftest import native_args, write_sidecar
 
 from wsbench import readplan
 from wsbench.evals import knowledge_cutoff
@@ -147,7 +147,8 @@ def test_example_readouts_pass_at_the_bank_layer(tmp_path, fake_judge):
     assert r.config["judge_model"] == DEFAULT_JUDGE and r.pinned_instrument
     assert r.extras["n_calls"] == 4 == len(seen)  # one call per (item, layer)
     assert r.extras["regex_reply_start_by_layer"] == {"44": 0.0, "60": 0.5}
-    assert r.config["positions_regime"] == "all"
+    # every (item, layer) holds the contiguous full span -4..-1 (the retired regime key "all")
+    assert r.config["reads"] == "full" and r.extras["positions_per_cell"]["min"] == 4
 
 
 def test_every_position_lands_in_one_call_in_order_without_prompt_text(tmp_path, fake_judge):
@@ -170,13 +171,15 @@ def test_quote_must_be_verbatim_in_one_sample_and_name_the_pick(tmp_path, fake_j
     g = _letter(A, A["gold"])
     rows = [
         _cell(A, 60, -3, ["I think it is the Kirin", "9100 is my guess"]),
-        _cell(A, 60, -1, ["The Kirin 9100.", "unclear"]),
+        _cell(A, 60, -1, ["The Kirin 9100.", "麒麟9100", "unclear"]),  # G2: two samples
         _cell(B, 60, -1, ["no"]),
     ]
     path = _write(tmp_path, rows)
     cases = [
         ((g, "The Kirin 9100."), True),  # verbatim in one sample, names the pick
-        ((g, "Kirin\n9100"), False),  # spans two samples: never verbatim in one
+        # spans two samples: never verbatim in one (plan 0044: quote_ok folds whitespace, so the
+        # former "Kirin\n9100" now matches "The Kirin 9100." and is replaced by a real span)
+        ((g, "the Kirin 9100 is my guess"), False),
         ((g, "I think it is the Kirin"), False),  # verbatim but does not name the pick
         ((g, "The Kirin 9020."), False),  # not in any sample
         (("NONE", ""), False),
@@ -230,7 +233,12 @@ def test_ati_pass_is_gold_pick_or_any_mention(tmp_path, fake_judge):
 def test_partial_layer_run_uses_its_own_layer(tmp_path, fake_judge):
     answers, _ = fake_judge
     answers[(A["id"], 44)] = (_letter(A, A["gold"]), "Probably the Kirin 9100.")
-    r = judge.run(_args(EXAMPLE, tmp_path, layers=[44]))
+    # plan 0044 G2: a second L44 reply_start sample presents the gold (the fixture has one)
+    rows = [json.loads(x) for x in EXAMPLE.read_text("utf-8").splitlines()]
+    for x in rows:
+        if x["id"] == A["id"] and x["layer"] == 44 and x["pos"] == -1:
+            x["samples"] = [*x["samples"], "Kirin 9100"]
+    r = judge.run(_args(_write(tmp_path, rows), tmp_path, layers=[44]))
     assert r.extras["headline_layer"] == 44 and r.config["layers_judged"] == [44]
     by = {row["id"]: row for row in r.rows}
     assert by[A["id"]]["pass"] is True and by[A["id"]]["layer"] == 44
@@ -260,11 +268,13 @@ def test_missing_cells_exit_failed_calls_undecided_and_rowless_items(tmp_path, f
 
 def test_off_plan_positions_are_ignored(tmp_path, fake_judge):
     _answers, seen = fake_judge
-    rows = [_cell(A, 60, 40, ["Kirin 9100"]), _cell(A, 60, -1, ["no"]), _cell(B, 60, -1, ["no"])]
+    rows = [_cell(A, 60, 40, ["OFFPLAN Kirin 9100"]), _cell(A, 60, -1, ["no"])]
+    rows += [_cell(B, 60, -1, ["no"])]
     r = judge.run(_args(_write(tmp_path, rows), tmp_path))
     assert r.value == 0.0 and r.counts["skipped_rows"] == 1
     assert r.extras["n_rows_nonnegative_pos"] == 1
-    assert all("Kirin 9100" not in c.user for c in seen)
+    # (the menu itself now lists "HiSilicon Kirin 9100", so the marker is the off-plan text)
+    assert all("OFFPLAN" not in c.user for c in seen)
 
 
 def test_empty_cell_is_a_judged_fail_and_not_sent(tmp_path, fake_judge):
@@ -285,7 +295,13 @@ def test_regex_judge_option_is_refused(tmp_path, fake_judge):
 def test_token_cells_are_one_sample_per_position(tmp_path, fake_judge):
     answers, seen = fake_judge
     rows = [
-        {"id": A["id"], "layer": 60, "pos": -2, "tokens": ["ĠKirin", "Ġchip"], "scores": [1, 0.5]},
+        {
+            "id": A["id"],
+            "layer": 60,
+            "pos": -2,
+            "tokens": ["ĠKirin", "Ġ9100", "Ġchip"],
+            "scores": [1, 0.6, 0.5],
+        },
         {"id": A["id"], "layer": 60, "pos": -1, "tokens": ["Kirin", "9100"], "scores": [1, 0.5]},
         {"id": B["id"], "layer": 60, "pos": -1, "tokens": ["six"], "scores": [1]},
     ]
@@ -308,10 +324,13 @@ def test_legacy_three_site_file_is_scored_but_never_complete(tmp_path, fake_judg
     )
     assert judge.run(_args(EXAMPLE, tmp_path / "full")).complete is True
     rows = [_cell(it, 60, p, ["x"]) for it in (A, B) for p in (-10, -2, -1)]
-    rows[2]["samples"] = ["The Kirin 9100."]
+    rows[2]["samples"] = ["The Kirin 9100.", "Kirin 9100"]
     answers[(A["id"], 60)] = (_letter(A, A["gold"]), "The Kirin 9100.")
-    r = judge.run(_args(_write(tmp_path, rows), tmp_path))
-    assert r.value == 0.5 and r.config["positions_regime"] == "partial"
+    # plan 0044: the span check enforces only with a producer sidecar (infra §2.6)
+    path = _write(tmp_path, rows)
+    write_sidecar(path, reads="full", sampling="bullet4", reader="fixture", layers=[60])
+    r = judge.run(_args(path, tmp_path, allow_missing=True))
+    assert r.value == 0.5 and set(r.extras["partial_ids"]) == {A["id"], B["id"]}
     assert r.extras["n_partial_cells"] == 2 and r.complete is False
 
 

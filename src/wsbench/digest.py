@@ -265,6 +265,9 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "multi_concept_directed_modulation": {"summ_rare": "25"},
     # plan 0035 C3: a single mention of the held concept has room in the rare tier
     "directed_modulation": {"summ_rare": "25"},
+    # plan 0044 §C3: the judge must see the competing answers to weigh them (coverage 0.42 at
+    # 10 items vs 0.65 at 25), and rare single answers must survive so minimum support counts them
+    "knowledge_cutoff": {"summ_max": "25", "summ_rare": "25"},
     # plan 0032 §2.2.2: the language each evidence span is written in, shown to the judge
     "multilingual": {"summ_lang": "1"},
     "multilingual_mt": {"summ_lang": "1"},
