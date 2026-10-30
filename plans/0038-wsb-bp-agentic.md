@@ -215,8 +215,10 @@ Versioning:
   task-variant change, item 4.)
 - **Macro membership (Q13, binding).** `pair_rate` enters the macro **only if ≥ 20 matched pairs
   survive gating**. `__init__.py` registers `metric="pair_rate"` and sets `MACRO_MIN_PAIRS = 20`;
-  at registration it reads the frozen v2 header's `n_pairs` (through
-  `registry.bank_path(FAMILY)`) and computes the string `EvalSpec.not_in_macro`
+  when the macro is assembled (an `EvalSpec.macro_gate` read by `registry.not_in_macro()`;
+  never at import, so a `WSB_BANK_ROOT` without this family's bank still loads every family
+  and counts as 0 pairs — review of PR #162) it counts `score.pairs_of` over the bank
+  `registry.bank_path(FAMILY)` resolves and computes the string
   (`str = ""`, never `None`): `not_in_macro=""` when `n_pairs >= 20`, else
   `not_in_macro=f"pair-scored safety family: {n_pairs} matched pairs survived gating (< 20)"`.
   `results.macro` admits it because `pair_rate ∈ results.MACRO_METRICS` (infra §2.17; shared
