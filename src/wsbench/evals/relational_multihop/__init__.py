@@ -1,4 +1,5 @@
-"""Relational multihop: does the lens hold a composed two-hop relation in the right order."""
+"""Relational multihop: do the readouts state a composed two-hop relation, in the right order,
+as one phrase (rel-v2, plan 0043)."""
 
 from pathlib import Path
 
@@ -19,9 +20,15 @@ SPEC = register(
         metric="pass_rate",
         higher_is_better=True,
         run=judge.run,
-        min_full_positions=1,
+        # plan 0043 C1: the full read is ". In other words, P3 is P1's" (9-12 Qwen tokens); 8
+        # tolerates one fused punctuation piece, the full-stop check pins the start
+        min_full_positions=8,
+        full_contiguous=True,
         task_note=_prompts.DIGEST_TASK_NOTE,
-        calls_per_arm="≈ 2.2k",
+        flat_types=(),
+        multi_select=False,
+        not_in_macro="",
+        calls_per_arm="≈ 1.1k native (+ gold-pick retries); summary 100 digests + 100",
         sources="",
     )
 )
