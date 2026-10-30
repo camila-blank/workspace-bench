@@ -652,9 +652,18 @@ def _key_hits(key: str, ln: Line) -> bool:
     k, t = _plain(key), _plain(ln.text)
     if not k:
         return False
+    if k not in t:  # a whole-word match implies the substring: skip the regex (same result)
+        return False
     if not _ASCII_WORD.search(k):
-        return k in t
-    return re.search(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", t) is not None
+        return True
+    return _word_re(k).search(t) is not None
+
+
+@functools.lru_cache(maxsize=1 << 12)
+def _word_re(k: str) -> re.Pattern[str]:
+    """The whole-word pattern of a folded key, compiled once (``support_of`` runs it over every
+    bundle line: an agentic bundle is tens of thousands of lines per union sample)."""
+    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])")
 
 
 def support_of(key: str, lines: Sequence[Line]) -> str:
