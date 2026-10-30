@@ -420,6 +420,46 @@ def test_language_label_alone_fails_language_role(name, tmp_path, monkeypatch):
         assert r.rows[0]["pass"] is False  # the content role picked cannot tell
 
 
+@pytest.mark.parametrize("name", ["multilingual", "multilingual_multihop"])
+@pytest.mark.parametrize("summary", [False, True])
+def test_regex_leg_of_mcrx_has_its_own_stamp(name, summary, tmp_path, monkeypatch):
+    """Review r4 item 2: ``opts=judge=regex`` on an mc+regex family is a different instrument
+    from the mc+regex record, so it never carries the record's stamp (floor / ATI matching is
+    by ``strip_reads(pv)`` + judge model, which would otherwise not tell the two apart)."""
+    from wsbench.multitoken.family import REGEX_LEG_VERSION
+
+    item = HALF if name == "multilingual" else KENTE
+    path = write_jsonl(tmp_path / "r.jsonl", [_cell(item, 36, "three (German)")])
+    spec = _spec(name)
+    if summary:
+        FakeLLM.install(monkeypatch, _pick(lambda *a: (None, "")), digest=_lang_digest("German"))
+        args = summary_args(
+            path, tmp_path / "o", spec.judge.prompt_version, items=[item],
+            extra={"judge": "regex"},
+        )  # fmt: skip
+    else:
+        args = native_args(
+            readouts=path, out=tmp_path / "o", judge=resolve(spec.judge), layers=None,
+            items=[item], limit=0, allow_missing=True, concurrency=1, rpm=1.0, dry_run=False,
+            extra={"judge": "regex"},
+        )  # fmt: skip
+    r = spec.run(args)
+    pv = r.config["prompt_version"]
+    assert MCRX_VERSION not in pv and ML_MC_PROMPT_VERSION not in pv
+    assert pv.startswith(REGEX_LEG_VERSION) and r.config["scorer_version"] == pv
+    assert not r.pinned_instrument and not r.complete
+    if not summary:
+        assert pv == REGEX_LEG_VERSION
+
+
+def test_ml_system_has_no_readout_wide_two_options_rule():
+    """Review r4 item 1: a stray mention of a distractor does not void a repeated commitment;
+    "cannot tell" for several options is about equally prominent ones, judged per line."""
+    assert "TWO OR MORE" not in ML_SYSTEM
+    assert "only option on its line is singled out by that line" in ML_SYSTEM
+    assert "stray mention" in ML_SYSTEM and "equally prominently" in ML_SYSTEM
+
+
 @pytest.mark.parametrize("name", ["multilingual_mt", "multilingual_typo"])
 def test_language_label_alone_fails_regex_unit(name, tmp_path, monkeypatch):
     _h, items = _v2(name)

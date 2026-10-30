@@ -89,6 +89,12 @@ def bank_version(name: str) -> int:
     return int(raw) if raw.isdigit() else 1
 
 
+# the opts=judge=regex diagnostic of an mc+regex family (plan 0040 B5, review r4 item 2): its own
+# stamp, so floor / ATI matching (strip_reads(pv) + judge model) never mistakes it for the
+# family's mc+regex instrument of record
+REGEX_LEG_VERSION = f"{SCORER_VERSION}+leg-regex"
+
+
 def _spec_pv(name: str, default: str) -> str:
     """The family's registered prompt version (its scorer's own, plus any instrument tag); on a
     v1-shaped bank the tag is dropped (an mc+regex family falls back to its v1 regex stamp)."""
@@ -181,7 +187,7 @@ def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyRes
         if leg == "mc":
             return run_mc(args, name=name)
         if leg == SCORER:
-            r = run_regex(args, name=name)
+            r = run_regex(args, name=name, version=REGEX_LEG_VERSION)
             return dataclasses.replace(r, pinned_instrument=False, complete=False)
         return run_mcrx(args, name=name)
     which = args.extra.get("judge", SCORER)
@@ -272,7 +278,10 @@ def _previous_mc(out: Path) -> dict[str, Any] | None:
     }
 
 
-def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
+def run_regex(args: JudgeArgs, *, name: str, version: str | None = None) -> FamilyResult:
+    """The regex contract. ``version`` overrides the stamp (the ``opts=judge=regex`` leg of an
+    mc+regex family is stamped ``REGEX_LEG_VERSION``, never the family's mc+regex instrument);
+    default: the family's registered prompt version."""
     header, items = load_bank(bank_path(name))
     contract = regex.contract_for(header, str(header.get("family", name)))
     scope = item_scope(items, args)
@@ -292,6 +301,7 @@ def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
         return _run_regex_summary(
             args,
             name=name,
+            version=version,
             contract=contract,
             scope=scope,
             ids=ids,
@@ -353,7 +363,7 @@ def run_regex(args: JudgeArgs, *, name: str) -> FamilyResult:
             if lang is not None:
                 first_lang[role][lang] += 1
     judge_used = REGEX_JUDGE  # the contract alone (token readouts are matched as raw tokens)
-    version = _spec_pv(name, SCORER_VERSION)
+    version = version or _spec_pv(name, SCORER_VERSION)
     result = pass_rate_result(
         name=name,
         args=dataclasses.replace(args, judge=judge_used),
@@ -445,6 +455,7 @@ def _run_regex_summary(
     positions: dict[tuple[str, int], list[Cell]],
     layers: list[int],
     missing: list[tuple[str, int]],
+    version: str | None = None,
 ) -> FamilyResult:
     """Summary mode (plan 0020): the contract runs once per item on its digest's evidence
     samples (``gate_texts(joined=True)``) as the samples of one layer, so the same-layer
@@ -500,7 +511,7 @@ def _run_regex_summary(
     # the instrument is the digest (plan 0020 A6): judge_model = the digest model, pinned
     # follows the digest, version = the regex contract + the digest suffix
     judge_used = digest.summarizer_judge(args, name)
-    version = digest.prompt_version(_spec_pv(name, SCORER_VERSION), args, name)
+    version = digest.prompt_version(version or _spec_pv(name, SCORER_VERSION), args, name)
     result = pass_rate_result(
         name=name,
         args=dataclasses.replace(args, judge=judge_used),
