@@ -185,7 +185,7 @@ def verdict(
         any(
             score.token_ok(f, ln.pieces or (), others, end)
             if raw is None
-            else score.prose_ok(f, raw, others)
+            else score.prose_ok(f, raw, others, end)
             for f in forms
         )
         for ln, raw in src
