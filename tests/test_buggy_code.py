@@ -1,6 +1,6 @@
 """buggy_code: the bank (and its twin pairs), the blind inference, the informed 1-10 grade, the
-plan-0030 pair headline (specific_pair_rate) with the blended score kept in extras, voting, a
-scripted two-stage run, dry run."""
+plan-0030 pairs (headline pair_rate since 2026-10-30, specific_pair_rate beside it) with the
+blended score kept in extras, voting, a scripted two-stage run, dry run."""
 
 import json
 from pathlib import Path
