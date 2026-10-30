@@ -92,9 +92,9 @@ Russian sentence"); they are measured in the run phase.
 
 | arm | v1 | v2 |
 |---|---|---|
-| O-lens s3d-rl600 | 0.71 | 0.44 |
+| O-lens s3d-rl600 | 0.71 | 0.42 |
 | O-lens rl-onchat-x4 | 0.68 | 0.29 |
-| ML-NLA rl2-2000 | 0.85 | 0.99 |
+| ML-NLA rl2-2000 | 0.85 | 0.98 |
 | J-lens | 0.00 | 0.00 |
 
 ## Instrument history

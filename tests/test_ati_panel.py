@@ -623,6 +623,24 @@ def test_ati_exclude_ids_absent_from_subset(tmp_path, fams, monkeypatch):
         ti.subset_entry("fam", dst)
 
 
+def test_ati_exclude_all_covers_new_survivors(tmp_path, fams, monkeypatch):
+    """A family excluded by construction (ATI_EXCLUDE_ALL) drops every survivor, including ids
+    the hand audit never listed (a new survivor after a re-gate)."""
+    out = tmp_path / "o"
+    _standard(out)  # ATI: a, c, e
+    monkeypatch.setattr(ti, "ATI_EXCLUDE", {"fam": {"c": "obvious from the prompt"}})
+    monkeypatch.setattr(ti, "ATI_EXCLUDE_ALL", {"fam": "text-invertible by construction"})
+    monkeypatch.setattr(ti, "ATI_MIN_RULE", frozenset({"fam"}))
+    e = ti.gate(out, dst=tmp_path / "ati.json")["fam"]
+    assert e["ids"] == []
+    assert e["ati_exclude"] == {
+        "a": "text-invertible by construction",
+        "c": "obvious from the prompt",
+        "e": "text-invertible by construction",
+    }
+    assert e["ati_reportable"] is False
+
+
 def test_multilingual_ati_exclusions_are_the_audited_v1_survivors():
     """Plan 0033 §4: the 6 multihop, 1 mt and 15 typo panel-v1 survivors are all obvious from
     the prompt; each carries a reason."""

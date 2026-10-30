@@ -702,8 +702,7 @@
       "en": [
        "sheep wool",
        "sheep fleece",
-       "wool",
-       "fleece"
+       "wool"
       ],
       "zh": [
        "羊毛",
@@ -714,7 +713,6 @@
       "sheep wool",
       "sheep fleece",
       "wool",
-      "fleece",
       "羊毛",
       "绵羊毛"
      ]
@@ -757,7 +755,6 @@
       "en": [
        2,
        2,
-       1,
        1
       ],
       "zh": [
@@ -3109,8 +3106,7 @@
      "forms": {
       "en": [
        "solar eclipse",
-       "eclipse of the sun",
-       "eclipse"
+       "eclipse of the sun"
       ],
       "zh": [
        "日食",
@@ -3120,7 +3116,6 @@
      "match": [
       "solar eclipse",
       "eclipse of the sun",
-      "eclipse",
       "日食",
       "日全食"
      ]
@@ -3166,8 +3161,7 @@
      "concept": {
       "en": [
        2,
-       4,
-       1
+       4
       ],
       "zh": [
        2,
@@ -11198,9 +11192,7 @@
      "forms": {
       "en": [
        "palatine tonsil",
-       "tonsil gland",
-       "tonsil",
-       "tonsils"
+       "tonsil gland"
       ],
       "zh": [
        "扁桃体",
@@ -11210,8 +11202,6 @@
      "match": [
       "palatine tonsil",
       "tonsil gland",
-      "tonsil",
-      "tonsils",
       "扁桃体",
       "腭扁桃体"
      ]
@@ -11255,9 +11245,7 @@
      "concept": {
       "en": [
        4,
-       3,
-       2,
-       2
+       3
       ],
       "zh": [
        1,

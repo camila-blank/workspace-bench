@@ -112,6 +112,21 @@ def test_v2_bank_lint():
         assert it["lang"] in LANGUAGES and it["lang"] not in native_langs(header)
 
 
+def test_v2_no_mc_distractor_hits_its_own_unit():
+    """Review r3 item 1: a bare natural form ("eclipse") must not credit the item's own MC
+    distractor ("lunar eclipse"); multilingual_mt is regex-only, so it would pass the wrong
+    concept."""
+    for fam in FOUR:
+        _h, items = load_bank(V2[fam])
+        for it in items:
+            units = {u["role"]: u for u in it["units"]}
+            for role in it["mc_roles"]:
+                block = (it.get("mc") or {}).get(role)
+                if block and role in units:
+                    for d in block["distractors"]:
+                        assert not regex.hit_forms([d], units[role]["forms"]), (it["name"], d)
+
+
 def test_v2_builder_is_reproducible():
     """The frozen v2 files are exactly what the offline builder writes (no hand edits)."""
     import glob
