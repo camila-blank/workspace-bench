@@ -320,7 +320,7 @@ def test_prompt_only_freeze_and_floors(tmp_path):
     assert frozen["_source"]["prompt_kind"] == "prompt_only_summary"
     assert po.floors(dst) == {"typo_mt": frozen["typo_mt"]}
     # plan 0032 §2.11.9 ("all categories"): a dictated-answer family is measured and frozen as
-    # saturated; only jlens_concept_pr (and the leaving hallucination) stay excluded
+    # saturated; only jlens_concept_pr stays excluded
     mc = registry.FAMILIES["multi_concept_directed_modulation"]
     write_results(run / mc.name, result(mc.name, mc.judge.prompt_version, value=1.0))
     assert po.freeze(run, tmp_path / "po_mc.json")[mc.name]["saturated"] is True

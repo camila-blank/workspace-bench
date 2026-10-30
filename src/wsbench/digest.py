@@ -213,12 +213,8 @@ DIGEST_SCHEMA_LANG = schema_block(
 NATIVE_ONLY: dict[str, str] = {
     "jlens_concept_pr": "native: precision is measured against the J-lens top-10 at one "
     "(layer, pos); a summary has no reference",
-    # plan 0032 §2.5.2: the one exception is jlens_concept_pr (decision Q2). hallucination is
-    # listed only until it leaves WorkspaceBench in the HallucinationBench PR (hb.md W1), which
-    # deletes this entry with the family; LEAVING names it so the guard test allows it meanwhile.
-    "hallucination": "native: the metric is per-readout precision, which a summary would change",
+    # plan 0032 §2.5.2: the one exception is jlens_concept_pr (decision Q2)
 }
-LEAVING: frozenset[str] = frozenset({"hallucination"})
 
 # Per-family digest defaults: applied to any key the run's opts do not set. Only these keys are
 # allowed (plan 0032 §2.2.2): the cap, the overflow and the variant are global.

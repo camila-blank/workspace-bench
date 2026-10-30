@@ -49,7 +49,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Safety", ["agentic_misalignment", "jailbreak_recognition"]),
     ("Association", ["user_modeling", "conjunctive_association", "role_bound_association"]),
     ("Bag of words", ["relational_multihop"]),
-    ("Precision", ["hallucination", "jlens_concept_pr"]),
+    ("Precision", ["jlens_concept_pr"]),
     ("Model-specific", ["moral_rationale", "introspection", "knowledge_cutoff"]),
 ]
 

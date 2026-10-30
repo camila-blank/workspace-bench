@@ -562,15 +562,6 @@ PARITY_ONLY = {"jailbreak_recognition"}  # judged cells, but same judge: reporte
 
 
 # parity families: headline only, read from the source summary file
-def _hal_parity(s: dict) -> tuple[float | None, str, dict]:
-    num = s.get("numbers") or {}
-    v = num.get("hallucination_rate")
-    if v is None:
-        v = _ratio(num.get("n_hallucinated"), num.get("n_specific"))
-    model = s.get("model") if isinstance(s.get("model"), str) else GEMINI
-    return v, model, {}
-
-
 def _jlens_parity(s: dict) -> tuple[float | None, str, dict]:
     l44 = ((s.get("arms") or {}).get("s3d") or {}).get("by_layer", {}).get("44") or {}
     extras = {"recall_at_10": l44["recall_at_10"]} if "recall_at_10" in l44 else {}
@@ -582,7 +573,6 @@ def _am_parity(s: dict) -> tuple[float | None, str, dict]:
 
 
 PARITY: dict[str, Callable[[dict], tuple[float | None, str, dict]]] = {
-    "hallucination": _hal_parity,
     "jlens_concept_pr": _jlens_parity,
     "agentic_misalignment": _am_parity,
 }

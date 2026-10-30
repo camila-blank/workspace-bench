@@ -37,7 +37,7 @@ POEM = [
 def test_every_family_plans_and_rows_serialize():
     fams = readplan.families()
     assert len(fams) == 34  # + 4 (plan 0016), - ttt (0017), + unverbalized_hint, + 2 (0027),
-    # - brew_intermediates (0029), - wrong_bridge_true (2026-10-30)
+    # - brew_intermediates (0029), - wrong_bridge_true (2026-10-30), - hallucination (0040)
     for fam in fams:
         specs = readplan.plan(fam)
         assert specs, fam
@@ -69,8 +69,6 @@ def test_plans_match_the_bank_specs():
     conj = readplan.plan("conjunctive_association")[0]
     assert conj.layers == readplan.GRID and conj.suffix == readplan.SUMMARIZE_SUFFIX
     assert conj.lite_positions == {"kind": "final_token"} and conj.lite_layers is None
-    hal = readplan.plan("hallucination")[0]
-    assert hal.render == "captured" and hal.extra["input_ids"] and hal.positions["positions"]
     multihop = readplan.plan("multihop")  # plan 0036 C2 (sanctioned): full = every token
     assert {s.positions["kind"] for s in multihop} == {"all_from_end"}
     assert {s.lite_positions["kind"] for s in multihop} == {"offset_from_end"}

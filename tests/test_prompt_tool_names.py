@@ -23,7 +23,6 @@ TOOL = re.compile(
 # §2.8.1 assigns to it (directed_modulation, user_modeling, buggy_code, introspection,
 # unverbalized_hint, medical_diagnosis{,_alt}).
 PENDING_FAMILY_PR: dict[str, str] = {
-    "hallucination": "leaves WorkspaceBench (hb.md W1)",
     # the multi-token MC prompt factory is basic_readout_mt.md's
     "basic_readout_mt": "basic_readout_mt.md (MC prompt factory)",
     "multihop_mt": "superseded; basic_readout_mt.md factory",

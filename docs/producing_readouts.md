@@ -41,7 +41,7 @@ Positions rules, all handled by `resolve`:
 | `last_n {n}` | the last `n` tokens |
 | `all` | every token |
 | `all_from_end` | every token, reported as negative offsets `-n..-1` (arithmetic intermediates: the bank and judge count from the end) |
-| `positions {positions}` | explicit indices (hallucination, jailbreak, J-lens precision) |
+| `positions {positions}` | explicit indices (jailbreak, J-lens precision) |
 | `line_one_newline` | the newline token that ends line one (poetry) |
 | `from_token {token}` | from the first token with that text through the end |
 | `from_text_last_token {text}` | from the LAST token of the (last) occurrence of `text` through the end (chain: "The starting number is 23" reads from the "3") |
@@ -178,6 +178,6 @@ runs fan that out over Modal.
   (`evals/introspection/vectors/*.npy`; each row names `vector_file` / `vector_row`), and
   `wsbench produce` applies the steer itself (a forward hook on the inject layer's output over
   the span; `type: none` rows are a plain forward). Any other steering type is refused.
-- **Two families without text.** `hallucination` and `jlens_concept_pr` ship captured token ids
-  and positions, not prompts: their banks are the model's own outputs, and they are read by
-  re-feeding those ids.
+- **A family without text.** `jlens_concept_pr` ships captured token ids and positions, not
+  prompts: its items are the model's own activations, read by re-feeding those ids
+  (`hallucination`, the other such family, left for HallucinationBench, plan 0040).

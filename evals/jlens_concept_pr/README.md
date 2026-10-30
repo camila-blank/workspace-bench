@@ -370,6 +370,6 @@ Concepts:
   (the LMSYS-Chat-1M Dataset License Agreement applies to those turns),
   [`ConvLab/dailydialog`](https://huggingface.co/datasets/ConvLab/dailydialog) (CC BY-NC-SA 4.0;
   Li et al., 2017, *DailyDialog: A Manually Labelled Multi-turn Dialogue Dataset* — the same
-  data terms as the hallucination family), [`NeelNanda/pile-10k`](https://huggingface.co/datasets/NeelNanda/pile-10k),
+  data terms as the former hallucination family), [`NeelNanda/pile-10k`](https://huggingface.co/datasets/NeelNanda/pile-10k),
   [`HuggingFaceFW/fineweb-edu`](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu)
   (sample-10BT).
