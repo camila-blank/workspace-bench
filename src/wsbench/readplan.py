@@ -431,6 +431,35 @@ def _final_token_families(family: str, render: str) -> list[ReadSpec]:
     return out
 
 
+def _multihop() -> list[ReadSpec]:
+    """Multihop (plan 0036 C2): full = every token of the plain render, reported as negative
+    offsets (``all_from_end``); lite = the last word of the prompt, ``offset_from_end k`` with
+    ``k = -readout.offsets[0]`` (1 or 2), which retains the 2026-09-23 decision (read the last
+    word, not the trailing space token). ``offset_from_end k=1`` rather than ``final_token``
+    keeps both modes on one coordinate system; lite is a subset of full, so one read serves
+    both."""
+    _h, items = _bank("multihop")
+    out = []
+    for it in items:
+        offsets = (it.get("readout") or {}).get("offsets") or [-1]
+        k = -int(offsets[0])
+        if k < 1:
+            raise ValueError(f"multihop/{it['id']}: readout.offsets {offsets} must be negative")
+        out.append(
+            ReadSpec(
+                "multihop",
+                it["id"],
+                it.get("eval_render") or "plain",
+                {"kind": "all_from_end"},
+                GRID,
+                text=it["prompt"],
+                note="full: every token of the render; lite: the last word of the prompt",
+                lite_positions={"kind": "offset_from_end", "k": k},
+            )
+        )
+    return out
+
+
 # families whose plan layers an adapted bank stores itself (none since plan 0032: buggy_code and
 # multi_concept_directed_modulation read GRID like every other family, remapped by depth)
 BANK_LAYERS: set[str] = set()
@@ -537,7 +566,6 @@ def _plan(family: str) -> list[ReadSpec]:
     """The read plan for one family, one ReadSpec per bank item."""
     if family in (
         "basic_readout",
-        "multihop",
         "multilingual",
         "typo",
         "basic_readout_mt",
@@ -573,6 +601,8 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ]
+    if family == "multihop":
+        return _multihop()
     if family == "poetry":
         from wsbench.capable.questions import CONTINUE
 

@@ -71,8 +71,9 @@ def test_plans_match_the_bank_specs():
     assert conj.lite_positions == {"kind": "final_token"} and conj.lite_layers is None
     hal = readplan.plan("hallucination")[0]
     assert hal.render == "captured" and hal.extra["input_ids"] and hal.positions["positions"]
-    multihop = readplan.plan("multihop")
-    assert {s.positions["kind"] for s in multihop} == {"final_token", "offset_from_end"}
+    multihop = readplan.plan("multihop")  # plan 0036 C2 (sanctioned): full = every token
+    assert {s.positions["kind"] for s in multihop} == {"all_from_end"}
+    assert {s.lite_positions["kind"] for s in multihop} == {"offset_from_end"}
     poetry = readplan.plan("poetry")[0]
     assert poetry.positions == {"kind": "line_one_newline"} and poetry.layers == readplan.GRID
     jb = readplan.plan("jailbreak_recognition")[0]
@@ -333,3 +334,23 @@ def test_basic_readout_v2_positions():
     assert got == list(range(3, len(toks)))  # the template header before the question is not read
     lite = readplan.lite_select(got, {"kind": "final_token"})
     assert lite == [len(toks) - 1]
+
+
+def test_multihop_full_and_lite():
+    """Plan 0036 C2: full = every token (negative offsets); lite = the last word, the
+    2026-09-23 site (offset_from_end k = -readout.offsets[0]), on every layer."""
+    from wsbench.banks import load_bank
+
+    _h, items = load_bank(readplan.bank_path("multihop"))
+    k_of = {it["id"]: -int(it["readout"]["offsets"][0]) for it in items}
+    rows = readplan.plan("multihop")
+    assert len(rows) == 100
+    for s in rows:
+        assert s.positions == {"kind": "all_from_end"} and s.render == "plain"
+        assert s.lite_positions == {"kind": "offset_from_end", "k": k_of[s.id]}
+        assert s.lite_layers is None and s.layers == readplan.GRID
+    assert sorted(k_of.values()).count(2) == 33
+    toks = ["Fact", ":", " The", " capital", " is", " "]
+    full = readplan.resolve({"kind": "all_from_end"}, toks)
+    assert full == [-6, -5, -4, -3, -2, -1]
+    assert readplan.lite_select(full, {"kind": "offset_from_end", "k": 2}) == [-2]
