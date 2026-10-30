@@ -584,11 +584,17 @@ def _plan(family: str) -> list[ReadSpec]:
                 family,
                 it["id"],
                 "chat_context",
-                {"kind": "from_last_sentence_start"},
+                # user_modeling plan (Camila 2026-10-30: "We should read at all positions"):
+                # every token of the chat_context render; lite = the assistant-onset final token
+                {"kind": "all"},
                 GRID,
                 messages=it["messages"],
-                note="the request sentence through the end of the render, template tokens included",
-                lite_positions=FINAL,
+                note=(
+                    "every token of the render (system turn, user turn, assistant header, empty "
+                    "think block)"
+                ),
+                lite_positions=dict(FINAL),
+                lite_layers=None,
             )
             for it in items
         ]

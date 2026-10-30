@@ -181,3 +181,16 @@ def test_offsets_from_end_reports_each_negative_offset():
     assert readplan.resolve({"kind": "offsets_from_end", "ks": [60, 1]}, toks) == [
         -1
     ]  # out of range dropped
+
+
+def test_user_modeling_reads_every_position():
+    """Camila 2026-10-30 ("We should read at all positions", plan 0043): the UM full read is
+    every token of the chat render (system turn, user turn, template tail); lite = the final
+    token, a subset of it."""
+    rows = readplan.plan("user_modeling")
+    assert len(rows) == 100 and all(list(s.layers) == list(readplan.GRID) for s in rows)
+    rule, lite = rows[0].positions, rows[0].lite_positions
+    assert rule == {"kind": "all"} and lite == {"kind": "final_token"}
+    full = readplan.resolve(rule, UM_TOKENS)
+    assert full == list(range(len(UM_TOKENS)))
+    assert readplan.lite_select(full, lite) == [len(UM_TOKENS) - 1]
