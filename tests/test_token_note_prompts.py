@@ -144,7 +144,7 @@ BASIC_TARGET_JUDGES = [
     "medical_diagnosis",
     "medical_diagnosis_alt",
     # multihop left in plan 0036: an OPTIONS judge (blind MC), held by test_multihop.py
-    "multilingual",
+    # plan 0040: multilingual left the basic bank judge (an MC judge with options, mc+regex)
     "poetry",
     "typo",
 ]  # wrong_bridge: its own MC judge with FLAT_TYPES (plan 0037); wrong_bridge_true removed

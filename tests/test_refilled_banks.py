@@ -139,10 +139,14 @@ PENDING_REGATE = {
 
 
 def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
+    # a family whose campaign PR changed its bank is re-gated in the run phase (gpu.md G13)
+    from test_ati_fingerprint import CHANGED_BY_FAMILY_PRS
+
     stale = [
         f
         for f, e in frozen.items()
         if not f.startswith("_")
+        and f not in CHANGED_BY_FAMILY_PRS
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
     ]

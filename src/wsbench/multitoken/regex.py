@@ -43,7 +43,7 @@ digest, and a word split across adjacent positions reaches the contract through
 
 import re
 import unicodedata
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -54,6 +54,7 @@ __all__ = [
     "contract_for",
     "extract_phrase",
     "fold",
+    "fold_accents",
     "hit_forms",
     "item_result",
     "layer_passes",
@@ -66,7 +67,9 @@ __all__ = [
 SCORER_VERSION = "mt-regex-2026-10-30"  # the contract on the samples (raw tokens for token arms)
 # 2026-10-30 (plan 0033 M2): numeric answer markers match in any case ("**Answer:** 429",
 # "Result: 429"); the ONE campaign bump of this constant, shared by every mt family
-# (mt-regex-2026-09-23 before)
+# (mt-regex-2026-09-23 before); plan 0040 did not bump it: its
+# ``case_sensitive`` path is reached only by a bank unit that lists forms there (the v2
+# multilingual banks, told apart by their ``+v2`` instrument tag)
 # the retired token-arm stamp "mt-regex-summarized-decoded-2026-10-27" (a bag -> prose step,
 # Camila 2026-09-23) is gone with that step: Camila 2026-10-30 "make sure that we have gotten rid
 # of the individual jlens summarizer step" (plan 0032 §2.3)
@@ -155,30 +158,38 @@ def _numeric_matcher(target: str) -> Callable[[str], bool]:
     return numeric
 
 
+def fold_accents(s: str) -> str:
+    """NFKD, strip combining marks, straighten the right single quote; case is kept."""
+    s = unicodedata.normalize("NFKD", s).replace("\u2019", "'")
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
 def fold(s: str) -> str:
     """NFKD, strip combining marks, straighten the right single quote, casefold — applied to
     BOTH the form and the sample (Mexico with/without the accent, pointed and unpointed Hebrew,
     curly and straight apostrophes all coincide)."""
-    s = unicodedata.normalize("NFKD", s).replace("\u2019", "'")
-    return "".join(c for c in s if not unicodedata.combining(c)).casefold()
+    return fold_accents(s).casefold()
 
 
 _CJK_HANGUL = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
 _WORDY = re.compile(r"[^\W_]+(?:[\s\-'][^\W_]+)*")
 
 
-def unicode_word_matcher(form: str) -> Callable[[str], bool]:
+def unicode_word_matcher(form: str, *, case_sensitive: bool = False) -> Callable[[str], bool]:
     """Boundary match on folded text for a unit form (any script); CJK/Hangul and non-wordy
     forms are substrings of the folded sample; purely numeric forms use the answer-context
-    rule. The script decision is made on the RAW form (NFKD decomposes Hangul syllables)."""
-    f = fold(form)
+    rule. The script decision is made on the RAW form (NFKD decomposes Hangul syllables).
+    ``case_sensitive`` (a bank unit's ``case_sensitive`` list, plan 0040 B1): accents are folded
+    but case is kept on both sides, so the language name "Polish" never matches "polish"."""
+    norm = fold_accents if case_sensitive else fold
+    f = norm(form)
     if re.fullmatch(r"\d+", f):
         return _numeric_matcher(f)
     if _CJK_HANGUL.search(form) or not _WORDY.fullmatch(f):
-        return lambda text: f in fold(text)
+        return lambda text: f in norm(text)
     parts = [re.escape(w) for w in re.split(r"[\s\-]+", f) if w]
     pat = re.compile(r"(?<![^\W_])" + r"[\s\-]+".join(parts) + r"(?![^\W_])")
-    return lambda text: bool(pat.search(fold(text)))
+    return lambda text: bool(pat.search(norm(text)))
 
 
 def _standalone_number_matcher(form: str) -> Callable[[str], bool]:
@@ -197,13 +208,15 @@ def hit_forms(
     forms: Mapping[str, list[str]],
     *,
     numeric_match: NumericMatch = "context",
+    case_sensitive: Collection[str] = (),
 ) -> list[str]:
-    """The language keys of ``forms`` whose strings hit any SINGLE sample, in dict order."""
+    """The language keys of ``forms`` whose strings hit any SINGLE sample, in dict order; a form
+    listed in ``case_sensitive`` keeps its case (``unicode_word_matcher``)."""
 
     def matcher(f: str) -> Callable[[str], bool]:
         if numeric_match == "standalone" and re.fullmatch(r"-?\d+", f.strip()):
             return _standalone_number_matcher(f)
-        return unicode_word_matcher(f)
+        return unicode_word_matcher(f, case_sensitive=f in case_sensitive)
 
     out: list[str] = []
     for lang, fs in forms.items():
@@ -245,6 +258,7 @@ class ScoredUnit:
     required: bool
     forms: dict[str, list[str]]  # language -> the strings that may award credit
     numeric_match: NumericMatch = "context"
+    case_sensitive: tuple[str, ...] = ()  # forms matched with their case kept (plan 0040 B1)
 
     def all_forms(self) -> list[str]:
         out: list[str] = []
@@ -262,6 +276,8 @@ class ScoredUnit:
         }
         if self.numeric_match != "context":
             out["numeric_match"] = self.numeric_match
+        if self.case_sensitive:
+            out["case_sensitive"] = list(self.case_sensitive)
         return out
 
 
@@ -319,7 +335,8 @@ def scored_units(item: Mapping[str, Any], contract: BankContract) -> list[Scored
                 "(multi-token) form"
             )
         if forms:
-            units.append(ScoredUnit(role, required, forms, _numeric_match_of(raw)))
+            cs = tuple(str(f) for f in raw.get("case_sensitive") or ())
+            units.append(ScoredUnit(role, required, forms, _numeric_match_of(raw), cs))
     roles = {u.role for u in units}
     target = item.get("target")
     if contract.include_target and target and "target" not in roles:
@@ -352,7 +369,12 @@ def scored_units(item: Mapping[str, Any], contract: BankContract) -> list[Scored
 # ---------------------------------------------------------------------------------------------
 def layer_unit_hits(samples: list[str], units: list[ScoredUnit]) -> dict[str, list[str]]:
     """role -> the languages in which the unit hit any single sample at this layer."""
-    return {u.role: hit_forms(samples, u.forms, numeric_match=u.numeric_match) for u in units}
+    return {
+        u.role: hit_forms(
+            samples, u.forms, numeric_match=u.numeric_match, case_sensitive=u.case_sensitive
+        )
+        for u in units
+    }
 
 
 def layer_passes(hits: Mapping[str, list[str]], units: list[ScoredUnit]) -> bool:

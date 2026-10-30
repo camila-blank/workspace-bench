@@ -352,3 +352,20 @@ def test_multihop_full_and_lite():
     full = readplan.resolve({"kind": "all_from_end"}, toks)
     assert full == [-6, -5, -4, -3, -2, -1]
     assert readplan.lite_select(full, {"kind": "offset_from_end", "k": 2}) == [-2]
+
+
+@pytest.mark.parametrize(
+    "family", ["multilingual", "multilingual_mt", "multilingual_multihop", "multilingual_typo"]
+)
+def test_multilingual_families_read_all_positions(family):
+    """Plan 0033 B4: every prompt position by default, the final prompt token under reads=lite."""
+    from wsbench.readplan import lite_select, plan, resolve
+
+    toks = ["a", "b", "c", "d", "e"]
+    for spec in plan(family)[:5]:
+        assert spec.render == "plain"
+        full = resolve(spec.positions, toks)
+        assert full == [0, 1, 2, 3, 4]
+        assert lite_select(full, spec.lite_positions) == [4]
+    lite = plan(family, reads="lite")[0]
+    assert resolve(lite.positions, toks) == [4]

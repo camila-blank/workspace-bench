@@ -2,7 +2,8 @@
 ``regex`` — the regex contract in ``wsbench.multitoken.regex`` (a layer passes when every
 required unit's form is found in a sample at that layer, an item at any layer; no call; the
 ``opts=judge=mc`` forced-choice judge stays a diagnostic, never pinned); ``mc`` — the forced-choice
-judge as the pinned instrument; ``mc+regex`` — its semantics land with the multilingual family PR.
+judge as the pinned instrument; ``mc+regex`` — the MC roles AND the regex units
+(``wsbench.multitoken.mcrx``, plan 0040: multilingual, multilingual_multihop).
 Every read position of a layer is pooled (the one-position refusal is gone); token readouts are
 matched as raw tokens (the J-lens interpretation step is deleted, plan 0032 §2.3); under summary
 mode (the default) every method goes through ``digest.collapse`` only."""
@@ -46,6 +47,8 @@ from wsbench.multitoken.prompts import (
     CANNOT,
     DIGEST_TASK_NOTES,
     LETTERS,
+    ML_MC_PROMPT_VERSION,
+    ML_SYSTEM,
     PROMPT_VERSION,
     SCHEMA,
     SYSTEM,
@@ -85,12 +88,47 @@ REGEX_JUDGE = ResolvedJudge(model=SCORER, reasoning=None, pinned=True, source="f
 SCORERS = ("regex", "mc", "mc+regex")
 
 
+# families whose instrument tag names their bank version (plan 0040: "+v2", or the v2 MC prompts
+# of the mc+regex families): the tag follows the HEADER of the bank actually judged (its
+# ``version``), never the file path, so a v1-shaped bank (an adapted port under
+# ``WSB_BANK_ROOT``, or ``WSB_BANK_FILE_<F>=…/items.json``) never claims the v2 instrument and a
+# v2 bank anywhere keeps it
+_BANK_TAGS: dict[str, str] = {}
+# mc+regex families: the scorer of record of a v1-shaped bank ("bank" = the basic bank judge,
+# "regex" = the regex contract; review r2 item 1), with the stamp that scorer used before v2
+V1Scorer = Literal["bank", "regex"]
+_V1_SCORERS: dict[str, V1Scorer] = {}
+
+
+def bank_version(name: str) -> int:
+    """The ``version`` of the family's bank header as loaded now (``bank_path``); 1 if absent
+    or unreadable. An int (the multilingual v2 banks) or a ``"v<N>"`` string (multihop_mt_v2)."""
+    header, _items = load_bank(bank_path(name))
+    raw = str(header.get("version", 1)).strip().lower().removeprefix("v")
+    return int(raw) if raw.isdigit() else 1
+
+
+# the opts=judge=regex diagnostic of an mc+regex family (plan 0040 B5, review r4 item 2): its own
+# stamp, so floor / ATI matching (strip_reads(pv) + judge model) never mistakes it for the
+# family's mc+regex instrument of record
+REGEX_LEG_VERSION = f"{SCORER_VERSION}+leg-regex"
+
+
 def _spec_pv(name: str, default: str) -> str:
-    """The family's registered prompt version (its scorer's own, plus any instrument tag)."""
+    """The family's registered prompt version (its scorer's own, plus any instrument tag); on a
+    v1-shaped bank the tag is dropped (an mc+regex family falls back to its v1 regex stamp)."""
     from wsbench import registry
 
     spec = registry.FAMILIES.get(name)
-    return spec.judge.prompt_version if spec is not None else default
+    if spec is None:
+        return default
+    pv = spec.judge.prompt_version
+    tag = _BANK_TAGS.get(name)
+    if tag and bank_version(name) < 2:
+        if _V1_SCORERS.get(name) == SCORER:
+            return SCORER_VERSION
+        pv = pv.removesuffix("+" + tag)
+    return pv
 
 
 def _spec_task_note(name: str) -> str:
@@ -118,17 +156,27 @@ def mt_family(
     item_task_notes: Callable[[], Mapping[str, str]] | None = None,
     flat_types: tuple[str, ...] = (),
     group: str = GROUP,
+    v1_scorer: V1Scorer | None = None,
 ) -> EvalSpec:
     """One multi-token family (plan 0032 §2.16). ``scorer``: ``regex`` (``EvalSpec.scorer =
     "regex"``, no call; ``opts=judge=mc`` is a forced-unpinned diagnostic), ``mc`` / ``mc+regex``
     (``EvalSpec.scorer = ""``: an LLM judge, preflighted, the result pinned). ``bank`` defaults
     to ``evals/<name>/items.json``; ``prompt_version`` to the scorer's own; ``instrument_tag`` is
-    appended once (``f"{pv}+{tag}"``)."""
+    appended once (``f"{pv}+{tag}"``) and stamped only on a bank whose header is ``version >= 2``.
+    ``v1_scorer`` (``mc+regex`` only): how a v1-shaped bank of the family is scored — ``"bank"``
+    (the basic bank judge) or ``"regex"`` (the regex contract), each under its own v1 stamp;
+    without it a v1-shaped bank is a clear error."""
     if scorer not in SCORERS:
         raise ValueError(f"{name}: scorer={scorer!r}; expected one of {SCORERS}")
     pv = prompt_version or (SCORER_VERSION if scorer == "regex" else PROMPT_VERSION)
     if instrument_tag and not pv.endswith("+" + instrument_tag):
         pv = f"{pv}+{instrument_tag}"
+    if v1_scorer is not None and scorer != "mc+regex":
+        raise ValueError(f"{name}: v1_scorer applies to scorer='mc+regex' only")
+    if instrument_tag:
+        _BANK_TAGS[name] = instrument_tag
+    if v1_scorer is not None:
+        _V1_SCORERS[name] = v1_scorer
     calls = f"0 (regex); {calls_per_arm} with opts=judge=mc" if scorer == "regex" else calls_per_arm
     return EvalSpec(
         name=name,
@@ -162,7 +210,19 @@ def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyRes
             return run_regex(args, name=name, pinned=False)
         fail(f"{name}: opts=judge must be 'mc' (default) or 'regex', not {which!r}")
     if scorer == "mc+regex":
-        fail(f"{name}: scorer mc+regex: its semantics land with the multilingual family PR")
+        # plan 0040 B5: the MC roles AND the regex units; opts=judge=mc / =regex keep each leg
+        # alone as an unpinned diagnostic (never the number of record, never in the macro)
+        from wsbench.multitoken.mcrx import run_mcrx
+
+        if bank_version(name) < 2:
+            return _run_v1(args, name=name)
+        leg = args.extra.get("judge", "mcrx")
+        if leg == "mc":
+            return run_mc(args, name=name)
+        if leg == SCORER:
+            r = run_regex(args, name=name, version=REGEX_LEG_VERSION)
+            return dataclasses.replace(r, pinned_instrument=False, complete=False)
+        return run_mcrx(args, name=name)
     which = args.extra.get("judge", SCORER)
     if which == SCORER:
         return run_regex(args, name=name)
@@ -171,9 +231,42 @@ def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyRes
     fail(f"{name}: opts=judge must be 'regex' (default) or 'mc', not {which!r}")
 
 
+def _run_v1(args: JudgeArgs, *, name: str) -> FamilyResult:
+    """An mc+regex family on a v1-shaped bank (no ``mc_roles``, optional units: the adapted
+    ports under ``WSB_BANK_ROOT`` until they are rebuilt, plan 0040 R6): the family's v1 scorer
+    of record under its v1 stamp, as on main before plan 0040 (review r2 item 1)."""
+    v1 = _V1_SCORERS.get(name)
+    which = args.extra.get("judge")
+    path = bank_path(name)
+    if v1 is None:
+        fail(
+            f"{name}: {path} is a v1-shaped bank (header version < 2, no mc_roles); the mc+regex "
+            "scorer needs a v2 bank — rebuild it (plan 0040 R6: wsbench.adapt emits v2)"
+        )
+    if v1 == "bank":
+        if which not in (None, "mcrx"):
+            fail(
+                f"{name}: {path} is a v1 bank; it is scored by the bank judge only (no opts=judge)"
+            )
+        from wsbench.basic.family import run_family as run_bank
+
+        return run_bank(args, name=name, bank=path)
+    if which == "mc":
+        return run_mc(args, name=name)
+    if which not in (None, "mcrx", SCORER):
+        fail(f"{name}: opts=judge must be 'regex' (default on a v1 bank) or 'mc', not {which!r}")
+    return run_regex(args, name=name)
+
+
 # ---------------------------------------------------------------------------------------------
 # the regex contract (scorer of record)
 # ---------------------------------------------------------------------------------------------
+def _content_hit(res: Mapping[str, Any]) -> bool:
+    """Some content unit (every unit but ``language``) hit at some layer: the ATI gate field of
+    the multilingual families (plan 0040 item 10; the prompt names the language by itself)."""
+    return any(hit for role, hit in res["unit_hit"].items() if role != "language")
+
+
 def _cell_samples(cell: Cell) -> list[str]:
     """One sample per prose sample, or one per top-k token string (as written by the producer);
     scaffolding stripped; blanks dropped. Samples are never joined, so a form found in a single
@@ -221,9 +314,14 @@ def _previous_mc(out: Path) -> dict[str, Any] | None:
     }
 
 
-def run_regex(args: JudgeArgs, *, name: str, pinned: bool = True) -> FamilyResult:
+def run_regex(
+    args: JudgeArgs, *, name: str, pinned: bool = True, version: str | None = None
+) -> FamilyResult:
     """The regex contract. ``pinned=False``: an ``mc`` family's ``opts=judge=regex``
-    diagnostic (never pinned, so never complete and never in the macro)."""
+    diagnostic (never pinned, so never complete and never in the macro). ``version`` overrides
+    the stamp (the ``opts=judge=regex`` leg of an mc+regex family is stamped
+    ``REGEX_LEG_VERSION``, never the family's mc+regex instrument); default: the family's
+    registered prompt version (pinned) or ``SCORER_VERSION`` (unpinned)."""
     header, items = load_bank(bank_path(name))
     contract = regex.contract_for(header, str(header.get("family", name)))
     scope = item_scope(items, args)
@@ -243,6 +341,7 @@ def run_regex(args: JudgeArgs, *, name: str, pinned: bool = True) -> FamilyResul
         return _run_regex_summary(
             args,
             name=name,
+            version=version,
             contract=contract,
             scope=scope,
             ids=ids,
@@ -298,6 +397,7 @@ def run_regex(args: JudgeArgs, *, name: str, pinned: bool = True) -> FamilyResul
             "split_word_hit": bool(
                 res["pass"] and not regex.item_result(plain_by.get(item_id, {}), units)["pass"]
             ),
+            "content_hit": _content_hit(res),
             "missing_layers": item_missing,
             "layers": {
                 str(layer): {"hits": h, "empty": (item_id, layer) in empty}
@@ -315,7 +415,7 @@ def run_regex(args: JudgeArgs, *, name: str, pinned: bool = True) -> FamilyResul
                 first_lang[role][lang] += 1
     # the contract alone (token readouts are matched as raw tokens)
     judge_used = REGEX_JUDGE if pinned else dataclasses.replace(REGEX_JUDGE, pinned=False)
-    version = _spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION
+    version = version or (_spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION)
     result = pass_rate_result(
         name=name,
         args=dataclasses.replace(args, judge=judge_used),
@@ -409,6 +509,7 @@ def _run_regex_summary(
     layers: list[int],
     missing: list[tuple[str, int]],
     pinned: bool = True,
+    version: str | None = None,
 ) -> FamilyResult:
     """Summary mode (plan 0020): the contract runs once per item on its digest's evidence
     samples (``gate_texts(joined=True)``) as the samples of one layer, so the same-layer
@@ -457,6 +558,7 @@ def _run_regex_summary(
             "first_lang": res["first_lang"],
             "any_hit": res["any_hit"],
             "split_word_hit": bool(res["pass"] and not regex.item_result(plain, units)["pass"]),
+            "content_hit": _content_hit(res),
             "missing_layers": [layer for i, layer in missing if i == item_id],
             "layers": {
                 str(layer): {"hits": h, "empty": item_id in col.empty} for layer, h in hits.items()
@@ -478,7 +580,7 @@ def _run_regex_summary(
     if not pinned:
         judge_used = dataclasses.replace(judge_used, pinned=False)
     version = digest.prompt_version(
-        _spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION, args, name
+        version or (_spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION), args, name
     )
     result = pass_rate_result(
         name=name,
@@ -854,13 +956,23 @@ def _family_extras(
     }
 
 
+def is_v2_multilingual(header: Mapping[str, Any], items: list[dict[str, Any]]) -> bool:
+    """A multilingual v2 bank (plan 0040): its MC calls use the v2 prompts (``ML_SYSTEM``, the
+    names-only language question) under ``ML_MC_PROMPT_VERSION``."""
+    return any(it.get("mc_roles") for it in items)
+
+
 def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
     """The forced-choice judge, one call per (item, layer, unit). For a regex family it is not
     the instrument of record: the result is never pinned, so it is never ``complete`` and never
-    enters the macro. ``pinned=True``: the family's ``scorer="mc"`` (the judge's own pin)."""
+    enters the macro. ``pinned=True``: the family's ``scorer="mc"`` (the judge's own pin). On a
+    multilingual v2 bank the calls use the v2 prompts (``is_v2_multilingual``)."""
     cfg = mc_family(name)
     header, items = load_bank(bank_path(name))
     native = native_langs(header)
+    v2 = is_v2_multilingual(header, items)
+    base_system = ML_SYSTEM if v2 else cfg.system
+    diag_pv = ML_MC_PROMPT_VERSION if v2 else PROMPT_VERSION
     scope = item_scope(items, args)
     ids = [it["id"] for it in scope]
     by_id = {it["id"]: it for it in scope}
@@ -888,11 +1000,13 @@ def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
             positions=positions,
             layers=layers,
             missing=missing,
+            v2=v2,
         )
 
-    pv = _spec_pv(name, PROMPT_VERSION) if pinned else PROMPT_VERSION
+    pv = _spec_pv(name, PROMPT_VERSION) if pinned else diag_pv
     spend = Spend()
     pre = Preflighter(args.dry_run)
+    token_note = digest.token_note_of(name) if v2 else ""
     texts: dict[str, str] = {}
     lines_of: dict[tuple[str, int], list[digest.Line]] = {}
     tokens_at: set[tuple[str, int]] = set()
@@ -922,17 +1036,26 @@ def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
             readout = texts.get(f"{item_id}|{layer}")
             if readout is None:
                 continue
+            tok = v2 and any(c.tokens is not None for c in positions[(item_id, layer)])
             for role, (opts, gold_idx) in options[item_id].items():
                 key = f"{item_id}|L{layer:03d}|{role}"
                 meta[key] = (item_id, layer, role, gold_idx, opts, readout)
                 system = (
-                    token_system if cfg.name_gate and (item_id, layer) in tokens_at else cfg.system
+                    token_system if cfg.name_gate and (item_id, layer) in tokens_at else base_system
                 )
                 calls.append(
                     Call(
                         key=key,
                         system=system,
-                        user=render_user(readout, role, opts, native, cfg.unit_question),
+                        user=render_user(
+                            readout,
+                            role,
+                            opts,
+                            native,
+                            cfg.unit_question,
+                            v2=v2,
+                            token_note=token_note if tok else "",
+                        ),
                         meta={"item": item_id, "layer": layer, "role": role},
                     )
                 )
@@ -1050,6 +1173,7 @@ def _run_mc_summary(
     positions: dict[tuple[str, int], list[Cell]],
     layers: list[int],
     missing: list[tuple[str, int]],
+    v2: bool = False,
 ) -> FamilyResult:
     """Summary mode (plan 0020) on the forced-choice judge: one call per (item, unit) on the
     item's digest, the quote gated by ``gate_texts`` (a name-gate family: ``digest.quote_ok`` on
@@ -1059,9 +1183,8 @@ def _run_mc_summary(
     spend = Spend()
     pre = Preflighter(args.dry_run)
     native = native_langs(dict(header))
-    pv = digest.prompt_version(
-        _spec_pv(name, PROMPT_VERSION) if pinned else PROMPT_VERSION, args, name
-    )
+    diag_pv = ML_MC_PROMPT_VERSION if v2 else PROMPT_VERSION
+    pv = digest.prompt_version(_spec_pv(name, PROMPT_VERSION) if pinned else diag_pv, args, name)
     with Cache(args.out / "cells.jsonl") as cache:
         col = _collapse(name, args, ids, positions, cache=cache, spend=spend, pre=pre)
         source_kind = digest.as_prose(rep)
@@ -1081,9 +1204,9 @@ def _run_mc_summary(
                 calls.append(
                     Call(
                         key=key,
-                        system=cfg.system,
+                        system=ML_SYSTEM if v2 else cfg.system,
                         user=render_user_summary(
-                            readout, note, role, opts, native, cfg.unit_question
+                            readout, note, role, opts, native, cfg.unit_question, v2=v2
                         ),
                         meta={"item": item_id, "layer": layer, "role": role},
                     )

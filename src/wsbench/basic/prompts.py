@@ -183,8 +183,10 @@ def cell_lines(cell: Cell) -> tuple[str, ...]:
 
 
 def token_note_for(family: str | None) -> str:
-    """The token note of the family's own spec (``mc.token_note(spec.flat_types, ...)``)."""
-    return digest.token_note_of(family)
+    """The token note of the family's own spec in its TARGETS form (``mc.token_note(
+    spec.flat_types, targets=True)``): the bank judge holds targets whatever the spec's own
+    judge (an mc+regex family scoring a v1 bank, plan 0040 review r2)."""
+    return digest.token_note_of(family, targets=True)
 
 
 def forbidden_line(family: str, item: dict[str, Any]) -> str:
