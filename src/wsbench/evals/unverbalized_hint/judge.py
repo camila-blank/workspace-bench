@@ -414,6 +414,12 @@ def run(args: JudgeArgs) -> FamilyResult:
             i: sorted({c.pos for c in cells if c.id == i}) or ps for i, ps in positions.items()
         }
     expected = expected_cells(positions, layers)
+    if rep.reads_checked == "prompt_only":
+        # a prompt_only: reader is waived from the span checks (reads.load), so its expected
+        # cells are the ones it holds (po-opus-v1: one per id); an id with none stays missing
+        have = {(c.id, c.layer, c.pos) for c in cells}
+        held = {k[0] for k in have}
+        expected = have | {k for k in expected if k[0] not in held}
     missing = missing_cells(cells, expected)
     require_cells(NAME, missing, len(expected), args)
     incomplete = {m[0] for m in missing}
