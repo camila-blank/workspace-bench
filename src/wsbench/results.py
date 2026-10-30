@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Self
 
 SCHEMA_VERSION = 1
+# the metrics a family may enter the macro with (plan 0032 §2.17): pass rates and agentic's pair
+# rate (decision Q13); design_score, precision and hallucination_rate stay out (reason "metric")
+MACRO_METRICS: frozenset[str] = frozenset({"pass_rate", "pair_rate"})
 _COUNT_KEYS = (
     "n_expected_cells",
     "n_missing_cells",
@@ -250,6 +253,9 @@ def macro(
     included: list[FamilyResult] = []
     excluded: list[dict[str, str]] = []
     skip = adapted_exclusions()
+    modes = sorted({str(r.config.get("reads", "full")) for r in results})
+    if len(modes) > 1:  # plan 0032 §2.6.8: a macro never blends reads=full and reads=lite rows
+        raise SystemExit(f"macro: results mix reads modes {modes}; report one mode at a time")
     # a summary-mode run (plan 0020) averages summary rows only, never a blend with native ones
     summary_run = any(r.config.get("aggregate") == "summary" for r in results)
     for r in results:
@@ -265,7 +271,7 @@ def macro(
             )
         elif r.family in skip:
             excluded.append({"family": r.family, "reason": "adapted set: " + skip[r.family]})
-        elif r.metric != "pass_rate":
+        elif r.metric not in MACRO_METRICS:
             excluded.append({"family": r.family, "reason": "metric"})
         elif not on_family_judge(r):
             excluded.append(

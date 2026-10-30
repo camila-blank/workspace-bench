@@ -61,6 +61,13 @@ LATENT_KEYS = ("intermediates", "bridges", "hop1", "hop2", "concept", "concepts"
 ADAPT_KEY = "adapt"
 
 
+def _bank_rel(family: str) -> Path:
+    """The family's registered bank path relative to a checkout root (plan 0032 §2.12)."""
+    from wsbench.registry import REPO_ROOT, frozen_bank_path
+
+    return frozen_bank_path(family).relative_to(REPO_ROOT)
+
+
 def _load(path: Path) -> Any:
     return json.loads(path.read_text())
 
@@ -188,7 +195,7 @@ def build(out: Path, root: Path = REPO_ROOT) -> dict:
     orig = {"key": ORIGINAL, "label": "Qwen3.6-27B (original banks)", "families": {}}
     for _group, fams in GROUPS:
         for fam in fams:
-            path = root / "evals" / fam / "items.json"
+            path = root / _bank_rel(fam)
             if not path.exists():
                 continue
             raw = _load(path)
@@ -212,7 +219,7 @@ def build(out: Path, root: Path = REPO_ROOT) -> dict:
                 rows = _family_view(_items(raw), _header(raw), gates)
                 _write(data / mdir.name / f"{fam}.json", {"family": fam, "items": rows})
                 fam_report = dict((report.get("families") or {}).get(fam) or {})
-                n_orig = len(_items(_load(root / "evals" / fam / "items.json")))
+                n_orig = len(_items(_load(root / _bank_rel(fam))))
                 orig_rows = [r for r in (gates or {}).values() if r.get("origin") == "original"]
                 fam_report.setdefault("target", n_orig)
                 fam_report.setdefault("n_original", n_orig)

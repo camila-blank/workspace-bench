@@ -890,7 +890,7 @@ def families() -> list[str]:
     names = sorted(
         p.name
         for p in (REPO_ROOT / "evals").iterdir()
-        if (p / "items.json").exists() or (p / "manifest.json").exists()
+        if any(p.glob("items*.json")) or (p / "manifest.json").exists()  # incl. items_v<N>.json
     )
     root = os.environ.get(BANK_ROOT_ENV)
     if not root:

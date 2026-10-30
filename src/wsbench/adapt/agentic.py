@@ -72,7 +72,9 @@ def _dir(model: str):
 
 
 def _bank() -> dict[str, Any]:
-    return json.loads((store.REPO_ROOT / "evals" / FAMILY / "items.json").read_text())
+    from wsbench.registry import frozen_bank_path
+
+    return json.loads(frozen_bank_path(FAMILY).read_text())
 
 
 def rollout(model: str) -> None:

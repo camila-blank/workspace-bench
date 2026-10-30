@@ -68,6 +68,13 @@ def bank_path(family: str) -> Path:
     return REPO_ROOT / _spec_for_bank(family).bank
 
 
+def frozen_bank_path(family: str) -> Path:
+    """The family's registered bank of record (``REPO_ROOT / EvalSpec.bank``), ignoring the
+    ``WSB_BANK_*`` overrides: what the adapt / viewer / lucky-guessing tools treat as the frozen
+    27B bank (a versioned ``items_v<N>.json`` once the family switches, plan 0032 §2.12)."""
+    return REPO_ROOT / _spec_for_bank(family).bank
+
+
 def _spec_for_bank(family: str) -> "EvalSpec":
     """The family's EvalSpec, also when the registry was emptied after import (the family
     package's ``SPEC``); an unknown family exits 2."""
