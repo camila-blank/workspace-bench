@@ -523,6 +523,8 @@ def floor_columns() -> dict[str, dict[str, str]]:
 
     lucky = {
         fam: f"{f(e.get('blind', {}).get('mean'))} / {f(e.get('described', {}).get('mean'))}"
+        # plan 0040 §2.3: the question+options guesser is the family's chance line where measured
+        + (f"; question {f(e['question'].get('mean'))}" if "question" in e else "")
         for fam, e in lucky_guessing.floors().items()
     }
     po = {}
@@ -646,6 +648,9 @@ class Baseline(Command):
             )
             for name in names:
                 for variant in self.variant:
+                    if variant == "question" and name not in lucky_guessing.GUESS_QUESTION:
+                        print(f"{name}: no question hook, question variant skipped")
+                        continue
                     r = lucky_guessing.run_family(
                         name,
                         variant,

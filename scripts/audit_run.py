@@ -12,7 +12,12 @@ Per ``<run dir>/<family>/results.json`` it checks, and prints a table:
   over ``reads.specs``; ``scripts/lite_site_table.py --write`` freezes it);
 - ``n_readouts_in == n_readouts_bundled`` and ``n_truncated_items == 0`` (no readout dropped);
 - ``complete`` for a ``layers=<L>`` run.
-It prints ``extras.digest_served_by``, ``n_unverified_bullet`` and ``n_bare_mention_pass``.
+It prints ``extras.digest_served_by``, ``n_unverified_bullet`` and ``n_bare_mention_pass``, and
+(round 3; plan 0040 moral) the two instrument matches, reported, never failed (a PV change after
+gpu R6 / R8 means "no floor" / "re-gate", not a broken run): ``floor`` = whether the frozen
+summary prompt-only floor's ``instrument`` equals ``strip_reads(prompt_version)``
+(``prompt_only.summary_floor_applies``), ``ati`` = whether a native row's ``prompt_version``
+equals the frozen ATI entry's ``instrument``.
 Exit 1 when any check fails."""
 
 import argparse
@@ -90,6 +95,7 @@ def audit_family(fam_dir: Path) -> dict[str, Any]:
             problems.append(f"n_truncated_items={summ['n_truncated_items']}")
     if cfg.get("layers") and not res.get("complete"):
         problems.append("a layers= run is incomplete")
+    floor, ati = _instrument_matches(family, cfg)
     return {
         "family": family,
         "dir": str(fam_dir),
@@ -101,7 +107,35 @@ def audit_family(fam_dir: Path) -> dict[str, Any]:
         else None,
         "n_unverified_bullet": extras.get("n_unverified_bullet"),
         "n_bare_mention_pass": extras.get("n_bare_mention_pass"),
+        "floor": floor,
+        "ati": ati,
     }
+
+
+def _instrument_matches(family: str, cfg: dict[str, Any]) -> tuple[str, str]:
+    """(floor, ati) status strings: ``applies`` / ``no floor (<instrument>)`` / ``none`` for a
+    summary row; ``ok`` / ``re-gate (<instrument>)`` / ``none`` for a native row's ATI entry."""
+    from wsbench import reads
+    from wsbench.baselines import prompt_only, text_inversion
+
+    pv = str(cfg.get("prompt_version") or "")
+    floor = ati = "n/a"
+    if cfg.get("aggregate") == "summary":
+        e = prompt_only.summary_floors().get(family)
+        if e is None:
+            floor = "none"
+        elif prompt_only.summary_floor_applies(e, cfg):
+            floor = "applies"
+        else:
+            floor = f"no floor ({e.get('instrument')} != {reads.strip_reads(pv)})"
+    else:
+        frozen = json.loads(text_inversion.FROZEN.read_text(encoding="utf-8"))
+        e = frozen.get(family) if isinstance(frozen.get(family), dict) else None
+        if e is None:
+            ati = "none"
+        else:
+            ati = "ok" if e.get("instrument") == pv else f"re-gate ({e.get('instrument')} != {pv})"
+    return floor, ati
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
             mark = "ok  " if r["ok"] else "FAIL"
             tag = " (diagnostic control arm)" if r["diagnostic"] else ""
             print(f"{mark} {r['family']}{tag}: {'; '.join(r['problems']) or '—'}")
+            print(f"     floor: {r['floor']}; ati: {r['ati']}; "
+                  f"n_unverified_bullet: {r['n_unverified_bullet']}")  # fmt: skip
     return 0 if all(r["ok"] for r in rows) else 1
 
 
