@@ -18,9 +18,10 @@ render it, which token positions to read, and at which layers:
 
 ```json
 {"family": "poetry", "id": "couplet-ahead-head", "render": "plain",
- "positions": {"kind": "line_one_newline"}, "layers": [20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60],
+ "positions": {"kind": "line_one_tail"}, "layers": [20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60],
  "text": "A rhyming couplet:\nThe captain pointed at the route ahead,\nAnd told his crew to follow where he'd ",
- "note": "the newline that ends line one of the couplet"}
+ "note": "line one's last word through the newline that ends it (never the line-two stub); lite = that newline",
+ "lite_positions": {"kind": "final_token"}}
 ```
 
 | key | meaning |
@@ -42,7 +43,8 @@ Positions rules, all handled by `resolve`:
 | `all` | every token |
 | `all_from_end` | every token, reported as negative offsets `-n..-1` (arithmetic intermediates: the bank and judge count from the end) |
 | `positions {positions}` | explicit indices (hallucination, jailbreak, J-lens precision) |
-| `line_one_newline` | the newline token that ends line one (poetry) |
+| `line_one_newline` | the newline token that ends line one (poetry's lite site, and its full read before plan 0038) |
+| `line_one_tail {anchor?}` | line one's last word through the newline that ends it: the word's tokens, any punctuation after it, and that newline (poetry's full read, plan 0038; `couplet-ahead-head` → `" ahead"`, `","`, `"\n"` = positions 14-16). `anchor: "last_newline"` ends it at the last newline anywhere (adapted `chat_prefill` items) |
 | `from_token {token}` | from the first token with that text through the end (chain's question span) |
 | `from_last_sentence_start` | from the first token of the last user turn's final sentence through the end (user modelling) |
 | `suffix_text {text}` | the tokens spelling `text` at the end of the render (directed modulation's carrier) |

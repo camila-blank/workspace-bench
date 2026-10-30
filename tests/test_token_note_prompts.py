@@ -143,7 +143,6 @@ BASIC_TARGET_JUDGES = [
     "medical_diagnosis_alt",
     "multihop",
     "multilingual",
-    "poetry",
     "typo",
     "wrong_bridge",
     "wrong_bridge_true",

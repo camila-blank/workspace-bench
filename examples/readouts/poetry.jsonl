@@ -1,4 +1,12 @@
-{"id": "couplet-ahead-head", "layer": 20, "pos": 16, "token": "\u010a", "samples": ["He pointed forward, commanding us to sail."]}
-{"id": "couplet-ahead-head", "layer": 36, "pos": 16, "token": "\u010a", "samples": ["led the way"]}
-{"id": "couplet-blame-game", "layer": 20, "pos": 17, "token": "\u010a", "samples": ["playing the same game"]}
-{"id": "couplet-blame-game", "layer": 36, "pos": 17, "token": "\u010a", "samples": [""]}
+{"id": "couplet-ahead-head", "layer": 20, "pos": 14, "token": "\u0120ahead", "samples": ["He pointed forward, commanding us to sail."]}
+{"id": "couplet-ahead-head", "layer": 20, "pos": 15, "token": ",", "samples": ["- The sea was calm\n- Into the wind they sped"]}
+{"id": "couplet-ahead-head", "layer": 20, "pos": 16, "token": "\u010a", "samples": ["- And told his crew to follow where he led\n- The stars shone down"]}
+{"id": "couplet-ahead-head", "layer": 36, "pos": 14, "token": "\u0120ahead", "samples": ["Follow my lead"]}
+{"id": "couplet-ahead-head", "layer": 36, "pos": 15, "token": ",", "samples": ["led the way"]}
+{"id": "couplet-ahead-head", "layer": 36, "pos": 16, "token": "\u010a", "samples": ["The crew obeyed the words the captain said,\nand sailed on"]}
+{"id": "couplet-blame-game", "layer": 20, "pos": 15, "token": "\u0120blame", "samples": ["- playing the same game\n- a cruel and silly game"]}
+{"id": "couplet-blame-game", "layer": 20, "pos": 16, "token": ",", "samples": ["shame on them"]}
+{"id": "couplet-blame-game", "layer": 20, "pos": 17, "token": "\u010a", "samples": [""]}
+{"id": "couplet-blame-game", "layer": 36, "pos": 15, "token": "\u0120blame", "samples": ["The fault was theirs, the very same old name"]}
+{"id": "couplet-blame-game", "layer": 36, "pos": 16, "token": ",", "samples": [""]}
+{"id": "couplet-blame-game", "layer": 36, "pos": 17, "token": "\u010a", "samples": ["- But knew that they were playing the same game"]}

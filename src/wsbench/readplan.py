@@ -158,6 +158,10 @@ def lite_select(positions: Iterable[int], rule: dict[str, Any]) -> list[int]:
 #                               convention of the banks that count from the end)
 #   positions {list}            explicit indices into the render
 #   line_one_newline            the newline token that ends line one (the last newline)
+#   line_one_tail {anchor?}     line one's last word through the newline that ends it: the
+#                               word's tokens, any punctuation after it, and that newline
+#                               (poetry, plan 0038 P7). anchor "last_newline" ends the tail at
+#                               the last newline anywhere (chat_prefill: inside the prefill)
 #   last_newline                the last newline token anywhere (chat_prefill: inside the prefill)
 #   from_token {token}          from the first token whose text is `token` through the end
 #   from_last_sentence_start    from the first token of the final sentence of the last user
@@ -229,6 +233,12 @@ def resolve(rule: dict[str, Any], tokens: list[str]) -> list[int]:
     if kind == "last_newline":
         nls = [i for i, t in enumerate(tokens) if "\n" in _clean(t)]
         return [nls[-1]] if nls else []
+    if kind == "line_one_tail":
+        anchor = {"kind": rule.get("anchor", "line_one_newline")}
+        if anchor["kind"] not in ("line_one_newline", "last_newline"):
+            raise ValueError(f"line_one_tail: unknown anchor {anchor['kind']!r}")
+        nl = resolve(anchor, tokens)
+        return _line_tail(tokens, nl[0]) if nl else []
     if kind == "from_token":
         want = rule["token"]
         hits = [i for i, t in enumerate(tokens) if _clean(t) == want or t == want]
@@ -244,6 +254,28 @@ def resolve(rule: dict[str, Any], tokens: list[str]) -> list[int]:
         end = _text_end(tokens, start, rule["text"])
         return list(range(start, end))
     raise ValueError(f"unknown positions rule {kind!r}")
+
+
+def _line_tail(tokens: list[str], nl: int) -> list[int]:
+    """``nl`` (a newline token) back through the first token of the last word before it: the
+    punctuation-only tokens just before the newline, then that word's tokens back to the one that
+    starts it (a leading space, or the token after a newline / the render start)."""
+
+    def alnum(t: str) -> bool:
+        return any(ch.isalnum() for ch in t)
+
+    start, j = nl, nl - 1
+    while j >= 0 and "\n" not in _clean(tokens[j]) and not alnum(_clean(tokens[j])):
+        start, j = j, j - 1  # trailing punctuation ("," / '."' / "!")
+    while j >= 0:
+        t = _clean(tokens[j])
+        if "\n" in t or not alnum(t):
+            break
+        start = j
+        if t.startswith(" "):
+            break
+        j -= 1
+    return list(range(start, nl + 1))
 
 
 # turn markers of the chat templates the banks are adapted to (ChatML / Qwen, Gemma-4, Gemma-2/3,
@@ -489,11 +521,12 @@ def _plan(family: str) -> list[ReadSpec]:
                     family,
                     it["id"],
                     "chat_prefill",
-                    {"kind": "last_newline"},
+                    {"kind": "line_one_tail", "anchor": "last_newline"},
                     GRID,
                     text=POETRY_PREFILL_USER,
                     prefill=poetry_prefill(it["prompt"]),
-                    note="the newline that ends line one, inside the prefill",
+                    note="line one's last word through the newline that ends it, inside the "
+                    "prefill; lite = that newline",
                     lite_positions=FINAL,
                 )
             else:
@@ -505,10 +538,11 @@ def _plan(family: str) -> list[ReadSpec]:
                     family,
                     it["id"],
                     "chat" if gv == "chat" else "plain",
-                    {"kind": "line_one_newline"},
+                    {"kind": "line_one_tail"},
                     GRID,
                     text=texts.get(gv, it["prompt"]),
-                    note="the newline that ends line one of the couplet",
+                    note="line one's last word through the newline that ends it (never the "
+                    "line-two stub); lite = that newline",
                     lite_positions=FINAL,
                 )
             out.append(spec)

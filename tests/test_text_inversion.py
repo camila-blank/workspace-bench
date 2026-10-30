@@ -683,3 +683,17 @@ def test_full_gate_carries_construction_entries_over(tmp_path, two_families, mon
     assert written["built"] == prior  # never asked, never dropped by a full re-gate
     assert "built" not in written["_not_gated"]
     assert written["fam"]["ids"] == list("abcde")
+
+
+def test_poetry_prefix_unchanged_under_full():
+    """plan 0038 P7 invariant: the prompt-only / ATI prefix is the render through the LAST read
+    position, which under both reads modes is the line-one newline (line two's stub unseen)."""
+    from test_readplan import COUPLET
+
+    for mode in ("full", "lite"):
+        row = readplan.plan("poetry", reads=mode)[0]
+        last = max(readplan.resolve(row.positions, COUPLET))
+        assert last == 16 and COUPLET[last] == "Ċ"
+        assert (
+            "".join(COUPLET[: last + 1]).replace("Ġ", " ").replace("Ċ", "\n").endswith("ahead,\n")
+        )
