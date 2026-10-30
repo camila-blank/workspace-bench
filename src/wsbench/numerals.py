@@ -20,14 +20,14 @@ def fold(s: str) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-_FULLWIDTH = str.maketrans({chr(0xFF10 + d): str(d) for d in range(10)} | {"，": ","})
+_FULLWIDTH = str.maketrans({chr(0xFF10 + d): str(d) for d in range(10)} | {"\uff0c": ","})
 
 
 # ---------------------------------------------------------------- CJK
 
 
 CJK_DIGIT = {
-    "〇": 0,
+    "\u3007": 0,  # ideographic zero
     "零": 0,
     "一": 1,
     "二": 2,
@@ -77,6 +77,10 @@ def cjk_int(t: str) -> int | None:
 # ---------------------------------------------------------------- number words
 
 
+def _w(s: str) -> list[str]:
+    return s.split()
+
+
 def _table() -> dict[str, int]:
     """Folded phrase (words joined by one space) -> value, 0-100 in eight languages."""
     out: dict[str, int] = {}
@@ -87,14 +91,14 @@ def _table() -> dict[str, int]:
             out.setdefault(key, value)
 
     # English, with ordinals
-    en_u = "zero one two three four five six seven eight nine".split()
+    en_u = _w("zero one two three four five six seven eight nine")
     en_t = "ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
-    en_tens = "twenty thirty forty fifty sixty seventy eighty ninety".split()
-    en_ord_u = "zeroth first second third fourth fifth sixth seventh eighth ninth".split()
+    en_tens = _w("twenty thirty forty fifty sixty seventy eighty ninety")
+    en_ord_u = _w("zeroth first second third fourth fifth sixth seventh eighth ninth")
     for i, w in enumerate(en_u):
         add(i, w)
         add(i, en_ord_u[i])
-    for i, w in enumerate(en_t.split()):
+    for i, w in enumerate(_w(en_t)):
         add(10 + i, w)
         add(10 + i, "twelfth" if w == "twelve" else w + "th")
     for i, t in enumerate(en_tens):
@@ -105,13 +109,13 @@ def _table() -> dict[str, int]:
     add(100, "hundred", "one hundred", "a hundred", "hundredth", "one hundredth")
 
     # German
-    de_u = "null eins zwei drei vier fünf sechs sieben acht neun".split()
+    de_u = _w("null eins zwei drei vier fünf sechs sieben acht neun")
     de_t = "zehn elf zwölf dreizehn vierzehn fünfzehn sechzehn siebzehn achtzehn neunzehn"
-    de_tens = "zwanzig dreißig vierzig fünfzig sechzig siebzig achtzig neunzig".split()
+    de_tens = _w("zwanzig dreißig vierzig fünfzig sechzig siebzig achtzig neunzig")
     for i, w in enumerate(de_u):
         add(i, w)
     add(1, "ein", "eine")
-    for i, w in enumerate(de_t.split()):
+    for i, w in enumerate(_w(de_t)):
         add(10 + i, w)
     for i, t in enumerate(de_tens):
         v = 20 + 10 * i
@@ -121,17 +125,17 @@ def _table() -> dict[str, int]:
     add(100, "hundert", "einhundert")
 
     # Spanish
-    es_u = "cero uno dos tres cuatro cinco seis siete ocho nueve".split()
+    es_u = _w("cero uno dos tres cuatro cinco seis siete ocho nueve")
     es_t = "diez once doce trece catorce quince dieciséis diecisiete dieciocho diecinueve"
     es_20s = (
         "veinte veintiuno veintidós veintitrés veinticuatro veinticinco veintiséis veintisiete "
         "veintiocho veintinueve"
     )
-    es_tens = "treinta cuarenta cincuenta sesenta setenta ochenta noventa".split()
+    es_tens = _w("treinta cuarenta cincuenta sesenta setenta ochenta noventa")
     for i, w in enumerate(es_u):
         add(i, w)
     add(1, "una", "un")
-    for i, w in enumerate(es_t.split()):
+    for i, w in enumerate(_w(es_t)):
         add(10 + i, w)
     for i, w in enumerate(es_20s.split()):
         add(20 + i, w)
@@ -143,8 +147,8 @@ def _table() -> dict[str, int]:
     add(100, "cien", "ciento")
 
     # French
-    fr_u = "zéro un deux trois quatre cinq six sept huit neuf".split()
-    fr_t = "dix onze douze treize quatorze quinze seize dix-sept dix-huit dix-neuf".split()
+    fr_u = _w("zéro un deux trois quatre cinq six sept huit neuf")
+    fr_t = _w("dix onze douze treize quatorze quinze seize dix-sept dix-huit dix-neuf")
     for i, w in enumerate(fr_u):
         add(i, w)
     add(1, "une")
@@ -169,12 +173,12 @@ def _table() -> dict[str, int]:
     add(100, "cent")
 
     # Italian (vowel elision before uno / otto; tre -> tré)
-    it_u = "zero uno due tre quattro cinque sei sette otto nove".split()
+    it_u = _w("zero uno due tre quattro cinque sei sette otto nove")
     it_t = "dieci undici dodici tredici quattordici quindici sedici diciassette diciotto diciannove"
-    it_tens = "venti trenta quaranta cinquanta sessanta settanta ottanta novanta".split()
+    it_tens = _w("venti trenta quaranta cinquanta sessanta settanta ottanta novanta")
     for i, w in enumerate(it_u):
         add(i, w)
-    for i, w in enumerate(it_t.split()):
+    for i, w in enumerate(_w(it_t)):
         add(10 + i, w)
     for i, t in enumerate(it_tens):
         v = 20 + 10 * i
@@ -185,9 +189,9 @@ def _table() -> dict[str, int]:
     add(100, "cento")
 
     # Portuguese
-    pt_u = "zero um dois três quatro cinco seis sete oito nove".split()
-    pt_t = "dez onze doze treze catorze quinze dezesseis dezessete dezoito dezenove".split()
-    pt_tens = "vinte trinta quarenta cinquenta sessenta setenta oitenta noventa".split()
+    pt_u = _w("zero um dois três quatro cinco seis sete oito nove")
+    pt_t = _w("dez onze doze treze catorze quinze dezesseis dezessete dezoito dezenove")
+    pt_tens = _w("vinte trinta quarenta cinquenta sessenta setenta oitenta noventa")
     for i, w in enumerate(pt_u):
         add(i, w)
     add(1, "uma")
@@ -206,13 +210,13 @@ def _table() -> dict[str, int]:
     add(100, "cem", "cento")
 
     # Dutch (unit + en / ën + tens, one word)
-    nl_u = "nul een twee drie vier vijf zes zeven acht negen".split()
+    nl_u = _w("nul een twee drie vier vijf zes zeven acht negen")
     nl_t = "tien elf twaalf dertien veertien vijftien zestien zeventien achttien negentien"
-    nl_tens = "twintig dertig veertig vijftig zestig zeventig tachtig negentig".split()
+    nl_tens = _w("twintig dertig veertig vijftig zestig zeventig tachtig negentig")
     for i, w in enumerate(nl_u):
         add(i, w)
     add(1, "één")
-    for i, w in enumerate(nl_t.split()):
+    for i, w in enumerate(_w(nl_t)):
         add(10 + i, w)
     for i, t in enumerate(nl_tens):
         v = 20 + 10 * i
@@ -222,7 +226,7 @@ def _table() -> dict[str, int]:
     add(100, "honderd", "eenhonderd")
 
     # Russian
-    ru_u = "ноль один два три четыре пять шесть семь восемь девять".split()
+    ru_u = _w("ноль один два три четыре пять шесть семь восемь девять")
     ru_t = (
         "десять одиннадцать двенадцать тринадцать четырнадцать пятнадцать шестнадцать "
         "семнадцать восемнадцать девятнадцать"
@@ -232,9 +236,9 @@ def _table() -> dict[str, int]:
         add(i, w)
     add(1, "одна", "одно")
     add(2, "две")
-    for i, w in enumerate(ru_t.split()):
+    for i, w in enumerate(_w(ru_t)):
         add(10 + i, w)
-    for i, t in enumerate(ru_tens.split()):
+    for i, t in enumerate(_w(ru_tens)):
         v = 20 + 10 * i
         add(v, t)
         for u in range(1, 10):
