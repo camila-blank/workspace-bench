@@ -105,6 +105,9 @@ Russian sentence"); they are measured in the run phase.
   final prompt token.
 - 2026-10-30 (plan 0040): the v2 bank (correction split into L2 AND native, names-only
   language unit, natural forms), every prompt position.
+- Review r2: the `+v2` tag follows the bank header's `version`, not the file path: a v1-shaped
+  bank (an adapted port under `WSB_BANK_ROOT`, or `WSB_BANK_FILE_*=…/items.json`) stamps
+  `mt-regex-2026-09-23`, the v2 bank anywhere keeps `+v2`.
 
 ## Readouts
 

@@ -75,15 +75,17 @@ CONTENT = "content"
 
 def role_forms(
     role: str, units: list[regex.ScoredUnit], native: tuple[str, ...]
-) -> tuple[dict[str, list[str]], tuple[str, ...]]:
+) -> tuple[dict[str, list[str]], tuple[str, ...], regex.NumericMatch]:
     """The forms a quote line must hit for ``role``: the content unit's native-language forms,
-    or every language-name form of the ``language`` unit (en, zh, autonym)."""
+    or every language-name form of the ``language`` unit (en, zh, autonym); plus the unit's
+    ``case_sensitive`` forms and ``numeric_match`` mode (matched as the regex leg matches)."""
     unit = next((u for u in units if u.role == role), None)
     if unit is None:
-        return {}, ()
+        return {}, (), "context"
     if role == LANGUAGE_ROLE:
-        return dict(unit.forms), unit.case_sensitive
-    return {k: v for k, v in unit.forms.items() if k in native}, unit.case_sensitive
+        return dict(unit.forms), unit.case_sensitive, unit.numeric_match
+    forms = {k: v for k, v in unit.forms.items() if k in native}
+    return forms, unit.case_sensitive, unit.numeric_match
 
 
 def _pieces(ln: Line) -> list[str]:
@@ -100,6 +102,7 @@ def form_condition(
     lines: list[Line],
     forms: dict[str, list[str]],
     case_sensitive: tuple[str, ...] = (),
+    numeric_match: regex.NumericMatch = "context",
 ) -> bool:
     """Some line that verifies ``quote`` on its own hits a form (per bullet); a word split across
     adjacent token positions (``digest.split_word``) is matched as that word."""
@@ -109,7 +112,9 @@ def form_condition(
     texts = [t for ln in hit for t in _pieces(ln)]
     if not hit and digest.split_word(quote, lines) is not None:
         texts = [quote]
-    return bool(texts) and bool(regex.hit_forms(texts, forms, case_sensitive=case_sensitive))
+    return bool(texts) and bool(
+        regex.hit_forms(texts, forms, numeric_match=numeric_match, case_sensitive=case_sensitive)
+    )
 
 
 def role_verdict(
@@ -119,6 +124,7 @@ def role_verdict(
     lines: list[Line],
     forms: dict[str, list[str]],
     case_sensitive: tuple[str, ...] = (),
+    numeric_match: regex.NumericMatch = "context",
 ) -> dict[str, Any]:
     """One role: ``correct`` = gold pick AND ``quote_ok`` AND the family form condition."""
     if res is None:
@@ -131,7 +137,7 @@ def role_verdict(
         return {"judged": True, "pick": LETTERS[idx], "kind": "cannot", "correct": False}
     quote = str(res.get("quote", ""))
     ok = digest.quote_ok(quote, lines)
-    form = ok and form_condition(quote, lines, forms, case_sensitive)
+    form = ok and form_condition(quote, lines, forms, case_sensitive, numeric_match)
     kind = "correct" if idx == gold_idx else "distractor"
     return {
         "judged": True,
@@ -224,8 +230,8 @@ def _score_role(
     ctx: _Ctx, item_id: str, role: str, res: dict[str, Any] | None, lines: list[Line]
 ) -> dict[str, Any]:
     opts, gold = ctx.options[item_id][role]
-    forms, cs = role_forms(role, ctx.units_of[item_id], ctx.native)
-    v = role_verdict(res, gold, opts, lines, forms, cs)
+    forms, cs, nm = role_forms(role, ctx.units_of[item_id], ctx.native)
+    v = role_verdict(res, gold, opts, lines, forms, cs, nm)
     return {"role": role, "gold": opts[gold], **v}
 
 

@@ -56,7 +56,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "three"
+       "three",
+       "3"
       ],
       "zh": [
        "三"
@@ -64,8 +65,10 @@
      },
      "match": [
       "three",
+      "3",
       "三"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -125,6 +128,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -603,7 +607,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "two"
+       "two",
+       "2"
       ],
       "zh": [
        "二",
@@ -612,9 +617,11 @@
      },
      "match": [
       "two",
+      "2",
       "二",
       "两"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -676,6 +683,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -3119,7 +3127,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "eight"
+       "eight",
+       "8"
       ],
       "zh": [
        "八"
@@ -3127,8 +3136,10 @@
      },
      "match": [
       "eight",
+      "8",
       "八"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -3186,6 +3197,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -3642,7 +3654,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "three"
+       "three",
+       "3"
       ],
       "zh": [
        "三"
@@ -3650,8 +3663,10 @@
      },
      "match": [
       "three",
+      "3",
       "三"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -3709,6 +3724,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -4443,7 +4459,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "four"
+       "four",
+       "4"
       ],
       "zh": [
        "四"
@@ -4451,8 +4468,10 @@
      },
      "match": [
       "four",
+      "4",
       "四"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -4514,6 +4533,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -5495,7 +5515,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "four"
+       "four",
+       "4"
       ],
       "zh": [
        "四"
@@ -5503,8 +5524,10 @@
      },
      "match": [
       "four",
+      "4",
       "四"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -5564,6 +5587,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -6949,7 +6973,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "five"
+       "five",
+       "5"
       ],
       "zh": [
        "五"
@@ -6957,8 +6982,10 @@
      },
      "match": [
       "five",
+      "5",
       "五"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -7016,6 +7043,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -7724,7 +7752,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "four"
+       "four",
+       "4"
       ],
       "zh": [
        "四"
@@ -7732,8 +7761,10 @@
      },
      "match": [
       "four",
+      "4",
       "四"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -7791,6 +7822,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -10478,7 +10510,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "six"
+       "six",
+       "6"
       ],
       "zh": [
        "六"
@@ -10486,8 +10519,10 @@
      },
      "match": [
       "six",
+      "6",
       "六"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -10547,6 +10582,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -11931,7 +11967,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "four"
+       "four",
+       "4"
       ],
       "zh": [
        "四"
@@ -11939,8 +11976,10 @@
      },
      "match": [
       "four",
+      "4",
       "四"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -12002,6 +12041,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -12452,7 +12492,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "three"
+       "three",
+       "3"
       ],
       "zh": [
        "三"
@@ -12460,8 +12501,10 @@
      },
      "match": [
       "three",
+      "3",
       "三"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -12523,6 +12566,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -12583,7 +12627,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "ten"
+       "ten",
+       "10"
       ],
       "zh": [
        "十"
@@ -12591,8 +12636,10 @@
      },
      "match": [
       "ten",
+      "10",
       "十"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -12650,7 +12697,8 @@
     "units": {
      "concept_native": {
       "en": [
-       1
+       1,
+       2
       ],
       "zh": [
        1
@@ -12709,7 +12757,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "five"
+       "five",
+       "5"
       ],
       "zh": [
        "五"
@@ -12717,8 +12766,10 @@
      },
      "match": [
       "five",
+      "5",
       "五"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -12776,6 +12827,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [
@@ -12964,7 +13016,8 @@
      "multi_token": false,
      "forms": {
       "en": [
-       "six"
+       "six",
+       "6"
       ],
       "zh": [
        "六"
@@ -12972,8 +13025,10 @@
      },
      "match": [
       "six",
+      "6",
       "六"
-     ]
+     ],
+     "numeric_match": "standalone"
     },
     {
      "role": "language",
@@ -13031,6 +13086,7 @@
     "units": {
      "concept_native": {
       "en": [
+       1,
        1
       ],
       "zh": [

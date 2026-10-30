@@ -22,5 +22,6 @@ SPEC = register(
         task_note=DIGEST_TASK_NOTES["multilingual"],
         flat_types=(),
         group="basic",
+        v1_scorer="bank",  # a v1-shaped (adapted) bank: the basic bank judge, as before v2
     )
 )

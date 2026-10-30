@@ -69,14 +69,29 @@ REGEX_JUDGE = ResolvedJudge(model=SCORER, reasoning=None, pinned=True, source="f
 SCORERS = ("regex", "mc", "mc+regex")
 
 
-# regex families whose instrument tag names their bank version (plan 0040: "+v2"): the tag is
-# stamped only while that registered bank is the one judged, so a run pinned to another bank file
-# (``WSB_BANK_FILE_<F>``, ``WSB_BANK_ROOT``) never claims the v2 instrument
+# families whose instrument tag names their bank version (plan 0040: "+v2", or the v2 MC prompts
+# of the mc+regex families): the tag follows the HEADER of the bank actually judged (its
+# ``version``), never the file path, so a v1-shaped bank (an adapted port under
+# ``WSB_BANK_ROOT``, or ``WSB_BANK_FILE_<F>=…/items.json``) never claims the v2 instrument and a
+# v2 bank anywhere keeps it
 _BANK_TAGS: dict[str, str] = {}
+# mc+regex families: the scorer of record of a v1-shaped bank ("bank" = the basic bank judge,
+# "regex" = the regex contract; review r2 item 1), with the stamp that scorer used before v2
+V1Scorer = Literal["bank", "regex"]
+_V1_SCORERS: dict[str, V1Scorer] = {}
+
+
+def bank_version(name: str) -> int:
+    """The ``version`` of the family's bank header as loaded now (``bank_path``); 1 if absent
+    or unreadable. An int (the multilingual v2 banks) or a ``"v<N>"`` string (multihop_mt_v2)."""
+    header, _items = load_bank(bank_path(name))
+    raw = str(header.get("version", 1)).strip().lower().removeprefix("v")
+    return int(raw) if raw.isdigit() else 1
 
 
 def _spec_pv(name: str, default: str) -> str:
-    """The family's registered prompt version (its scorer's own, plus any instrument tag)."""
+    """The family's registered prompt version (its scorer's own, plus any instrument tag); on a
+    v1-shaped bank the tag is dropped (an mc+regex family falls back to its v1 regex stamp)."""
     from wsbench import registry
 
     spec = registry.FAMILIES.get(name)
@@ -84,7 +99,9 @@ def _spec_pv(name: str, default: str) -> str:
         return default
     pv = spec.judge.prompt_version
     tag = _BANK_TAGS.get(name)
-    if tag and bank_path(name).resolve() != (registry.REPO_ROOT / spec.bank).resolve():
+    if tag and bank_version(name) < 2:
+        if _V1_SCORERS.get(name) == SCORER:
+            return SCORER_VERSION
         pv = pv.removesuffix("+" + tag)
     return pv
 
@@ -105,19 +122,27 @@ def mt_family(
     item_task_notes: Callable[[], Mapping[str, str]] | None = None,
     flat_types: tuple[str, ...] = (),
     group: str = GROUP,
+    v1_scorer: V1Scorer | None = None,
 ) -> EvalSpec:
     """One multi-token family (plan 0032 §2.16). ``scorer``: ``regex`` (``EvalSpec.scorer =
     "regex"``, no call; ``opts=judge=mc`` is a forced-unpinned diagnostic), ``mc`` / ``mc+regex``
     (``EvalSpec.scorer = ""``: an LLM judge, preflighted, the result pinned). ``bank`` defaults
     to ``evals/<name>/items.json``; ``prompt_version`` to the scorer's own; ``instrument_tag`` is
-    appended once (``f"{pv}+{tag}"``)."""
+    appended once (``f"{pv}+{tag}"``) and stamped only on a bank whose header is ``version >= 2``.
+    ``v1_scorer`` (``mc+regex`` only): how a v1-shaped bank of the family is scored — ``"bank"``
+    (the basic bank judge) or ``"regex"`` (the regex contract), each under its own v1 stamp;
+    without it a v1-shaped bank is a clear error."""
     if scorer not in SCORERS:
         raise ValueError(f"{name}: scorer={scorer!r}; expected one of {SCORERS}")
     pv = prompt_version or (SCORER_VERSION if scorer == "regex" else PROMPT_VERSION)
     if instrument_tag and not pv.endswith("+" + instrument_tag):
         pv = f"{pv}+{instrument_tag}"
-    if scorer == "regex" and instrument_tag:
+    if v1_scorer is not None and scorer != "mc+regex":
+        raise ValueError(f"{name}: v1_scorer applies to scorer='mc+regex' only")
+    if instrument_tag:
         _BANK_TAGS[name] = instrument_tag
+    if v1_scorer is not None:
+        _V1_SCORERS[name] = v1_scorer
     calls = f"0 (regex); {calls_per_arm} with opts=judge=mc" if scorer == "regex" else calls_per_arm
     return EvalSpec(
         name=name,
@@ -150,6 +175,8 @@ def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyRes
         # alone as an unpinned diagnostic (never the number of record, never in the macro)
         from wsbench.multitoken.mcrx import run_mcrx
 
+        if bank_version(name) < 2:
+            return _run_v1(args, name=name)
         leg = args.extra.get("judge", "mcrx")
         if leg == "mc":
             return run_mc(args, name=name)
@@ -163,6 +190,33 @@ def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyRes
     if which == "mc":
         return run_mc(args, name=name)
     fail(f"{name}: opts=judge must be 'regex' (default) or 'mc', not {which!r}")
+
+
+def _run_v1(args: JudgeArgs, *, name: str) -> FamilyResult:
+    """An mc+regex family on a v1-shaped bank (no ``mc_roles``, optional units: the adapted
+    ports under ``WSB_BANK_ROOT`` until they are rebuilt, plan 0040 R6): the family's v1 scorer
+    of record under its v1 stamp, as on main before plan 0040 (review r2 item 1)."""
+    v1 = _V1_SCORERS.get(name)
+    which = args.extra.get("judge")
+    path = bank_path(name)
+    if v1 is None:
+        fail(
+            f"{name}: {path} is a v1-shaped bank (header version < 2, no mc_roles); the mc+regex "
+            "scorer needs a v2 bank — rebuild it (plan 0040 R6: wsbench.adapt emits v2)"
+        )
+    if v1 == "bank":
+        if which not in (None, "mcrx"):
+            fail(
+                f"{name}: {path} is a v1 bank; it is scored by the bank judge only (no opts=judge)"
+            )
+        from wsbench.basic.family import run_family as run_bank
+
+        return run_bank(args, name=name, bank=path)
+    if which == "mc":
+        return run_mc(args, name=name)
+    if which not in (None, "mcrx", SCORER):
+        fail(f"{name}: opts=judge must be 'regex' (default on a v1 bank) or 'mc', not {which!r}")
+    return run_regex(args, name=name)
 
 
 # ---------------------------------------------------------------------------------------------
