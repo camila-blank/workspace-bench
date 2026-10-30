@@ -871,38 +871,48 @@ def item_name_forms(item: Mapping[str, Any], role: str) -> dict[str, list[str]]:
 FLAT_RUN_MIN = 2
 
 
+def merge_forms(entries: Sequence[Sequence[str]]) -> list[list[str]]:
+    """``entries`` with every two that share a folded form merged into one (one name listed
+    under two spellings, or as a unit and as a distractor, is ONE rival, never two)."""
+    groups: list[tuple[set[str], list[str]]] = []
+    for e in entries:
+        forms = [str(f) for f in e if str(f).strip()]
+        keys = {mc.fold(f).strip() for f in forms}
+        if not keys:
+            continue
+        hit = [g for g in groups if g[0] & keys]
+        merged_keys, merged = set(keys), []
+        for g in hit:
+            merged_keys |= g[0]
+            merged += g[1]
+            groups.remove(g)
+        merged += [f for f in forms if f not in merged]
+        groups.append((merged_keys, merged))
+    return [g[1] for g in groups]
+
+
 def bank_entities(items: Sequence[Mapping[str, Any]]) -> dict[str, list[list[str]]]:
-    """kind -> the bank's names of that kind, one entry (its forms) per name: every unit's full
-    names (``units[].full_forms``, else its forms) and every ``mc`` gold and distractor, over the
-    WHOLE bank (never the judged subset). ``kind`` is the unit's ``kind`` (multihop_mt_v2:
-    person / work / event), ``""`` for a bank without kinds (one pool)."""
-    out: dict[str, list[list[str]]] = defaultdict(list)
-    seen: set[tuple[str, str]] = set()
-
-    def add(kind: str, forms: Sequence[str]) -> None:
-        forms = [str(f) for f in forms if str(f).strip()]
-        if not forms:
-            return
-        key = (kind, mc.fold(forms[0]).strip())
-        if key not in seen:
-            seen.add(key)
-            out[kind].append(forms)
-
+    """kind -> the bank's names of that kind, one entry (its forms) per name: every name unit's
+    full names (``units[].full_forms``, else its forms; never the ``language`` unit) and every
+    ``mc`` gold and distractor, over the WHOLE bank (never the judged subset), entries sharing a
+    form merged (:func:`merge_forms`). ``kind`` is the unit's ``kind`` (multihop_mt_v2: person /
+    work / event), ``""`` for a bank without kinds (one pool)."""
+    raw: dict[str, list[list[str]]] = defaultdict(list)
     for it in items:
-        units = list(it.get("units") or [])
+        units = [u for u in it.get("units") or [] if str(u.get("role")) != LANGUAGE_ROLE]
         kinds = {str(u.get("role")): str(u.get("kind") or "") for u in units}
         for u in units:
             full = [str(f) for f in u.get("full_forms") or ()] or [
                 str(f) for fs in (u.get("forms") or {}).values() for f in fs
             ]
-            add(kinds[str(u.get("role"))], full)
+            raw[kinds[str(u.get("role"))]].append(full)
         for role, blk in (it.get("mc") or {}).items():
-            if not isinstance(blk, Mapping):
+            if not isinstance(blk, Mapping) or str(role) == LANGUAGE_ROLE:
                 continue
             for o in [blk.get("gold"), *(blk.get("distractors") or [])]:
                 if o:
-                    add(kinds.get(str(role), ""), [str(o)])
-    return dict(out)
+                    raw[kinds.get(str(role), "")].append([str(o)])
+    return {k: merge_forms(v) for k, v in raw.items()}
 
 
 def list_gate(
