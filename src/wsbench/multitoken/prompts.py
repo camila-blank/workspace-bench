@@ -63,8 +63,7 @@ DIGEST_TASK_NOTES: dict[str, str] = {
     "multilingual_multihop": "the model reads a short non-English factual prompt whose answer "
     "needs one silent intermediate step",
     "multilingual_typo": "the model reads a non-English sentence that ends in a misspelled word",
-    "typo_mt": "the model reads a sentence that ends in a misspelled word or phrase",
-}
+}  # typo_mt's note is its EvalSpec.task_note (evals/typo_mt/prompts.py, plan 0033 M1)
 
 PROMPTS: dict[str, str] = {
     "SYSTEM": SYSTEM,
@@ -75,11 +74,12 @@ PROMPTS: dict[str, str] = {
 }
 
 
-def summary_prompts(family: str) -> dict[str, str]:
-    """The summary-mode (plan 0020) strings a multi-token family sends, for its own PROMPTS."""
+def summary_prompts(family: str, task_note: str | None = None) -> dict[str, str]:
+    """The summary-mode (plan 0020) strings a multi-token family sends, for its own PROMPTS
+    (``task_note``: the family's own ``EvalSpec.task_note``, else its ``DIGEST_TASK_NOTES``)."""
     return {
         "USER_SUMMARY": USER_SUMMARY,
-        "DIGEST_TASK_NOTE": DIGEST_TASK_NOTES[family],
+        "DIGEST_TASK_NOTE": task_note if task_note is not None else DIGEST_TASK_NOTES[family],
         "SUMMARY_NOTE": digest.SUMMARY_NOTE,
         "SUMMARY_NOTE_ABSTRACTIVE": digest.SUMMARY_NOTE_ABSTRACTIVE,
         "SUMMARY_NOTE_TOKENS": digest.SUMMARY_NOTE_TOKENS,

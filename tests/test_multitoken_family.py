@@ -220,7 +220,8 @@ def test_scorer_enum_assignment(real_families):
 def test_regex_families_unchanged(real_families):
     for name in ("multilingual_mt", "multilingual_typo", "typo_mt"):
         spec = real_families[name]
-        assert spec.scorer == fam.SCORER and spec.judge.prompt_version == fam.SCORER_VERSION
+        tag = "+typo-v2" if name == "typo_mt" else ""  # plan 0033 M1: typo_mt's v2-bank tag
+        assert spec.scorer == fam.SCORER and spec.judge.prompt_version == fam.SCORER_VERSION + tag
 
 
 def test_instrument_tag_appended_once():

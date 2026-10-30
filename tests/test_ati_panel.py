@@ -559,7 +559,7 @@ def test_regex_multi_unit_families_count_any_unit_for_the_gate(tmp_path):
         {"id": "b", "pass": False, "any_hit": False},
         {"id": "c", "pass": None, "any_hit": False},  # a missing layer stays undecided
     ]
-    for fam in ("multilingual_mt", "basic_readout_mt", "typo_mt"):
+    for fam in ("multilingual_mt", "basic_readout_mt", "multilingual_typo"):
         p = tmp_path / fam / "results.json"
         p.parent.mkdir(parents=True)
         p.write_text(

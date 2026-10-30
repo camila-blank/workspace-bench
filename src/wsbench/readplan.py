@@ -468,11 +468,28 @@ def _plan(family: str) -> list[ReadSpec]:
         "multilingual_mt",
         "multilingual_multihop",
         "multilingual_typo",
-        "typo_mt",
         "wrong_bridge",
         "wrong_bridge_true",
     ):
         return _final_token_families(family, "plain")
+    if family == "typo_mt":
+        # plan 0033 M3: every token of the misspelled word that ends the prompt, nothing earlier
+        # (an earlier read would credit predicting the word, not correcting it); lite = its
+        # final token, today's site (lite is a subset of full: one read serves both)
+        _h, items = _bank(family)
+        return [
+            ReadSpec(
+                family,
+                it["id"],
+                "plain",
+                {"kind": "suffix_text", "text": it["typo_word"]},
+                GRID,
+                text=it["prompt"],
+                note="every token of the misspelled word that ends the prompt",
+                lite_positions=dict(FINAL),
+            )
+            for it in items
+        ]
     if family == "poetry":
         from wsbench.capable.questions import CONTINUE
 
