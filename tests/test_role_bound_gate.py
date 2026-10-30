@@ -101,6 +101,44 @@ def test_partial_name_prefix4():
     assert gate.name_ref("Dev fined", "Dev") is True and gate.name_ref("Devon", "Dev") is False
 
 
+@pytest.mark.parametrize(
+    "quote,role",
+    [
+        ("the star player pitied the reserve player", "star starter"),
+        ("the star player pitied the reserve player", "benchwarmer"),
+        ("the 窃贼 fled", "burglar"),
+        ("the 消防队员 arrived", "firefighter"),
+    ],
+)
+def test_own_compound_containing_other_role_term_counts(quote, role):
+    assert gate.role_ref(quote, role, LEX) is True
+
+
+@pytest.mark.parametrize(
+    "quote,name,role",
+    [
+        ("the paramedic thanked the victim", "Victor", "bystander"),  # near role of bystander
+        ("Victim thanked the paramedic", "Victor", "bystander"),  # capitalised, still a role word
+        ("ran three miles", "Miles", "teacher"),  # lowercase common word
+        ("Grandmother hugged her", "Grant", "teacher"),
+        ("delivered the parcel", "Delia", "teacher"),
+        ("March came", "Marcus", "teacher"),
+        ("Devoted to it", "Devon", "teacher"),  # > 2 edits
+        ("Glorious day", "Gloria", "teacher"),
+        ("Clarify it", "Clara", "teacher"),
+    ],
+)
+def test_common_and_role_words_are_not_names(quote, name, role):
+    assert gate.person_ref(quote, name, role, LEX) is False
+
+
+def test_star_vs_reserve_player_passes_gate():
+    cell = _prose("the star player pitied the reserve player")
+    g = _check("the star player pitied the reserve player", [cell], ("Ava", "star starter"),
+               ("Ben", "benchwarmer"))  # fmt: skip
+    assert g["ok"] is True, g
+
+
 def test_cjk_role_term_needs_listed_form():
     cell = _prose("孩子拥抱了奶奶")
     assert _check("孩子拥抱了奶奶", [cell])["patient_ref"] is True  # 奶奶 is listed

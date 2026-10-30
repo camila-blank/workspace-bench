@@ -52,3 +52,37 @@ def test_terms_hit_own_stimulus_free():
         for r in (it["role_a"], it["role_b"]):
             hits = [t for t in LEX.terms(r) if form_in(it["stimulus"], [t])]
             assert not hits, (it["id"], r, hits)
+
+
+def test_every_own_term_refers_to_its_own_role():
+    """Self-consistency: each listed term of a role names that role through the gate, even when
+    it contains another role's shorter term ("star player" vs "player", 窃贼 vs 贼)."""
+    bad = [
+        (r, t)
+        for r in LEX.roles
+        for t in LEX.terms(r)
+        if not gate.role_ref(f"the {t} did it", r, LEX)
+    ]
+    assert not bad, bad
+
+
+def test_longer_other_role_term_never_names_role():
+    """The other half: a different role's (or near role's) term that contains one of this role's
+    terms as a word never names this role ("security guard" is not "guard")."""
+    bad = []
+    for r in LEX.roles:
+        own = LEX.terms(r)
+        others = {t for s in LEX.roles if s != r for t in LEX.terms(s)}
+        others |= {t for n in LEX.near(r) for t in LEX.terms(n)}
+        for m in others:
+            contains_own = form_in(m, own) and not form_in(m, [x for x in own if len(x) >= len(m)])
+            if contains_own and gate.role_ref(f"the {m} did it", r, LEX):
+                bad.append((r, m))
+    assert not bad, bad
+
+
+def test_no_bank_name_is_a_lexicon_word():
+    names = {n for it in BANK for n in it["names"].values()}
+    for n in names:
+        assert gate.name_ref(f"{n} did it", n, LEX), n
+        assert not form_in(n, [t for r in LEX.roles for t in LEX.terms(r)]), n
