@@ -381,13 +381,13 @@ def test_all_blank_item_fails_rather_than_vanishing(family, tmp_path, monkeypatc
 
 
 def test_judge_calls_keyed_by_judge_prompt_version():
-    """Plan 0035: new judge prompts, new cache key (dm-2026-10-30); the instrument carries
+    """Plan 0035: new judge prompts, new cache key (dm-2026-10-30c); the instrument carries
     +expressed (the any-basis headline)."""
     from wsbench.evals.directed_modulation import judge as dmj
 
     src = __import__("inspect").getsource(dmj)
     assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
-    assert prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-30"
+    assert prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-30c"
     assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+expressed"
 
 
