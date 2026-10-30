@@ -8,15 +8,15 @@ from pathlib import Path
 import pytest
 from summary_fakes import FakeLLM, digest_lines, summary_args
 
-from wsbench import digest, registry
+from wsbench import digest, reads, registry
 from wsbench.banks import load_bank
 from wsbench.evals import directed_modulation as dm_pkg
-from wsbench.evals import directed_modulation_obscure as dmo_pkg
+from wsbench.evals import model_specific_directed_modulation as dmo_pkg
 from wsbench.evals import multi_concept_directed_modulation as mcdm_pkg
 from wsbench.evals.directed_modulation import judge as dm_judge
 from wsbench.evals.directed_modulation import prompts as dm_prompts
-from wsbench.evals.directed_modulation_obscure import judge as dmo_judge
-from wsbench.evals.directed_modulation_obscure import prompts as dmo_prompts
+from wsbench.evals.model_specific_directed_modulation import judge as dmo_judge
+from wsbench.evals.model_specific_directed_modulation import prompts as dmo_prompts
 from wsbench.evals.multi_concept_directed_modulation import prompts as mcdm_prompts
 from wsbench.evals.multi_concept_directed_modulation.options import option_sets
 from wsbench.registry import bank_path
@@ -35,7 +35,7 @@ MCDM_IDS = ["d-plumber", "b-ange-mix-ab", "d-none"]
 
 @pytest.fixture(autouse=True)
 def _dmo_pre_refill_bank(monkeypatch):
-    monkeypatch.setenv("WSB_BANK_FILE_DIRECTED_MODULATION_OBSCURE", str(DMO_FIXTURE))
+    monkeypatch.setenv("WSB_BANK_FILE_MODEL_SPECIFIC_DIRECTED_MODULATION", str(DMO_FIXTURE))
 
 
 def _drop_rows(src: Path, dst: Path, pred) -> Path:
@@ -103,8 +103,9 @@ def test_dm_one_call_per_item_and_gate(tmp_path, monkeypatch):
         "delta": 1.0,
     }
     assert r.config["aggregate"] == "summary" and r.config["kind"] == "prose"
-    assert r.config["prompt_version"] == digest.prompt_version(
-        pv, summary_args(DM_EX, tmp_path, pv)
+    assert r.config["prompt_version"] == reads.stamp(
+        digest.prompt_version(pv, summary_args(DM_EX, tmp_path, pv), "directed_modulation"),
+        "full",
     )
     assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v8")
     # native: the same cell counts
@@ -136,7 +137,7 @@ def test_dm_missing_layer_and_unsummarized(tmp_path, monkeypatch):
     assert all(v["summary_state"] == "unsummarized" and not v["judged"] for v in r.rows)
 
 
-# ---------------------------------------------------------------- directed_modulation_obscure
+# ------------------------------------------------- model_specific_directed_modulation
 
 
 def _keyword_digest(words: list[str]):
@@ -172,8 +173,9 @@ def test_dmo_one_regex_per_item_no_judge(tmp_path, monkeypatch):
     assert "layer_any_hit" not in spice and "per_layer" not in r.extras
     assert r.extras["distractor_rate"] == 0.25 and r.extras["summary"]["n_items_summarized"] == 2
     assert r.config["judge_model"] == digest.DEFAULT_MODEL and r.pinned_instrument
+    # plan 0034 G8: the summary gate joins token lines, stamped +joined (native unchanged)
     assert r.config["aggregate"] == "summary" and r.config["scorer_version"].startswith(
-        pv + "+digest-v4-task-extractive"
+        dmo_prompts.SUMMARY_PROMPT_VERSION + "+digest-v4-task-extractive"
     )
     n = dmo_pkg.SPEC.run(
         summary_args(DMO_EX, tmp_path / "n", pv, items=DMO_IDS, extra={"aggregate": "native"})

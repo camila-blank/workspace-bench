@@ -42,8 +42,7 @@ sys.path.insert(0, str(AGAM / "gw-olens/scripts/ola/ar_ablate"))
 CB_MANIFEST = Path("/tmp/cbviewer/manifest.json")
 CB_URL = "https://safety-sahan-2-camila-blank--wsbench-viewer-web.modal.run"
 SKIP_FAMS = {
-    "hallucination",
-    "agentic_misalignment",
+    "agentic_misalignment",  # pair-scored since plan 0031 (misaligned item + clean twin)
     "jlens_concept_pr",
 }  # not in her viewer either
 HEADLINE_23 = [
@@ -55,7 +54,6 @@ HEADLINE_23 = [
     "poetry",
     "typo",
     "basic_readout_mt",
-    "multihop_mt",
     "multilingual_mt",
     "multilingual_multihop",
     "multilingual_typo",

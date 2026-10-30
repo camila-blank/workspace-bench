@@ -135,8 +135,6 @@ def test_plan_layers_all_is_every_model_layer(monkeypatch):
 
 def test_every_family_reads_grid(real_families):
     for name in readplan.families():
-        if name == "hallucination":  # leaves WorkspaceBench with its in-house layers
-            continue
         want = [*readplan.GRID, 63] if name == "agentic_misalignment" else readplan.GRID
         assert all(s.layers == want for s in readplan.plan(name)), name
 

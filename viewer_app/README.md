@@ -9,7 +9,7 @@ anywhere outside `viewer_app/.cache/`.
 - **Overview** (`/`): one row per *run* (subject model × stage × tag) and one column per family.
   Each cell is the family's `numbers.value` with its n. Hover a cell for the 95% CI, judge,
   completeness and missing or unjudged counts. Colour is the normalized score:
-  `buggy_code` /10, and `1 - rate` for hallucination, where lower is better.
+  `buggy_code` /10. Removed families (`registry.REMOVED_FAMILIES`) are not shown.
   Prompt-only floors are shown in italic rows. You can filter by model, stage, bank, family
   group or family, and switch between raw and normalized values. Smoke runs and judge-audit
   runs are hidden unless you tick the box for them. Click a cell to open that family's items.
@@ -46,7 +46,7 @@ except the Qwen3.5-4B `.adapt.*` tags. Floors use their own model's adapted bank
 | `adapted/<model>/<family>.json`, `report.json`, `gate/<family>.jsonl` (candidates when no frozen bank) | — | per-model banks |
 | `outputs/audit-{4b,9b}/plan/<family>.jsonl` | — | read plans (render, positions, layers) |
 | `adapted/<model>/floors/{readouts,results}/`, `floors.json` | floor | scores, item verdicts, cells, readouts (4B, 9B) |
-| `olens_ckpts/<subject>/wsb/<tag>/summary_opus.json` (+ `.hal_onpolicy`, shown as family `hallucination_onpolicy`) | inverter / distill / rl | **per-family scores only** |
+| `olens_ckpts/<subject>/wsb/<tag>/summary_opus.json` (`.hal_onpolicy` tags are hidden: that family was removed, plan 0040) | inverter / distill / rl | **per-family scores only** |
 | `olens_report/adapt_work/runs/<tag>/summary_opus.json` | 4B inverter / distill / rl, normal + adaptive bank | per-family scores only; adaptive macro from `olens_report/adaptive_scores.json` |
 | `olens_report/readouts/<subj>.{basic_readout,typo_mt}.jsonl` | rl i600 (GLM: inverter) | readouts only, merged into the matching scored tag |
 | `olens_report/adapt_work/smoke/` | smoke | 4B inverter smoke, a few items |

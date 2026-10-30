@@ -252,10 +252,9 @@ def test_freeze_refuses_a_dst_of_the_other_mode(tmp_path, monkeypatch, real_fami
 
 
 def test_native_only_is_exactly(real_families):
-    """NATIVE_ONLY = {jlens_concept_pr} (decision Q2); hallucination stays listed only until it
-    leaves WorkspaceBench (HallucinationBench PR, hb.md W1), and only while it is registered."""
-    leaving = {f for f in digest.LEAVING if f in real_families}
-    assert set(digest.NATIVE_ONLY) == {"jlens_concept_pr"} | leaving
+    """NATIVE_ONLY = {jlens_concept_pr} (decision Q2); hallucination left WorkspaceBench (plan
+    0040), so there is no other exception."""
+    assert set(digest.NATIVE_ONLY) == {"jlens_concept_pr"}
     assert "unverbalized_hint" not in digest.NATIVE_ONLY
 
 

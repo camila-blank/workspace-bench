@@ -4,6 +4,7 @@ item, and the ``opts=judge=mc`` path with one call per (item, unit)."""
 import json
 import re
 
+import pytest
 from summary_fakes import FakeLLM, digest_lines, summary_args
 
 from wsbench import digest, registry
@@ -17,6 +18,14 @@ MH = "mh2-coeur-de-lion-brother-charter-q2"
 SUFFIX = "+digest-v4-task-extractive+sj-v8"
 # plan 0032 §2.2.2: multilingual_mt's digest records each evidence span's language (summ_lang)
 ML_SUFFIX = "+digest-v4-task-extractive-lang+sj-v8"
+
+
+@pytest.fixture(autouse=True)
+def _pin_v1_banks(monkeypatch):
+    """Plan 0033 §6: these tests stay on the frozen v1 banks; the v2 clones live in
+    test_multilingual.py."""
+    for name in ("multilingual_mt", "multilingual_multihop", "multilingual_typo"):
+        monkeypatch.setenv(f"WSB_BANK_FILE_{name.upper()}", f"evals/{name}/items.json")
 
 
 def _write(path, rows):
@@ -85,7 +94,9 @@ def test_token_file_digest_only_and_multiword_reachable_via_joined_line(tmp_path
         ],
     )
     fake = FakeLLM.install(monkeypatch, _no_judge)
-    r = MH2.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[MH]))
+    args = summary_args(path, tmp_path / "o", SCORER_VERSION, items=[MH])
+    args.extra["judge"] = "regex"  # multihop_mt_v2 is MC-scored since plan 0041; regex = opt-in
+    r = MH2.run(args)
     assert fake.n("interp") == 0 and fake.n("digest") == 1  # no per-cell interp-v1 call
     assert r.config["source_kind"] == "tokens"
     row = r.rows[0]
@@ -161,3 +172,82 @@ def test_unsummarized_is_undecided_and_zero_item_digest_fails(tmp_path, monkeypa
     FakeLLM.install(monkeypatch, _no_judge, digest=lambda user: {"items": []})
     r = ML.run(summary_args(path, tmp_path / "o3", SCORER_VERSION, items=[HOUR, OCTO]))
     assert all(x["pass"] is False for x in r.rows) and r.counts["n_empty_cells"] == 2
+
+
+# ---------------------------------------------------------------- plan 0040: the v2 banks
+
+
+def _unpin(monkeypatch):
+    for name in ("multilingual_mt", "multilingual_multihop", "multilingual_typo"):
+        monkeypatch.delenv(f"WSB_BANK_FILE_{name.upper()}", raising=False)
+
+
+V2_SUFFIX = "+v2" + ML_SUFFIX
+
+
+def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypatch):
+    """The v2 clone: the language unit holds names only, the conjunction is still relaxed
+    over the evidence samples, and the stamp carries the v2 bank tag."""
+    _unpin(monkeypatch)
+    _register(ML)
+    path = _write(tmp_path / "r.jsonl", _ml_rows())
+    native = ML.run(
+        summary_args(
+            path, tmp_path / "n", SCORER_VERSION, items=[HOUR, OCTO], extra={"aggregate": "native"}
+        )
+    )
+    fake = FakeLLM.install(monkeypatch, _no_judge)
+    r = ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR, OCTO]))
+    assert fake.n("digest") == 2 and len(fake.calls) == 2
+    rows = {x["id"]: x for x in r.rows}
+    assert {x["id"]: x["pass"] for x in native.rows} == {HOUR: True, OCTO: False}
+    assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is True
+    assert rows[HOUR]["content_hit"] is True
+    assert r.config["prompt_version"] == SCORER_VERSION + V2_SUFFIX
+    assert native.config["prompt_version"] == SCORER_VERSION + "+v2"
+
+
+def _positions_rows(item, layers, texts):
+    return [
+        {"id": item, "layer": layer, "pos": pos, "samples": [text]}
+        for layer in layers
+        for pos, text in enumerate(texts)
+    ]
+
+
+def test_all_positions_reach_the_digest(tmp_path, monkeypatch):
+    _unpin(monkeypatch)
+    _register(ML)
+    path = _write(tmp_path / "r.jsonl", _positions_rows(HOUR, [20, 36], ["a", "b", "c"]))
+    fake = FakeLLM.install(monkeypatch, _no_judge)
+    ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR]))
+    user = next(u for n, _s, u in fake.calls if n == "digest")
+    headers = re.findall(r"^\[L\d+ pos \d+\]$", user, flags=re.M)
+    assert len(headers) == 6 and "[L20 pos 0]" in headers and "[L36 pos 2]" in headers
+
+
+def test_reads_lite_keeps_final_position(tmp_path, monkeypatch):
+    """A mention at position 0 only passes under reads=full and fails under reads=lite (the
+    final prompt token)."""
+    _unpin(monkeypatch)
+    _register(ML)
+    texts = ["hourglass, written in Arabic", "nothing", "nothing again"]
+    path = _write(tmp_path / "r.jsonl", _positions_rows(HOUR, [20], texts))
+    FakeLLM.install(monkeypatch, _no_judge)
+    full = ML.run(summary_args(path, tmp_path / "f", SCORER_VERSION, items=[HOUR]))
+    lite = ML.run(
+        summary_args(path, tmp_path / "l", SCORER_VERSION, items=[HOUR], extra={"reads": "lite"})
+    )
+    assert full.rows[0]["pass"] is True and lite.rows[0]["pass"] is False
+    assert lite.config["prompt_version"].endswith("+reads-lite")
+
+
+def test_layer_subset_feeds_only_those_layers_to_digest(tmp_path, monkeypatch):
+    _unpin(monkeypatch)
+    _register(ML)
+    path = _write(tmp_path / "r.jsonl", _positions_rows(HOUR, [20, 44], ["a", "b"]))
+    fake = FakeLLM.install(monkeypatch, _no_judge)
+    ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR], layers=[44]))
+    user = next(u for n, _s, u in fake.calls if n == "digest")
+    headers = re.findall(r"^\[L(\d+) pos \d+\]$", user, flags=re.M)
+    assert headers and set(headers) == {"44"}

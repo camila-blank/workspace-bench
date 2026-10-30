@@ -93,7 +93,7 @@ def test_runner_stamps_native_only_and_fails_unhooked(tmp_path):
     judge = resolve(JudgeConfig(prompt_version="pv"))
     opts = {"aggregate": "summary"}
     r = runner.judge_family(
-        _spec("hallucination", _r("hallucination", 0.1, None)),
+        _spec("jlens_concept_pr", _r("jlens_concept_pr", 0.1, None)),
         _opts(),
         tmp_path / "x.jsonl",
         tmp_path / "o1",
@@ -101,7 +101,7 @@ def test_runner_stamps_native_only_and_fails_unhooked(tmp_path):
         opts=opts,
     )
     assert r.config["aggregate"] == "native"
-    assert r.extras["summary_mode_note"] == digest.NATIVE_ONLY["hallucination"]
+    assert r.extras["summary_mode_note"] == digest.NATIVE_ONLY["jlens_concept_pr"]
     with pytest.raises(SystemExit) as e:
         runner.judge_family(
             _spec("not_a_hooked_family", _r("x", 0.1, None)),
@@ -113,7 +113,7 @@ def test_runner_stamps_native_only_and_fails_unhooked(tmp_path):
         )
     assert e.value.code == 2
     native = runner.judge_family(
-        _spec("hallucination", _r("hallucination", 0.1, None)),
+        _spec("jlens_concept_pr", _r("jlens_concept_pr", 0.1, None)),
         _opts(),
         tmp_path / "x.jsonl",
         tmp_path / "o3",

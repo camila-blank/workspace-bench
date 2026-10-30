@@ -50,7 +50,7 @@ def test_reasoning_keys_are_route_keyed():
     """Plan 0023: a family's reasoning keys ride their own route only (`anthropic_effort` the
     Anthropic one, every other key OpenRouter's), whatever route the family model is on."""
     or_low = JudgeConfig(prompt_version="v", reasoning={"effort": "low"})  # knowledge_cutoff
-    or_min = JudgeConfig(prompt_version="v", reasoning={"effort": "minimal"})  # hallucination
+    or_min = JudgeConfig(prompt_version="v", reasoning={"effort": "minimal"})
     ant = JudgeConfig(
         model=DEFAULT_JUDGE, reasoning={"anthropic_effort": "default"}
     )  # introspection

@@ -4,7 +4,7 @@
 - **Filtering is not adapting.** `.pmeq` refilled each family with leftover 27B candidates and then
   authored more with the same "long-tail / obscure" prompts. Its "famous" knob was applied only
   after the reuse step.
-  - Yields on Qwen3.5-4B: multihop_mt 3%, multilingual_mt 4%, multilingual_multihop 2%, chain
+  - Yields on Qwen3.5-4B: multihop_mt 3% (family removed 2026-10-30), multilingual_mt 4%, multilingual_multihop 2%, chain
     3.5%, brew 0%, relational 0%.
   - Change the difficulty the brief asks for first.
 - **Ungated families slipped through.**
@@ -12,14 +12,15 @@
   - The single-token multihop bank never gates the bridge.
   - Gate every leg of every family that has one.
 - **Off-policy content.**
-  - The Qwen-sizes hallucination port fed Qwen3.6's token ids to the small models.
+  - The Qwen-sizes port of the removed hallucination family (plan 0040) fed Qwen3.6's token ids
+    to the small models.
   - The Gemma port teacher-forced Qwen's responses.
   - Both are off-policy. Regenerate on the subject.
 - **Gate ≠ read render.** The V4 port gated implicit favourites without the answer stem, which is
   not the render the lens reads. Gate in the render that is read, or in the bank's stated gate
   render.
-- **Wrong thinning rule.** The V4 port thinned hallucination sites with `round(i*(n-1)/7)`; the bank
-  rule is `int(i*len/8)`.
+- **Wrong thinning rule.** The V4 port thinned read sites with `round(i*(n-1)/7)`; the bank
+  rule was `int(i*len/8)` (removed hallucination family, plan 0040). Copy a bank's rule exactly.
 
 ## Grading
 - Don't use OpenRouter stand-ins for the subject. `wsbench capable` is an OpenRouter shortcut with
@@ -37,14 +38,15 @@
 - 0.8B and 2B models often answer in the wrong language, or add prose before the answer.
   - The format is the problem, not the latent.
   - Look at the answer before you step down a tier.
-- Hallucination at T=1 with full vocabulary loops on small models. Record `n_truncated_at_max`.
+- On-policy generation at T=1 with full vocabulary loops on small models. Record
+  `n_truncated_at_max`.
 
 ## Known defects in the frozen banks (don't copy them into adapted banks)
 - moral_rationale:
   - 23 items have `gate_pass=False`;
   - 21 committed items have `look_for_reasons[0]` supporting the side opposite
     `commit_direction`.
-- multihop_mt: 9 items break the leak rule and 3 break bridge/target overlap.
+- multihop_mt (removed 2026-10-30): 9 items broke the leak rule and 3 broke bridge/target overlap.
 - multilingual_multihop: 1 known defect.
 - agentic_misalignment: 3 "misaligned" items have a misalignment rate of 0.125–0.25.
 - `adapt.lint` over the frozen banks flags:
@@ -72,8 +74,8 @@
 - **Grade in parallel.** The gate graded one call at a time: ~3 h for 170 items (now 16 threads).
 - **Own-answer guards must be scoped.** A "None is not a favourite" refusal list containing "a"
   broke moral's A/B answers (149 → 100) until it was limited to basic_readout implicit.
-- **Judge-side and plan-side paths must follow `WSB_BANK_ROOT`.** hallucination capture rows and
-  the jlens reference were hard-coded to the 27B (off-policy reads); both fixed.
+- **Judge-side and plan-side paths must follow `WSB_BANK_ROOT`.** Capture rows (the removed
+  hallucination family) and the jlens reference were hard-coded to the 27B (off-policy reads); both fixed.
 - **The plan speaks subject layers** (report.json `n_layers`; 63 clamps to the last block); banks
   that store layers (buggy, mcdm, arithmetic) are already remapped at freeze.
 - **poetry is read in the render the rhyme was committed in** (`gate_variant`), and
@@ -97,7 +99,7 @@
 - **New gate legs don't apply retroactively:** gate records are append-only and last-wins, so
   originals AND passing new items must be re-gated (`regate=true` on profile and gate).
 - **Non-Qwen tokenizers re-stamp before select** (`live_rows`): OLMo loses 15/100 typo_mt, 5
-  basic_readout_mt, 4 multihop_mt to one-token forms; fill refills them before freeze.
+  basic_readout_mt, 4 multihop_mt (removed 2026-10-30) to one-token forms; fill refills them before freeze.
 - **J-lens for a subject neuronpedia lacks:** `scripts/fit_jlens_modal.py` (official estimator,
   neuronpedia's recipe, H200 chunks, exact merge). Validated on the 4B: per-layer cosine to
   neuronpedia's lens min 0.927, mean 0.986 at n=400. Fitted: 9B (n=400), OLMo-3-7B-Instruct

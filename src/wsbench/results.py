@@ -309,11 +309,21 @@ def markdown_table(
     *,
     floors: Mapping[str, Mapping[str, str]] | None = None,
     summary_floors: Mapping[str, Mapping[str, SummaryCell]] | None = None,
+    removed: Mapping[str, str] | None = None,
 ) -> str:
     """One row per family; ``floors`` (column title -> family -> cell text) adds one column per
     measured floor, ``—`` where a family has none. A summary row reads its cells from
     ``summary_floors`` (same column titles; each cell carries the frozen entry it rests on, see
-    :func:`summary_floor_applies`) instead; without it a summary row shows ``—`` (plan 0024)."""
+    :func:`summary_floor_applies`) instead; without it a summary row shows ``—`` (plan 0024).
+
+    A family deleted from the bench (``removed`` defaults to ``registry.REMOVED_FAMILIES``) gets
+    no score row: a stale results.json in an old run dir would otherwise read as a live result
+    with no floor (plan 0033). It is still listed under "Not in macro:" when ``macro_row`` is
+    given."""
+    if removed is None:
+        from wsbench import registry  # lazy: registry imports this module
+
+        removed = registry.REMOVED_FAMILIES
     cols = list(floors or {})
     extra = "".join(f" {c} |" for c in cols)
     lines = [
@@ -322,6 +332,8 @@ def markdown_table(
     ]
     summary_rows = override_rows = False
     for r in results:
+        if r.family in removed:
+            continue
         chance = _fmt(r.chance) + (f" ({r.chance_label})" if r.chance_label else "")
         summ = r.config.get("aggregate") == "summary"
         summary_rows = summary_rows or summ

@@ -184,5 +184,5 @@ def test_po_entries_refusal_share():
 
 
 def test_excluded_is_only_jlens_concept_pr():
-    assert set(poo.EXCLUDED) - {"hallucination"} == {"jlens_concept_pr"}
-    assert set(po.EXCLUDED) - {"hallucination"} == {"jlens_concept_pr"}
+    assert set(poo.EXCLUDED) == {"jlens_concept_pr"}
+    assert set(po.EXCLUDED) == {"jlens_concept_pr"}

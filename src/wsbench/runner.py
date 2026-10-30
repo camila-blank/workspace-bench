@@ -366,7 +366,7 @@ def run_manifest(
             if "n_calls" in r.extras:
                 d["n_calls"] = r.extras["n_calls"]
         families[o.family] = d
-    return {
+    manifest: dict = {
         "started": _iso(started),
         "finished": _iso(finished),
         "families": families,
@@ -375,3 +375,6 @@ def run_manifest(
         "aggregate": parse_opts(list(getattr(args, "opt", None) or []))["aggregate"],
         "readouts_root": str(readouts_root),
     }
+    if getattr(args, "hb_method", ""):  # plan 0040: `wsbench report` prints its HB index
+        manifest["hb_method"] = args.hb_method
+    return manifest
