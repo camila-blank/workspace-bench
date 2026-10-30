@@ -305,17 +305,17 @@ the model reads a chat conversation up to the end of the last user turn
 `SUMMARY_NOTE`:
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 `SUMMARY_NOTE_ABSTRACTIVE`:
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position, written by a note-taker who did not see the passage, most prominent first, then content seen in only one or a few samples. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
+The readout below is a digest of the readouts across every read layer and position, written by a note-taker who did not see the passage, most prominent first, then content seen in only one or a few samples. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
 ```
 
 `SUMMARY_NOTE_TOKENS`:
 
 ```text
-A line whose items are separated by " | " is one ranked list of the lens's top vocabulary tokens, best first, and each token in it is its own sample: a quote from such a line must be exactly one token. A token ranked first among the candidates of its type in such a list is singled out, even if unrelated tokens rank above it; a token ranked below another candidate of its type, in a list made mostly of such candidates, is not.
+A line whose items are separated by " | " is one ranked list of the top vocabulary tokens read from ONE activation, best first. Several tokens of the same line may jointly express one meaning, and a quote from such a line is one token or several tokens of that same line joined by " | ". Tokens of adjacent positions at the same layer may be joined only to spell one word split across them; such a quote is that word. Tokens on different lines never combine otherwise, and a relation (who does what to whom) must be stated within one sample (for a free-text sample, within one of its "- " bullets; in a free-text sample, bullets are separated by ⁞). A line that holds two or more of the options singles out none of those options, whatever their rank; an option that is the only option on its line is singled out by that line, even if the line holds other words of the same kind.
 ```
