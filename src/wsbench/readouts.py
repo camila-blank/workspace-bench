@@ -72,6 +72,7 @@ class LoadReport:
     sampling_source: str = ""  # declared | override | default
     reader: str = ""
     layers_requested: list[int] | None = None
+    lite_rule: str = ""  # reads=lite: the frozen lite rule(s) the selection applied (json)
     n_samples_trimmed: int = 0
     n_packed_ambiguous: int = 0
     n_cells_short: int = 0

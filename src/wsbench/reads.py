@@ -189,6 +189,18 @@ def check_full(
     return bad
 
 
+def lite_rule_of(specs: Mapping[str, ReadSpec], ids: Collection[str] | None = None) -> str:
+    """The lite rule(s) of the plan rows (of ``ids``), as one canonical JSON string: what a
+    ``reads=lite`` result stamps as ``config.lite_rule`` (late fix 2026-10-30: the frozen lite
+    rule is part of the lite instrument, and ``scripts/audit_run.py`` checks it)."""
+    rules = {
+        json.dumps({"positions": sp.lite_positions, "layers": sp.lite_layers}, sort_keys=True)
+        for iid, sp in specs.items()
+        if ids is None or iid in ids
+    }
+    return json.dumps([json.loads(r) for r in sorted(rules)], sort_keys=True)
+
+
 def plan_layers_missing(
     cells: Sequence[Cell], specs: Mapping[str, ReadSpec], mode: str
 ) -> dict[str, list[int]]:
@@ -290,6 +302,8 @@ def load(
     except (SystemExit, KeyError, OSError, ValueError):
         sp = {}
     enforce = meta is not None
+    if m == "lite":
+        rep.lite_rule = lite_rule_of(sp, {c.id for c in cells})
     cells = select(cells, sp, m, reader=reader)
     partial: set[str] = set()
     if m == "full":
@@ -371,6 +385,7 @@ def config_stamps(args: JudgeArgs) -> dict[str, Any]:
         "reader": rep.reader,
         "reads_checked": rep.reads_checked,
         "layers_judged": rep.layers_requested if rep.layers_requested is not None else rep.layers,
+        **({"lite_rule": rep.lite_rule} if m == "lite" else {}),
     }
 
 

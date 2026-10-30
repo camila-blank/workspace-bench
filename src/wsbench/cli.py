@@ -8,6 +8,7 @@ import sys
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pydra
 
@@ -441,6 +442,7 @@ class ConvertGenDir(Command):
         self.out = pydra.REQUIRED
         self.kind = pydra.REQUIRED
         self.layers = None
+        _sidecar_keys(self)
 
     def finalize(self) -> None:
         if self.kind not in ("prose", "tokens"):
@@ -448,9 +450,11 @@ class ConvertGenDir(Command):
         self.gen_dir = _path(self.gen_dir)
         self.out = _path(self.out)
         self.layers = _ints(self.layers)
+        self.sampling = _sampling_arg(self.sampling)
 
     def execute(self) -> int:
         rep = convert_gen_dir(self.gen_dir, self.out, kind=self.kind, layers=self.layers)
+        _maybe_sidecar(self, rep)
         print(
             f"wrote {self.out}: kind={rep.kind} rows={rep.n_rows} layers={rep.layers} "
             f"empty={rep.n_empty} skipped={rep.skipped}"
@@ -465,18 +469,49 @@ class ConvertReadJson(Command):
         super().__init__()
         self.read = pydra.REQUIRED
         self.out = pydra.REQUIRED
+        _sidecar_keys(self)
 
     def finalize(self) -> None:
         self.read = _path(self.read)
         self.out = _path(self.out)
+        self.sampling = _sampling_arg(self.sampling)
 
     def execute(self) -> int:
         rep = convert_read_json(self.read, self.out)
+        _maybe_sidecar(self, rep)
         print(
             f"wrote {self.out}: kind={rep.kind} rows={rep.n_rows} layers={rep.layers} "
             f"empty={rep.n_empty} skipped={rep.skipped}"
         )
         return 0
+
+
+def _sidecar_keys(cmd: Command) -> None:
+    """The producer-declaration keys of the converters (plan 0032 §2.9.2): ``sampling=`` writes
+    the sidecar ``<out>.meta.json``, with ``arm=``, ``reader=`` (default the arm), ``reads=`` and
+    ``plan_sha=``."""
+    cmd.sampling = ""
+    cmd.arm = ""
+    cmd.reader = ""
+    cmd.reads = "full"
+    cmd.plan_sha = ""
+
+
+def _maybe_sidecar(cmd: Any, rep: Any) -> None:
+    if not cmd.sampling:
+        return
+    from wsbench.readouts import write_sidecar
+
+    meta: dict[str, Any] = {
+        "reads": _reads_arg(cmd.reads),
+        "sampling": cmd.sampling,
+        "reader": str(cmd.reader or cmd.arm or ""),
+        "arm": str(cmd.arm or ""),
+        "layers": rep.layers,
+    }
+    if cmd.plan_sha:
+        meta["plan_sha"] = str(cmd.plan_sha)
+    print(f"wrote {write_sidecar(cmd.out, **meta)}")
 
 
 def floor_columns() -> dict[str, dict[str, str]]:
