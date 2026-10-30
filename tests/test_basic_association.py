@@ -1,4 +1,7 @@
-"""The association family end to end, offline: bank, judge with a fake client, cache, rules."""
+"""The shared bank judge end to end, offline, on the association v1 bank: bank, judge with a fake
+client, cache, rules. Plan 0039 moved the registered association family to its own MC judge on
+bank v2 (tests/test_association_v2.py); these tests keep exercising the bank judge through a
+test-only ``bank_family("association", bank=items.json)`` registration and the v1 toy file."""
 
 import json
 from pathlib import Path
@@ -16,7 +19,7 @@ from wsbench.judge_config import DEFAULT_JUDGE
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
-EXAMPLE = REPO / "examples/readouts/association.jsonl"
+EXAMPLE = REPO / "tests/fixtures/association_v1_toy.jsonl"  # the v1 toy (plain final token)
 
 
 def _reply(expressed: bool, target: str = "", quote: str = "", cost: float = 0.001) -> Any:
@@ -69,10 +72,12 @@ def family(monkeypatch):
 
     monkeypatch.setattr(llm, "_pace", no_pace)
     monkeypatch.setattr(llm, "preflight", lambda model, reasoning: None)
-    from wsbench.evals.association import SPEC
+    from wsbench.basic.family import bank_family
 
-    registry.FAMILIES.setdefault(SPEC.name, SPEC)
-    return SPEC
+    # plan 0039: the bank judge on the frozen v1 bank, registered for this test only
+    spec = bank_family("association", "Association", bank=Path("evals/association/items.json"))
+    monkeypatch.setitem(registry.FAMILIES, spec.name, spec)
+    return spec
 
 
 def _install(monkeypatch, fake: FakeJudge) -> FakeJudge:
@@ -105,14 +110,20 @@ def test_bank_targets_and_labels(tmp_path):
         load_bank(clash)
 
 
-def test_registered_spec(family):
-    assert family.group == "basic" and family.metric == "pass_rate"
-    assert family.judge.model == DEFAULT_JUDGE
-    assert family.judge.prompt_version == PROMPT_VERSION and family.calls_per_arm == "≈ 1.1k"
+def test_registered_spec(real_families):
+    # plan 0039: the registered family is the MC judge on bank v2 (its own stamp and calls)
+    from wsbench.evals.association import SPEC
+    from wsbench.evals.association.prompts import PROMPT_VERSION as ASSOC_PV
+
+    assert SPEC.group == "basic" and SPEC.metric == "pass_rate"
+    assert SPEC.judge.model == DEFAULT_JUDGE
+    assert SPEC.judge.prompt_version == ASSOC_PV == "assoc-mc-2026-10-30"
+    assert SPEC.calls_per_arm == "≈ 200" and str(SPEC.bank).endswith("items_v2.json")
 
 
 def test_readme_carries_the_verbatim_prompt():
-    readme = (REPO / "evals/association/README.md").read_text(encoding="utf-8")
+    # the bank judge's README of record moves to medical_diagnosis (plan 0039 §6)
+    readme = (REPO / "evals/medical_diagnosis/README.md").read_text(encoding="utf-8")
     assert SYSTEM in readme and PROMPT_VERSION in readme
 
 

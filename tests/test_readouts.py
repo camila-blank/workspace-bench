@@ -340,7 +340,7 @@ def test_sidecar_meta_sets_sampling(tmp_path):
         [{"id": "x", "layer": 20, "pos": 1, "samples": ["- a\n- b\n- c\n- d"]}],
     )
     write_sidecar(path, sampling="bullet4", reader="rl-onchat-x4", arm="rl-onchat-x4")
-    cells, rep = reads.load(_args_for(path, tmp_path), "association")
+    cells, rep = reads.load(_args_for(path, tmp_path), "jlens_concept_pr")
     assert rep.sampling == "bullet4" and rep.sampling_source == "declared"
     assert cells[0].samples == ("a", "b", "c", "d")
     assert reads.config_stamps(_args_for(path, tmp_path)) == {
@@ -358,7 +358,7 @@ def test_no_sidecar_is_default_never_bullet4(tmp_path):
         tmp_path / "r.jsonl",
         [{"id": "x", "layer": 20, "pos": 1, "samples": ["- a\n- b\n- c\n- d"]}],
     )
-    cells, rep = reads.load(_args_for(path, tmp_path), "association")
+    cells, rep = reads.load(_args_for(path, tmp_path), "jlens_concept_pr")
     assert rep.sampling == "prose1" and rep.sampling_source == "default"
     assert cells[0].samples == ("- a\n- b\n- c\n- d",)  # never split by shape
 
@@ -372,7 +372,7 @@ def test_cli_sampling_overrides_sidecar(tmp_path):
         tmp_path / "r.jsonl", [{"id": "x", "layer": 20, "pos": 1, "samples": ["one", "two"]}]
     )
     write_sidecar(path, sampling="bullet4")
-    cells, rep = reads.load(_args_for(path, tmp_path, sampling="prose1"), "association")
+    cells, rep = reads.load(_args_for(path, tmp_path, sampling="prose1"), "jlens_concept_pr")
     assert rep.sampling_source == "override" and cells[0].samples == ("one",)
 
 

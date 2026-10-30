@@ -181,3 +181,26 @@ def test_offsets_from_end_reports_each_negative_offset():
     assert readplan.resolve({"kind": "offsets_from_end", "ks": [60, 1]}, toks) == [
         -1
     ]  # out of range dropped
+
+
+def test_association_reads_summarize_suffix():
+    """Plan 0039 §C2: association reads the conjunctive / role-bound render and 19 sites."""
+    plan = readplan.plan("association")
+    assert len(plan) == 93
+    for s in plan:
+        assert s.render == "chat_summarize" and s.suffix == readplan.SUMMARIZE_SUFFIX
+        assert s.positions == {"kind": "suffix_text_then_tail", "text": "Summarize the "
+                               "preceding story in one sentence."}  # fmt: skip
+        assert s.layers == readplan.GRID and s.text
+    # the real Qwen tail after the suffix: 10 suffix tokens + 9 chat-tail tokens = 19 sites
+    toks = ["Os", "Ġtambores", ".", "ĊĊ", "Sum", "mar", "ize", "Ġthe", "Ġpreceding", "Ġstory",
+            "Ġin", "Ġone", "Ġsentence", ".", "<|im_end|>", "Ċ", "<|im_start|>", "assistant", "Ċ",
+            "<think>", "ĊĊ", "</think>", "ĊĊ"]  # fmt: skip
+    got = readplan.resolve(plan[0].positions, toks)
+    assert got == list(range(4, 23)) and len(got) == 19
+
+
+def test_association_lite_rule():
+    for s in readplan.plan("association"):
+        assert s.lite_positions == readplan.frozen_lite_rule("association")
+        assert s.lite_positions == {"kind": "final_token"} and s.lite_layers is None

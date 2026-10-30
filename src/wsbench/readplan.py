@@ -457,7 +457,6 @@ def plan(family: str, *, layers: LayersArg = None, reads: str = "full") -> list[
 def _plan(family: str) -> list[ReadSpec]:
     """The read plan for one family, one ReadSpec per bank item."""
     if family in (
-        "association",
         "basic_readout",
         "multihop",
         "multilingual",
@@ -623,7 +622,9 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ]
-    if family in ("conjunctive_association", "role_bound_association"):
+    if family in ("association", "conjunctive_association", "role_bound_association"):
+        # plan 0039 §C2: association reads the conjunctive / role-bound sites exactly (its bank
+        # v2 scene is `prompt`; the siblings' is `stimulus`)
         _h, items = _bank(family)
         return [
             ReadSpec(
@@ -632,7 +633,7 @@ def _plan(family: str) -> list[ReadSpec]:
                 "chat_summarize",
                 {"kind": "suffix_text_then_tail", "text": SUMMARIZE_SUFFIX.strip()},
                 GRID,
-                text=it["stimulus"],
+                text=it["prompt"] if family == "association" else it["stimulus"],
                 suffix=SUMMARIZE_SUFFIX,
                 note="the 19 suffix and chat-tail tokens; story positions are never "
                 "read (docs/read_sites.md)",

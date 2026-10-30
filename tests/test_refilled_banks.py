@@ -114,11 +114,17 @@ def test_introspection_bank_unchanged_by_the_refill():
     assert sum(1 for it in b["items"] if it.get("headline")) == N0["introspection"]
 
 
+# families whose bank / plan a family PR changed; their entry is stale (refused by subset_entry)
+# until the run phase re-gates them (gpu.md R8 / G13)
+REGATE_PENDING = {"association": "plan 0039: bank v2 (93 items, MC) + summarize-suffix render"}
+
+
 def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
     stale = [
         f
         for f, e in frozen.items()
         if not f.startswith("_")
+        and f not in REGATE_PENDING
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
     ]
