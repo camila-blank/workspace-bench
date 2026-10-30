@@ -59,7 +59,7 @@ The readout describes a relation of the form "X's Y". What is {role}?
 
 ### `BUNDLE`
 
-The readout handed to the judge (prose) or to the summarizer (tokens): `{token!r}` = the Python repr of the row's `token` (`"'s"`), or `p<pos>` when the row carries no token; `{txt}` = the non-empty samples joined by `" | "` (tokens: `render_bag`).
+The readout handed to the judge (prose or tokens): `{token!r}` = the Python repr of the row's `token` (`"'s"`), or `p<pos>` when the row carries no token; `{txt}` = the non-empty samples joined by `" | "` (tokens: `render_bag`).
 
 ```text
 [position {token!r}] {txt}
@@ -122,15 +122,16 @@ pass}`. `extras` = `per_layer_pass {"L20": {pass, judged}, …}`, `pair_consiste
 
 ## Token (J-lens) readouts
 
-A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is the `BUNDLE` template above with `{txt} = render_bag(tokens, scores)` — the `[position …]` prefix IS part of the summarizer input, as in the source (L269). Deliberate deviation: the source sent that bundle with NO `TOKEN READOUTS:` prefix, whereas the shared summarizer always adds it. The judge then sees the interpretation
-text in place of the readout. A cell whose summary fails is skipped (counted in
-`n_unjudged_cells`); an empty string is never judged.
+A `tokens` readouts file is judged on its raw tokens: plan 0032 §2.3 deleted the per-cell
+J-lens interpretation step (`interp-v1-decoded`, `summ:` cache keys). Natively
+(`opts=aggregate=native`) the judge sees the `BUNDLE` template above with
+`{txt} = render_bag(tokens, scores)` (the decoded tokens best first, joined by `" | "`, no scores
+shown) in place of the readout; an empty bag is never judged. Under summary mode (the default since plan 0024) the token lens goes through the same digest as every other method (`docs/summarizer.md` § Item digest).
 
 **Legacy note.** The source script carried its own copy of the interpretation prompt
-(`INTERP_SYSTEM` L88-92, identical to the shared prompt);
-this repo uses the one shared prompt. The original is quoted here for provenance only — it is
-not what this family sends:
+(`INTERP_SYSTEM` L88-92, identical to the deleted shared summarizer's prompt);
+this repo runs no interpretation prompt at all (plan 0032 §2.3). The original is quoted here for
+provenance only — it is not what this family sends:
 
 ```text
 You are shown the top-10 token readouts from an interpretability lens at oneposition inside a language model that was reading a passage you cannot see. Tokens may includenoise, fragments, other languages (translate them), or byte artifacts. In one or two sentences,state what these outputs are collectively trying to say — the situation or mental content theypoint to. Commit to the most specific reading the tokens support; do not just say they are noisy.

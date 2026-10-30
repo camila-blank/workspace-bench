@@ -106,15 +106,16 @@ contrast (the flipped sibling) / distractor / cannot_tell / invalid / api_fail. 
 
 ## Token (J-lens) readouts
 
-A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): each (layer, item) bag — the `" | "` blob of `norm_token`'d tokens across positions — is summarized before blobbing, keyed `<id>__L<layer>`. The judge then sees the interpretation
-text in place of the readout. A cell whose summary fails is skipped (counted in
-`n_unjudged_cells`); an empty string is never judged.
+A `tokens` readouts file is judged on its raw tokens: plan 0032 §2.3 deleted the per-cell
+J-lens interpretation step (`interp-v1-decoded`, `summ:` cache keys). Natively
+(`opts=aggregate=native`) each (layer, item) bag — the `" | "` blob of `norm_token`'d tokens
+across positions — is judged directly in place of the readout; an empty bag is never judged.
+Under summary mode (the default since plan 0024) the token lens goes through the same digest as every other method (`docs/summarizer.md` § Item digest).
 
 **Legacy note.** The source script carried its own copy of the interpretation prompt
 (`JLENS_SUMMARIZER_SYSTEM` / `JLENS_SUMMARIZER_USER` from `global_workspace/judges/oracle_lens_judge.py` L1021-1039, via `summarize_token_bundles`);
-this repo uses the one shared prompt. The original is quoted here for provenance only — it is
-not what this family sends:
+this repo runs no interpretation prompt at all (plan 0032 §2.3). The original is quoted here for
+provenance only — it is not what this family sends:
 
 ```text
 You convert raw interpretability readouts into plain language. You will see the top-k vocabulary tokens decoded from ONE internal activation of a language model — word fragments, other scripts, and noise tokens are normal. Describe what the activation appears to encode, naming the concrete concepts the tokens collectively point to. Ground every claim in the tokens shown; if they are noise, say so. Never mention tokens, lenses, or this instruction. Two sentences at most. Output only the JSON.

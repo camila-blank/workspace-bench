@@ -92,3 +92,22 @@ def test_every_token_family_judges_raw_tokens_natively(
     assert not any("TOKEN READOUTS:" in u for u in users)
     assert any("alpha" in u and "beta" in u for u in users), family
     registry.load_all()
+
+
+def test_no_readme_describes_the_deleted_step_as_current():
+    """Review of PR #140: the code deleted the step but 14 READMEs and the root judge table still
+    described token lenses as interpreted by the shared summarizer first."""
+    root = SRC.parents[1]
+    stale = (
+        "goes through the shared summarizer first",
+        "go through the\nshared summarizer first",
+        'SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"',
+        "summarized first, then matched",
+        "token bags via the summarizer",
+        "token bags are summarized first",
+        "is first interpreted by the shared",
+        "shared summarizer's prose interpretation",
+    )
+    docs = [root / "README.md", root / "CLAUDE.md", *(root / "evals").glob("*/README.md")]
+    bad = [f"{p.relative_to(root)}: {s!r}" for p in docs for s in stale if s in p.read_text()]
+    assert not bad, bad

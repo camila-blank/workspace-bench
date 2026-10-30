@@ -537,6 +537,7 @@ class Line:
     pos: int | None = None
     language: str = ""  # summ_lang: the summarizer's label, shown to the judge, never gated
     bullet: int | None = None
+    scores: tuple[float, ...] | None = None  # token lines: the cell's scores, aligned to pieces
 
 
 @dataclass(frozen=True)
@@ -580,8 +581,15 @@ def _group(cell: Cell, decode: bool = True) -> _Group:
     header = f"[L{cell.layer} pos {cell.pos}]"
     # ``decode`` is inert (summ_decode=false is retired); kept so Settings fingerprints still hit
     if cell.tokens is not None:  # decoded to text by the loader (wsbench.bpe); not again here
-        toks = tuple(t for t in (_one_line(t) for t in cell.tokens) if t)
-        lines = (Line(TOKEN_SEP.join(toks), toks, header, cell.layer, cell.pos),) if toks else ()
+        sc_in = cell.scores if cell.scores and len(cell.scores) == len(cell.tokens) else None
+        kept = [(i, _one_line(t)) for i, t in enumerate(cell.tokens) if _one_line(t)]
+        toks = tuple(t for _i, t in kept)
+        sc = None if sc_in is None else tuple(float(sc_in[i]) for i, _t in kept)
+        lines = (
+            (Line(TOKEN_SEP.join(toks), toks, header, cell.layer, cell.pos, scores=sc),)
+            if toks
+            else ()
+        )
         return _Group(header, cell.layer, lines)
     samples = (
         Line(sample_text(s), None, header, cell.layer, cell.pos)
@@ -750,19 +758,39 @@ def evidence_line(span: str, lines: Sequence[Line], where: str = "") -> Line | N
 # ---------------------------------------------------------------- the one quote verifier
 
 _MD = re.compile(r"\*\*|__|[*_`]")
-_SCORE = re.compile(r"\s*\(-?\d+(?:\.\d+)?\)")
+_SCORE = re.compile(r"^(.*\S)\s*\((-?\d+(?:\.(\d+))?)\)$")
 
 
 @functools.lru_cache(maxsize=1 << 16)
 def fold_quote(s: str) -> str:
     """The normal form both sides of a quote check use: ``mc.fold`` (NFKD, casefold, curly
-    quotes), markdown emphasis / code marks stripped, score annotations stripped
-    (``九 (15.19)`` -> ``九``), the bullet mark ``⁞`` as a space, whitespace collapsed."""
+    quotes), markdown emphasis / code marks stripped, the bullet mark ``⁞`` as a space,
+    whitespace collapsed. Parenthesised numbers are KEPT: a score annotation is accepted only
+    by :func:`quote_ok`'s token branch, and only when it is that token's real score."""
     t = _mc.fold(s)
     t = _MD.sub("", t)
-    t = _SCORE.sub("", t)
     t = t.replace(_MARK, " ")
     return " ".join(t.split())
+
+
+def _token_part_ok(part: str, ln: Line) -> bool:
+    """One " | "-part of a token quote against one token line: a whole token, or a whole token
+    followed by its OWN score annotation (``九 (15.19)``: the line carries scores and the token's
+    score, rounded to the quoted precision, equals the number). Never a made-up number."""
+    fp = fold_quote(part)
+    pieces = ln.pieces or ()
+    if not fp:
+        return False
+    if any(fold_quote(t) == fp for t in pieces):
+        return True
+    m = _SCORE.match(fp)
+    if m is None or ln.scores is None or len(ln.scores) != len(pieces):
+        return False
+    base, num, dec = m.group(1), float(m.group(2)), m.group(3) or ""
+    return any(
+        fold_quote(t) == base and round(sc, len(dec)) == num
+        for t, sc in zip(pieces, ln.scores, strict=True)
+    )
 
 
 def _nospace(s: str) -> str:
@@ -805,9 +833,10 @@ def split_word(quote: str, lines: Sequence[Line], max_parts: int = 4) -> list[Li
 def quote_ok(quote: str, lines: Sequence[Line]) -> bool:
     """THE quote verifier (plan 0032 §2.7.4): ``lines`` = ``col.evidence[item]`` in summary
     mode or :func:`native_lines` in native mode. A prose quote lies inside ONE sample (folded
-    substring); a token quote is one token, or several tokens of ONE list joined by " | ", or one
-    word spelled by consecutive positions at one layer (:func:`split_word`). An empty quote never
-    verifies. Families may add conditions on top, never replace it."""
+    substring, parenthesised numbers kept); a token quote is one token, or several tokens of ONE
+    list joined by " | " (each optionally with its own real score, :func:`_token_part_ok`), or
+    one word spelled by consecutive positions at one layer (:func:`split_word`). An empty quote
+    never verifies. Families may add conditions on top, never replace it."""
     fq = fold_quote(quote)
     if not fq:
         return False
@@ -816,9 +845,7 @@ def quote_ok(quote: str, lines: Sequence[Line]) -> bool:
             if fq in fold_quote(ln.text):
                 return True
             continue
-        toks = {fold_quote(t) for t in ln.pieces}
-        parts = [fold_quote(p) for p in quote.split("|")]
-        if all(parts) and set(parts) <= toks:
+        if all(_token_part_ok(p, ln) for p in quote.split("|")):
             return True
     return split_word(quote, lines) is not None
 

@@ -76,7 +76,7 @@ The model was answering: "{question}"
 
 ### `USER`
 
-User message; `{readout}` = the cell's readout (`join_samples`, or the summarizer's interpretation for token readouts), `{q}` = the rendered question.
+User message; `{readout}` = the cell's readout (`join_samples`, or the rendered token bag, `render_bag`, for token readouts), `{q}` = the rendered question.
 
 ```text
 READOUT:
@@ -151,15 +151,16 @@ option; share read as the opposite side at any cell, and per call).
 
 ## Token (J-lens) readouts
 
-A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is `render_bag(tokens, scores)` for that row (`tok (score)` best first, or `" | "`-joined tokens without scores). The judge then sees the interpretation
-text in place of the readout. A cell whose summary fails is skipped (counted in
-`n_unjudged_cells`); an empty string is never judged.
+A `tokens` readouts file is judged on its raw tokens: plan 0032 §2.3 deleted the per-cell
+J-lens interpretation step (`interp-v1-decoded`, `summ:` cache keys). Natively
+(`opts=aggregate=native`) the judge sees `render_bag(tokens, scores)` for that row (the decoded
+tokens best first, joined by `" | "`, no scores shown) in place of the readout; an empty bag is
+never judged. Under summary mode (the default since plan 0024) the token lens goes through the same digest as every other method (`docs/summarizer.md` § Item digest).
 
 **Legacy note.** The source script carried its own copy of the interpretation prompt
-(`INTERP_SYSTEM` L61-65, with "top-k" where the shared prompt says "top-10");
-this repo uses the one shared prompt. The original is quoted here for provenance only — it is
-not what this family sends:
+(`INTERP_SYSTEM` L61-65, with "top-k" where the deleted shared summarizer said "top-10");
+this repo runs no interpretation prompt at all (plan 0032 §2.3). The original is quoted here for
+provenance only — it is not what this family sends:
 
 ```text
 You are shown the top-k token readouts from an interpretability lens at oneposition inside a language model that was reading a passage you cannot see. Tokens may includenoise, fragments, other languages (translate them), or byte artifacts. In one or two sentences,state what these outputs are collectively trying to say — the situation or mental content theypoint to. Commit to the most specific reading the tokens support; do not just say they are noisy.
@@ -189,8 +190,8 @@ The default since plan 0024; `opts=aggregate=native` opts out to the any-cell ru
 selected cells (the last 5 positions at every read layer — the read plan is not widened) go to ONE
 passive digest call (`docs/summarizer.md` § Item digest). A committed item gets ONE MC call on that
 digest; a deliberative item gets one call per side, both on the same digest, and passes only if both
-sides pick the gold (both sides in one summary, not each side at any cell). Token files skip the
-per-cell interp-v1 summarizer. `any_of_grid_floor` is omitted (there is no grid). The prompt version
+sides pick the gold (both sides in one summary, not each side at any cell). Token files are
+digested like every other method (no per-cell interpretation step). `any_of_grid_floor` is omitted (there is no grid). The prompt version
 is stamped `ec-v3+digest-v3-<variant>-<render>+sj-v7` (`ec-v3+contrast-off+digest-v3-…` under
 `opts=contrast=off`).
 

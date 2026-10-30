@@ -458,7 +458,11 @@ def test_adjacent_positions_spell_one_word_only():
 
 
 def test_quote_ok_strips_scores_and_markdown():
-    assert digest.quote_ok("九 (15.19) | nine (14.10)", [_tl(20, 1, "九", "nine", "x")])
+    scored = digest.native_lines(
+        [Cell("q", 20, 1, None, ("九", "nine", "x"), (15.19, 14.1, 3.0), None)]
+    )
+    assert digest.quote_ok("九 (15.19) | nine (14.10)", scored)
+    assert digest.quote_ok("九 | nine", scored)
     assert digest.quote_ok("**Khachaturian**", [_pl("composer Khachaturian wrote it")])
     assert not digest.quote_ok("  **  ", [_pl("anything")])
 
@@ -647,3 +651,16 @@ def test_truncated_item_is_incomplete(tmp_path):
     )  # fmt: skip
     finalize_reads(_args(tmp_path), r)
     assert r.complete is False and col.extras()["summary_complete"] is False
+
+
+def test_quote_ok_rejects_made_up_parenthesised_numbers():
+    """Review of PR #140: a number the readout never contains must not verify by riding in a
+    "(n)" annotation, on prose lines or on token lines."""
+    assert not digest.quote_ok("final number (6)", [_pl("the final number is unclear")])
+    assert not digest.quote_ok("Tambora (1815)", [_pl("Tambora erupted")])
+    assert digest.quote_ok("Tambora (1815)", [_pl("Tambora (1815) erupted")])
+    assert not digest.quote_ok("nine (7)", [_tl(20, 1, "nine", "eight")])  # no scores on line
+    scored = digest.native_lines([Cell("q", 20, 1, None, ("nine", "eight"), (14.1, 9.0), None)])
+    assert not digest.quote_ok("nine (7)", scored)  # not nine's score
+    assert not digest.quote_ok("nine (9.00)", scored)  # eight's score, not nine's
+    assert digest.quote_ok("nine (14.10)", scored) and digest.quote_ok("nine (14.1)", scored)
