@@ -1,4 +1,4 @@
-"""Draft ``evals/role_bound_association/roles_v1.json`` with Opus 5.5 (role_bound plan 0041 C2.1).
+"""Draft ``evals/role_bound_association/roles_v1.json`` with Opus 5.5 (role_bound plan 0042 C2.1).
 
 One call: every bank role, with the gold sentences and blocklisted role words of the items that
 use it, goes to Opus, which writes ``{role: {"terms": [...], "near": [...]}}``. The draft is then

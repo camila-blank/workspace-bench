@@ -1,4 +1,4 @@
-"""role_bound_association's single-statement gate (plan 0041 C1.4, C2.3): the shared quote
+"""role_bound_association's single-statement gate (plan 0042 C1.4, C2.3): the shared quote
 verifier and statement splitter, plus the family's agent / patient reference check."""
 
 import pytest

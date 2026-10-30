@@ -114,7 +114,7 @@ def frozen_lite_rule(family: str) -> dict[str, Any]:
 
 
 def _adapted_offset(rule: dict[str, Any], header: dict[str, Any]) -> bool:
-    """role_bound plan 0041 C3.3: an ``offset_from_end`` lite rule counts positions of the Qwen
+    """role_bound plan 0042 C3.3: an ``offset_from_end`` lite rule counts positions of the Qwen
     chat tail, so an adapted bank (``$WSB_BANK_ROOT``) reads ``final_token`` instead unless its
     header's ``readout`` block names a ``lite`` source key."""
     if not os.environ.get(BANK_ROOT_ENV) or rule.get("kind") not in (

@@ -72,7 +72,7 @@ still restrict.
 Role-bound gains (best single cell 11 → 18 items passing / 100; agent/patient accuracy per cell
 0.06–0.12 → 0.12–0.17); conjunctive is flat, with ~83 % "cannot tell" either way.
 
-## Role-bound under oa-v2 (plan 0041)
+## Role-bound under oa-v2 (plan 0042)
 
 - **Layers:** `readplan.GRID` (20..60 step 4, 11 layers); the 19 sites are unchanged.
   `wsbench plan role_bound_association` emits them as `suffix_text_then_tail`; `reads=full`

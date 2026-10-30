@@ -1,4 +1,4 @@
-"""role_bound_association's mechanical single-statement gate (plan 0041 C1.4, C2).
+"""role_bound_association's mechanical single-statement gate (plan 0042 C1.4, C2).
 
 A row passes only if the judge's three picks are gold AND its ``quote``:
 
