@@ -38,7 +38,6 @@ FAMILY_DESC = {
     "poetry": "Couplet: the rhyme word of line 2 is planned at the end of line 1.",
     "typo": "A misspelled word; the lens should read the corrected word.",
     "directed_modulation": "The model is told to think (or not think) about a word while writing something else.",
-    "multihop_mt": "Two-hop question whose bridge is a multi-token entity.",
     "multilingual_mt": "Multi-token concept described in another language.",
     "typo_mt": "Typo'd multi-token word or number.",
     "basic_readout_mt": "Multi-token answer (an entity) read before it is written.",

@@ -72,11 +72,10 @@ def test_repo_root_and_judge_args():
     }
 
 
-def test_multihop_mt_is_superseded_by_v2(real_families):
-    assert registry.FAMILIES["multihop_mt"].superseded_by == "multihop_mt_v2"
-    assert registry.superseded() == {"multihop_mt": "multihop_mt_v2"}
-    assert "multihop_mt_v2" in registry.FAMILIES  # the successor is registered
-    names = sorted(registry.FAMILIES)
-    kept = registry.drop_superseded(names)
-    assert "multihop_mt" not in kept and "multihop_mt_v2" in kept
-    assert len(kept) == len(names) - 1
+def test_multihop_mt_removed(real_families):
+    # Camila 2026-10-30: "remove it from workspacebench because it has been superceded by v2"
+    assert "multihop_mt" in registry.REMOVED_FAMILIES
+    assert "multihop_mt" not in registry.FAMILIES
+    assert "multihop_mt" not in registry.superseded()
+    assert "multihop_mt_v2" in registry.FAMILIES  # the successor stays registered
+    assert "multihop_mt_v2" in registry.drop_superseded(sorted(registry.FAMILIES))

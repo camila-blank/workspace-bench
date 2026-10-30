@@ -282,7 +282,6 @@ FAMILIES: dict[str, Family] = {
         Family("typo", _asked(CORRECT_SPELLING, grade="first_word", strict=True)),
         Family("directed_modulation", _directed_modulation),
         Family("basic_readout_mt", _asked(CONTINUE, plain=True)),
-        Family("multihop_mt", _asked(CONTINUE, bridges=True, plain=True)),
         Family("multilingual_mt", _asked(CONTINUE, plain=True, strict=True)),
         Family("multilingual_multihop", _asked(CONTINUE, bridges=True, plain=True, strict=True)),
         Family("typo_mt", _asked(CORRECT_SPELLING, strict=True)),

@@ -211,7 +211,7 @@ QUOTA_KEYS = {"arithmetic_intermediates": "variant", "buggy_code": "src"}  # kee
 # written families whose scored latent is intermediates[0]: a new item repeating a selected
 # latent adds no coverage, so it is skipped (Opus repeats concepts across calls and waves)
 UNIQUE_LATENT = {
-    "association", "basic_readout_mt", "multihop", "multihop_mt", "multilingual",
+    "association", "basic_readout_mt", "multihop", "multilingual",
     "multilingual_mt", "multilingual_multihop", "multilingual_typo", "poetry", "typo", "typo_mt",
 }  # fmt: skip
 

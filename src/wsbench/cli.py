@@ -247,7 +247,7 @@ class RunFamilies(JudgeOptions):
     def __init__(self) -> None:
         super().__init__()
         self.all = False
-        self.include_superseded = False  # all=True also runs superseded families (multihop_mt)
+        self.include_superseded = False  # all=True also runs superseded families
         self.families = None
         self.readouts_root = pydra.REQUIRED
         self.out = pydra.REQUIRED

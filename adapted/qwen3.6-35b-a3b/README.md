@@ -39,7 +39,6 @@ Gate: greedy right AND >= 8/10 sampled (10/10 chain); Opus-graded misses (`llm=c
 | moral_rationale | untried | 175/200 | 175 | 0 | side re-gated, reasons re-distilled on the subject |
 | multi_concept_directed_modulation | full | 27/27 | - | - | layers remapped |
 | multihop | full | 100/100 | 94 | 6 | t1 |
-| multihop_mt | full | 100/100 | 77 | 23 | t1 |
 | multilingual | full | 100/100 | 99 | 1 | t1 |
 | multilingual_mt | full | 100/100 | 86 | 14 | t1 |
 | multilingual_multihop | full | 98/98 | 78 | 20 | t1 |
