@@ -23,7 +23,6 @@ TOOL = re.compile(
 # §2.8.1 assigns to it (directed_modulation, user_modeling, buggy_code, introspection,
 # unverbalized_hint, medical_diagnosis{,_alt}).
 PENDING_FAMILY_PR: dict[str, str] = {
-    "agentic_misalignment": "agentic.md 4b (native prompts + golden re-pin)",
     "conjunctive_association": "conjunctive.md G5",
     "jlens_concept_pr": "jlens_pr.md item 3 / C5",
     "moral_rationale": "moral.md §2.6",

@@ -85,7 +85,8 @@ PANEL_TEMPLATE = PANEL_TEMPLATES[DEFAULT_VARIANT]
 NOT_GATED: dict[str, str] = {
     "hallucination": "an invention rate over free generation, no item answer to invert",
     "jlens_concept_pr": "precision against the J-lens top-10, not a bar a lens clears",
-    "agentic_misalignment": "a design score netted against foils, no item pass bit",
+    "agentic_misalignment": "a pair-scored design family: the null is the clean twin and the "
+    "prompt-only floor, with no per-item answer to text-invert",
     "multi_concept_directed_modulation": "the prompt dictates the concepts; prompt-only is 1.0",
     "directed_modulation": "the instruction states the concept; items survived only because the "
     "scorer discounted instruction narration, not because the answer is hidden (Camila "

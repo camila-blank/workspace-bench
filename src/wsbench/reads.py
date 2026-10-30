@@ -314,6 +314,9 @@ def load(
     if m == "lite":
         rep.lite_rule = lite_rule_of(sp, {c.id for c in cells})
     declared = str(meta.get("reads") or "") if meta is not None else None
+    for c in cells:  # before the selection: lite keeps every position's token for context
+        if c.token is not None:
+            rep.site_tokens.setdefault(c.id, {}).setdefault(c.pos, c.token)
     cells = select(cells, sp, m, reader=reader, declared=declared)
     partial: set[str] = set()
     if m == "full":
