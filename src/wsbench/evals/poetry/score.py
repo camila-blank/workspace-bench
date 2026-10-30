@@ -75,6 +75,11 @@ _META = re.compile(
     r"|\bmodel\b|\btext\b|\bdescri\w*|\bthinking\b|\bwriting\b|\bsentence\b|\bword\b"
     r"|\bmention\w*|\brefer\w*|\bsuggest\w*|\bnarrat\w*|\bstory\b|\bscene\b|\bimager\w*"
     r"|\bconcepts?\b|\bcontext\b|\bsubject\b|\bspeaker\b|\bauthor\b|\bwriter\b"
+    # review r9: more prose about the text (``The focus is on a sailor at the end of the day``,
+    # ``Discussing a captain and his crew who he led``, ``The poet means ...``)
+    r"|\bpoet\w*|\bpassage\b|\blines\b|\bfocus\w*|\bdiscuss\w*|\bdepict\w*|\bportray\w*"
+    r"|\bpictur\w*|\bevok\w*|\bconvey\w*|\bexpress\w*|\bemphasi\w*|\bhighlight\w*"
+    r"|\bmeaning\b|\bmeans\b|\btone\b|\bmood\b|\bimagin\w*|\bplann?\w*|\bpredict\w*"
 )
 # review r4: a line of verse holds >= this many words, the word included (a label prefix, ``Line
 # 2:``, not counted): a 1-4 word bullet or "/" segment is a topic or list item (``- Sunny day``,
