@@ -4426,9 +4426,9 @@
   "n_rewritten": 861
  },
  "coregister": {
-  "n_lists": 199,
+  "n_lists": 212,
   "n_lists_total": 224,
-  "n_distractors_edited": 178
+  "n_distractors_edited": 195
  },
  "gate": {
   "draws": 3,

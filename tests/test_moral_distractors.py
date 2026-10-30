@@ -127,8 +127,12 @@ def test_coregistered_lists_freeze_first():
 
 
 def test_form_marks_cover_the_measured_tells():
-    assert set(md.FORM_MARKS) == {"comma", "slash", "outweigh", "and"}
-    gold = "Safety and duty outweigh / trump profit, always"
+    assert set(md.FORM_MARKS) == {"comma", "slash_spaced", "slash_tight", "outweigh", "and"}
+    gold = "Safety and duty outweigh / trump legal/ethical profit, always"
     assert all(has(gold) for has in md.FORM_MARKS.values())
+    # review of PR #190: the slash's spacing is its own mark (a tight gold vs spaced distractors)
+    tight, spaced = "legal/ethical duty", "legal / ethical duty"
+    assert md.FORM_MARKS["slash_tight"](tight) and not md.FORM_MARKS["slash_spaced"](tight)
+    assert md.FORM_MARKS["slash_spaced"](spaced) and not md.FORM_MARKS["slash_tight"](spaced)
     assert not any(has("Plain claim here") for has in md.FORM_MARKS.values())
     assert "contains a comma" in md.form_rules(gold) and "No rewrite" in md.form_rules("x")
