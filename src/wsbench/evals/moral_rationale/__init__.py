@@ -32,7 +32,7 @@ SPEC = register(
         flat_types=(),
         multi_select=False,
         not_in_macro="",
-        calls_per_arm="summary ≈ 234 (one per item and side); native ≈ 100k",
+        calls_per_arm="summary ≈ 224 MC + 195 digest (one per item and side); native ≈ 95k",
         sources="",
     )
 )
