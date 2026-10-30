@@ -508,14 +508,14 @@ def test_base_pairs_plan_0021():
         assert cmp.check_pair(fam, _res(pv, []), summ) == []
 
 
-def _bug(i, src, pair, specific=None):
+def _bug(i, src, pair, hit=None):
     """A plan-0030 buggy_code row: ``pair`` = the twin's id (None for an orphan); the pair verdict
-    ``specific_hit`` sits on the buggy member only."""
-    return {"id": i, "src": src, "pair": pair, "specific_hit": specific, "judged": True}
+    ``pair_hit`` (the headline since 2026-10-30) sits on the buggy member only."""
+    return {"id": i, "src": src, "pair": pair, "pair_hit": hit, "judged": True}
 
 
 def test_buggy_pair_extractor():
-    # plan 0030: buggy_code left CONTINUOUS; its item verdict is the pair rule (specific_hit)
+    # plan 0030: buggy_code left CONTINUOUS; its item verdict is the pair rule (pair_hit)
     assert cmp.BUGGY not in cmp.CONTINUOUS
     rows = [
         _bug("a", "buggy", "a-twin", True),
