@@ -2,47 +2,70 @@
 (source repo ``judge_free_modal.py``) with its task sentence changed to a bare arithmetic
 expression; printed verbatim in the family README."""
 
-import json
-
+from wsbench import mc
 from wsbench.digest import (
     SUMMARY_NOTE_ABSTRACTIVE_NO_RARE,
     SUMMARY_NOTE_NO_RARE,
-    SUMMARY_NOTE_TOKENS,
 )
 from wsbench.llm import schema_block
 
-PROMPT_VERSION = "arith-free-2026-09-23"  # cells=frozen: one call per cell
+# cells=frozen: one call per cell. 2026-10-30 (plan 0036): neutral readout wording
+# (mc.READOUT_PHRASE), the shared token-list note rendered from the spec (flat type "numbers",
+# decision Q4), and the "dominated by one value" rule without the "tight cluster" clause (Q4: a
+# flat list of numbers singles out none of them).
+PROMPT_VERSION = "arith-free-2026-10-30"
 # cells=all: one call per (item, layer) over every position of that layer (Camila, 2026-09-23 06:14:
 # "for user modeling and arithmetic let's just batch it - feed it everything at once!"). Same
-# instructions as PROMPT_VERSION, different packaging, so its own version tag.
-PROMPT_VERSION_BATCH = "arith-free-batched-2026-09-23"
+# instructions as PROMPT_VERSION, different packaging, so its own version tag. 2026-10-30: the
+# entry headers no longer carry the read-site token (Camila: "Remove the token labels").
+PROMPT_VERSION_BATCH = "arith-free-batched-2026-10-30"
 MAX_VALUES = 3  # the prompt caps the ranked list at three; the schema cannot (no maxItems)
 
-SYSTEM = """You are reading the output of a "lens" that tries to verbalize what a language model is
-computing internally. The model is silently evaluating a short arithmetic expression: two or
-three operations on given numbers, answered with no chain of thought. You do NOT get to see the
-expression — only the lens output.
+# the registry reads these two (EvalSpec.flat_types / multi_select), so the token note the judge
+# sees here and the one the digest note renders (digest.token_note_of) are the same text
+FLAT_TYPES: tuple[str, ...] = ("numbers",)
+MULTI_SELECT = False
+TOKEN_NOTE = mc.token_note(FLAT_TYPES, multi_select=MULTI_SELECT)
+# arithmetic's own condition on top of the shared note (plan 0032 §2.7.4 "add, never relax"):
+# digits are not a split word, and assembling them would rebuild the prompt's operands
+NO_ASSEMBLY = (
+    "A number is never assembled from separate tokens: digits on one list or at adjacent "
+    "positions (2, 7, 1) are not the number 271."
+)
 
-The lens output may be free text, bullet points, or a bag of loose tokens, possibly in several
+_INTRO = f"""You are reading {mc.READOUT_PHRASE}, written as text or as lists of tokens."""
+_TASK = """The model is silently evaluating a short arithmetic expression: two or three operations
+on given numbers, answered with no chain of thought. You do NOT get to see the expression — only
+the readout{s}."""
+_BAG = """- A bag of loose numerals with no arithmetic around them counts only when it is dominated
+  by ONE value (several of its tokens write the same number, e.g. 九 | nine | 9): list that
+  value. A bag or list of several different numbers singles out none of them, whatever their
+  order or rank."""
+_NOTE = f"""Token lists. {TOKEN_NOTE} {NO_ASSEMBLY}"""
+
+SYSTEM = f"""{_INTRO} {_TASK.format(s="")}
+
+The readout may be free text, bullet points, or a bag of loose tokens, possibly in several
 languages (Chinese numerals like 十四 mean fourteen). It is often vague, generic, or about
 something else entirely, and it frequently contains numbers that are not results of anything.
 
-Your job: name the number(s) that this output presents as a COMPUTED VALUE — a result, an
+Your job: name the number(s) that this readout presents as a COMPUTED VALUE — a result, an
 intermediate, a total, a "the answer is X". Rank them, most clearly a computed result first,
 at most three. Decimals and negative numbers are values too; report them exactly as written.
 
 Rules:
 - Do NOT list numbers that appear as operands, quantities, labels, list indices, years, counts
-  of items, or parts of unrelated prose. Only numbers the output presents as something that was
+  of items, or parts of unrelated prose. Only numbers the readout presents as something that was
   worked out.
-- If the output states arithmetic with both operands and a result ("16 - 2 = 14"), list the
+- If the readout states arithmetic with both operands and a result ("16 - 2 = 14"), list the
   RESULT (14), not the operands.
-- A bag of loose numerals with no arithmetic around them still counts: if the bag is dominated
-  by one value or a tight cluster, list what it points at, most frequent or most prominent first.
-- If the output presents no number as a computed value, set states_value false and return an
+{_BAG}
+- If the readout presents no number as a computed value, set states_value false and return an
   empty list. That is a normal and common answer — do not invent one.
 - Never do any arithmetic of your own. You do not know the task, so you cannot know what the
-  right answer is; only report what the text itself puts forward."""
+  right answer is; only report what the text itself puts forward.
+
+{_NOTE}"""
 
 # summary mode, five-number digest (plan 0022 Part B): the digest's (at most five) number keys
 # bound what can pass; the judge, which sees whole evidence samples, may name up to ten values,
@@ -52,59 +75,59 @@ SYSTEM_SUMMARY = SYSTEM.replace("at most three.", "at most ten.")
 assert SYSTEM_SUMMARY != SYSTEM
 
 USER = (
-    "Lens output:\n<<<\n{readout}\n>>>\n\n"
-    "Which number(s) does this output present as a computed value?"
+    "Readout:\n<<<\n{readout}\n>>>\n\n"
+    "Which number(s) does this readout present as a computed value?"
 )
 
-SYSTEM_BATCH = """\
-You are reading the outputs of a "lens" that tries to verbalize what a language model is
-computing internally. The model is silently evaluating a short arithmetic expression: two or
-three operations on given numbers, answered with no chain of thought. You do NOT get to see the
-expression — only the lens outputs.
+SYSTEM_BATCH = f"""{_INTRO} {_TASK.format(s="s")}
 
-You are given several lens outputs at once, one per position the lens was read at, as numbered
-entries "[k] pos=<offset from the end of the prompt> token=<the token at that position>:" followed
-by that entry's output (a bag of loose tokens is written as "tokens: ..."). Judge every entry on
-its own; the entries do not explain each other, and an entry's header is not part of its output.
+You are given several readouts at once, one per position of the prompt that was read, as
+numbered entries "[k] pos=<offset from the end of the prompt>:" followed by that entry's readout
+(a bag of loose tokens is written as "tokens: ..."). Judge every entry on its own; the entries do
+not explain each other, and an entry's header is not part of its readout. The one exception is
+the token-list note below: tokens of adjacent entries may be joined only to spell one word split
+across them, never to assemble a number.
 
-A lens output may be free text, bullet points, or a bag of loose tokens, possibly in several
+A readout may be free text, bullet points, or a bag of loose tokens, possibly in several
 languages (Chinese numerals like 十四 mean fourteen). It is often vague, generic, or about
 something else entirely, and it frequently contains numbers that are not results of anything.
 
-Your job, for EACH entry: name the number(s) that its output presents as a COMPUTED VALUE — a
+Your job, for EACH entry: name the number(s) that its readout presents as a COMPUTED VALUE — a
 result, an intermediate, a total, a "the answer is X". Rank them, most clearly a computed result
 first, at most three. Decimals and negative numbers are values too; report them exactly as written.
 
 Rules, applied to every entry on its own:
 - Do NOT list numbers that appear as operands, quantities, labels, list indices, years, counts
-  of items, or parts of unrelated prose. Only numbers the output presents as something that was
+  of items, or parts of unrelated prose. Only numbers the readout presents as something that was
   worked out.
-- If the output states arithmetic with both operands and a result ("16 - 2 = 14"), list the
+- If the readout states arithmetic with both operands and a result ("16 - 2 = 14"), list the
   RESULT (14), not the operands.
-- A bag of loose numerals with no arithmetic around them still counts: if the bag is dominated
-  by one value or a tight cluster, list what it points at, most frequent or most prominent first.
-- If an output presents no number as a computed value, return an empty list for that entry. That
+{_BAG}
+- If a readout presents no number as a computed value, return an empty list for that entry. That
   is a normal and common answer — do not invent one.
 - Never do any arithmetic of your own. You do not know the task, so you cannot know what the
   right answer is; only report what each text itself puts forward.
 - Answer with exactly one result per entry, carrying the entry's k, in the order given; the
-  quote is the shortest verbatim span of THAT entry supporting its top value (empty if none)."""
+  quote is the shortest verbatim span of THAT entry supporting its top value (empty if none).
+
+{_NOTE}"""
 
 USER_BATCH = (
-    "Lens outputs, one per read position:\n\n{entries}\n\n"
-    "For each entry, which number(s) does its output present as a computed value?"
+    "Readouts, one per read position:\n\n{entries}\n\n"
+    "For each entry, which number(s) does its readout present as a computed value?"
 )
 
 # summary mode (plan 0020): the per-cell SYSTEM judges one digest per item; the USER's
-# "Lens output:" header becomes the digest note (digest.summary_note)
+# "Readout:" header becomes the digest note (digest.summary_note)
 USER_SUMMARY = (
-    "{summary_note}\n\nLens output:\n<<<\n{readout}\n>>>\n\n"
-    "Which number(s) does this output present as a computed value?"
+    "{summary_note}\n\nReadout:\n<<<\n{readout}\n>>>\n\n"
+    "Which number(s) does this readout present as a computed value?"
 )
-# the task TYPE the digest's `task` variant may be told (never the expression or its values)
-DIGEST_TASK_NOTE = (
-    "the model silently evaluates a short arithmetic expression and answers with no chain of "
-    "thought"
+# the task TYPE the digest's `task` variant is told (EvalSpec.task_note; never the expression,
+# its values or its answer: no numeral and no number word, test_arith_task_note_has_no_numerals)
+TASK_NOTE = (
+    "the model was silently evaluating a short arithmetic expression (a few operations on given "
+    "numbers) and answering with only the final number, with no written working"
 )
 
 PROMPTS: dict[str, str] = {
@@ -117,8 +140,9 @@ PROMPTS: dict[str, str] = {
     # the numbers digest runs summ_rare=0, so the note without the rare clause (plan 0022)
     "SUMMARY_NOTE_NO_RARE": SUMMARY_NOTE_NO_RARE,
     "SUMMARY_NOTE_ABSTRACTIVE_NO_RARE": SUMMARY_NOTE_ABSTRACTIVE_NO_RARE,
-    "SUMMARY_NOTE_TOKENS": SUMMARY_NOTE_TOKENS,
-    "DIGEST_TASK_NOTE": DIGEST_TASK_NOTE,
+    # the token note every arithmetic prompt shows (and digest.summary_note appends for tokens)
+    "TOKEN_NOTE": TOKEN_NOTE,
+    "TASK_NOTE": TASK_NOTE,
 }
 
 SCHEMA = schema_block(
@@ -196,16 +220,17 @@ def render_user_summary(note: str, summary: str) -> str:
     return USER_SUMMARY.replace("{summary_note}", note).replace("{readout}", summary.strip())
 
 
-def render_entry(k: int, pos: int, token: str | None, text: str, *, bag: bool) -> str:
-    """``[k] pos=<offset> token=<token>: <readout>``; a token lens's scored bag is prefixed
-    ``tokens:``. The token is JSON-quoted so newlines and specials stay legible."""
-    head = f"[{k}] pos={pos} token={json.dumps(token or '', ensure_ascii=False)}:"
+def render_entry(k: int, pos: int, text: str, *, bag: bool) -> str:
+    """``[k] pos=<offset>: <readout>``; a token lens's bag is prefixed ``tokens:``. No read-site
+    token text: the headers would spell out the expression the judge must not see (Camila:
+    "Remove the token labels")."""
+    head = f"[{k}] pos={pos}:"
     body = text.strip()
     return f"{head} tokens: {body}" if bag else f"{head} {body}"
 
 
-def render_batch_user(entries: list[tuple[int, int, str | None, str]], *, bag: bool) -> str:
+def render_batch_user(entries: list[tuple[int, int, str]], *, bag: bool) -> str:
     """The cells=all user message: every non-empty position of one (item, layer), in position
-    order, as numbered entries separated by blank lines."""
-    block = "\n\n".join(render_entry(k, pos, tok, text, bag=bag) for k, pos, tok, text in entries)
+    order, as numbered entries ``(k, pos, text)`` separated by blank lines."""
+    block = "\n\n".join(render_entry(k, pos, text, bag=bag) for k, pos, text in entries)
     return USER_BATCH.replace("{entries}", block)

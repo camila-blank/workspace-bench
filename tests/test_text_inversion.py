@@ -683,3 +683,74 @@ def test_full_gate_carries_construction_entries_over(tmp_path, two_families, mon
     assert written["built"] == prior  # never asked, never dropped by a full re-gate
     assert "built" not in written["_not_gated"]
     assert written["fam"]["ids"] == list("abcde")
+
+
+# ---------------------------------------------------------------- arithmetic (plan 0036)
+
+
+def test_arith_ati_entry_is_the_panel_subset(real_families):
+    """Camila: "Update the ati subset with the new 167 item version". The entry of record is the
+    panel-v1 gate, re-gated (judge re-run on the stored panel answers) under the family's
+    current instrument, so ``subset_entry`` does not exit."""
+    from wsbench.banks import load_bank
+
+    entry = ti.subset_entry("arithmetic_intermediates")
+    _h, items = load_bank(registry.bank_path("arithmetic_intermediates"))
+    bank = {it["id"] for it in items}
+    assert entry["gate"] == "panel-v1" and entry["n_ati"] == len(entry["ids"])
+    assert set(entry["ids"]) <= bank and entry["n_bank"] == len(bank) == 596
+    assert entry["instrument"] == registry.get("arithmetic_intermediates").judge.prompt_version
+    assert entry["bank_sha"] == ti.bank_fingerprint("arithmetic_intermediates")
+
+
+def test_arith_frozen_panel_readouts_load_under_guards(tmp_path, monkeypatch, real_families):
+    """A panel-style ATI readout file (every position, every grid layer, one answer copied to
+    every cell) is judged ``cells=frozen`` natively without tripping a full-read guard, whether
+    sidecar-less or declared ``reader: prompt_only:<answerer>``."""
+    from conftest import write_sidecar
+
+    from wsbench.banks import load_bank
+    from wsbench.evals.arithmetic_intermediates import judge as arith
+    from wsbench.judge_config import resolve
+
+    _h, items = load_bank(registry.bank_path("arithmetic_intermediates"))
+    ids = [it["id"] for it in items[:3]]
+    rows = [
+        {"id": i, "layer": layer, "pos": p, "token": "t", "samples": ["the answer is 7"]}
+        for i in ids
+        for layer in readplan.GRID
+        for p in range(-34, 0)
+    ]
+    path = tmp_path / "arithmetic_intermediates.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    calls: list = []
+
+    def fake(cs, **kw):
+        calls.extend(cs)
+        return {
+            c.key: {"states_value": False, "values": [], "basis": "none", "quote": ""} for c in cs
+        }
+
+    monkeypatch.setattr(arith, "run_calls", fake)
+    spec = registry.get("arithmetic_intermediates")
+    for tag, sidecar in (("bare", False), ("po", True)):
+        if sidecar:
+            write_sidecar(path, reader="prompt_only:qwen")
+        calls.clear()
+        r = arith.run(
+            native_args(
+                readouts=path,
+                out=tmp_path / tag,
+                judge=resolve(spec.judge),
+                layers=None,
+                items=ids,
+                limit=0,
+                allow_missing=True,
+                concurrency=1,
+                rpm=1.0,
+                dry_run=False,
+                extra={"cells": "frozen"},
+            )
+        )
+        assert len(calls) == len(ids) and r.config["cells"] == "frozen"
+        assert r.config["reads_checked"] == ("prompt_only" if sidecar else "no_sidecar")
