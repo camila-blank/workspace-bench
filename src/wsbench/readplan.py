@@ -561,7 +561,7 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ]
-    if family == "directed_modulation_obscure":
+    if family == "model_specific_directed_modulation":
         _h, items = _bank(family)
         return [
             ReadSpec(

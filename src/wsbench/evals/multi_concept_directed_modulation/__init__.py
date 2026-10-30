@@ -28,7 +28,7 @@ SPEC = register(
         # plan 0034 M7: a line naming several shown candidates names each of them
         flat_types=(),
         multi_select=True,
-        calls_per_arm="≈ 15k native (116 items × 12 positions × 11 layers) / 116 summary",
+        calls_per_arm="≈ 15k native (116 items x 12 positions x 11 layers) / 116 summary",
         sources="",
     )
 )

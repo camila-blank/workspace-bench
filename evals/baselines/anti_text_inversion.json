@@ -67334,7 +67334,7 @@
    ]
   }
  },
- "directed_modulation_obscure": {
+ "model_specific_directed_modulation": {
   "gate": "panel-v1",
   "answerer": "panel",
   "claude_slot": "opus",
@@ -67349,7 +67349,7 @@
   "layers_judged": [
    44
   ],
-  "bank_sha": "9f5370f0b33cf27b7c407f888320b3812a59e834918bc6f4d33afd8ca8244ed5",
+  "bank_sha": "1c6061d3f0c6b55797dd4665163976411064f89421e9dc8a5257260f0a9eb12b",
   "n_bank": 98,
   "n_ati": 98,
   "n_invertible": 0,
@@ -70041,6 +70041,11 @@
      true
     ]
    }
+  },
+  "renamed_from": {
+   "key": "directed_modulation_obscure",
+   "bank_sha": "9f5370f0b33cf27b7c407f888320b3812a59e834918bc6f4d33afd8ca8244ed5",
+   "plan": "0034"
   }
  },
  "wrong_bridge": {
