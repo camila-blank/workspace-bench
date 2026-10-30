@@ -842,17 +842,25 @@ def quote_ok(quote: str, lines: Sequence[Line]) -> bool:
     list joined by " | " (each optionally with its own real score, :func:`_token_part_ok`), or
     one word spelled by consecutive positions at one layer (:func:`split_word`). An empty quote
     never verifies. Families may add conditions on top, never replace it."""
+    if not fold_quote(quote):
+        return False
+    if any(line_holds(quote, ln) for ln in lines):
+        return True
+    return split_word(quote, lines) is not None
+
+
+def line_holds(quote: str, ln: Line) -> bool:
+    """Does this ONE line hold ``quote`` by :func:`quote_ok`'s own rule? A prose line: folded
+    substring. A token line: every " | "-part is a whole token of it (optionally with its real
+    score, :func:`_token_part_ok`), in any order. A split word (:func:`split_word`) is held by
+    no single line. Families that ask *which* lines hold a quote must use this, never a
+    substring of ``ln.text`` (a reordered or score-annotated token quote is no substring)."""
     fq = fold_quote(quote)
     if not fq:
         return False
-    for ln in lines:
-        if ln.pieces is None:
-            if fq in fold_quote(ln.text):
-                return True
-            continue
-        if all(_token_part_ok(p, ln) for p in quote.split("|")):
-            return True
-    return split_word(quote, lines) is not None
+    if ln.pieces is None:
+        return fq in fold_quote(ln.text)
+    return all(_token_part_ok(p, ln) for p in quote.split("|"))
 
 
 def statement_lines(lines: Sequence[Line], cells: Sequence[Cell]) -> list[Line]:

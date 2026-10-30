@@ -83,8 +83,10 @@ def build_options(it: dict[str, Any]) -> tuple[list[str], int]:
 
 
 def holding_lines(quote: str, lines: Sequence[digest.Line]) -> list[digest.Line]:
-    fq = digest.fold_quote(quote)
-    return [ln for ln in lines if fq and fq in digest.fold_quote(ln.text)]
+    """The lines that hold ``quote`` by the verifier's own per-line rule
+    (:func:`digest.line_holds`): token lines by piece membership, so a reordered, multi-token
+    or score-annotated token quote is still held by its list (and so can be voided)."""
+    return [ln for ln in lines if digest.line_holds(quote, ln)]
 
 
 def flat_list_void(

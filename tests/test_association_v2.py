@@ -285,6 +285,42 @@ def test_token_line_with_two_options_voids_gold_pick(tmp_path):
     assert not aj.flat_list_void("birthday", clean, others, "tokens10")
 
 
+@pytest.mark.parametrize(
+    "quote", ["birthday", "birthday | cake", "cake | birthday", "party | birthday"]
+)
+def test_token_list_void_holds_multi_token_and_reordered_quotes(tmp_path, quote):
+    """Step 2b decides which token lines hold a quote by piece membership (the verifier's own
+    rule), so a quote of several tokens of the list, in any order, cannot dodge the void."""
+    toks = ["birthday", "party", "christmas", "cake"]
+    path = write_cells(tmp_path / "r.jsonl", {(BD, 40, LAST): toks}, [BD], tokens=True)
+    r, _f = judge_run(
+        tmp_path, path, [BD], lambda s, u, sc: answer(u, "birthday", quote), ["christmas"]
+    )
+    assert r.config["sampling"] == "tokens10"
+    assert r.rows[0]["outcome"] == "gold_flat_list" and r.rows[0]["pass"] is False
+    assert r.extras["n_flat_list_voided"] == 1
+
+
+def test_token_list_void_holds_score_annotated_quote():
+    ln = digest.Line(
+        "birthday | party | christmas | cake",
+        pieces=("birthday", "party", "christmas", "cake"),
+        scores=(15.19, 9.0, 8.5, 7.25),
+    )
+    others = ["Christmas", "Halloween"]
+    for q in ("birthday (15.19)", "cake | birthday (15.19)", "party | birthday"):
+        assert digest.quote_ok(q, [ln]) and aj.holding_lines(q, [ln]) == [ln]
+        assert aj.flat_list_void(q, [ln], others, "tokens10")
+    # a made-up score verifies nowhere and so is held by no line
+    assert not digest.quote_ok("birthday (99.0)", [ln])
+    assert aj.holding_lines("birthday (99.0)", [ln]) == []
+    # a clean list holding the same tokens still rescues the quote
+    clean = dataclasses.replace(
+        ln, text="birthday | party | cake", pieces=("birthday", "party", "cake"), scores=None
+    )
+    assert not aj.flat_list_void("cake | birthday", [ln, clean], others, "tokens10")
+
+
 def test_system_tie_break_counts_only_singling_lines():
     for system in (ap.SYSTEM_SUMMARY, ap.SYSTEM_NATIVE):
         assert "lines that single out nothing never count" in system
