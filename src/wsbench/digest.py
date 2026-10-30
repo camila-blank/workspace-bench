@@ -263,6 +263,8 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     # plan 0034 M2 (Camila: "make sure that the summary judge is getting the rarer mentions"):
     # a dictated concept seen once, or only inside a restatement of the instruction, is kept
     "multi_concept_directed_modulation": {"summ_rare": "25"},
+    # plan 0035 C3: a single mention of the held concept has room in the rare tier
+    "directed_modulation": {"summ_rare": "25"},
     # plan 0032 §2.2.2: the language each evidence span is written in, shown to the judge
     "multilingual": {"summ_lang": "1"},
     "multilingual_mt": {"summ_lang": "1"},
