@@ -7,7 +7,8 @@ seed of the prompt version and the item id, with the family's cannot-tell line L
 the lettered options — never the item's prompt. A gold pick passes only when, on top of the
 judge's choice:
 
-- the quote names the picked option (``mc.form_in`` over its forms) and verifies against the real
+- the quote names the picked option (:func:`names`: ``mc.form_in`` over its forms, with the other
+  options' longer forms masked, :meth:`Options.masks`) and verifies against the real
   readout lines (``digest.quote_ok``; for prose lines only, :func:`quote_close` tolerates a
   near-verbatim quote whose matched block contains the option);
 - for numeric items, not every supporting line is a number flood (``digest.number_flood``);
@@ -18,6 +19,7 @@ A voided pick is scored ``cannot_tell``. Cells come from ``reads.load`` only.
 """
 
 import math
+import re
 import string
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -72,6 +74,20 @@ def fail(msg: str) -> Any:
 
 # ---------------------------------------------------------------- options
 
+_CJK_CHAR = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]")
+
+
+def names(text: str, forms: Sequence[str], masks: Sequence[str] = ()) -> bool:
+    """``mc.form_in(text, forms)`` after blanking every mask out of the folded text (a CJK mask as
+    a substring, any other mask between word boundaries, as ``form_in`` matches them)."""
+    t = mc.fold(text)
+    for m in masks:
+        if _CJK_CHAR.search(m):
+            t = t.replace(m, " ")
+        else:
+            t = re.sub(rf"(?<!\w){re.escape(m)}(?!\w)", " ", t)
+    return mc.form_in(t, forms)
+
 
 @dataclass(frozen=True)
 class Options:
@@ -85,6 +101,27 @@ class Options:
     @property
     def gold(self) -> str:
         return self.shown[self.gold_pos]
+
+    def masks(self, option: str) -> list[str]:
+        """The other options' forms that contain one of ``option``'s forms (``十一月`` holds
+        ``一月``, ``意大利辣香肠`` holds ``香肠``): blanked out of a text before asking whether it
+        names ``option``, so a mention of the longer option never counts as the shorter one. A
+        form two options share is not a mask (the bank forbids that; a shared form stays
+        ambiguous, the stricter reading)."""
+        own = {mc.fold(f).strip() for f in self.forms[option]}
+        out = []
+        for o, fs in self.forms.items():
+            if o == option:
+                continue
+            for f in fs:
+                g = mc.fold(f).strip()
+                if g and g not in own and mc.form_in(g, self.forms[option]):
+                    out.append(g)
+        return out
+
+    def names(self, text: str, option: str) -> bool:
+        """``text`` names ``option`` (:func:`names`) with the option's masks applied."""
+        return names(text, self.forms[option], self.masks(option))
 
     def lettered(self) -> str:
         return "\n".join(f"{LETTERS[i]}. {o}" for i, o in enumerate(self.shown))
@@ -119,26 +156,32 @@ def chance_of(items: Sequence[Mapping[str, Any]]) -> float:
 # ---------------------------------------------------------------- quote gate (C7)
 
 
-def quote_close(quote: str, line: str, forms: Sequence[str]) -> bool:
+def quote_close(quote: str, line: str, forms: Sequence[str], masks: Sequence[str] = ()) -> bool:
     """A near-verbatim prose quote: on ``digest.fold_quote`` forms, the longest common block of
     the quote and ONE prose line is >= max(4, ceil(0.9 * len(quote))) characters AND that block
-    itself contains one of ``forms`` (so a block that stops before the answer word fails)."""
+    itself names one of ``forms`` (:func:`names`, so a block that stops before the answer word
+    fails)."""
     fq, fl = digest.fold_quote(quote), digest.fold_quote(line)
     if not fq or not fl:
         return False
     m = SequenceMatcher(None, fq, fl, autojunk=False).find_longest_match(0, len(fq), 0, len(fl))
     need = max(4, math.ceil(0.9 * len(fq)))
-    return m.size >= need and mc.form_in(fq[m.a : m.a + m.size], forms)
+    return m.size >= need and names(fq[m.a : m.a + m.size], forms, masks)
 
 
 def supporting_lines(
-    quote: str, lines: Sequence[Line], forms: Sequence[str], *, close: bool
+    quote: str,
+    lines: Sequence[Line],
+    forms: Sequence[str],
+    *,
+    close: bool,
+    masks: Sequence[str] = (),
 ) -> list[Line]:
     """The readout lines a quote is verified against (empty = the gate fails): the quote must
     name the picked option, then verify by ``digest.quote_ok`` (one line, or a word split
     across adjacent positions of one layer), else — prose lines only, ``close`` families —
-    by :func:`quote_close`."""
-    if not quote.strip() or not mc.form_in(quote, forms):
+    by :func:`quote_close`. ``masks``: :meth:`Options.masks` of the pick."""
+    if not quote.strip() or not names(quote, forms, masks):
         return []
     sup = [ln for ln in lines if digest.quote_ok(quote, [ln])]
     if sup:
@@ -148,7 +191,7 @@ def supporting_lines(
         return split
     if not close:
         return []
-    return [ln for ln in lines if ln.pieces is None and quote_close(quote, ln.text, forms)]
+    return [ln for ln in lines if ln.pieces is None and quote_close(quote, ln.text, forms, masks)]
 
 
 # ASCII punctuation plus the CJK / curly forms (written as escapes: ruff RUF001)
@@ -174,8 +217,8 @@ def is_bare(quote: str, sup: Sequence[Line], forms: Sequence[str], stated: str) 
 
 def bare_ok(sup: Sequence[Line], pick: str, opts: Options) -> bool:
     """A bare pick counts only if one supporting readout names no other shown option."""
-    others = [fs for o, fs in opts.forms.items() if o != pick]
-    return any(not any(mc.form_in(ln.text, fs) for fs in others) for ln in sup)
+    others = [o for o in opts.forms if o != pick]
+    return any(not any(opts.names(ln.text, o) for o in others) for ln in sup)
 
 
 # ---------------------------------------------------------------- scoring
@@ -230,7 +273,7 @@ def score(
     if kind != "gold":
         return Verdict(kind, kind, choice, quote, False, False, "")
     forms = opts.forms[choice]
-    sup = supporting_lines(quote, lines, forms, close=close)
+    sup = supporting_lines(quote, lines, forms, close=close, masks=opts.masks(choice))
     if not sup:
         return Verdict(kind, "cannot_tell", choice, quote, False, False, "quote")
     bare = is_bare(quote, sup, forms, stated)
@@ -597,7 +640,9 @@ def _summary(
         chance_label=CHANCE_LABEL,
         config_extra={
             **digest.config(args, source_kind, name),
-            "layers_judged": args.layers,
+            # the resolved layer list, as native records it (None = all layers would read
+            # differently across modes in audit_run)
+            "layers_judged": args.layers if args.layers is not None else rep.layers,
             "judge": "mc",
         },
         extras={"n_calls": len(calls), "summary": col.extras(), **_pick_extras(rows, scope)},

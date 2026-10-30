@@ -18,7 +18,7 @@ FAMILY_PROMPT_VERSIONS: dict[str, str] = {
     "medical_diagnosis": "bank-2026-10-30b-md",
     "medical_diagnosis_alt": "bank-2026-10-30b-md",
     # plan 0039: the blind forced-choice judge (mcjudge_basic) has its own instrument
-    "basic_readout": "br-mc-2026-10-30",
+    "basic_readout": "br-mc-2026-10-30b",
 }
 
 
