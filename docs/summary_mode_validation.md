@@ -113,13 +113,13 @@ Values are not a selection input.
 | family | all layers: native → summary (n) | L44: native → summary (n) |
 |---|---|---|
 | **arithmetic_intermediates** | 0.60 → 0.17 (575) | — |
-| **chain_intermediates** | 0.95 → 0.27 (100) | 0.52 → 0.16 (100) |
+| **chain_intermediates**¹ | 0.95 → 0.27 (100) | 0.52 → 0.16 (100) |
 | **directed_modulation_obscure** | 0.31 → 0.14 (78) | 0.09 → 0.08 (78) |
 | **introspection** | 0.74 → 0.43 (23) | 0.27 → 0.12 (26) |
 | **user_modeling** | 0.93 → 0.39 (80) | 0.71 → 0.41 (80) |
 
 - **arithmetic_intermediates** (null rates from the result extras, over all items incl. the dev slice): native 0.60 over a `cross` null of 0.30 (lift 0.31); summary 0.17 over 0.05 (lift 0.12). The real signal falls by more than half.
-- **chain_intermediates** (null rates from the result extras, over all items): native top-1 0.91 over a top-1 decoy null of 0.01; summary any-of-3 0.25 over its any-of-3 decoy null 0.09. Native's signal is real and summary mode loses most of it.
+- **chain_intermediates** (corrected 2026-10-30, plan 0038 C3): native `cells=all` is 0.91 against an item-level any-cell permutation null of 0.81 (each item's verified top values scored against 20 same-depth partners' intermediates, the headline's own any-cell scale; net +0.10). Summary (digest-v3) is 0.30 against 0.11 on the same scale (net +0.19). Both recomputed from cached rows with zero calls (`scripts/rescore_chain_cached.py --null`). The earlier text compared native to `null_top1_near` (0.01), a per-cell decoy rate that is not a floor for an any-cell headline. So the "catastrophic" flag compared two numbers with different floors: by lift, summary mode is not worse.
   - Mechanism (dev-slice reading): one pooled digest holds many candidate numbers (prompt echoes,
     partial computations, decoys), and the judge names ≤ 3.
   - v2 digests contain the gold intermediate more often than v1 (14/20 vs 11/20 on the dev slice),
@@ -210,7 +210,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | association | 80 | 0.96 | 0.94 | [-0.06, +0.00] | 0.97 |  |
 | basic_readout | 80 | 0.99 | 0.97 | [-0.04, +0.00] | 0.97 |  |
 | basic_readout_mt | 80 | 0.72 | 0.71 | [-0.06, +0.03] | — |  |
-| chain_intermediates | 100 | 0.95 | 0.27 | [-0.77, -0.59] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
+| chain_intermediates¹ | 100 | 0.95 | 0.27 | [-0.77, -0.59] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | conjunctive_association | 80 | 0.42 | 0.26 | [-0.25, -0.09] | 0.50 |  |
 | directed_modulation | 79 | 0.38 | 0.23 | [-0.24, -0.08] | 0.60 |  |
 | moral_rationale | 180 | 0.82 | 0.57 | [-0.32, -0.18] | — |  |
@@ -234,7 +234,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | association | 80 | 0.60 | 0.61 | [+0.00, +0.04] | 1.00 |  |
 | basic_readout | 80 | 0.60 | 0.53 | [-0.14, -0.02] | 0.98 |  |
 | basic_readout_mt | 80 | 0.50 | 0.50 | [+0.00, +0.00] | — |  |
-| chain_intermediates | 100 | 0.52 | 0.16 | [-0.45, -0.27] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
+| chain_intermediates¹ | 100 | 0.52 | 0.16 | [-0.45, -0.27] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | conjunctive_association | 80 | 0.30 | 0.23 | [-0.16, +0.01] | 0.83 |  |
 | directed_modulation | 80 | 0.06 | 0.04 | [-0.08, +0.02] | 1.00 |  |
 | moral_rationale | 180 | 0.42 | 0.40 | [-0.06, +0.01] | — |  |
@@ -436,7 +436,7 @@ native is at chance too on those 22 items, so the flag carries no signal.
 | association | 80 | 0.96 | 0.93 | [-0.09, +0.00] | 0.97 |  |
 | basic_readout | 80 | 0.99 | 0.99 | [+0.00, +0.00] | 0.99 |  |
 | basic_readout_mt | 80 | 0.72 | 0.74 | [-0.03, +0.06] | — |  |
-| chain_intermediates | 100 | 0.95 | 0.30 | [-0.74, -0.56] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
+| chain_intermediates¹ | 100 | 0.95 | 0.30 | [-0.74, -0.56] | — | **summary < 0.5x native (CI excludes 0), drop > 0.30** |
 | conjunctive_association | 80 | 0.42 | 0.25 | [-0.26, -0.10] | 0.53 |  |
 | directed_modulation | 79 | 0.38 | 0.24 | [-0.22, -0.06] | 0.67 |  |
 | moral_rationale | 180 | 0.82 | 0.55 | [-0.34, -0.21] | — |  |
@@ -564,10 +564,16 @@ The single-token families are unchanged (within ±0.03). D3c s3d all layers (n 9
 directed_modulation_obscure 0.33 / 0.16 / 0.25, knowledge_cutoff 0.60 / 0.49 / 0.52, wrong_bridge
 0.50 / 0.48 / 0.50.
 
-**Catastrophe flags left (O-lens):** chain and arithmetic on full banks, and introspection and
+**Catastrophe flags left (O-lens):** chain¹ and arithmetic on full banks, and introspection and
 user_modeling on the ATI subsets (D3a). user_modeling on the full bank (0.94 → 0.68) is no longer
 flagged; that run is `complete=False` (4 of 100 items unsummarized: digest refusals), so it is
 excluded from its run's macro, as the plan 0020 rule requires.
+
+¹ chain_intermediates (plan 0038 C3): the flag compares raw rates whose floors differ. Native
+`cells=all` 0.91 sits on an item-level any-cell permutation null of 0.81 (net +0.10); summary 0.30
+on 0.11 (net +0.19). The flag is an artefact of comparing the two rates without their floors.
+Plan 0038 replaces the summary judge with an 8-option MC judge on bank v2 (strict
+all-intermediates headline, `null_shuffled` and `net` beside it).
 
 ### Chain and arithmetic: specificity is the rule, so the lift is the comparison
 

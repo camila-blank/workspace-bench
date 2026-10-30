@@ -46,7 +46,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   pass-rate `FamilyResult` epilogue: decided-only value, bootstrap CI, completeness, counts).
   A pass-rate family's `run()` is: load bank -> `item_scope` -> `load_readouts` -> select cells ->
   `cell_text` -> `Call`s -> `run_calls` -> per-cell verdicts -> per-item rows -> `pass_rate_result`
-  -> `with_readout_count`. `chain_intermediates/judge.py` is the shortest complete example.
+  -> `with_readout_count`. `chain_intermediates/judge.py` is a complete example (native free recall plus, since plan 0038, a per-slot MC summary path and an item-level permutation null).
 - `mcjudge.py`: `Call` + `run_calls` (one schema per batch, fingerprint `(prompt_version, model,
   reasoning, temperature, system, user)`, cache `{result, meta}` in `<out>/cells.jsonl`,
   `validate` re-queues an invalid answer); `Preflighter` (one preflight per model per process);

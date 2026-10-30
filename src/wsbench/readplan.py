@@ -160,6 +160,8 @@ def lite_select(positions: Iterable[int], rule: dict[str, Any]) -> list[int]:
 #   line_one_newline            the newline token that ends line one (the last newline)
 #   last_newline                the last newline token anywhere (chat_prefill: inside the prefill)
 #   from_token {token}          from the first token whose text is `token` through the end
+#   from_text_last_token {text} from the LAST token of the (last) occurrence of `text` through
+#                               the end (chain: "The starting number is 23" reads from the "3")
 #   from_last_sentence_start    from the first token of the final sentence of the last user
 #                               turn through the end of the render
 #   suffix_text {text}          the tokens whose joined text is `text` at the end of the render
@@ -235,6 +237,12 @@ def resolve(rule: dict[str, Any], tokens: list[str]) -> list[int]:
         return list(range(hits[0], n)) if hits else []
     if kind == "from_last_sentence_start":
         return _from_last_sentence_start(tokens)
+    if kind == "from_text_last_token":
+        start = _suffix_start(tokens, rule["text"])
+        if start is None:
+            return []
+        end = _text_end(tokens, start, rule["text"])
+        return list(range(end - 1, n))
     if kind in ("suffix_text", "suffix_text_then_tail"):
         start = _suffix_start(tokens, rule["text"])
         if start is None:
@@ -649,11 +657,13 @@ def _plan(family: str) -> list[ReadSpec]:
                 family,
                 it["id"],
                 "chat",
-                {"kind": "from_token", "token": " What"},
+                # plan 0038 C7: from the start number's LAST token (Qwen splits digits, so the
+                # "3" of "23") through the end of the render; lite = the final token
+                {"kind": "from_text_last_token", "text": f"The starting number is {it['start']}"},
                 GRID,
                 text=it["prompt"],
-                note="the question span through the end of the render (opts=cells=all); the "
-                "default judge reads only the render's final token, the assistant onset",
+                note="the start number's last token through the end of the render (full, 27 "
+                "positions on Qwen3.6-27B); lite = the render's final token, the assistant onset",
                 lite_positions=FINAL,
             )
             for it in items
