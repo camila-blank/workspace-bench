@@ -455,7 +455,7 @@ into separate `out=` dirs (`wsbench run` warns when it overwrites a result of th
 `aggregate=native`: summary mode reads every cell. Options: `summ_model`, `summ_variant=task|blind`,
 `summ_render=extractive|abstractive`, `summ_effort`, `summ_max`, `summ_token_cap` (ablation),
 `summ_overflow=hierarchical|stride`, `summ_concurrency`, `summ_timeout`,
-`summ_fallback=none|default`, `summ_rare`, `summ_numbers`, `summ_lang` (the multilingual families)
+`summ_fallback=none|default|default+<claude model>`, `summ_rare`, `summ_numbers`, `summ_lang` (the multilingual families)
 (per-family defaults in `digest.FAMILY_DEFAULTS`). Details: `docs/summarizer.md` § Item digest and each family README's "Summary
 mode" section.
 

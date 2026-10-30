@@ -318,6 +318,81 @@ def test_refusal_fallback_is_passed_and_served_model_recorded(tmp_path, fam, mon
     assert col.row("a")["summary_served_by"] == "claude-opus-4-8"
 
 
+def _refusing_on(models_refusing: set[str], seen: list[str]):
+    """A stream_json fake: ``REFUSED_JSON`` for calls on a model in ``models_refusing``, else
+    the first bundle line as evidence."""
+
+    def stream_json(prompts, *, on_result, **kw):
+        assert kw.get("mark_refusals") is True
+        for i, (_s, user) in enumerate(prompts):
+            seen.append(kw["model"])
+            if kw["model"] in models_refusing:
+                on_result(i, llm.REFUSED_JSON)
+                continue
+            line = next(ln[2:] for ln in user.splitlines() if ln.startswith("- "))
+            on_result(i, {"items": [{"statement": "s", "key": "", "where": "", "evidence": line}]})
+        return Spend()
+
+    return stream_json
+
+
+def test_refusal_model_serves_a_still_declined_digest(tmp_path, fam, monkeypatch):
+    """plan 0037 J10: ``summ_fallback=default+<model>`` re-runs a call still declined after the
+    server-side fallback on <model>, at the same level (no halving), and records it as served."""
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(llm, "stream_json", _refusing_on({"claude-opus-5-5"}, seen))
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
+    assert col.summaries["a"] and "a" not in col.unsummarized
+    assert col.row("a")["summary_served_by"] == "claude-sonnet-5"
+    assert col.extras()["digest_served_by"] == {"claude-sonnet-5": 1}
+    assert col.diag["n_refusal_model_calls"] == 1 and col.diag["max_halvings"] == 0
+    seen.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})  # cached: no call, provenance survives
+    assert seen == [] and col.row("a")["summary_served_by"] == "claude-sonnet-5"
+
+
+def test_refusal_model_declines_too_halves_as_before(tmp_path, fam, monkeypatch):
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(
+        llm, "stream_json", _refusing_on({"claude-opus-5-5", "claude-sonnet-5"}, seen)
+    )
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert "a" in col.unsummarized and col.diag["n_digest_refused"] == 1
+    assert seen[:2] == ["claude-opus-5-5", "claude-sonnet-5"]  # every level tries both
+
+
+def test_no_refusal_model_no_retry(tmp_path, fam, monkeypatch):
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default")
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(llm, "stream_json", _refusing_on({"claude-opus-5-5"}, seen))
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert "a" in col.unsummarized and set(seen) == {"claude-opus-5-5"}
+
+
+@pytest.mark.parametrize("bad", ["sonnet", "default+", "default+gpt-5", "none+claude-sonnet-5"])
+def test_summ_fallback_values(tmp_path, bad):
+    s = digest.settings(_args(tmp_path, summ_fallback="default+claude-sonnet-5"))
+    assert (s.server_fallback, s.refusal_model) == ("default", "claude-sonnet-5")
+    s = digest.settings(_args(tmp_path, summ_fallback="default"))
+    assert (s.server_fallback, s.refusal_model) == ("default", None)
+    s = digest.settings(_args(tmp_path))
+    assert (s.server_fallback, s.refusal_model) == (None, None)
+    with pytest.raises(SystemExit):
+        digest.settings(_args(tmp_path, summ_fallback=bad))
+
+
 def test_count_tokens_unavailable_falls_back_to_estimate(tmp_path, fam, monkeypatch):
     def no_count(model, prompts, concurrency=8):
         raise llm.JudgeConfigError("count_tokens needs an Anthropic model")
