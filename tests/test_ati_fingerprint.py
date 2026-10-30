@@ -25,6 +25,7 @@ CHANGED_BY_FAMILY_PRS: set[str] = {
     "association",  # plan 0039: bank v2 + summarize-suffix plan
     "basic_readout",  # plan 0039: v2 bank (question form)
     "wrong_bridge",  # plan 0037: bank v2 (mc block, all positions)
+    "basic_readout_mt",  # plan 0037: bank v2 (question form)
 }
 
 

@@ -134,6 +134,7 @@ PENDING_REGATE = {
     "association": "plan 0039: bank v2 (93 items, MC) + summarize-suffix render",
     "basic_readout": "plan 0039: v2 bank (question form, re-gated items)",
     "wrong_bridge": "plan 0037: bank v2 (mc block, all-positions read)",
+    "basic_readout_mt": "plan 0037: bank v2 (question form)",
 }
 
 
