@@ -157,7 +157,7 @@ would otherwise pick up a summary result.
   so a multi-word form stays reachable on a token lens). `judge_model` is the digest model,
   `pinned_instrument` follows the digest, and `prompt_version` is
   `digest.prompt_version("mt-regex-2026-10-30+typo-v2", args, "typo_mt")` (defaults:
-  `mt-regex-2026-10-30+typo-v2+digest-v4-task-extractive+sj-v8`; `+reads-lite` under lite).
+  `mt-regex-2026-10-30+typo-v2+digest-v4-task-extractive+sj-v9`; `+reads-lite` under lite).
   A word the summarizer only infers (in a statement) never hits: evidence spans only; a
   `quote_ok`-verified split word of adjacent positions hits as its plain word.
 - **Same-layer conjunction is relaxed by design.** "Every required unit hits at one layer" becomes
@@ -199,7 +199,7 @@ The readout below is a digest of the readouts across every read layer and positi
 `SUMMARY_NOTE_TOKENS` (appended to the note when the source readouts are token lists):
 
 ```text
-A line whose items are separated by " | " is one ranked list of the top vocabulary tokens read from ONE activation, best first. Several tokens of the same line may jointly express one meaning, and a quote from such a line is one token or several tokens of that same line joined by " | ". Tokens of adjacent positions at the same layer may be joined only to spell one word split across them; such a quote is that word. Tokens on different lines never combine otherwise, and a relation (who does what to whom) must be stated within one sample (for a free-text sample, within one of its "- " bullets; in a free-text sample, bullets are separated by ⁞). A line that holds two or more of the options singles out none of those options, whatever their rank; an option that is the only option on its line is singled out by that line, even if the line holds other words of the same kind.
+A line whose items are separated by " | " is one ranked list of the top vocabulary tokens read from ONE activation, best first. Several tokens of the same line may jointly express one meaning, and a quote from such a line is one token or several tokens of that same line joined by " | ". Tokens of adjacent positions at the same layer may be joined only to spell one word split across them; such a quote is that word. Tokens on different lines never combine otherwise, and a relation (who does what to whom) must be stated within one sample (for a free-text sample, within one of its "- " bullets; in a free-text sample, bullets are separated by ⁞). A line that holds two or more of the options singles out none of those options, whatever their rank. A line that holds a run of interchangeable words or names of one kind (numbers, months, colours, countries, cities, people, works, ...) singles out none of the words on it, whatever their rank, even when only one of them is an option. Otherwise, an option that is the only option on its line is singled out by it.
 ```
 
 `USER_SUMMARY` (the `opts=judge=mc` user message in summary mode; `{summary_note}` is the note

@@ -251,5 +251,5 @@ def test_dmo_summary_gate_joins_token_lines(tmp_path, monkeypatch):
         NAME,
     )
     assert re.search(
-        r"\+joined-2026-10-30\+digest-v4-task-extractive\+sj-v8$", r.config["prompt_version"]
+        r"\+joined-2026-10-30\+digest-v4-task-extractive\+sj-v9$", r.config["prompt_version"]
     )

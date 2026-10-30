@@ -652,4 +652,4 @@ def test_lite_site_table_uses_support_share(tmp_path):
 def test_registered_spec_is_summary_family():
     assert SPEC.name not in digest.NATIVE_ONLY and not SPEC.targets_judge
     assert SPEC.flat_types == () and SPEC.multi_select is False
-    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-10-30"
+    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-10-31"

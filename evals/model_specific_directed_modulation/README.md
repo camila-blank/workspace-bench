@@ -194,7 +194,7 @@ the gold hits any evidence sample. The floor is computed the same way: every dis
 scored on the same evidence samples (`distractor_rate`). No judge call is made; the instrument is
 the digest, so `judge_model` is the digest model, `pinned_instrument` is true only for the
 default digest model at its default effort, and the scorer version is stamped
-`dmcd-regex-2026-10-23+joined-2026-10-30+digest-v4-<variant>-<render>+sj-v8` (cited from
+`dmcd-regex-2026-10-23+joined-2026-10-30+digest-v4-<variant>-<render>+sj-v9` (cited from
 `digest.prompt_version`). **Fixed in plan 0034:** until then the code called
 `digest.gate_texts(...)` without `joined=True`, against this README and the docstring, so a
 multi-word gold was unreachable on a token lens's digest lines; the `+joined-2026-10-30` suffix
