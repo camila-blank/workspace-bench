@@ -52,7 +52,19 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `validate` re-queues an invalid answer); `Preflighter` (one preflight per model per process);
   `item_scope` = bank ∩ `items=` then `limit=`; `base_config` / `base_counts`. `mc.py`: seeds,
   shuffles, `fold`, `letter_index` (a lone letter or a letter with its own option text).
-  `summarizer.py`: token bag -> prose (prompt in `docs/summarizer.md`).
+  `summarizer.py` (the J-lens bag -> prose step) is deleted (plan 0032): native token paths judge
+  `family.render_bag(tokens)` (no scores); summary mode digests every method the same way.
+- `reads.py` (plan 0032) is THE loader every family calls (`reads.load(args, family, ids=,
+  positions=)`, never `load_readouts` directly; `test_no_family_calls_load_readouts_directly`):
+  sidecar `<file>.meta.json` (declared sampling `bullet4|prose1|tokens10`), the `reads=lite`
+  selection (`ReadSpec.lite_positions` / `lite_layers`), the `reads=full` span check
+  (`EvalSpec.min_full_positions` / `full_contiguous`), the plan-layer and `plan_sha` guards (with a
+  sidecar; sidecar-less files are report-only). `base_config` / `runner.finalize_reads` stamp
+  `config.reads/sampling/sampling_source/reader/reads_checked/layers_judged` (+`lite_rule`).
+  `mc.options_with_cannot` builds every MC list (cannot-tell last); `mc.token_note(flat_types,
+  multi_select=)` is THE token-list rule (Q4); `digest.quote_ok` THE quote verifier
+  (`statement_lines` for relational content, `number_flood`); `wsbench.numerals` reads numerals in
+  any language.
 - Shared judges: `basic/` (the bank judge, `bank_family(name, title, sources=, not_in_macro=)`; per-family strings `FAMILY_RULES` (poetry, typo, medical_diagnosis{,_alt}) and `FORBIDDEN_TEMPLATE` (multihop, medical_diagnosis{,_alt}) are added to that family's own `PROMPTS`; `FAMILY_PROMPT_VERSIONS` / `prompt_version_of` give a newer family its own stamp (plan 0027: `bank-2026-10-29-md`) so adding a rule never stales the older families' `bank-2026-10-10` ATI entries and floors; `DIGEST_TASK_NOTES_TEXT` is in every basic family's PROMPTS, so a new note line must be added to every basic README) and `multitoken/`
   (`mt_family(name, title, calls_per_arm=)`): its scorer of record is the deterministic regex
   contract `multitoken/regex.py` (a port of the source repo's `bank/matching.py` +
@@ -161,7 +173,8 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   numeral or regex gate takes `digest.gate_texts(cell, col)` (evidence samples only;
   `joined=True` for regex). Summary mode never changes a family's denominator rule. Stamp
   `digest.prompt_version` / `digest.config` / `digest.pinned`. `runner.judge_family` stamps the
-  `digest.NATIVE_ONLY` families native and fails any other family that did not report
+  `digest.NATIVE_ONLY` families (jlens_concept_pr; hallucination until it leaves) native and fails
+  any other family that did not report
   `config.aggregate = "summary"`. Never bind a module constant (e.g. `PROMPT_VERSION`) as a
   default argument: tests monkeypatch it.
 
