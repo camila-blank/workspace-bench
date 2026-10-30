@@ -158,3 +158,66 @@ def test_empty_or_non_string_quote_fails():
     cell = _prose("Mia hugs Ruth")
     assert _check("", [cell])["ok"] is False
     assert gate.check(None, digest.native_lines([cell]), [cell], MIA, RUTH, LEX)["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "quote,role",
+    [
+        # PR #174 review: spaced / CJK forms of a neighbouring kin role (the hyphenated / closed
+        # forms were already one word) must not name the gold role ("close words", C2).
+        ("her great grandmother", "grandparent"),
+        ("her great grandfather", "grandparent"),
+        ("her great-great grandmother", "grandparent"),
+        ("曾祖母", "grandparent"),
+        ("曾祖父", "grandparent"),
+        ("太奶奶", "grandparent"),
+        ("her great grandma", "grandmother"),
+        ("her step grandmother", "grandparent"),
+        ("her step mother", "parent"),
+        ("her step father", "parent"),
+        ("her foster mother", "parent"),
+        ("her foster father", "parent"),
+        ("her mother in law", "parent"),
+        ("her step mother", "mother"),
+        ("her foster mother", "mother"),
+        ("his grand mother", "mother"),
+        ("his step father", "father"),
+        ("his step son", "son"),
+        ("his son in law", "son"),
+        ("his grand daughter", "daughter"),
+        ("孙女儿", "daughter"),
+        ("his half brother", "brother"),
+        ("表兄弟", "brother"),
+        ("her step sister", "sister"),
+        ("her great grandson", "grandson"),
+        ("曾孙子", "grandson"),
+        ("her great grandchild", "child"),
+        ("her ex husband", "husband"),
+        ("老太太", "wife"),
+    ],
+)
+def test_spaced_and_cjk_near_kin_never_name_role(quote, role):
+    assert gate.role_ref(quote, role, LEX) is False
+
+
+@pytest.mark.parametrize(
+    "quote,role",
+    [
+        ("her grandmother", "grandparent"),
+        ("祖母", "grandparent"),
+        ("奶奶", "grandmother"),
+        ("her mother", "parent"),
+        ("his father", "parent"),
+        ("her grandson", "grandson"),
+        ("孙女", "child"),
+        ("兄弟", "brother"),
+        ("太太", "wife"),
+    ],
+)
+def test_block_forms_leave_own_terms_alone(quote, role):
+    assert gate.role_ref(quote, role, LEX) is True
+
+
+def test_block_words_are_not_name_variants():
+    assert gate.name_ref("Grand mother hugged her", "Grant", LEX) is False
+    assert gate.name_ref("Grant hugged her", "Grant", LEX) is True

@@ -86,3 +86,14 @@ def test_no_bank_name_is_a_lexicon_word():
     for n in names:
         assert gate.name_ref(f"{n} did it", n, LEX), n
         assert not form_in(n, [t for r in LEX.roles for t in LEX.terms(r)]), n
+
+
+def test_block_terms_mask_only():
+    """``block`` holds mask-only forms: none is a lexicon role's own term (it would be a no-op)
+    and each contains some role or near-role term as a word (else it masks nothing)."""
+    own = {gate._norm(t) for r in LEX.roles for t in LEX.terms(r)}
+    near = {t for r in LEX.roles for n in LEX.near(r) for t in LEX.terms(n)}
+    assert LEX.block_terms()
+    for t in LEX.block_terms():
+        assert gate._norm(t) not in own, t
+        assert form_in(gate._norm(t), [gate._norm(x) for x in own | near]), t
