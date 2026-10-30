@@ -162,7 +162,10 @@ def lite_select(positions: Iterable[int], rule: dict[str, Any]) -> list[int]:
 #   from_token {token}          from the first token whose text is `token` through the end
 #   from_last_sentence_start    from the first token of the final sentence of the last user
 #                               turn through the end of the render
-#   suffix_text {text}          the tokens whose joined text is `text` at the end of the render
+#   suffix_text {text}          the tokens whose joined text is `text` at the end of the render;
+#                               an optional `from_char` k drops the leading tokens that end
+#                               before character k of `text` (stripped), so the span starts at
+#                               the token containing that character
 #   suffix_text_then_tail       `suffix_text` plus every token after it (the chat tail)
 
 
@@ -242,6 +245,9 @@ def resolve(rule: dict[str, Any], tokens: list[str]) -> list[int]:
         if kind == "suffix_text_then_tail":
             return list(range(start, n))
         end = _text_end(tokens, start, rule["text"])
+        k = int(rule.get("from_char", 0))
+        if k > 0:
+            start = _token_at_char(tokens, start, end, k)
         return list(range(start, end))
     raise ValueError(f"unknown positions rule {kind!r}")
 
@@ -295,6 +301,25 @@ def _suffix_start(tokens: list[str], text: str) -> int | None:
         if joined.startswith(target):
             return start
     return None
+
+
+def _token_at_char(tokens: list[str], start: int, end: int, k: int) -> int:
+    """First index in ``[start, end)`` whose token covers character ``k`` of the span's joined
+    text (leading whitespace stripped, as in ``_suffix_start``); ``end - 1`` if none does."""
+    acc = ""
+    for i in range(start, end):
+        acc = (acc + _clean(tokens[i])).lstrip() if not acc else acc + _clean(tokens[i])
+        if len(acc) > k:
+            return i
+    return max(start, end - 1)
+
+
+def first_diff(typo: str, target: str) -> int:
+    """Index of the first character where ``typo`` differs from ``target`` (case-insensitive);
+    ``len(typo) - 1`` when ``typo`` is a prefix of ``target`` or equal to it."""
+    a, b = typo.lower(), target.lower()
+    k = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), min(len(a), len(b)))
+    return min(k, len(a) - 1)
 
 
 def _text_end(tokens: list[str], start: int, text: str) -> int:
@@ -473,8 +498,9 @@ def _plan(family: str) -> list[ReadSpec]:
     ):
         return _final_token_families(family, "plain")
     if family == "typo_mt":
-        # plan 0033 M3: every token of the misspelled word that ends the prompt, nothing earlier
-        # (an earlier read would credit predicting the word, not correcting it); lite = its
+        # plan 0033 M3: the tokens of the misspelled word that ends the prompt from the one that
+        # contains the first misspelled character on, nothing earlier (a read before the
+        # misspelling exists would credit predicting the word, not correcting it); lite = its
         # final token, today's site (lite is a subset of full: one read serves both)
         _h, items = _bank(family)
         return [
@@ -482,10 +508,14 @@ def _plan(family: str) -> list[ReadSpec]:
                 family,
                 it["id"],
                 "plain",
-                {"kind": "suffix_text", "text": it["typo_word"]},
+                {
+                    "kind": "suffix_text",
+                    "text": it["typo_word"],
+                    "from_char": first_diff(it["typo_word"], it["target"]),
+                },
                 GRID,
                 text=it["prompt"],
-                note="every token of the misspelled word that ends the prompt",
+                note="the misspelled word's tokens from the first misspelled character on",
                 lite_positions=dict(FINAL),
             )
             for it in items

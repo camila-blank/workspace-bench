@@ -23,7 +23,10 @@ FROZEN = "2026-10-30"
 WHY = "Camila 2026-10-30: drop the arithmetic items"
 GATE_ARITH_CLAUSE = " (correct spelling / true result)"
 GATE_READ_OLD = "plain prompt, final prompt token;"
-GATE_READ_NEW = "plain prompt, every token of the misspelled word (reads=lite: its final token);"
+GATE_READ_NEW = (
+    "plain prompt, the misspelled word's tokens from the first misspelled character on"
+    " (reads=lite: its final token);"
+)
 
 
 def sha256(path: Path) -> str:

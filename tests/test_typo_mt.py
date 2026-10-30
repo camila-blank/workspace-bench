@@ -153,21 +153,44 @@ def test_typo_mt_full_reads_the_misspelled_word_lite_the_last_token():
     specs = reads.specs("typo_mt")
     assert len(specs) == 85
     hand = specs[HAND]
-    assert hand.positions == {"kind": "suffix_text", "text": "interpretibility"}
+    assert hand.positions == {"kind": "suffix_text", "text": "interpretibility", "from_char": 9}
     assert hand.lite_positions == {"kind": "final_token"} and hand.lite_layers is None
     assert hand.layers == readplan.GRID and hand.render == "plain"
     toks = ["There", "'s", " a", " really", " cool", " field", " in", " AI", " safety"]
     toks += [" research", " called", " mechan", "istic", " interpret", "ibility"]
+    # ' interpret' (13) ends before the misspelled 'i' (char 9): the model has seen only a
+    # correct prefix there, so reading it would score prediction, not correction
     full = readplan.resolve(hand.positions, toks)
-    assert full == [13, 14]
+    assert full == [14]
     assert readplan.lite_select(full, hand.lite_positions) == [14]
     lite_row = next(s for s in readplan.plan("typo_mt", reads="lite") if s.id == HAND)
     assert readplan.resolve(lite_row.positions, toks) == [14]
     one = specs["tyh-real-deference"]  # a one-token misspelling: full == lite
     toks1 = ["I", " defer", " to", " your", " reference"]
-    assert one.positions["text"] == "reference"
+    assert one.positions == {"kind": "suffix_text", "text": "reference", "from_char": 0}
     assert readplan.resolve(one.positions, toks1) == [4]
     assert readplan.lite_select([4], one.lite_positions) == [4]
+
+
+def test_typo_mt_full_span_starts_at_the_first_misspelled_character():
+    """Qwen3.6-27B tokenizations (offline) of three v2 items: the span starts at the token that
+    holds the first character where ``typo_word`` differs from ``target``, never earlier."""
+    specs = reads.specs("typo_mt")
+    acc = specs["tyh-novel-acciaccatura-b6"]  # acciacatura vs acciaccatura: differs at char 6
+    assert acc.positions["from_char"] == 6
+    toks = [" is", " called", " an", " acc", "iac", "atura"]
+    assert readplan.resolve(acc.positions, toks) == [5]  # not ' acc' / 'iac'
+    ana = specs["tyh-novel-anaphylaxis"]  # anaphlyaxis vs anaphylaxis: differs at char 5
+    assert ana.positions["from_char"] == 5
+    toks = [" for", " an", "aph", "ly", "axis"]
+    assert readplan.resolve(ana.positions, toks) == [3, 4]  # 'aph' ends at char 4
+    # a misspelled character in the middle of a token starts the span at that token
+    mid = {"kind": "suffix_text", "text": "anaphlyaxis", "from_char": 3}
+    assert readplan.resolve(mid, toks) == [2, 3, 4]
+    assert readplan.first_diff("Interpretibility", "interpretability") == 9  # case-insensitive
+    assert readplan.first_diff("abc", "abcd") == 2  # a prefix of the target: its last char
+    for s in specs.values():  # lite (the final token) stays inside every full span
+        assert s.positions["from_char"] < len(s.positions["text"])
 
 
 def _hand_rows(cells):
@@ -258,7 +281,7 @@ def test_reads_lite_uses_shared_select(tmp_path, real_families):
 
 
 def test_full_partial_span_is_flagged(tmp_path, capsys, real_families):
-    """A gap inside the misspelled word's span (13, 15 of a 3-token span) is partial."""
+    """A gap inside a full span (13, 15: position 14 missing) is partial."""
     cells = [(44, 13, {"samples": ["x"]}), (44, 15, {"samples": ["interpretability"]})]
     path = write_jsonl(tmp_path / "r.jsonl", _hand_rows(cells))
     bare = fam.run_regex(_args(path, tmp_path / "b", items=[HAND], layers=[44]), name="typo_mt")

@@ -1,8 +1,9 @@
 """Typo (multi-token): the hard typo family, scored by the regex contract (plan 0033).
 
 Bank v2 (``items_v2.json``, 85 items): v1 minus the 15 arithmetic items (Camila 2026-10-30:
-"Drop the arithmetic items"). Full read: every token of the misspelled word that ends the
-prompt; ``reads=lite``: its final token. Not in the ATI subset (Camila: "This should not be in
+"Drop the arithmetic items"). Full read: the tokens of the misspelled word that ends the
+prompt from the one holding the first misspelled character on (never a correct prefix of it);
+``reads=lite``: its final token. Not in the ATI subset (Camila: "This should not be in
 ati")."""
 
 from pathlib import Path
