@@ -8,7 +8,7 @@ from wsbench import digest, reads
 from wsbench.cache import Cache
 from wsbench.family import render_bag
 from wsbench.llm import Spend
-from wsbench.mc import CANNOT, classify, join_samples, seed_int, seeded_shuffle
+from wsbench.mc import classify, join_samples, options_with_cannot, seed_int, seeded_shuffle
 from wsbench.mcjudge import (
     Call,
     Preflighter,
@@ -130,7 +130,9 @@ def build_mcs(
             if gold is None:
                 continue
             dists, short = sample_distractors(pool, gold, it["topic_id"], f"{it['id']}:{side}")
-            shown = [*seeded_shuffle([gold, *dists], f"{EC_SEED}:{it['id']}:{side}:order"), CANNOT]
+            shown = options_with_cannot(
+                seeded_shuffle([gold, *dists], f"{EC_SEED}:{it['id']}:{side}:order")
+            )
             out[side] = MC(
                 side,
                 prompts.render_deliberative(q, side, shown),
@@ -146,7 +148,9 @@ def build_mcs(
             dists = (
                 [*dists[: N_DISTRACTORS - 1], con] if len(dists) >= N_DISTRACTORS else [*dists, con]
             )
-        shown = [*seeded_shuffle([gold, *dists], f"{EC_SEED}:{it['id']}:committed:order"), CANNOT]
+        shown = options_with_cannot(
+            seeded_shuffle([gold, *dists], f"{EC_SEED}:{it['id']}:committed:order")
+        )
         out["committed"] = MC(
             "committed",
             prompts.render_committed(q, shown),

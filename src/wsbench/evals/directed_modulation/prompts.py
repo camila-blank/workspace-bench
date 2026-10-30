@@ -1,6 +1,7 @@
 """Prompts of the directed-modulation judge (source repo ``oracle_lens_judge.py``, ``dm_concept``
 probe); printed verbatim in the family README."""
 
+from wsbench import mc
 from wsbench.llm import schema_block
 
 JUDGE_PROMPT_VERSION = "dm-2026-09-16"  # keys every judge-call fingerprint (prompts unchanged)
@@ -146,7 +147,7 @@ READOUT_BUNDLE_NOTE = (
 COMPOSITION_BLOCK = """\
 Set composition to "full" if you picked a candidate, otherwise "none"."""
 
-CANNOT = "cannot tell from the readout"
+CANNOT = mc.CANNOT  # plan 0032 §2.4.1: the one shared escape text
 
 # summary mode (plan 0020): one call per item on its digest; USER's opening paragraph changes
 SUMMARY_INTRO_OLD = (
@@ -218,9 +219,8 @@ def basis_note(polarity: str) -> str:
 
 
 def option_lines(options: list[str]) -> str:
-    lines = [f"{i + 1}. {opt}" for i, opt in enumerate(options)]
-    lines.append(f"{len(options) + 1}. {CANNOT}")
-    return "\n".join(lines)
+    shown = mc.options_with_cannot(list(options), cannot=CANNOT)  # plan 0032 §2.4.1
+    return "\n".join(f"{i + 1}. {opt}" for i, opt in enumerate(shown))
 
 
 def render_user(
