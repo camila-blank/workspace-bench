@@ -147,6 +147,27 @@ def test_cannot_with_another_pick_is_reasked_once(tmp_path, monkeypatch):
     assert r.extras["kinds"] == {"invalid": 1}
 
 
+def test_kept_invalid_reask_is_replayed_from_cache(tmp_path, monkeypatch):
+    """The second G-plus-another-pick answer is cached as kept: a repeated pass replays it (no
+    call) and still scores it invalid."""
+    s = _sets()["d-lion"]
+    path = write_jsonl(
+        tmp_path / "r.jsonl", _rows("d-lion", {(44, -1): {"samples": ["a lion in a bow tie"]}})
+    )
+    both = {
+        "picks": [
+            {"choice": "G", "quote": "", "basis": CB},
+            {"choice": _letter(s.options, "lion"), "quote": "lion", "basis": CB},
+        ]
+    }
+    fake = FakeLLM.install(monkeypatch, lambda sy, u, sc: both)
+    r = judge.run(_args(path, tmp_path, items=["d-lion"]))
+    assert len(fake.calls) == 2 and r.extras["kinds"] == {"invalid": 1}
+    fake.calls.clear()
+    r = judge.run(_args(path, tmp_path, items=["d-lion"]))
+    assert fake.calls == [] and r.extras["kinds"] == {"invalid": 1}
+
+
 # ---------------------------------------------------------------- M2 rare mentions
 
 
@@ -259,6 +280,32 @@ def test_token_bag_cannot_state_direction():
     v = judge.verdict({"picks": [pick]}, REL, [0], lines, cells=[cell])
     assert v["own"] == [] and v["n_relation_unverified"] == 1
     assert "if the only evidence for such a candidate is a token list, answer G" in prompts.SYSTEM
+
+
+def test_relation_in_unlisted_script_trusts_judge():
+    """Bank v2 lists Latin forms only: a Chinese quote naming both people is taken on the
+    judge's reading (counted), a Latin quote missing a person is still dropped."""
+    s = _sets()["b-moza-ent-ab"]
+    gold = s.options[s.gold[0]]
+    pick = {"choice": _letter(s.options, gold), "quote": "莫扎特嫉妒萨列里", "basis": CB}
+    v = judge.verdict({"picks": [pick]}, s.options, s.gold, "- 我在想莫扎特嫉妒萨列里的情景",
+                      roles=s.roles)  # fmt: skip
+    assert v["kind"] == "hit" and v["n_relation_script_trusted"] == 1
+    assert v["n_relation_unverified"] == 0
+    # mixed: one person by a listed Latin form, the other in Chinese
+    pick = {"choice": _letter(s.options, gold), "quote": "Mozart嫉妒萨列里", "basis": CB}
+    v = judge.verdict({"picks": [pick]}, s.options, s.gold, "Mozart嫉妒萨列里", roles=s.roles)
+    assert v["kind"] == "hit" and v["n_relation_script_trusted"] == 1
+    # Latin-only and a person missing: still dropped
+    pick = {"choice": _letter(s.options, gold), "quote": "Mozart is jealous", "basis": CB}
+    v = judge.verdict({"picks": [pick]}, s.options, s.gold, "Mozart is jealous", roles=s.roles)
+    assert v["own"] == [] and v["n_relation_unverified"] == 1
+    assert v["n_relation_script_trusted"] == 0
+
+
+def test_alternatives_name_each_candidate_text():
+    assert "only hedges between them" not in prompts.SYSTEM
+    assert "even as alternatives" in prompts.SYSTEM
 
 
 def test_entity_aliases_count_as_names():
