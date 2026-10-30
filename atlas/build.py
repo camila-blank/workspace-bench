@@ -52,7 +52,7 @@ FAMILY_DESC = {
     "jailbreak_recognition": "Does the lens show the model recognising a jailbreak attempt?",
     "user_modeling": "Infer attributes of the user (country, gender, job) from the conversation.",
     "conjunctive_association": "Two cues jointly imply a concept neither implies alone.",
-    "role_bound_association": "An emotion bound to a specific person in a scene.",
+    "role_bound_association": "Who did what to whom in a two-person scene.",
     "relational_multihop": "Kinship / relation chains ('my friend's teacher's father').",
     "hallucination": "Does the lens fire on content the model never computed? (lower is better)",
     "jlens_concept_pr": "Precision of lens concepts against the subject's own J-lens top-10.",

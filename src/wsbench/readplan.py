@@ -113,6 +113,18 @@ def frozen_lite_rule(family: str) -> dict[str, Any]:
     return dict(rule)
 
 
+def _adapted_offset(rule: dict[str, Any], header: dict[str, Any]) -> bool:
+    """role_bound plan 0042 C3.3: an ``offset_from_end`` lite rule counts positions of the Qwen
+    chat tail, so an adapted bank (``$WSB_BANK_ROOT``) reads ``final_token`` instead unless its
+    header's ``readout`` block names a ``lite`` source key."""
+    if not os.environ.get(BANK_ROOT_ENV) or rule.get("kind") not in (
+        "offset_from_end",
+        "offsets_from_end",
+    ):
+        return False
+    return not (header.get("readout") or {}).get("lite")
+
+
 def lite_select(positions: Iterable[int], rule: dict[str, Any]) -> list[int]:
     """The subset of ``positions`` (one item, one layer) that ``rule`` keeps, sorted."""
     ps = sorted(set(positions))
@@ -679,7 +691,10 @@ def _plan(family: str) -> list[ReadSpec]:
             for it in items
         ]
     if family in ("conjunctive_association", "role_bound_association"):
-        _h, items = _bank(family)
+        header, items = _bank(family)
+        lite = frozen_lite_rule(family)
+        if family == "role_bound_association" and _adapted_offset(lite, header):
+            lite = dict(FINAL)
         return [
             ReadSpec(
                 family,
@@ -693,7 +708,7 @@ def _plan(family: str) -> list[ReadSpec]:
                 "read (docs/read_sites.md)",
                 # plan 0032 §2.6: final_token until the pre-registered lite-site procedure
                 # (scripts/lite_site_table.py) freezes a rule into evals/<family>/lite_rule.json
-                lite_positions=frozen_lite_rule(family),
+                lite_positions=lite,
             )
             for it in items
         ]
