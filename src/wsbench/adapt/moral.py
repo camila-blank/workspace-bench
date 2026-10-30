@@ -299,7 +299,7 @@ def _verify_sides(rows: list[dict]) -> set[str]:
 
 
 def run(model: str, stage: str = "all", **kw: Any) -> None:
-    if stage == "rekey_readrender":  # plan 0040: Qwen3.6-27B on the read render (bank v2)
+    if stage == "rekey_readrender":  # plan 0046: Qwen3.6-27B on the read render (bank v2)
         rekey_readrender(kw["out"], kw.get("step", "requests_s"), int(kw.get("limit", 0)))
         return
     if stage == "variant":
@@ -319,7 +319,7 @@ def run(model: str, stage: str = "all", **kw: Any) -> None:
 
 
 # ------------------------------------------------------------ v2 re-key under the read render
-# plan 0040 §2.1: the side AND the reasons are sampled in the conversation the lens reads (chat
+# plan 0046 §2.1: the side AND the reasons are sampled in the conversation the lens reads (chat
 # render, thinking off, the item's stimulus [+ system]); v1 mined reasons from an explanation
 # prompt on ``question``, where Qwen took the opposite side on 23 items. GPU sampling goes
 # through ``scripts/qwen_sample_modal.py`` (gpu.md G10); Opus distils / verifies.
@@ -546,7 +546,7 @@ SAME_PROMPT = (
 def distil_user_v2(it: dict, draws_by_answer: list[tuple[str, list[str]]]) -> str:
     """The distiller's input under the read render: the stimulus, the forced one-word answer
     and the one-sentence ask, then the draws (one block per forced answer). No human guess at
-    the reason is shown (v1 showed ``hypothesized_reason``; plan 0040 §2.1)."""
+    the reason is shown (v1 showed ``hypothesized_reason``; plan 0046 §2.1)."""
     blocks = []
     for answer, draws in draws_by_answer:
         listing = "\n".join(f"[{i}] {d.strip()}" for i, d in enumerate(draws))
@@ -640,7 +640,7 @@ def _write_jsonl(path: Any, rows: list[dict]) -> None:
 
 
 def rekey_readrender(out: str, step: str, limit: int = 0) -> None:
-    """``stage=rekey_readrender step=<step> out=<dir>`` (plan 0040 §2.1). Steps, in order:
+    """``stage=rekey_readrender step=<step> out=<dir>`` (plan 0046 §2.1). Steps, in order:
 
     requests_s -> <out>/side.jsonl (run scripts/qwen_sample_modal.py -> side.samples.jsonl);
     grade_s    -> <out>/verdicts.json (the Leg S keep rule);

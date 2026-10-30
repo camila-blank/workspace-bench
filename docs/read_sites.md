@@ -84,7 +84,7 @@ indexing the render above, `token` the site's token, e.g.
 (The files under `examples/readouts/` are dry-run fixtures; `wsbench plan` is the read site of
 record.)
 
-## moral_rationale (plan 0040)
+## moral_rationale (plan 0046)
 
 | reads | positions | layers |
 |---|---|---|

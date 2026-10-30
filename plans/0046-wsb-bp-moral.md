@@ -1,4 +1,4 @@
-# 0040 — WorkspaceBench fix campaign: moral_rationale ("moral" workstream)
+# 0046 — WorkspaceBench fix campaign: moral_rationale ("moral" workstream)
 
 Status: implemented in this PR (camila/wsb-bp-moral) on top of the merged infra (plan 0032,
 34005ac). Campaign source of truth: `/workspace/root/wsb-bp/plans/{moral,SHARED_API,gpu,

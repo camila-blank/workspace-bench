@@ -117,7 +117,7 @@ def test_introspection_bank_unchanged_by_the_refill():
 # families whose bank / plan a family PR changed; their entry is stale (refused by subset_entry)
 # until the run phase re-gates them (gpu.md R8 / G13)
 REGATE_PENDING = {
-    "moral_rationale": "plan 0040: bank v2 (re-keyed, same-topic options) + all reads"
+    "moral_rationale": "plan 0046: bank v2 (re-keyed, same-topic options) + all reads"
 }
 
 

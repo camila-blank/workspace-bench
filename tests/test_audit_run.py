@@ -62,7 +62,7 @@ def test_undeclared_and_stale_fail(tmp_path):
 
 
 def test_floor_and_ati_instruments_are_reported(tmp_path):
-    # plan 0040 (moral, SHARED_API r3): reported, never failed: a moral row on the ec-v4
+    # plan 0046 (moral, SHARED_API r3): reported, never failed: a moral row on the ec-v4
     # instrument has no ec-v3 floor / ATI entry until gpu R6 / R8 re-measure them
     r = ar.audit_family(_write(tmp_path / "s", "moral_rationale"))
     assert r["ok"] and r["ati"] == "n/a"

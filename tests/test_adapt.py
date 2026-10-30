@@ -565,7 +565,7 @@ def test_role_bound_strict_requires_stated_roles(monkeypatch):
     assert names_only.greedy["ok"] is False and roles.greedy["ok"] is True
 
 
-# ---------------------------------------------------------------- moral re-key (plan 0040 §2.1)
+# ---------------------------------------------------------------- moral re-key (plan 0046 §2.1)
 
 
 def test_rekey_readrender_teacher_forces_greedy_side():

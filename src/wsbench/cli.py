@@ -523,7 +523,7 @@ def floor_columns() -> dict[str, dict[str, str]]:
 
     lucky = {
         fam: f"{f(e.get('blind', {}).get('mean'))} / {f(e.get('described', {}).get('mean'))}"
-        # plan 0040 §2.3: the question+options guesser is the family's chance line where measured
+        # plan 0046 §2.3: the question+options guesser is the family's chance line where measured
         + (f"; question {f(e['question'].get('mean'))}" if "question" in e else "")
         for fam, e in lucky_guessing.floors().items()
     }

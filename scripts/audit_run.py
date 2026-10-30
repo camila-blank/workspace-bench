@@ -13,7 +13,7 @@ Per ``<run dir>/<family>/results.json`` it checks, and prints a table:
 - ``n_readouts_in == n_readouts_bundled`` and ``n_truncated_items == 0`` (no readout dropped);
 - ``complete`` for a ``layers=<L>`` run.
 It prints ``extras.digest_served_by``, ``n_unverified_bullet`` and ``n_bare_mention_pass``, and
-(round 3; plan 0040 moral) the two instrument matches, reported, never failed (a PV change after
+(round 3; plan 0046 moral) the two instrument matches, reported, never failed (a PV change after
 gpu R6 / R8 means "no floor" / "re-gate", not a broken run): ``floor`` = whether the frozen
 summary prompt-only floor's ``instrument`` equals ``strip_reads(prompt_version)``
 (``prompt_only.summary_floor_applies``), ``ati`` = whether a native row's ``prompt_version``

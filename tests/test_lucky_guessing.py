@@ -416,7 +416,7 @@ def test_lucky_floor_from_another_judge_is_not_drawn(tmp_path, real_families):
     assert set(lg.floors(dst)[fam]) == {"described", "uniform"}
 
 
-# ---------------------------------------------------------------- question variant (plan 0040)
+# ---------------------------------------------------------------- question variant (plan 0046)
 
 
 def test_moral_question_variant_shows_question_and_drops_escape():

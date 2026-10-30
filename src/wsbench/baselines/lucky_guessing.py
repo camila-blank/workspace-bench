@@ -44,7 +44,7 @@ SYSTEM_MULTI = (
     "(phrasing, specificity, how answer-like a candidate looks). Select one to three. Do not "
     "explain."
 )
-# plan 0040 §2.3 (moral_rationale): the question-and-options guesser, a floor for families whose
+# plan 0046 §2.3 (moral_rationale): the question-and-options guesser, a floor for families whose
 # judge always shows the question (only families with a GUESS_QUESTION hook get it)
 SYSTEM_QUESTION = (
     "You will be shown a question that a language model answered with one word, and a list of "

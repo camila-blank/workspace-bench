@@ -18,7 +18,7 @@ from wsbench.readplan import LITE_KINDS, ReadSpec, lite_select
 from wsbench.results import FamilyResult, write_results
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "wsbench"
-MORAL = "moral_rationale"  # full = all positions, min_full_positions 6, contiguous (plan 0040)
+MORAL = "moral_rationale"  # full = all positions, min_full_positions 6, contiguous (plan 0046)
 
 
 def _args(path: Path, tmp_path: Path, **kw) -> object:

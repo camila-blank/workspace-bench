@@ -599,7 +599,7 @@ def _plan(family: str) -> list[ReadSpec]:
                 family,
                 it["id"],
                 "chat",
-                {"kind": "all"},  # plan 0040 §2.5: every position; lite = today's tail five
+                {"kind": "all"},  # plan 0046 §2.5: every position; lite = today's tail five
                 GRID,
                 text=it["stimulus"],
                 system=it.get("system"),  # the subject's one-word system turn (moral.variant)
