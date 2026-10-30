@@ -250,6 +250,9 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "arithmetic_intermediates": {"summ_numbers": "5", "summ_rare": "0"},
     # plan 0032 §2.5.2: a single COMMIT sample survives the digest
     "unverbalized_hint": {"summ_rare": "25"},
+    # plan 0044 §C3: the judge must see the competing answers to weigh them (coverage 0.42 at
+    # 10 items vs 0.65 at 25), and rare single answers must survive so minimum support counts them
+    "knowledge_cutoff": {"summ_max": "25", "summ_rare": "25"},
     # plan 0032 §2.2.2: the language each evidence span is written in, shown to the judge
     "multilingual": {"summ_lang": "1"},
     "multilingual_mt": {"summ_lang": "1"},

@@ -540,7 +540,8 @@ def _plan(family: str) -> list[ReadSpec]:
                 GRID,
                 text=it["user"],
                 note="every prompt position as a negative offset (reply_start, the last prompt "
-                "token, is -1); one judge call per item and layer reads all of them together",
+                "token, is -1); one judge call reads all of them together (summary mode: per "
+                "item; native: per item and layer)",
                 lite_positions=FINAL,
             )
             for it in items
