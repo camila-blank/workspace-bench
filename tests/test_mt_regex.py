@@ -395,15 +395,36 @@ def test_markdown_fold_bankv2():
     }
 
 
+def test_fuzzy_rejects_common_words():
+    """PR #167 review: one edit on a 6-7-letter surname is an ordinary English word, and a
+    first-letter edit is another name — none of these may credit a bank entity."""
+    misses = [
+        ("tailor", ["Taylor"]),
+        ("virgin", ["Virgil", "Vergil"]),
+        ("a bridge", ["Bridget", "Brigid", "Brigit"]),
+        ("bright light", ["Brigit"]),
+        ("canton", ["Cantor"]),
+        ("hobbies", ["Hobbes"]),
+        ("Herbert", ["Gerbert"]),
+        ("garrison", ["Harrison"]),
+    ]
+    for text, forms in misses:
+        assert not regex.fuzzy_form_in(text, forms), (text, forms)
+    # the exact names still hit
+    assert regex.fuzzy_form_in("Zachary Taylor", ["Taylor"])
+    assert regex.fuzzy_form_in("Virgil", ["Virgil", "Vergil"])
+
+
 def test_fuzzy_khatchaturian():
-    """Plan 0041 B5 (Camila: "allowing e.g. 'khatchaturian'"): edit distance 1 for 6-11 letters,
-    2 for >= 12, exact under 6; never near another option."""
+    """Plan 0041 B5 (Camila: "allowing e.g. 'khatchaturian'"): edit distance 1 for 8-11 letters,
+    2 for >= 12, exact under 8, first letter kept; never near another option."""
     assert regex.fuzzy_form_in("Khatchaturian ethnicity", ["Khachaturian"])
     assert regex.fuzzy_form_in("aram khatchaturian", ["Aram Khachaturian"])
     assert not regex.fuzzy_form_in("Khanjian", ["Khachaturian"])
     assert not regex.fuzzy_form_in("Kachalov", ["Khachaturian"])
     assert not regex.fuzzy_form_in("Harrison", ["Benjamin Harrison"])  # needs both words
     assert not regex.fuzzy_form_in("Davos", ["Davis"])  # 5 letters: exact only
+    assert regex.fuzzy_form_in("Kierkegard", ["Kierkegaard"])  # 11 letters: one edit
     assert regex.fuzzy_form_in("Ibsne", ["Ibsen"]) is False
     assert regex.fuzzy_form_in("Shakespere", ["Shakespeare"])
     assert not regex.fuzzy_form_in("Benjamin Harrisen", ["Benjamin Harrison"],
