@@ -97,6 +97,22 @@ LITE_KINDS = (
 FINAL = {"kind": "final_token"}
 
 
+LITE_SITE_FAMILIES = ("association", "conjunctive_association", "role_bound_association")
+
+
+def frozen_lite_rule(family: str) -> dict[str, Any]:
+    """The lite rule frozen by the pre-registered lite-site procedure (plan 0032 §2.6; gpu.md
+    R4d: ``scripts/lite_site_table.py --write``) in ``evals/<family>/lite_rule.json``, else
+    ``final_token``. A lite-rule edit never changes full cells, ``plan_sha`` or ``bank_sha``."""
+    path = REPO_ROOT / "evals" / family / "lite_rule.json"
+    if not path.exists():
+        return dict(FINAL)
+    rule = json.loads(path.read_text(encoding="utf-8"))["lite_positions"]
+    if rule.get("kind") not in LITE_KINDS:
+        raise ValueError(f"{path}: lite rule {rule!r} is not one of {LITE_KINDS}")
+    return dict(rule)
+
+
 def lite_select(positions: Iterable[int], rule: dict[str, Any]) -> list[int]:
     """The subset of ``positions`` (one item, one layer) that ``rule`` keeps, sorted."""
     ps = sorted(set(positions))
@@ -307,6 +323,7 @@ def _bank(family: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
 def _final_token_families(family: str, render: str) -> list[ReadSpec]:
     _h, items = _bank(family)
+    lite = frozen_lite_rule(family) if family in LITE_SITE_FAMILIES else dict(FINAL)
     out = []
     for it in items:
         rule = {"kind": "final_token"}
@@ -325,12 +342,12 @@ def _final_token_families(family: str, render: str) -> list[ReadSpec]:
                     GRID,
                     text=it["prompt"],
                     prefill=ANSWER_STEM,
-                    lite_positions=FINAL,
+                    lite_positions=lite,
                 )
             )
         else:
             out.append(
-                ReadSpec(family, it["id"], r, rule, GRID, text=it["prompt"], lite_positions=FINAL)
+                ReadSpec(family, it["id"], r, rule, GRID, text=it["prompt"], lite_positions=lite)
             )
     return out
 
@@ -620,8 +637,8 @@ def _plan(family: str) -> list[ReadSpec]:
                 note="the 19 suffix and chat-tail tokens; story positions are never "
                 "read (docs/read_sites.md)",
                 # plan 0032 §2.6: final_token until the pre-registered lite-site procedure
-                # (scripts/lite_site_table.py) freezes a rule
-                lite_positions=FINAL,
+                # (scripts/lite_site_table.py) freezes a rule into evals/<family>/lite_rule.json
+                lite_positions=frozen_lite_rule(family),
             )
             for it in items
         ]
