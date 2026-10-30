@@ -3,7 +3,7 @@ cell, a prompt over positions and layers, a plan row, or a whole eval set."""
 
 import json
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Self
 
@@ -132,13 +132,25 @@ class Producer:
         out: Path | str,
         *,
         limit: int = 0,
-        layers: Iterable[int] | None = None,
+        layers: Iterable[int] | str | None = None,
         items: Iterable[str] | None = None,
+        reads: str = "full",
     ) -> Path:
         """Every item of a family into one readouts JSONL, resumable: an item whose rows are
-        already in ``out`` is skipped; each item's rows are written in one call."""
+        already in ``out`` is skipped; each item's rows are written in one call. ``layers``:
+        None = the plan's, ``"all"`` = every model layer (one forward captures them all), or a
+        list. ``reads="lite"`` reads only the lite sites. Writes the sidecar
+        ``<out>.meta.json`` declaring reads, sampling, reader and plan_sha (plan 0032 §2.9)."""
+        from wsbench import reads as reads_mod
+        from wsbench.readouts import write_sidecar
+
+        from .methods import sampling_of
+
         out = Path(out)
-        specs = readplan.plan(family)
+        plan_layers: Any = layers if layers == "all" else None
+        specs = readplan.plan(family, layers=plan_layers, reads=reads)
+        if layers is not None and layers != "all":
+            specs = [replace(s, layers=list(layers)) for s in specs]  # type: ignore[arg-type]
         if items is not None:
             want = set(items)
             specs = [s for s in specs if s.id in want]
@@ -153,9 +165,19 @@ class Producer:
             for spec in specs:
                 if spec.id in done:
                     continue
-                rows = self.read_spec(spec, layers=layers)
+                rows = self.read_spec(spec)
                 fh.write("".join(json.dumps(r.contract(), ensure_ascii=False) + "\n" for r in rows))
                 fh.flush()
+        name = getattr(self.method, "name", "method")
+        write_sidecar(
+            out,
+            reads=reads,
+            sampling=sampling_of(self.method),
+            reader=name,
+            arm=name,
+            layers=sorted({x for s in specs for x in s.layers}),
+            plan_sha=reads_mod.plan_sha(family),
+        )
         return out
 
     # ---- internals

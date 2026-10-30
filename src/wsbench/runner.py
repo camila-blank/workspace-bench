@@ -3,14 +3,14 @@
 import json
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from wsbench import digest, llm, mcjudge, registry
+from wsbench import digest, llm, mcjudge, reads, registry
 from wsbench.baselines import text_inversion
 from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
@@ -121,6 +121,7 @@ def judge_family(
         scope=scope,
     )
     result = spec.run(jargs)
+    finalize_reads(jargs, result)
     if opts.get("aggregate") == "summary" and result.config.get("aggregate") != "summary":
         if spec.name not in digest.NATIVE_ONLY:
             fail(f"{spec.name}: aggregate=summary but the family ran native (not hooked)")
@@ -139,6 +140,50 @@ def judge_family(
         f"-> {path}"
     )
     return result
+
+
+def finalize_reads(args: JudgeArgs, result: FamilyResult) -> None:
+    """The load's stamps on every result, whatever the family's own config builder (plan 0032
+    §2.0 / §2.6): ``config.reads`` / ``sampling`` / ``sampling_source`` / ``reader`` /
+    ``reads_checked`` / ``layers_judged``; ``+reads-lite`` on a lite ``prompt_version``; the
+    partial ids, missing layers and sampling diag counts in ``extras``; ``complete=False`` when
+    the load left items partial or layers missing, or a summary item was truncated (stride)."""
+    for k, v in reads.config_stamps(args).items():
+        result.config.setdefault(k, v)
+    pv = result.config.get("prompt_version")
+    if isinstance(pv, str):
+        result.config["prompt_version"] = reads.stamp(pv, reads.mode(args))
+    for k, v in reads.extras_of(args).items():
+        result.extras.setdefault(k, v)
+    summ = result.extras.get("summary")
+    truncated = result.extras.get("summary_complete") is False or (
+        isinstance(summ, dict) and summ.get("summary_complete") is False
+    )
+    if reads.incomplete(args) or truncated:
+        result.complete = False
+
+
+def readouts_path(root: Path, name: str) -> Path | None:
+    """``root/<family>.jsonl`` (or a former family key's file), None when there is none."""
+    path = root / f"{name}.jsonl"
+    if path.exists():
+        return path
+    for old in registry.legacy_names(name):
+        if (legacy := root / f"{old}.jsonl").exists():
+            return legacy
+    return None
+
+
+def file_layers(path: Path) -> list[int]:
+    """The layers present in a readouts file (one cheap pass, no parsing beyond the layer)."""
+    from wsbench.readouts import load_readouts
+
+    return load_readouts(path)[1].layers
+
+
+def each_configs(path: Path) -> list[tuple[str, list[int] | None]]:
+    """``layers=each``: the all-layer config, then one config per layer in the file."""
+    return [("all", None), *((f"L{k}", [k]) for k in file_layers(path))]
 
 
 def _one(
@@ -184,6 +229,7 @@ def run_families(
     readouts_root: Path,
     out: Path,
     env: Mapping[str, str] | None = None,
+    out_of: Callable[[str], Path] | None = None,
 ) -> tuple[list[FamilyOutcome], int]:
     """Judge ``specs`` from ``readouts_root/<family>.jsonl`` into ``out/<family>/``.
 
@@ -250,7 +296,8 @@ def run_families(
     futures: dict[Future[FamilyOutcome], str] = {}
     try:
         for s, readouts in runnable:
-            fut = executor.submit(_one, s, args, readouts, out / s.name, judges[s.name], opts)
+            dest = out_of(s.name) if out_of is not None else out / s.name
+            fut = executor.submit(_one, s, args, readouts, dest, judges[s.name], opts)
             futures[fut] = s.name
         for fut in as_completed(futures):
             oc = fut.result()
