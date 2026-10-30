@@ -444,7 +444,8 @@ def score(
         )
         extras["summary"] = summary
         # a pair's two digests served by different models (``summary_served_by``: the refusal
-        # fallback's model, None = the default): the pair is one instrument only at Stage C
+        # fallback's model, None = the default): the pair is one instrument only at Stage C.
+        # Meaningful on a complete run: an undigested member also reads None
         served = {str(r["id"]): r.get("summary_served_by") for r in rows}
         extras["n_pairs_mixed_summarizer"] = sum(served.get(m) != served.get(t) for m, t in pairs)
     judged = {r["id"] for r in records}
