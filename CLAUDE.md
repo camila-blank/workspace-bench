@@ -104,7 +104,8 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   (the source of truth); do not restate them here. Eleven families keep their own `judge.py` +
   `score.py`: Camila's nine originals (agentic, jailbreak, hallucination, jlens_concept_pr,
   moral, relational, role-bound, conjunctive, user_modeling), directed_modulation and
-  knowledge_cutoff. directed_modulation_obscure (plan 0016) has its own
+  knowledge_cutoff. model_specific_directed_modulation (plan 0016; formerly
+  directed_modulation_obscure) has its own
   regex `judge.py` with no LLM and no summarizer (token readouts are matched token by token, as in
   the source); its `PROMPTS` holds only the subject template, since `test_prompts_in_readme`
   requires every family to export one. knowledge_cutoff (plan 0017) is judged: ONE call per
@@ -136,7 +137,10 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
 - Renamed families: `registry.LEGACY_FAMILY_NAMES` maps the former keys `introspection_inject`
   / `cutoff_confab` / `dm_category_default` to `introspection` / `knowledge_cutoff` /
   `directed_modulation_obscure` (2026-10-26, pure rename: banks and ATI ids unchanged; the bank
-  headers keep the old key).
+  headers keep the old key), and `directed_modulation_obscure` (and `dm_category_default`, since
+  `canonical` is single-step) to `model_specific_directed_modulation` (2026-10-30, plan 0034:
+  bank and native instrument unchanged; the ATI entry moved key with
+  `scripts/ati_restamp_rename.py`, which re-derives the old-name `bank_sha` first).
   `registry.canonical` resolves CLI `family=`/`families=`, `run` falls back to `<old>.jsonl`,
   `read_results` and `text_inversion.subset_entry` accept the old key
   (`tests/test_legacy_family_names.py`).
