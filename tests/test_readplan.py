@@ -271,3 +271,16 @@ def test_relational_reads_from_full_stop():
         assert it["stimulus"].count(readplan.RELATIONAL_ANCHOR) == 1
     with pytest.raises(ValueError, match="rel-x"):
         readplan.relational_tail({"id": "rel-x", "stimulus": "Avery's landlord is Sam"})
+
+
+def test_user_modeling_reads_every_position():
+    """Camila 2026-10-30 ("We should read at all positions", plan 0043): the UM full read is
+    every token of the chat render (system turn, user turn, template tail); lite = the final
+    token, a subset of it."""
+    rows = readplan.plan("user_modeling")
+    assert len(rows) == 100 and all(list(s.layers) == list(readplan.GRID) for s in rows)
+    rule, lite = rows[0].positions, rows[0].lite_positions
+    assert rule == {"kind": "all"} and lite == {"kind": "final_token"}
+    full = readplan.resolve(rule, UM_TOKENS)
+    assert full == list(range(len(UM_TOKENS)))
+    assert readplan.lite_select(full, lite) == [len(UM_TOKENS) - 1]

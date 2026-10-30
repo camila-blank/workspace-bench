@@ -134,6 +134,11 @@ def _um_options() -> dict:
     return um.build_options(load_bank("user_modeling")["items"])
 
 
+def _esc(opts: dict, item_id: str) -> int:
+    """The escape's choice number (plan 0043: it moves with the item's option count)."""
+    return len(opts[item_id][0]) + 1
+
+
 def test_user_modeling_one_call_per_item(tmp_path, monkeypatch):
     path = EX / "user_modeling.jsonl"
     opts = _um_options()
@@ -149,11 +154,16 @@ def test_user_modeling_one_call_per_item(tmp_path, monkeypatch):
                 "evidence": "Paraguayan",
                 "rationale": "",
             }
-        return {"choice": 6, "basis": "absent", "evidence": "", "rationale": ""}
+        return {"choice": _esc(opts, UB), "basis": "absent", "evidence": "", "rationale": ""}
 
     FakeLLM.install(
         monkeypatch,
-        lambda s, u, sc: {"choice": 6, "basis": "absent", "evidence": "", "rationale": ""},
+        lambda s, u, sc: {
+            "choice": _esc(opts, UA),
+            "basis": "absent",
+            "evidence": "",
+            "rationale": "",
+        },
     )
     native = um.run(_native(path, tmp_path / "n", ump.PROMPT_VERSION, items=[UA, UB]))
     assert native.extras["pass_at_1"] is not None
@@ -189,7 +199,10 @@ def test_user_modeling_token_file_skips_interp(tmp_path, monkeypatch):
     r = um.run(summary_args(path, tmp_path / "s", ump.PROMPT_VERSION, items=[UA]))
     assert fake.n("interp") == 0 and fake.n("um_attribute") == 1
     assert r.config["source_kind"] == "tokens"
-    assert digest.SUMMARY_NOTE_TOKENS in next(u for n, _s, u in fake.calls if n == "um_attribute")
+    # plan 0043 (um-v3): the judge gets the token rule of UM's own spec (flat_types), never the
+    # bare SUMMARY_NOTE_TOKENS
+    user = next(u for n, _s, u in fake.calls if n == "um_attribute")
+    assert digest.token_note_of("user_modeling") in user and digest.SUMMARY_NOTE_TOKENS not in user
 
 
 # ---------------------------------------------------------------- moral_rationale

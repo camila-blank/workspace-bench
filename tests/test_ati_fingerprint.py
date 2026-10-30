@@ -19,6 +19,7 @@ CHANGED_BY_FAMILY_PRS: set[str] = {
     "introspection",  # plan 0045 bank v2
     # plan 0043 C1: full plan final_token -> suffix_text (bank byte-identical); re-judge at R8
     "relational_multihop",
+    "user_modeling",  # plan 0043: full plan reads every position (re-judge at gpu R8)
 }
 
 

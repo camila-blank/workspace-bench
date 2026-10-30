@@ -172,6 +172,12 @@ TARGET_TOKEN_NOTE = token_note(targets=True)
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
 
 
+def is_cjk(form: str) -> bool:
+    """``form`` holds a character of a script without spaces between words (CJK, kana, Hangul):
+    :func:`form_in` matches such a form as a substring."""
+    return bool(_CJK.search(form))
+
+
 def form_in(text: str, forms: Sequence[str]) -> bool:
     """A listed form occurs in ``text`` (both folded): a form in a script without spaces between
     words (CJK, kana, Hangul) as an exact substring, any other form (Latin, Cyrillic, Greek…)
