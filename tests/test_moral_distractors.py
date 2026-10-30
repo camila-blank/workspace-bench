@@ -58,3 +58,29 @@ def test_register_pass_output_is_what_freezes():
     assert md._final({"chosen": chosen}) == chosen
     assert md._final({"chosen": chosen, "restyled": restyled}) == restyled
     assert "{lo}" in md.RESTYLE_SYSTEM and "STYLE REFERENCE" in md.RESTYLE_USER
+
+
+def test_hardened_lists_freeze_first():
+    restyled = [{"text": "r", "kind": "same", "source": "opus"}]
+    hardened = [{"text": "h", "kind": "same", "source": "opus", "origin": "predict"}]
+    assert md._final({"restyled": restyled, "hardened": hardened}) == hardened
+    assert md._final({"restyled": restyled, "hardened": None}) == restyled
+
+
+def test_harden_shapes_drop_opposite_options_from_deliberative_lists():
+    # review of PR #186: the deliberative ask names the side, so other-side options were free
+    # eliminations; committed lists keep 2 opposite (the reader must still infer the side)
+    assert md.harden_need(_entry("deliberative")) == {"opp": 0, "same": 4}
+    assert md.harden_need(_entry("committed")) == {"opp": 2, "same": 2}
+
+
+def test_harden_ranks_by_preference_over_gold():
+    s = {"cands": {"a": {"prefer_wins": 0, "prefer_n": 4}, "b": {"prefer_wins": 3, "prefer_n": 4},
+                   "c": {}, "d": {"prefer_wins": 1, "prefer_n": 4}}}  # fmt: skip
+    assert md._ranked(s, ["a", "b", "c", "d"]) == ["b", "d", "a", "c"]
+
+
+def test_prefer_prompt_is_the_question_guessers():
+    u = md._prefer_user("Q?", "yes", "first", "second")
+    assert u.startswith("QUESTION:\nQ?") and "1. first" in u and "2. second" in u
+    assert "reasons to answer yes" in u
