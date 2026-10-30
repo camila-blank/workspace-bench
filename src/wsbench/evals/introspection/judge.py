@@ -358,7 +358,7 @@ def _run_summary(
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=NAME)
         calls: list[Call] = []
         empty_units: list[str] = []
         for u in us:

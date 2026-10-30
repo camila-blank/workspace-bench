@@ -392,7 +392,7 @@ def _run_summary(
             pos=HEADLINE_POS,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=NAME)
         calls = [
             Call(
                 key=f"{i}|L{digest.SUMMARY_LAYER}",

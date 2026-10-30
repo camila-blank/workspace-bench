@@ -125,12 +125,20 @@ def is_prompt_only(reader: str) -> bool:
 
 
 def select(
-    cells: Sequence[Cell], specs: Mapping[str, ReadSpec], mode: str, *, reader: str = ""
+    cells: Sequence[Cell],
+    specs: Mapping[str, ReadSpec],
+    mode: str,
+    *,
+    reader: str = "",
+    declared: str | None = None,
 ) -> list[Cell]:
     """The cells a ``reads`` mode judges: identity under ``full`` (and for a ``prompt_only:``
     reader); under ``lite`` each item's ``lite_positions`` rule over its positions at each layer,
-    at its ``lite_layers`` (an item without a plan row: ``final_token``)."""
-    if mode == "full" or is_prompt_only(reader):
+    at its ``lite_layers`` (an item without a plan row: ``final_token``). Identity, too, for a
+    file whose sidecar declares ``reads=lite`` (``declared``): the producer already applied the
+    rule, and the rule is not idempotent (``offset_from_end`` over its own single output keeps
+    nothing), so it is never applied twice (review of PR #140)."""
+    if mode == "full" or is_prompt_only(reader) or declared == "lite":
         return list(cells)
     keep: set[tuple[str, int, int]] = set()
     for (iid, layer), cs in _by_item_layer(cells).items():
@@ -305,7 +313,8 @@ def load(
     enforce = meta is not None
     if m == "lite":
         rep.lite_rule = lite_rule_of(sp, {c.id for c in cells})
-    cells = select(cells, sp, m, reader=reader)
+    declared = str(meta.get("reads") or "") if meta is not None else None
+    cells = select(cells, sp, m, reader=reader, declared=declared)
     partial: set[str] = set()
     if m == "full":
         partial |= (

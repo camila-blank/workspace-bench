@@ -481,6 +481,8 @@ def token_note_of(family: str | None) -> str:
     """``mc.token_note`` of the family's own spec (``flat_types``, ``multi_select``)."""
     from wsbench import registry
 
+    if family and family not in registry.FAMILIES:
+        registry.load_all()  # a lazily populated registry must not silently drop the spec
     spec = registry.FAMILIES.get(family or "")
     if spec is None:
         return SUMMARY_NOTE_TOKENS

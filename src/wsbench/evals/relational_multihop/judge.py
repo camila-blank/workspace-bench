@@ -244,7 +244,7 @@ def _run_summary(
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=FAMILY)
         judged = [i for i in ids if i not in col.unsummarized and i not in col.empty]
         calls: list[Call] = []
         for i in judged:

@@ -246,7 +246,7 @@ def _run_summary(
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=FAMILY)
         options = {it["id"]: build_options(it) for it in items}
         judged = [iid for iid in kept if iid not in col.unsummarized and iid not in col.empty]
         calls = [

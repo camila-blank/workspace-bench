@@ -256,7 +256,7 @@ def _run_summary(
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family="directed_modulation")
         rows = [
             Row(i, digest.SUMMARY_LAYER, c.pos, 0, (c.samples or ("",))[0])
             for i, c in col.cells.items()

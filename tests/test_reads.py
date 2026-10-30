@@ -335,3 +335,31 @@ def test_collapse_rejects_dropped_cells(tmp_path):
             task_note="",
             expect_all=cells,
         )
+
+
+def test_produce_lite_then_judge_lite_keeps_the_lite_site(tmp_path):
+    """A file the producer wrote reads=lite (only the lite site) judges reads=lite unchanged:
+    the lite rule is not idempotent (MCDM's offset_from_end k=6 over its own single output keeps
+    nothing), so it is never re-applied to a declared-lite file (review of PR #140)."""
+    fam = "multi_concept_directed_modulation"
+    sp = reads.specs(fam)
+    iid = next(iter(sp))
+    spec = sp[iid]
+    layers = spec.lite_layers or spec.layers
+    (site,) = lite_select(list(range(30, 42)), spec.lite_positions)
+    assert lite_select([site], spec.lite_positions) == []  # the non-idempotence itself
+    rows = [{"id": iid, "layer": L, "pos": site, "samples": ["x"]} for L in layers]
+    path = write_jsonl(tmp_path / "r.jsonl", rows)
+    write_sidecar(path, reads="lite", reader="t")
+    cells, rep = reads.load(_args(path, tmp_path, extra={"reads": "lite"}), fam, ids=[iid])
+    assert rep.reads == "lite"
+    assert {(c.layer, c.pos) for c in cells} == {(L, site) for L in layers}
+
+
+def test_select_is_identity_on_a_declared_lite_file():
+    spec = ReadSpec(
+        "f", "a", "plain", {"kind": "all"}, [20], lite_positions={"kind": "offset_from_end", "k": 6}
+    )
+    cells = [Cell("a", 20, 36, ("x",), None, None)]
+    assert reads.select(cells, {"a": spec}, "lite") == []
+    assert reads.select(cells, {"a": spec}, "lite", declared="lite") == cells

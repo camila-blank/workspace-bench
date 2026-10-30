@@ -250,7 +250,7 @@ def _run_summary(
             task_note=prompts.DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=FAMILY)
         calls: list[Call] = []
         for i, c in col.cells.items():
             if i in col.unsummarized or i in col.empty:

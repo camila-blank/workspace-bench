@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from wsbench.basic.prompts import (
+    KIND_NOTE_TOKENS,
     PROMPT_VERSION,
     SCHEMA,
     SYSTEM,
     SYSTEM_SUMMARY,
-    cell_samples,
+    cell_lines,
     render_user,
     render_user_summary,
 )
@@ -91,6 +92,7 @@ def judge_cells(
     summary: Collapse | None = None,
     summary_note: str = "",
     prompt_version: str | None = None,
+    token_note: str = KIND_NOTE_TOKENS,
 ) -> JudgeOutcome:
     """Judge every (item, layer) group. A group with no text is a negative without a call.
     Unjudged cells (failed calls, or every call under ``dry_run``) are counted, never scored;
@@ -105,7 +107,7 @@ def judge_cells(
         if summary is not None:
             samples = gate_texts(cells[0], summary)
         else:
-            samples = [s for c in cells for s in cell_samples(c)]
+            samples = [s for c in cells for s in cell_lines(c)]
         if not any(s.strip() for s in samples):
             verdicts[key] = EMPTY_VERDICT
             n_empty += 1
@@ -128,6 +130,7 @@ def judge_cells(
             cells,
             family_rule=family_rule,
             forbidden=forbidden.get(key[0], ""),
+            token_note=token_note,
         )
         calls.append(Call(key=k, system=SYSTEM, user=user))
     results = run_calls(
