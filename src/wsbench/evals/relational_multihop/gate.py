@@ -48,7 +48,9 @@ def _pattern(alias: str) -> str:
 
 _MENTION = re.compile("|".join(_pattern(a) for a in sorted(ALIASES, key=lambda a: -len(a))))
 _POSS = r"(?:'s|的)"
+# X's / X的; a bare apostrophe only right after an s-final mention ("boss' sister")
 _LINK_POSS = re.compile(
+    r"(?P<bare>')?"
     rf"\s*(?P<pre>{_POSS})?\s*(?:\((?P<gloss>[^()]{{0,25}})\))?\s*(?P<post>{_POSS})?\s*"
 )
 _DET = r"(?:the|a|an|my|your|his|her|their|our|its|one's|someone's|[^\W\d_][\w-]*'s)"
@@ -87,19 +89,24 @@ def mentions(text: str) -> list[Mention]:
     return out
 
 
-def _poss_link(between: str) -> bool:
+def _poss_link(between: str, s_final: bool) -> bool:
     m = _LINK_POSS.fullmatch(between)
-    if m is None:
+    if m is None or (m.group("bare") and not s_final):
         return False
     gloss = m.group("gloss") or ""
-    n = bool(m.group("pre")) + bool(m.group("post")) + bool(re.search(rf"{_POSS}\s*$", gloss))
+    n = (
+        bool(m.group("bare"))
+        + bool(m.group("pre"))
+        + bool(m.group("post"))
+        + bool(re.search(rf"{_POSS}\s*$", gloss))
+    )
     return n == 1
 
 
 def _link(text: str, a: Mention, b: Mention) -> str | None:
     """``"poss"`` (a's b), ``"of"`` (a of b), or None."""
     between = text[a.end : b.start]
-    if _poss_link(between):
+    if _poss_link(between, text[a.end - 1 : a.end] == "s"):
         return "poss"
     if _LINK_OF.fullmatch(between):
         return "of"
@@ -153,14 +160,19 @@ def order_gate(
     gold: tuple[str, str],
     rivals: Sequence[tuple[str, str]],
 ) -> str:
-    """``"pass"``: some statement holding the quote states ``gold`` (non-embedded) inside the
-    quote, and that statement states none of ``rivals`` (the reversed / near-miss chains);
-    ``"two_chains"``: every such statement also states a rival (one statement holding two listed
-    chains singles out none); ``"order"``: no statement holding the quote states ``gold``."""
+    """The gold pick's mechanical gate over the unit's statements (bullets):
+
+    - ``"order"``: no statement holding the quote states ``gold`` (non-embedded) inside it;
+    - ``"two_chains"``: every such statement also states a rival chain (the other composed
+      options: reversed, near-miss, other) — one statement holding two listed chains singles out
+      none;
+    - ``"rival_prominent"``: some rival chain is stated in at least as many statements as the
+      gold — the prompt's "most bullets/lines, a tie is cannot tell" rule, enforced;
+    - ``"pass"`` otherwise."""
     fq = fold_quote(quote)
     if not fq or "|" in fq:
         return "order"
-    found_two = False
+    found_two = found = False
     for ln in statements:
         if ln.pieces is not None:
             continue  # a token list carries no order (only a " | " quote spans its tokens)
@@ -171,8 +183,14 @@ def order_gate(
         if any(states(text, *r) for r in rivals):
             found_two = True
             continue
-        return "pass"
-    return "two_chains" if found_two else "order"
+        found = True
+        break
+    if not found:
+        return "two_chains" if found_two else "order"
+    n_gold = count_units(statements, gold)
+    if any(count_units(statements, r) >= n_gold for r in rivals):
+        return "rival_prominent"
+    return "pass"
 
 
 def count_units(statements: Sequence[Line], chain: tuple[str, str]) -> int:

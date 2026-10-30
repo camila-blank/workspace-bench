@@ -377,9 +377,22 @@ def test_two_chains_in_one_bullet_single_out_none(tmp_path, monkeypatch):
     assert res.rows[0]["gate"] == "two_chains" and res.rows[0]["pass"] is False
     assert res.extras["n_two_chains_in_one_statement"] == 1
     assert "states none of them" in fake.calls[-1][1]
+    # the reversed chain in ANOTHER bullet is the judge's "most bullets" call, enforced: the
+    # gold in more bullets passes, a tie is cannot tell (rival_prominent)
     split = ["- Riley is Avery's landlord's sibling\n- or maybe her sibling's landlord"]
     res, _ = _run_one(tmp_path, monkeypatch, A, split, "landlord's sibling")
+    assert res.rows[0]["gate"] == "rival_prominent" and res.rows[0]["pass"] is False
+    assert res.extras["n_rival_prominent"] == 1
+    more = [split[0] + "\n- yes: Riley is Avery's landlord's sister"]
+    res, _ = _run_one(tmp_path, monkeypatch, A, more, "landlord's sibling")
     assert res.rows[0]["pass"] is True
+
+
+def test_s_final_bare_apostrophe_links():
+    """ "boss' sister-in-law" is a chain (a bare apostrophe after an s-final word)."""
+    t = digest.fold_quote("Emery is the boss' sister-in-law")
+    assert gate.states(t, "boss", "sibling-in-law")
+    assert not gate.states(digest.fold_quote("the landlord' sibling"), "landlord", "sibling")
 
 
 def test_one_bullet_chain_passes(tmp_path, monkeypatch):
