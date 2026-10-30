@@ -851,7 +851,7 @@ def _nocot_rows() -> list[ReadSpec]:
 def _introspection() -> list[ReadSpec]:
     """One row per activation a producer must generate WITH the steer applied: inject and
     gaussian items and the 12 beta0 rows. Cross items reuse their partner's readout
-    (`readout_of`) and get no row; only the 125 headline items are ATI-scored. Plan 0042: the
+    (`readout_of`) and get no row; only the 125 headline items are ATI-scored. Plan 0045: the
     steer names its shipped vector (`vector_file` / `vector_row`, bank v2 `vectors`), and the
     lite site is the bank render's `lite` (absolute positions; twins at their own render's)."""
     bank = json.loads(bank_path("introspection").read_text())

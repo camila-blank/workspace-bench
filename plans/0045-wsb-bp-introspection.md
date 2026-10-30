@@ -1,4 +1,4 @@
-# 0042 — WorkspaceBench fix campaign: introspection ("introspection" workstream)
+# 0045 — WorkspaceBench fix campaign: introspection ("introspection" workstream)
 
 Status: implemented in this PR (camila/wsb-bp-introspection), on top of the infra PR (plan 0032,
 #140, origin/main 34005ac). Campaign source of truth:

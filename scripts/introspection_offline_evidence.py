@@ -1,4 +1,4 @@
-"""Offline evidence for plan 0042 (introspection), no model and no API call.
+"""Offline evidence for plan 0045 (introspection), no model and no API call.
 
 ``paired`` (default): the source repo's committed per-cell verdicts (s3d.rl600 O-lens and J-lens,
 every unit, all 11 layers x the full grid; ``grid_verdicts.json``) and its raw grid readouts

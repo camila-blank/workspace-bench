@@ -17,7 +17,7 @@ from .methods import Method, Readout, method
 from .render import Rendered, render, render_text
 
 Positions = int | list[int] | dict[str, Any] | str  # -1 | [3, 5] | {"kind": ...} | "all"
-STEERING_TYPES = ("concept", "gaussian")  # the introspection bank's injections (plan 0042)
+STEERING_TYPES = ("concept", "gaussian")  # the introspection bank's injections (plan 0045)
 
 
 @dataclass(frozen=True)
@@ -115,7 +115,7 @@ class Producer:
     def read_spec(self, spec: ReadSpec, *, layers: Iterable[int] | None = None) -> list[Row]:
         """A read-plan row: its own render and positions rule; its layers unless the method has
         fixed ones or the caller overrides. A row whose ``extra.steering`` injects a shipped
-        vector (introspection, plan 0042 §2.3) is read under that steer (``steering``)."""
+        vector (introspection, plan 0045 §2.3) is read under that steer (``steering``)."""
         rendered = render(spec, self.backend.tokenizer)
         with self.steering(spec):
             return list(

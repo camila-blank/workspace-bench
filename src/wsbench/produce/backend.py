@@ -76,7 +76,7 @@ class Backend:
     def steered(
         self, layer: int, positions: Sequence[int], vector: Any, beta: float
     ) -> Iterator[None]:
-        """A dose injection for every forward inside the block (plan 0042 §2.3, the
+        """A dose injection for every forward inside the block (plan 0045 §2.3, the
         introspection bank's recipe): on the OUTPUT residual of decoder block ``layer``, at each
         absolute ``positions`` index, ``h <- h + beta * ||h|| * v / ||v||`` (computed in fp32,
         written back in the residual's dtype). Removed on exit, even if the body raises."""

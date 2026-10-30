@@ -165,7 +165,7 @@ def test_introspection_token_source_quotes_one_token(tmp_path, monkeypatch):
 
 
 def test_introspection_paired_rule_in_summary_mode(tmp_path, monkeypatch):
-    """Plan 0042: the gaussian twin's regex leg reads the loaded raw cells, not the digest: a
+    """Plan 0045: the gaussian twin's regex leg reads the loaded raw cells, not the digest: a
     twin whose digest never shows the target still voids the item when a raw sample names it."""
     rows = [
         {"id": HEAD, "layer": 56, "pos": 140, "samples": ["a fanfare of trumpets"]},

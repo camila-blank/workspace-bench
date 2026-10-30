@@ -1,4 +1,4 @@
-"""Write the introspection injection vectors as float32 ``.npy`` files (plan 0042 §2.3, CPU only).
+"""Write the introspection injection vectors as float32 ``.npy`` files (plan 0045 §2.3, CPU only).
 
 - ``evals/introspection/vectors/concept_vectors_L12.npy``: (125, 5120), the RAW (un-normalised)
   layer-12 concept vectors of record, rows in the bank's ``concepts[]`` order. Source: the
