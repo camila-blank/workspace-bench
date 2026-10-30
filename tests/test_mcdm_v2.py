@@ -282,25 +282,73 @@ def test_token_bag_cannot_state_direction():
     assert "if the only evidence for such a candidate is a token list, answer G" in prompts.SYSTEM
 
 
-def test_relation_in_unlisted_script_trusts_judge():
-    """Bank v2 lists Latin forms only: a Chinese quote naming both people is taken on the
-    judge's reading (counted), a Latin quote missing a person is still dropped."""
+def test_relation_in_chinese_needs_both_listed_names():
+    """No script exemption (review of PR #144): a Chinese quote names a person only by one of
+    the Chinese forms of ``name_aliases_v2.json``; one CJK character never names anybody."""
     s = _sets()["b-moza-ent-ab"]
     gold = s.options[s.gold[0]]
     pick = {"choice": _letter(s.options, gold), "quote": "莫扎特嫉妒萨列里", "basis": CB}
     v = judge.verdict({"picks": [pick]}, s.options, s.gold, "- 我在想莫扎特嫉妒萨列里的情景",
                       roles=s.roles)  # fmt: skip
-    assert v["kind"] == "hit" and v["n_relation_script_trusted"] == 1
+    assert v["kind"] == "hit" and v["n_relation_cjk_named"] == 1
     assert v["n_relation_unverified"] == 0
-    # mixed: one person by a listed Latin form, the other in Chinese
+    # mixed: one person by a listed Latin form, the other by a Chinese form
     pick = {"choice": _letter(s.options, gold), "quote": "Mozart嫉妒萨列里", "basis": CB}
     v = judge.verdict({"picks": [pick]}, s.options, s.gold, "Mozart嫉妒萨列里", roles=s.roles)
-    assert v["kind"] == "hit" and v["n_relation_script_trusted"] == 1
+    assert v["kind"] == "hit" and v["n_relation_cjk_named"] == 1
     # Latin-only and a person missing: still dropped
     pick = {"choice": _letter(s.options, gold), "quote": "Mozart is jealous", "basis": CB}
     v = judge.verdict({"picks": [pick]}, s.options, s.gold, "Mozart is jealous", roles=s.roles)
     assert v["own"] == [] and v["n_relation_unverified"] == 1
-    assert v["n_relation_script_trusted"] == 0
+    assert v["n_relation_cjk_named"] == 0
+
+
+@pytest.mark.parametrize(
+    ("quote", "named"),
+    [
+        ("Adam很生气", False),  # Betty missing; the CJK relation word names nobody
+        ("很生气", False),  # "he is very angry": no names at all
+        ("他很生气", False),
+        ("Adam对贝蒂很生气", True),
+        ("亚当对贝蒂很生气", True),
+        ("アダムはベティに怒っている", False),  # kana: no listed form, so not named
+    ],
+)
+def test_relation_cjk_quote_missing_a_person_is_dropped(quote, named):
+    s = _sets()["b-ange-mix-ab"]
+    gold = s.options[s.gold[0]]
+    assert gold == "Adam being angry at Betty"
+    pick = {"choice": _letter(s.options, gold), "quote": quote, "basis": CB}
+    v = judge.verdict({"picks": [pick]}, s.options, s.gold, quote, roles=s.roles)
+    assert (v["kind"] == "hit") is named, v
+    assert v["n_relation_unverified"] == int(not named)
+
+
+def test_unnamed_partner_pick_in_chinese_cannot_fail_item():
+    """The same hole the other way: an unnamed reverse pick must not void the item."""
+    s = _sets()["b-ange-mix-ab"]
+    gold = s.options[s.gold[0]]
+    rev = "Betty being angry at Adam"
+    picks = [
+        {"choice": _letter(s.options, gold), "quote": "Adam is angry at Betty", "basis": CB},
+        {"choice": _letter(s.options, rev), "quote": "很生气", "basis": CB},
+    ]
+    text = "- Adam is angry at Betty\n- 很生气"
+    partner = [s.options.index(rev)]
+    v = judge.verdict({"picks": picks}, s.options, s.gold, text, partner=partner, roles=s.roles)
+    assert v["own"] == [gold] and v["false"] == [] and v["n_relation_unverified"] == 1
+
+
+def test_every_relation_person_has_a_chinese_form():
+    _h, items = load_bank(V2)
+    people = {
+        n for it in items if (r := options.item_roles(it)) for n in (r["agent"], r["patient"])
+    }
+    zh = options.name_aliases()
+    assert people <= set(zh), sorted(people - set(zh))
+    forms = [(p, f) for p, fs in zh.items() for f in fs]
+    clashes = [(p, f, q, g) for p, f in forms for q, g in forms if p != q and f in g]
+    assert not clashes  # no person's form is a substring of another's
 
 
 def test_alternatives_name_each_candidate_text():
