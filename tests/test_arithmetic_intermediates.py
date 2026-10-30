@@ -80,8 +80,13 @@ def test_tolerance_and_quantities():
 def test_verified_and_verdict():
     text = "- 271 - 322 = -51, then times 14\n- 结果是 负五十一"
     assert judge.verified(-51.0, text, "") and not judge.verified(-52.0, text, "")
-    assert judge.verified(-52.0, text, "负五十一")  # a CJK-numeral quote vouches for the top value
-    assert not judge.verified(-52.0, text, "负五十一", top=False)  # only for the top value
+    # a CJK-numeral quote vouches for the top value it writes (plan 0036 C6: "yields the named
+    # value"), never for a different one
+    assert judge.verified(-51.0, "结果是 负五十一", "负五十一")
+    assert not judge.verified(-52.0, text, "负五十一") and not judge.verified(
+        51.0, text, "负五十一"
+    )
+    assert not judge.verified(-51.0, "结果是 负五十一", "负五十一", top=False)  # only the top value
     assert not judge.verified(-52.0, text, "-52")  # a bare-number quote does not
     assert not judge.verified(-52.0, text, "4,816") and not judge.verified(
         999.0, text, "then times"
@@ -877,6 +882,27 @@ def test_arith_prompts_render_the_spec_token_note():
 # C6: token quotes with scores -----------------------------------------------------------
 
 
+def test_arith_quote_must_write_the_named_value():
+    # plan 0036 C6: a verbatim quote holding SOME number word does not vouch for another value
+    text = "The model is computing something; this is one way to see it."
+    assert not judge.verified(135.0, text, "one way")
+    v = judge.verdict({"values": [135], "basis": "t", "quote": "one way"}, 135.0, "exact", [], text)
+    assert v["kind"] == "unverified" and not v["hit"]
+    assert judge.verified(1.0, text, "one way")  # it does vouch for the value it writes
+    t2 = "it comes to one hundred thirty-five, or minus fifty-one before that"
+    assert judge.verified(-51.0, t2, "minus fifty-one before")
+    assert not judge._quote_vouches("minus fifty-one before", 51.0)
+    # quotes that do write the value (cases from the 2026-10-30 ATI panel re-gate)
+    t3 = "determining that 245 minus 299 equals negative 54."
+    assert judge.verified(-54.0, t3, "245 minus 299 equals negative 54")
+    assert not judge._quote_vouches("245 minus 299 equals negative 54", 54.0)  # sign kept
+    t4 = "The model is calculating the simplified fraction 23/13 to prepare"
+    assert judge.verified(23 / 13, t4, "the simplified fraction 23/13")
+    assert not judge.verified(13 / 23, t4, "the simplified fraction 23/13")
+    assert judge.verified(23 / 13, "结果是十三分之二十三。", "结果是十三分之二十三")
+    assert judge.verified(3.5, "大约三点五左右", "大约三点五")
+
+
 def test_arith_token_quote_with_score_verifies():
     cell = Cell("x", 56, -1, None, ("九", "nine"), (15.19, 14.10))
     lines = [u[1] for u in judge.units_of_cell(cell)]
@@ -939,6 +965,28 @@ def test_arith_flood_line_singles_out_nothing(tmp_path, monkeypatch):
     _capture(monkeypatch, _batch_hit([GOLD]))
     r = judge.run(_nargs(path, tmp_path / "p", extra={"cells": "all"}))
     assert r.rows[0]["pass"] is False and r.extras["n_flood_voided"] == 1
+
+
+def test_arith_flood_void_not_bypassed_by_other_number_quote():
+    # summary mode: 135's only numeral support is a flood list; a quote "one way" from another,
+    # non-flood line wrote 1, not 135, so it is no support and the void stands
+    lines = digest.native_lines(
+        [
+            Cell(GOLD_ID, 56, -1, ("135, 6, 8, 7, 11 and 9",), None, None),
+            Cell(GOLD_ID, 60, -1, ("this is one way to see it",), None, None),
+        ]
+    )
+    assert digest.number_flood(lines[0]) and not digest.number_flood(lines[1])
+    v = judge.verdict(
+        {"values": [GOLD], "basis": "t", "quote": "one way"},
+        GOLD,
+        "exact",
+        [],
+        "",
+        keys=["135"],
+        lines=lines,
+    )
+    assert v["kind"] == "flood" and not v["hit"]
 
 
 def _prose_both_modes(tmp_path, monkeypatch, sample: str, tag: str):
