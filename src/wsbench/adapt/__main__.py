@@ -51,7 +51,7 @@ KEYS: dict[str, set[str]] = {
     "drop": {"family", "ids", "reason"},
     "patch": {"family", "id", "set", "note"},
     "status": set(),
-    "moral": {"stage"},
+    "moral": {"stage", "step", "out", "limit"},
     "hal": {"limit"},
     "agentic": {"stage"},
     "carry": {"families"},
@@ -117,7 +117,8 @@ def main(argv: list[str] | None = None) -> None:
     elif cmd == "moral":
         from . import moral
 
-        moral.run(model, a.get("stage", "all"))
+        extra = {k: a[k] for k in ("step", "out", "limit") if k in a}
+        moral.run(model, a.get("stage", "all"), **extra)
     elif cmd == "auto":
         print(a["family"], run.auto(model, a["family"]))
     elif cmd == "note":

@@ -5,7 +5,7 @@ import copy
 import json
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -517,6 +517,12 @@ def _maybe_sidecar(cmd: Any, rep: Any) -> None:
     print(f"wrote {write_sidecar(cmd.out, **meta)}")
 
 
+def _question_floor(e: dict, f: Callable[[object], str]) -> str:
+    b = lucky_guessing.bar(e)
+    tail = f"; floor {f(b[0])} ({b[1]})" if b else ""
+    return f"; question {f(e['question'].get('mean'))}{tail}"
+
+
 def floor_columns() -> dict[str, dict[str, str]]:
     """The report's floor columns from the frozen baselines: lucky guessing (blind / described
     means) and prompt-only (judged rate), each only where the stamp matches the instrument."""
@@ -526,6 +532,9 @@ def floor_columns() -> dict[str, dict[str, str]]:
 
     lucky = {
         fam: f"{f(e.get('blind', {}).get('mean'))} / {f(e.get('described', {}).get('mean'))}"
+        # plan 0046 §2.3 + review round 3: where the question guesser is measured, the family's
+        # floor is the highest measured guesser (lucky_guessing.bar), not the question one alone
+        + (_question_floor(e, f) if "question" in e else "")
         for fam, e in lucky_guessing.floors().items()
     }
     po = {}
@@ -649,6 +658,9 @@ class Baseline(Command):
             )
             for name in names:
                 for variant in self.variant:
+                    if variant == "question" and name not in lucky_guessing.GUESS_QUESTION:
+                        print(f"{name}: no question hook, question variant skipped")
+                        continue
                     r = lucky_guessing.run_family(
                         name,
                         variant,
