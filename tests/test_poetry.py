@@ -348,6 +348,16 @@ def test_opus_gate_rejudged_on_pv_change(bank, tmp_path, monkeypatch):
         ("a long day - then the night came", "day"),
         ('a partner for "way" (e.g. "the load"). Possible', "load"),
         ('a "sunny day" at the beach', "day"),
+        # review r3: a rhyme list, a hedge or a description whose LAST word is the gold
+        ("Likely rhymes: bed, fed, or led.", "led"),
+        ("- rhyme options: bed, fed, led\n- the captain", "led"),
+        ("such as bed, head or led", "led"),
+        ("such as 'bed', 'head' or 'led'", "led"),
+        ("- The couplet is about a captain who led\n- sea voyage", "led"),
+        ("The word that comes next is probably led or said.", "said"),
+        ("- Theme: a sunny day", "day"),
+        ('Theme: "a sunny day"', "day"),
+        ("bed, fed, or led", "led"),
     ],
 )
 def test_gate_rejects_incidental_mentions(text, word):
@@ -383,6 +393,12 @@ def test_named_plan_cue_governs_word(text):
         # a written-out \\n, a trailing note
         ('then "He crafted truth with vivid art,\\n" -- next', "art", []),
         ("- And monsters in his cave did roar. (A simple AABB rhyme)\n- A monster", "roar", []),
+        # review r3: verse with "or" / a line label / a line quoted in prose still counts
+        ("Whether to stay or go", "go", ["slow", "know"]),
+        ("- and then the bucket, empty, fell\n- until", "fell", ["bell", "spell"]),
+        ("- and set them on the counter, hot and done.\n", "done", ["fun", "bun"]),
+        ("- Line 2: And so the captain led", "led", ["said", "red"]),
+        ("A natural line: 'And told his crew to follow where he led.'", "led", ["said"]),
     ],
 )
 def test_gate_accepts_line_endings(text, word, others):
@@ -524,6 +540,46 @@ def test_summary_flat_rhyme_list_not_credited(bank, tmp_path, monkeypatch):
                     digest=_digest_of("far | car | star | bar"))  # fmt: skip
     r = pj.run_family(_summary(tmp_path, rows))
     assert r.rows[0]["kind"] == "not_line_final" and r.rows[0]["pass"] is False
+
+
+def test_quoted_proposal_beside_rival_options_not_credited():
+    """review r3: Opus prompt-only shape: rival rhymes listed, then a line PROPOSED in quotes
+    that ends on the gold. A proposal counts only when no other option is named (named_plan)."""
+    text = (
+        'The strongest candidate is "nest". Other options are "breast" or "west".\n'
+        '- One example: "upon a branch beside its cozy nest."'
+    )
+    assert not score.line_final("nest", text, ["breast", "west", "chest"])
+    assert score.line_final(
+        "nest", 'A natural line: "upon a branch beside its cozy nest."', ["west"]
+    )
+    # verse written out (not quoted in prose) still counts beside a rival mention elsewhere
+    assert score.line_final("nest", "Upon a branch beside its cozy nest\n- or west", ["west"])
+
+
+def test_gate_rejects_option_run_without_cue():
+    """review r3: a bare hedge between options (``led or said``) credits neither option."""
+    words = ["led", "said", "dread", "red", "instead"]
+    for text in ("he led or said", "led or said", "- bed, fed, or led\n"):
+        cells = [Cell("couplet-ahead-head", 20, 16, (text,), None, None)]
+        n = score.counts(words, cells, "ahead")
+        assert n["led"] == 0 == n["said"], (text, n)
+    assert score.line_final("said", "the words he said", ["led"])
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Likely rhymes: bed, fed, or led.", "- rhyme options: bed, fed, led\n- the captain",
+     "such as bed, head or led", "- The couplet is about a captain who led\n- sea voyage"],
+)  # fmt: skip
+def test_summary_prose_rhyme_list_not_credited(text, bank, tmp_path, monkeypatch):
+    """review r3: the fake judge picks the gold from a prose rhyme list / description that ends
+    on it; the deterministic gate (not the judge) refuses the credit."""
+    rows = _rows({(20, 16): [text]})
+    shown = text.replace("\n", " ")
+    FakeLLM.install(monkeypatch, judge=_picker("led", "led"), digest=_digest_of(shown))
+    r = pj.run_family(_summary(tmp_path, rows))
+    assert r.rows[0]["kind"] == "not_line_final" and r.rows[0]["pass"] is False, r.rows[0]
 
 
 def test_summary_stamp_is_computed(bank, tmp_path, monkeypatch):
