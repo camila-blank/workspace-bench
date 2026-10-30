@@ -84,3 +84,51 @@ def test_prefer_prompt_is_the_question_guessers():
     u = md._prefer_user("Q?", "yes", "first", "second")
     assert u.startswith("QUESTION:\nQ?") and "1. first" in u and "2. second" in u
     assert "reasons to answer yes" in u
+
+
+def test_lenmatched_lists_freeze_first():
+    hardened = [{"text": "h", "kind": "same", "source": "opus"}]
+    matched = [{"text": "m", "kind": "same", "source": "opus", "lenmatched_from": "h"}]
+    assert md._final({"hardened": hardened, "lenmatched": matched}) == matched
+    assert md._pre_lenmatch({"hardened": hardened, "lenmatched": matched}) == hardened
+
+
+def test_gold_length_ranks_are_balanced_and_seeded():
+    keys = [f"i{n}|committed" for n in range(224)]
+    r = md.gold_ranks(keys)
+    counts = [list(r.values()).count(k) for k in range(5)]
+    assert max(counts) - min(counts) <= 1 and r == md.gold_ranks(list(reversed(keys)))
+
+
+def test_len_slots_and_fit():
+    gold = "one two three four five six seven eight nine ten"  # 10 words, band 9-11
+    assert md.word_band(gold) == (9, 11)
+    texts = ["a b c d e f g h i j k l", "a b c", "a b c d e f g h i j k"]
+    assert md.len_slots(gold, texts, 1) == ["above", "below", "above"]
+    assert md.len_fit("alpha bravo charlie delta echo foxtrot golf hotel india", gold, "below") == (
+        "characters 55: need fewer than 48"
+    )
+    assert md.len_fit("a b c d e f g h i", gold, "below") == ""
+    assert md.len_fit("a b c d e f g h i j", gold, "below").startswith("words 10")
+    assert md.len_fit("a b c d e f g h, i", gold, "below").startswith("comma")
+    long = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo"
+    assert md.len_fit(long, gold, "above") == ""
+    assert md.len_target(gold, "below", 0) == 9 and md.len_target(gold, "above", 3) == 11
+
+
+def test_coregistered_lists_freeze_first():
+    matched = [{"text": "m", "kind": "same", "source": "opus"}]
+    coreg = {"gold": "g2", "distractors": [{"text": "c", "kind": "same", "source": "opus"}]}
+    assert md._final({"lenmatched": matched, "coreg": coreg}) == coreg["distractors"]
+    assert md._final({"lenmatched": matched}) == matched
+    # the co-register prompt never marks which option is the gold
+    assert "CORRECT" not in md.COREG_SYSTEM + md.COREG_USER
+    assert "STYLE REFERENCE" not in md.COREG_USER
+
+
+def test_form_marks_cover_the_measured_tells():
+    assert set(md.FORM_MARKS) == {"comma", "slash", "outweigh", "and"}
+    gold = "Safety and duty outweigh / trump profit, always"
+    assert all(has(gold) for has in md.FORM_MARKS.values())
+    assert not any(has("Plain claim here") for has in md.FORM_MARKS.values())
+    assert "contains a comma" in md.form_rules(gold) and "No rewrite" in md.form_rules("x")
