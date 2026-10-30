@@ -234,9 +234,17 @@ token)"**
   (`readplan.py:318`) into its own branch:
 
   ```python
-  ReadSpec(family, id, "plain", {"kind": "all"}, GRID, text=it["prompt"],
-           lite_positions={"kind": "final_token"}, lite_layers=None,
-           note="every prompt token (lite: the final token)")
+  ReadSpec(
+      family,
+      id,
+      "plain",
+      {"kind": "all"},
+      GRID,
+      text=it["prompt"],
+      lite_positions={"kind": "final_token"},
+      lite_layers=None,
+      note="every prompt token (lite: the final token)",
+  )
   ```
 
   The bank's `readout` block carries `lite: {"kind": "final_token"}` as the *source* readplan
@@ -299,13 +307,20 @@ token)"**
 - **Shared factory, not forked** (infra §2.16 signature, verbatim kwargs):
 
   ```python
-  SPEC = register(mt_family(
-      "multihop_mt_v2", "Multihop v2 (multi-token)",
-      calls_per_arm="≈ 0.15k (70 digests + 76 MC)", scorer="mc",
-      bank=Path("evals/multihop_mt_v2/items_v2.json"),
-      prompt_version=MH2_PROMPT_VERSION,          # "mh2-mc-2026-10-30"
-      min_full_positions=17, full_contiguous=True,
-      task_note=MH2_TASK_NOTE, flat_types=()))
+  SPEC = register(
+      mt_family(
+          "multihop_mt_v2",
+          "Multihop v2 (multi-token)",
+          calls_per_arm="≈ 0.15k (70 digests + 76 MC)",
+          scorer="mc",
+          bank=Path("evals/multihop_mt_v2/items_v2.json"),
+          prompt_version=MH2_PROMPT_VERSION,  # "mh2-mc-2026-10-30"
+          min_full_positions=17,
+          full_contiguous=True,
+          task_note=MH2_TASK_NOTE,
+          flat_types=(),
+      )
+  )
   ```
 
   `scorer="mc"` is mhv2's value in infra's one enum (`test_scorer_enum_assignment`), so
