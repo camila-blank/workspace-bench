@@ -284,3 +284,4 @@ Label it:
   explanation of why it is correct is OTHER.
 
 Reply with JSON only: {"label": "COMMIT" | "CONFLICT" | "OTHER"}
+```
