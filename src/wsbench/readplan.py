@@ -328,6 +328,24 @@ def _final_token_families(family: str, render: str) -> list[ReadSpec]:
     for it in items:
         rule = {"kind": "final_token"}
         spec = it.get("readout") or {}
+        if spec.get("kind") == "question_through_end":
+            # plan 0039 (basic_readout v2): every token from the first token of the user question
+            # through the prefilled answer stem; lite = the bank's lite rule (the stem's ":")
+            out.append(
+                ReadSpec(
+                    family,
+                    it["id"],
+                    "chat_prefill",
+                    {"kind": "suffix_text_then_tail", "text": it["prompt"]},
+                    GRID,
+                    text=it["prompt"],
+                    prefill=ANSWER_STEM,
+                    note="the user question, the turn end, the assistant header and the "
+                    "prefilled answer stem",
+                    lite_positions=dict(spec.get("lite") or FINAL),
+                )
+            )
+            continue
         if spec.get("kind") in ("final_prompt_token", "last_word_token") and spec.get("offsets"):
             k = -int(spec["offsets"][0])
             rule = {"kind": "final_token"} if k == 1 else {"kind": "offset_from_end", "k": k}
