@@ -74,10 +74,6 @@ DESCRIPTIONS: dict[str, str] = {
         "which concept a model was told to hold in mind, or to suppress, while writing an "
         "unrelated sentence"
     ),
-    "multihop_mt": (
-        "which multi-token concept a two- or three-hop factual prompt passes through on the way "
-        "to its answer"
-    ),
     "multihop_mt_v2": (
         "which multi-token entities a two- or three-hop factual prompt passes through on the way "
         "to its answer"
@@ -369,7 +365,6 @@ BUILDERS: dict[str, Callable[[], list[Item]]] = {
     "moral_rationale": _moral,
     "user_modeling": _user_modeling,
     "directed_modulation": _directed_modulation,
-    "multihop_mt": _multitoken("multihop_mt"),
     "multihop_mt_v2": _multitoken("multihop_mt_v2"),
     "multilingual": _multitoken("multilingual"),  # plan 0040: the mc+regex MC roles
     "multilingual_mt": _multitoken("multilingual_mt"),

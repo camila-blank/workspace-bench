@@ -12,6 +12,7 @@ import dataclasses
 import json
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,9 +63,12 @@ from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
 
 __all__ = [
+    "MC_PROFILES",
+    "MCProfile",
     "fold",
     "letter_index",
     "mt_family",
+    "name_credit",
     "name_gate",
     "run_family",
     "run_mc",
@@ -112,6 +116,107 @@ def bank_version(name: str) -> int:
 # stamp, so floor / ATI matching (strip_reads(pv) + judge model) never mistakes it for the
 # family's mc+regex instrument of record
 REGEX_LEG_VERSION = f"{SCORER_VERSION}+leg-regex"
+
+
+@dataclass(frozen=True)
+class MCProfile:
+    """A ``scorer="mc"`` family's own forced-choice judge (plan 0041; first user multihop_mt_v2):
+    its SYSTEM prompt, its unit question (no role label), its cannot-tell line, and the name gate
+    over the bank's ``name_forms``. ``regex_version`` stamps the regex contract when it runs as the
+    diagnostic (``extras.regex``) or, unpinned, as ``opts=judge=regex``."""
+
+    system: str
+    question: str
+    cannot: str
+    regex_version: str = SCORER_VERSION
+
+
+# family -> its judge; registered by the family package beside its SPEC (a family without an entry
+# keeps the shared diagnostic judge of ``prompts.SYSTEM``)
+MC_PROFILES: dict[str, MCProfile] = {}
+CREDIT_KINDS = ("exact", "surname", "fuzzy", "name_miss", "none")
+
+
+def _quote_candidates(quote: str) -> list[str]:
+    """The texts a credited quote may name the gold in (each ``digest.fold_quote``-folded): each
+    bullet of the quote on its own (split at the bullet mark, so a name is never assembled across
+    two bullets), and for a token quote its " | " parts, plus the parts space-joined and
+    concatenated in quote order (decision Q4: tokens of ONE list may spell one name; ``quote_ok``
+    has already proved they are tokens of one list)."""
+    out: list[str] = []
+    for part in quote.split(mc.BULLET_MARK):
+        if not part.strip():
+            continue
+        out.append(part)
+        pieces = [x for x in part.split("|") if x.strip()]
+        if len(pieces) >= 2:
+            out += pieces
+            out.append(" ".join(x.strip() for x in pieces))
+            out.append("".join(x.strip() for x in pieces))
+    return [digest.fold_quote(x) for x in out if digest.fold_quote(x)]
+
+
+def name_credit(
+    quote: str,
+    *,
+    full_forms: Sequence[str],
+    name_forms: Sequence[str],
+    fuzzy: bool = False,
+    avoid: Sequence[str] = (),
+) -> str:
+    """How a verified quote names the gold: ``exact`` (one of its full names, the frozen bank's
+    forms), ``surname`` (only a further ``name_forms`` entry: a gate alias, surname or distinctive
+    name), ``fuzzy`` (only a misspelling ``regex.fuzzy_form_in`` accepts, never one also near an
+    ``avoid`` option) or ``none``."""
+    cands = _quote_candidates(quote)
+    if any(mc.form_in(c, full_forms) for c in cands):
+        return "exact"
+    if any(mc.form_in(c, name_forms) for c in cands):
+        return "surname"
+    if fuzzy and any(regex.fuzzy_form_in(c, list(name_forms), avoid=avoid) for c in cands):
+        return "fuzzy"
+    return "none"
+
+
+def name_gate(
+    kind: str,
+    quote: str,
+    gold_forms: Sequence[str],
+    lines: Sequence[digest.Line],
+    *,
+    fuzzy: bool = False,
+    avoid: Sequence[str] = (),
+) -> str:
+    """The deterministic name gate ON TOP of ``digest.quote_ok`` (never replacing it; the same
+    signature and kinds as basic_readout_mt's, plan 0037 item 8, plus ``fuzzy`` / ``avoid``): a
+    gold pick (``kind == "correct"``) is ``unverified`` unless the quote verifies, ``name_miss``
+    unless it names the gold by one of ``gold_forms`` (``mc.form_in`` over
+    :func:`_quote_candidates`, then ``regex.fuzzy_form_in`` when ``fuzzy``), else ``correct``.
+    Every other kind is returned unchanged."""
+    if kind != "correct":
+        return kind
+    if not digest.quote_ok(quote, lines):
+        return "unverified"
+    credit = name_credit(
+        quote, full_forms=gold_forms, name_forms=gold_forms, fuzzy=fuzzy, avoid=avoid
+    )
+    return "correct" if credit != "none" else "name_miss"
+
+
+def _regex_pv(name: str) -> str:
+    """The regex contract's stamp: an ``mc`` family's own regex version, else the spec's."""
+    profile = MC_PROFILES.get(name)
+    return profile.regex_version if profile is not None else _spec_pv(name, SCORER_VERSION)
+
+
+def _regex_version(name: str, pinned: bool) -> str:
+    """The regex result's stamp: :func:`_regex_pv` when pinned or for a profile family (its own
+    regex version, plan 0041), else the bare ``SCORER_VERSION`` (an ``mc`` family's unpinned
+    ``opts=judge=regex`` diagnostic, plan 0037)."""
+    if pinned or name in MC_PROFILES:
+        return _regex_pv(name)
+    return SCORER_VERSION
+
 
 
 def _spec_pv(name: str, default: str) -> str:
@@ -201,13 +306,15 @@ def mt_family(
 
 
 def run_family(args: JudgeArgs, *, name: str, scorer: str = SCORER) -> FamilyResult:
-    """The scorer of record, or (regex families) ``opts=judge=mc`` as an unpinned diagnostic."""
+    """The scorer of record, or (regex families) ``opts=judge=mc`` as an unpinned diagnostic;
+    an ``mc`` family's ``opts=judge=regex`` scores the regex contract, forced unpinned."""
     if scorer == "mc":
         which = args.extra.get("judge", "mc")
         if which == "mc":
             return run_mc(args, name=name, pinned=True)
         if which == SCORER:  # the old regex contract: a diagnostic, never pinned
-            return run_regex(args, name=name, pinned=False)
+            res = run_regex(args, name=name, pinned=False)
+            return dataclasses.replace(res, pinned_instrument=False, complete=False)
         fail(f"{name}: opts=judge must be 'mc' (default) or 'regex', not {which!r}")
     if scorer == "mc+regex":
         # plan 0040 B5: the MC roles AND the regex units; opts=judge=mc / =regex keep each leg
@@ -370,10 +477,12 @@ def run_regex(
             hits_by[item_id][layer] = {}
             continue
         units = units_of[item_id]
-        plain_by[item_id][layer] = regex.layer_unit_hits(samples, units)
+        plain_by[item_id][layer] = regex.layer_unit_hits(samples, units, contract)
         split = _split_words(cs, units)
         hits_by[item_id][layer] = (
-            regex.layer_unit_hits(samples + split, units) if split else plain_by[item_id][layer]
+            regex.layer_unit_hits(samples + split, units, contract)
+            if split
+            else plain_by[item_id][layer]
         )
 
     rows: list[dict[str, Any]] = []
@@ -415,7 +524,7 @@ def run_regex(
                 first_lang[role][lang] += 1
     # the contract alone (token readouts are matched as raw tokens)
     judge_used = REGEX_JUDGE if pinned else dataclasses.replace(REGEX_JUDGE, pinned=False)
-    version = version or (_spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION)
+    version = version or _regex_version(name, pinned)
     result = pass_rate_result(
         name=name,
         args=dataclasses.replace(args, judge=judge_used),
@@ -433,7 +542,7 @@ def run_regex(
             "layers_judged": layers,
             "scorer": SCORER,
             "scorer_version": version,
-            "contract": dataclasses.asdict(contract),
+            "contract": regex.contract_json(contract),
         },
         extras={
             "n_calls": spend.calls,
@@ -535,7 +644,7 @@ def _run_regex_summary(
             forms = [f for u in units for f in u.all_forms()]
             texts = digest.gate_texts(cell, col, joined=True, forms=forms)
             samples = [s for s in (regex.extract_phrase(t) for t in texts) if s]
-            hits[digest.SUMMARY_LAYER] = regex.layer_unit_hits(samples, units)
+            hits[digest.SUMMARY_LAYER] = regex.layer_unit_hits(samples, units, contract)
             # the same evidence without the quote_ok-verified split words (plan 0033 M3)
             ev = col.evidence.get(item_id, ())
             no_split = dataclasses.replace(
@@ -544,7 +653,7 @@ def _run_regex_summary(
             )
             bare = digest.gate_texts(cell, no_split, joined=True)
             plain[digest.SUMMARY_LAYER] = regex.layer_unit_hits(
-                [s for s in (regex.extract_phrase(t) for t in bare) if s], units
+                [s for s in (regex.extract_phrase(t) for t in bare) if s], units, contract
             )
         res = regex.item_result(hits, units)
         incomplete = item_id in partial or not hits or args.dry_run
@@ -579,9 +688,7 @@ def _run_regex_summary(
     judge_used = digest.summarizer_judge(args, name)
     if not pinned:
         judge_used = dataclasses.replace(judge_used, pinned=False)
-    version = digest.prompt_version(
-        version or (_spec_pv(name, SCORER_VERSION) if pinned else SCORER_VERSION), args, name
-    )
+    version = digest.prompt_version(version or _regex_version(name, pinned), args, name)
     result = pass_rate_result(
         name=name,
         args=dataclasses.replace(args, judge=judge_used),
@@ -600,7 +707,7 @@ def _run_regex_summary(
             "layers_judged": layers,
             "scorer": SCORER,
             "scorer_version": version,
-            "contract": dataclasses.asdict(contract),
+            "contract": regex.contract_json(contract),
         },
         extras={
             "n_calls": spend.calls,
@@ -629,7 +736,7 @@ def _print_dry_run(
     missing: list[tuple[str, int]],
 ) -> None:
     print(
-        f"[regex] {name}: scorer {SCORER_VERSION}, contract {dataclasses.asdict(contract)}, "
+        f"[regex] {name}: scorer {SCORER_VERSION}, contract {regex.contract_json(contract)}, "
         f"{len(scope)} items x {len(layers)} layers, {len(missing)} missing cells"
     )
     if scope:
@@ -976,8 +1083,7 @@ def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
     scope = item_scope(items, args)
     ids = [it["id"] for it in scope]
     by_id = {it["id"]: it for it in scope}
-    # over the whole bank, never the scored subset
-    options = option_sets(items, cannot=cfg.cannot)
+    profile = MC_PROFILES.get(name) if pinned else None
     cells, rep = reads.load(args, name, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     positions: dict[tuple[str, int], list[Cell]] = defaultdict(list)
@@ -985,6 +1091,22 @@ def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
         positions[(c.id, c.layer)].append(c)
     missing = [(i, layer) for i in ids for layer in layers if (i, layer) not in positions]
     require_cells(name, missing, len(ids) * len(layers), args)
+    if profile is not None:
+        return _run_mc_profile(
+            args,
+            name=name,
+            profile=profile,
+            header=header,
+            scope=scope,
+            ids=ids,
+            by_id=by_id,
+            cells=cells,
+            rep=rep,
+            positions=positions,
+            layers=layers,
+            missing=missing,
+        )
+    options = option_sets(items, cannot=cfg.cannot)  # over the whole bank, never the subset
     if digest.summary_mode(args):
         return _run_mc_summary(
             args,
@@ -1389,3 +1511,353 @@ def _item_row(
             for _layer, vs in sorted(by_layer.items())
         ]
     return row
+
+
+# ---------------------------------------------------------------------------------------------
+# a family's own pinned forced-choice judge (MC_PROFILES; plan 0041, multihop_mt_v2)
+# ---------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _UnitBank:
+    """What the name gate of one (item, unit) needs from the bank."""
+
+    full_forms: list[str]
+    name_forms: list[str]
+
+
+def _unit_banks(items: list[dict[str, Any]]) -> dict[str, dict[str, _UnitBank]]:
+    """item id -> role -> its full names (``units[].full_forms``, else the unit's forms) and its
+    ``name_forms`` (``name_forms[role]`` over every language, else the full names)."""
+    out: dict[str, dict[str, _UnitBank]] = {}
+    for it in items:
+        per: dict[str, _UnitBank] = {}
+        nf = it.get("name_forms") or {}
+        for u in it.get("units") or []:
+            role = str(u["role"])
+            full = [str(f) for f in u.get("full_forms") or ()] or [
+                str(f) for fs in (u.get("forms") or {}).values() for f in fs
+            ]
+            names = [str(f) for fs in (nf.get(role) or {}).values() for f in fs] or full
+            per[role] = _UnitBank(full, names)
+        out[it["id"]] = per
+    return out
+
+
+def _profile_verdict(
+    res: dict[str, Any] | None,
+    gold_idx: int,
+    options: list[str],
+    lines: Sequence[digest.Line],
+    unit: _UnitBank | None,
+    *,
+    fuzzy: bool,
+) -> dict[str, Any]:
+    """One answer of a profile judge: ``verdict``'s kinds, the quote checked by ``digest.quote_ok``
+    against ``lines`` (summary: the digest's evidence lines; native: ``digest.native_lines``),
+    then the name gate; ``credit`` in :data:`CREDIT_KINDS` (``none`` unless the gold was picked)."""
+    if res is None:
+        return {"judged": False, "kind": "unavailable", "correct": False, "credit": "none"}
+    idx = letter_index(res.get("choice"), options)
+    if idx is None:
+        pick = str(res.get("choice", "")).strip() or None
+        return {
+            "judged": True,
+            "pick": pick,
+            "kind": "invalid",
+            "correct": False,
+            "quote_ok": False,
+            "credit": "none",
+        }
+    letter = LETTERS[idx]
+    if idx == len(options) - 1:
+        return {
+            "judged": True,
+            "pick": letter,
+            "kind": "cannot",
+            "correct": False,
+            "quote_ok": False,
+            "credit": "none",
+        }
+    quote = str(res.get("quote", ""))
+    ok = digest.quote_ok(quote, lines)
+    kind = "correct" if idx == gold_idx else "distractor"
+    credit = "none"
+    if kind == "correct" and not ok:
+        kind = "unverified"
+    if kind == "correct" and unit is not None:
+        avoid = [o for i, o in enumerate(options[:-1]) if i != gold_idx]
+        credit = name_credit(
+            quote,
+            full_forms=unit.full_forms,
+            name_forms=unit.name_forms,
+            fuzzy=fuzzy,
+            avoid=avoid,
+        )
+        if credit == "none":
+            kind, credit = "name_miss", "name_miss"
+    return {
+        "judged": True,
+        "pick": letter,
+        "kind": kind,
+        "correct": kind == "correct" and ok,
+        "quote": quote,
+        "quote_ok": ok,
+        "credit": credit,
+    }
+
+
+def _regex_columns(
+    name: str,
+    scope: list[dict[str, Any]],
+    samples: Mapping[str, Mapping[int, list[str]]],
+) -> dict[str, Any]:
+    """The regex contract on the SAME evidence as the judge (no calls): ``value`` / ``any_hit_rate``
+    over the items with evidence, and ``regex_any_length`` = the same contract over the bank's
+    ``name_forms`` with no token-length filter (what the multi-token filter costs)."""
+    header, _items = load_bank(bank_path(name))
+    contract = regex.contract_for(header, str(header.get("family", name)))
+    loose = dataclasses.replace(contract, multi_token=False)
+    out: dict[str, Any] = {"version": _regex_pv(name), "contract": regex.contract_json(contract)}
+    for key, use_names in (("regex", False), ("regex_any_length", True)):
+        passes: list[bool] = []
+        anys: list[bool] = []
+        for it in scope:
+            by_layer = samples.get(it["id"])
+            if not by_layer:
+                continue
+            units = regex.scored_units(it, contract)
+            if use_names:
+                nf = it.get("name_forms") or {}
+                units = [
+                    dataclasses.replace(
+                        u, forms={"en": [f for fs in nf[u.role].values() for f in fs]}
+                    )
+                    if u.role in nf
+                    else u
+                    for u in regex.scored_units(it, loose)
+                ]
+            hits = {L: regex.layer_unit_hits(s, units, contract) for L, s in by_layer.items()}
+            res = regex.item_result(hits, units)
+            passes.append(bool(res["pass"]))
+            anys.append(bool(res["any_hit"]))
+        out[key if key == "regex" else "regex_any_length"] = {
+            "value": rate(passes),
+            "any_hit_rate": rate(anys),
+            "n_items": len(passes),
+        }
+    return {
+        "regex": {**out["regex"], "version": out["version"], "contract": out["contract"]},
+        "regex_any_length": out["regex_any_length"],
+    }
+
+
+def _name_misses(verdicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {k: v.get(k) for k in ("item", "layer", "role", "gold", "quote")}
+        for v in verdicts
+        if v.get("kind") == "name_miss"
+    ]
+
+
+def _credit_counts(verdicts: list[dict[str, Any]]) -> dict[str, int]:
+    c = Counter(str(v.get("credit", "none")) for v in verdicts if v.get("judged"))
+    return {k: c.get(k, 0) for k in CREDIT_KINDS}
+
+
+def _run_mc_profile(
+    args: JudgeArgs,
+    *,
+    name: str,
+    profile: MCProfile,
+    header: dict[str, Any],
+    scope: list[dict[str, Any]],
+    ids: list[str],
+    by_id: dict[str, dict[str, Any]],
+    cells: list[Cell],
+    rep: Any,
+    positions: dict[tuple[str, int], list[Cell]],
+    layers: list[int],
+    missing: list[tuple[str, int]],
+) -> FamilyResult:
+    """The pinned instrument of a profile family. Summary mode (the default): one call per
+    (item, unit) on the item's digest of every loaded cell (every read position x every requested
+    layer), quote checked against ``col.evidence``. Native (``opts=aggregate=native``): one call
+    per (item, layer, unit), all positions of the layer as ``[pos k]`` blocks, any-layer rule and
+    ``mcjudge.layer_pick_columns``. Both: the name gate, ``credit`` per unit row, the regex
+    contract on the same evidence in ``extras.regex``."""
+    _h, items = load_bank(bank_path(name))
+    options = option_sets(items, cannot=profile.cannot)  # over the whole bank
+    ubank = _unit_banks(items)
+    contract = regex.contract_for(header, str(header.get("family", name)))
+    fuzzy = contract.fuzzy_names
+    native = native_langs(header)
+    spend = Spend()
+    pre = Preflighter(args.dry_run)
+    summary = digest.summary_mode(args)
+    pv = (
+        digest.prompt_version(_spec_pv(name, PROMPT_VERSION), args, name)
+        if summary
+        else _spec_pv(name, PROMPT_VERSION)
+    )
+    calls: list[Call] = []
+    meta: dict[str, tuple[str, int, str, int, list[str], Sequence[digest.Line]]] = {}
+    regex_samples: dict[str, dict[int, list[str]]] = defaultdict(dict)
+    empty: set[tuple[str, int]] = set()
+    col: digest.Collapse | None = None
+    source_kind = digest.as_prose(rep) if summary else None
+    with Cache(args.out / "cells.jsonl") as cache:
+        if summary:
+            col = _collapse(name, args, ids, positions, cache=cache, spend=spend, pre=pre)
+            note = digest.summary_note(args, source_kind, name)
+            layer = digest.SUMMARY_LAYER
+            for item_id in ids:
+                cell = col.cells.get(item_id)
+                if cell is None or item_id in col.unsummarized or item_id in col.empty:
+                    continue
+                readout = (cell.samples or ("",))[0]
+                lines = col.evidence.get(item_id, ())
+                forms = [f for u in ubank[item_id].values() for f in u.name_forms]
+                texts = digest.gate_texts(cell, col, joined=True, forms=forms)
+                regex_samples[item_id][layer] = [
+                    s for s in (regex.extract_phrase(t) for t in texts) if s
+                ]
+                for role, (opts, gold_idx) in options[item_id].items():
+                    key = f"{item_id}|L{layer:03d}|{role}"
+                    meta[key] = (item_id, layer, role, gold_idx, opts, lines)
+                    calls.append(
+                        Call(
+                            key=key,
+                            system=profile.system,
+                            user=render_user_summary(
+                                readout, note, role, opts, native, question=profile.question
+                            ),
+                            meta={"item": item_id, "layer": layer, "role": role},
+                        )
+                    )
+        else:
+            for (item_id, layer), cs in sorted(positions.items()):
+                blocks = []
+                for c in sorted(cs, key=lambda c: c.pos):
+                    text = render_bag(c.tokens) if c.tokens is not None else cell_text(c)[0]
+                    if text.strip():
+                        blocks.append(text if len(cs) == 1 else f"[pos {c.pos}] {text}")
+                regex_samples[item_id][layer] = _layer_samples(cs)
+                if not blocks:
+                    empty.add((item_id, layer))
+                    continue
+                readout = "\n".join(blocks)
+                lines = digest.native_lines(cs)
+                for role, (opts, gold_idx) in options[item_id].items():
+                    key = f"{item_id}|L{layer:03d}|{role}"
+                    meta[key] = (item_id, layer, role, gold_idx, opts, lines)
+                    calls.append(
+                        Call(
+                            key=key,
+                            system=profile.system,
+                            user=render_user(
+                                readout, role, opts, native, question=profile.question
+                            ),
+                            meta={"item": item_id, "layer": layer, "role": role},
+                        )
+                    )
+        results = run_calls(
+            calls,
+            schema=SCHEMA,
+            judge=args.judge,
+            prompt_version=pv,
+            cache=cache,
+            spend=spend,
+            concurrency=args.concurrency,
+            rpm=args.rpm,
+            dry_run=args.dry_run,
+            preflight=pre.for_judge(args.judge),
+            temperature=0.0,
+        )
+    verdicts: list[dict[str, Any]] = []
+    for key, (item_id, layer, role, gold_idx, opts, lines) in meta.items():
+        v = _profile_verdict(
+            results.get(key), gold_idx, opts, lines, ubank[item_id].get(role), fuzzy=fuzzy
+        )
+        verdicts.append(
+            {"item": item_id, "layer": layer, "role": role, "gold": opts[gold_idx], **v}
+        )
+    if col is not None:
+        unsummarized = {(i, digest.SUMMARY_LAYER) for i in col.unsummarized}
+        empty = {(i, digest.SUMMARY_LAYER) for i in col.empty}
+    else:
+        unsummarized = set()
+    rows = []
+    for i in ids:
+        row = _item_row(i, judged_roles(by_id[i]), verdicts, missing, unsummarized, empty)
+        row["credit"] = {
+            v["role"]: v["credit"] for v in verdicts if v["item"] == i and v.get("correct")
+        }
+        if col is not None:
+            row.pop("earliest_layer")
+            row.pop("passing_layers")
+            if i in col.cells:
+                row.update(col.row(i))
+        rows.append(row)
+    decided = [r for r in rows if r["pass"] is not None]
+    kinds: dict[str, int] = defaultdict(int)
+    for v in verdicts:
+        kinds[v["kind"]] += 1
+    roles = sorted({r for i in ids for r in judged_roles(by_id[i])})
+    if col is not None:
+        unjudged = {v["item"] for v in verdicts if not v["judged"]} | col.unsummarized
+        pinned = bool(args.judge.pinned) and digest.pinned(args, name)
+        n_unjudged, n_empty = len(unjudged), len(col.empty)
+    else:
+        unjudged_cells = {(v["item"], v["layer"]) for v in verdicts if not v["judged"]}
+        pinned = bool(args.judge.pinned)
+        n_unjudged, n_empty = len(unjudged_cells), len(empty)
+    extras: dict[str, Any] = {
+        "n_calls": len(calls),
+        "n_unjudged_units": sum(1 for v in verdicts if not v["judged"]),
+        "unit_any_layer": {
+            r: rate(row["unit_correct"][r] for row in decided if r in row["unit_correct"])
+            for r in roles
+        },
+        "kinds": dict(kinds),
+        "credit": _credit_counts(verdicts),
+        "name_misses": _name_misses(verdicts),
+        "abstain_rate": rate(v["kind"] == "cannot" for v in verdicts if v["judged"]),
+        **(_regex_columns(name, scope, regex_samples) if not args.dry_run else {}),
+    }
+    if col is not None:
+        extras["summary"] = col.extras()
+    else:
+        gold_of = {}
+        for v in verdicts:
+            label = (
+                "gold"
+                if v["kind"] in ("correct", "name_miss", "unverified")
+                else "distractor"
+                if v["kind"] == "distractor"
+                else v["kind"]
+            )
+            gold_of.setdefault(v["item"], []).append(label)
+        extras.update(layer_pick_columns([{"picks": gold_of.get(i, [])} for i in ids]))
+    result = pass_rate_result(
+        name=name,
+        args=dataclasses.replace(args, judge=dataclasses.replace(args.judge, pinned=pinned)),
+        prompt_version=pv,
+        rows=rows,
+        cells=cells,
+        rep=rep,
+        n_expected=len(ids) * len(layers),
+        n_missing=len(missing),
+        n_unjudged=n_unjudged,
+        n_empty=n_empty,
+        spend=spend,
+        chance_label=MC_CHANCE_LABEL,
+        config_extra={
+            **(digest.config(args, source_kind, name) if col is not None else {}),
+            "layers_judged": layers,
+            "instrument_of_record": _spec_pv(name, PROMPT_VERSION),
+            "regex_version": profile.regex_version,
+        },
+        extras=extras,
+        n_items=len(ids) if col is not None else None,
+        pinned=pinned,
+    )
+    return with_readout_count(result, scope, cells)

@@ -54,7 +54,6 @@ HEADLINE_23 = [
     "poetry",
     "typo",
     "basic_readout_mt",
-    "multihop_mt",
     "multilingual_mt",
     "multilingual_multihop",
     "multilingual_typo",

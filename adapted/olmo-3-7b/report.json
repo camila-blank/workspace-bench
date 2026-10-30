@@ -127,20 +127,6 @@
     "re-stamped with the subject's tokenizer; 0 items lost every multi-token form"
    ]
   },
-  "multihop_mt": {
-   "status": "full",
-   "target": 100,
-   "n_original": 100,
-   "n_original_gated": 96,
-   "n_original_pass": 6,
-   "n_items": 100,
-   "n_new": 94,
-   "n_candidates_gated": 314,
-   "change": "new items from t1",
-   "freeze_notes": [
-    "re-stamped with the subject's tokenizer; 0 items lost every multi-token form"
-   ]
-  },
   "multilingual_mt": {
    "status": "ooc",
    "target": 100,

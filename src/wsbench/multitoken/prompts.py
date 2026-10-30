@@ -180,8 +180,6 @@ _ML_TAIL = (
 )
 DIGEST_TASK_NOTES: dict[str, str] = {
     "basic_readout_mt": BRMT_TASK_NOTE,
-    "multihop_mt": "the model reads a factual prompt whose answer needs one or two silent "
-    "intermediate steps, each a multi-word name",
     "multihop_mt_v2": "the model reads a factual prompt whose answer needs one or two silent "
     "intermediate steps, each a multi-word name",
     # plan 0040 B8: no answer, rare mentions kept, the language left unnamed (the native
@@ -228,10 +226,13 @@ SCHEMA = schema_block(
 )
 
 
-def _question(role: str, native: tuple[str, ...], unit_question: str | None) -> str:
+def _question(role: str, native: tuple[str, ...], question: str | None) -> str:
+    """The unit question: the language question, a family's own (``question``, no role label:
+    basic_readout_mt's ``BRMT_QUESTION`` or an ``MCProfile``'s), else the shared
+    ``QUESTION_UNIT`` with the role."""
     if role == "language":
         return question_language(native)
-    return unit_question if unit_question is not None else QUESTION_UNIT.replace("{role}", role)
+    return question if question is not None else QUESTION_UNIT.replace("{role}", role)
 
 
 def render_user(
@@ -241,14 +242,16 @@ def render_user(
     native: tuple[str, ...] = DEFAULT_NATIVE_LANGS,
     unit_question: str | None = None,
     *,
+    question: str | None = None,
     v2: bool = False,
     token_note: str = "",
 ) -> str:
-    """One MC user message. ``unit_question``: a family's own question for its non-language units
-    (``BRMT_QUESTION``; None = the shared ``QUESTION_UNIT``). ``v2``: the multilingual v2
-    questions (``ml_question``); ``token_note``: the family's token-list rule, appended under a
-    token readout."""
-    question = ml_question(role, native) if v2 else _question(role, native, unit_question)
+    """One MC user message. ``unit_question`` / ``question`` (same meaning; the keyword is an
+    ``MCProfile``'s): a family's own question for its non-language units (None = the shared
+    ``QUESTION_UNIT``). ``v2``: the multilingual v2 questions (``ml_question``);
+    ``token_note``: the family's token-list rule, appended under a token readout."""
+    own = question if question is not None else unit_question
+    question = ml_question(role, native) if v2 else _question(role, native, own)
     if token_note:
         question = f"{token_note}\n\n{question}"
     lines = "\n".join(f"{LETTERS[i]}. {o}" for i, o in enumerate(options))
@@ -267,10 +270,12 @@ def render_user_summary(
     native: tuple[str, ...] = DEFAULT_NATIVE_LANGS,
     unit_question: str | None = None,
     *,
+    question: str | None = None,
     v2: bool = False,
 ) -> str:
     """Summary mode: ``render_user`` with the digest note above the readout (the digest)."""
-    question = ml_question(role, native) if v2 else _question(role, native, unit_question)
+    own = question if question is not None else unit_question
+    question = ml_question(role, native) if v2 else _question(role, native, own)
     lines = "\n".join(f"{LETTERS[i]}. {o}" for i, o in enumerate(options))
     return (
         USER_SUMMARY.replace("{summary_note}", note)

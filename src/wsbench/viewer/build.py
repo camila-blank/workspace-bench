@@ -29,7 +29,6 @@ GROUPS: list[tuple[str, list[str]]] = [
     (
         "Basic (multi-token)",
         [
-            "multihop_mt",
             "multilingual_mt",
             "typo_mt",
             "basic_readout_mt",

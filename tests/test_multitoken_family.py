@@ -19,7 +19,6 @@ from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
 MT = [
-    "multihop_mt",
     "multihop_mt_v2",
     "multilingual_mt",
     "typo_mt",
@@ -205,7 +204,8 @@ def test_dry_run_on_the_toy_file(name, tmp_path, capsys, monkeypatch):
     argv = ["judge", f"family={name}", f"readouts={example}", f"out={out}", "dry_run=True"]
     assert main([*argv, "opts=judge=mc,aggregate=native"]) == 0
     r = read_results(out)
-    assert r.value is None and r.family == name and not r.pinned_instrument
+    # opts=judge=mc is a regex family's unpinned diagnostic, an mc family's pinned instrument
+    assert r.value is None and r.family == name and r.pinned_instrument == (spec.scorer == "")
     assert "[user]" in capsys.readouterr().out
 
 
@@ -266,7 +266,7 @@ def test_multi_position_file_is_judged(name, tmp_path, real_families, monkeypatc
     # the test is about the loader accepting two positions, not about the judge's answers
     args = native_args(
         readouts=path, out=tmp_path / "o", judge=resolve(spec.judge), layers=None, items=None,
-        limit=0, allow_missing=True, concurrency=1, rpm=1.0, dry_run=not spec.scorer,
+        limit=0, allow_missing=True, concurrency=1, rpm=1.0, dry_run=spec.scorer == "",
     )  # fmt: skip
-    r = spec.run(args)
+    r = spec.run(args)  # an LLM-judged mt family runs dry: no judge call offline
     assert r.n_items > 0 and r.config["layers_judged"]
