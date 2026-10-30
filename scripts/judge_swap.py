@@ -586,6 +586,8 @@ PARITY: dict[str, Callable[[dict], tuple[float | None, str, dict]]] = {
     "jlens_concept_pr": _jlens_parity,
     "agentic_misalignment": _am_parity,
 }
+# parity families whose port value is ``extras["design_score"]``, not the result's headline
+PORT_FROM_EXTRAS = {"agentic_misalignment"}
 
 
 # ---------------------------------------------------------------- compare
@@ -610,10 +612,13 @@ def compare(
     port_model = res.config.get("judge_model")
     if family in PARITY:
         value, model, extras = PARITY[family](_read_json(baseline_path))
+        # agentic's headline is pair_rate since plan 0031; the source baseline is a design score,
+        # so its port side is the design score the result keeps in extras (same parity check)
+        port = res.extras.get("design_score") if family in PORT_FROM_EXTRAS else res.value
         return {
             "family": family,
             "parity": True,
-            "headline": {"port": res.value, "baseline": value, "delta": _delta(res.value, value)},
+            "headline": {"port": port, "baseline": value, "delta": _delta(port, value)},
             "port_model": port_model,
             "baseline_model": model,
             "baseline_note": "unswapped judge: port must reproduce the source headline",

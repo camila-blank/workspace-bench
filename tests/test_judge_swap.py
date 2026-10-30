@@ -524,7 +524,9 @@ def test_compare_parity_families(tmp_path):
     }
 
     am = _write_json(tmp_path / "am.json", {"headline": {"design_score": 0.57}})
-    out = js.compare("agentic_misalignment", _results("agentic_misalignment", [], 0.6), am)
+    # plan 0031: the port side is the design score in extras (the headline is pair_rate)
+    port = _results("agentic_misalignment", [], 0.1, {"design_score": 0.6})
+    out = js.compare("agentic_misalignment", port, am)
     assert out["baseline_model"] == "claude-sonnet-5"
     assert out["headline"]["delta"] == pytest.approx(0.03)
 
