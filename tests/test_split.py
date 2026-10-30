@@ -70,7 +70,6 @@ def test_relational_protocols_pair_twins_and_count_empty_cells(tmp_path):
         config={},
         n_layers=2,
         n_api_failed=0,
-        n_interp_missing=0,
         empty_cells=empty,
     )
     lp = res.extras["layer_protocols"]

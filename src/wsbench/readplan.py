@@ -355,6 +355,22 @@ def _text_end(tokens: list[str], start: int, text: str) -> int:
 # ---------------------------------------------------------------- per-family plans
 
 
+RELATIONAL_ANCHOR = ". In other words"  # relational_multihop: the full read starts here
+
+
+def relational_tail(item: dict[str, Any]) -> str:
+    """The relational full-read text: the stimulus from the full stop that ends sentence two
+    (``". In other words, P3 is P1's"``). The anchor must occur exactly once (raises with the
+    item id otherwise: refuse, never guess)."""
+    stim = str(item["stimulus"])
+    if stim.count(RELATIONAL_ANCHOR) != 1:
+        raise ValueError(
+            f"relational_multihop {item.get('id')}: {RELATIONAL_ANCHOR!r} occurs "
+            f"{stim.count(RELATIONAL_ANCHOR)} times in the stimulus (need exactly one)"
+        )
+    return stim[stim.index(RELATIONAL_ANCHOR) :]
+
+
 def _bank(family: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     path = bank_path(family)
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -676,17 +692,21 @@ def _plan(family: str) -> list[ReadSpec]:
             for it in items
         ]
     if family == "relational_multihop":
+        # plan 0043 C1 (Camila: "every position starting after the second sentence (including
+        # the full stop)"): full = the full stop ending sentence two through the possessive
+        # blank; lite = the blank alone (today's read, the span's last position)
         _h, items = _bank(family)
         return [
             ReadSpec(
                 family,
                 it["id"],
                 "bare",
-                {"kind": "final_token"},
+                {"kind": "suffix_text", "text": relational_tail(it)},
                 GRID,
                 text=it["stimulus"],
-                note="the possessive blank that ends the cloze",
-                lite_positions=FINAL,
+                note='the full stop ending sentence two through the possessive blank (". In '
+                "other words, P3 is P1's\")",
+                lite_positions=dict(FINAL),
             )
             for it in items
         ]
