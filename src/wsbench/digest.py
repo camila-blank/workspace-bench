@@ -270,6 +270,9 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "multilingual_mt": {"summ_lang": "1"},
     "multilingual_multihop": {"summ_lang": "1"},
     "multilingual_typo": {"summ_lang": "1"},
+    # plan 0045 C1: 8-11% of introspection digests are refused by Opus 5.5 and were undecided;
+    # a declined digest re-runs server-side on a fallback model (extras.digest_served_by)
+    "introspection": {"summ_fallback": "default"},
 }
 assert all(set(d) <= FAMILY_DEFAULT_KEYS for d in FAMILY_DEFAULTS.values())
 

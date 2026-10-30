@@ -16,6 +16,7 @@ FROZEN = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
 # instrument).
 CHANGED_BY_FAMILY_PRS: set[str] = {
     "chain_intermediates",  # plan 0038: bank v2 (items_v2.json), re-gated at gpu R8 (new answers)
+    "introspection",  # plan 0045 bank v2
 }
 
 

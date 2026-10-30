@@ -173,8 +173,11 @@ runs fan that out over Modal.
 - **Sampling.** The in-house arms used k=1, temperature 1.0, top-p 0.95, top-k 64, max 256 new
   tokens for prose lenses and top-10 for token lenses; the judges accept any k.
 - **Steering.** `introspection` rows carry `extra.steering` (a concept or gaussian vector
-  added at layer 12 over a token span); the producer must apply it in the forward that is read.
-  `wsbench produce` does not and refuses those rows; the vector recipe is in the family README.
+  added at layer 12 over a token span, `h <- h + beta * ||h|| * v / ||v||`); the producer must
+  apply it in the forward that is read. The vectors ship with the bank
+  (`evals/introspection/vectors/*.npy`; each row names `vector_file` / `vector_row`), and
+  `wsbench produce` applies the steer itself (a forward hook on the inject layer's output over
+  the span; `type: none` rows are a plain forward). Any other steering type is refused.
 - **Two families without text.** `hallucination` and `jlens_concept_pr` ship captured token ids
   and positions, not prompts: their banks are the model's own outputs, and they are read by
   re-feeding those ids.
