@@ -250,6 +250,8 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "arithmetic_intermediates": {"summ_numbers": "5", "summ_rare": "0"},
     # plan 0032 §2.5.2: a single COMMIT sample survives the digest
     "unverbalized_hint": {"summ_rare": "25"},
+    # plan 0035 C3: a single mention of the held concept has room in the rare tier
+    "directed_modulation": {"summ_rare": "25"},
     # plan 0032 §2.2.2: the language each evidence span is written in, shown to the judge
     "multilingual": {"summ_lang": "1"},
     "multilingual_mt": {"summ_lang": "1"},
