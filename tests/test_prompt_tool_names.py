@@ -24,7 +24,6 @@ TOOL = re.compile(
 # unverbalized_hint, medical_diagnosis{,_alt}).
 PENDING_FAMILY_PR: dict[str, str] = {
     "agentic_misalignment": "agentic.md 4b (native prompts + golden re-pin)",
-    "arithmetic_intermediates": "arithmetic.md (mc.READOUT_PHRASE)",
     "conjunctive_association": "conjunctive.md G5",
     "jlens_concept_pr": "jlens_pr.md item 3 / C5",
     "moral_rationale": "moral.md §2.6",

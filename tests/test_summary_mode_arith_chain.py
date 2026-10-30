@@ -2,6 +2,7 @@
 ``cells=all``, one judged digest per item, values verified on evidence samples only."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,27 @@ def test_arith_no_cells_and_unsummarized_are_undecided(tmp_path, monkeypatch):
     assert rows["subsub-000"]["pass"] is False
     assert fake.n("digest") == 2 and fake.n("arith_free") == 1
     assert r.counts["n_unjudged_cells"] == 1 and r.counts["n_missing_cells"] == 1
+
+
+def test_arith_digest_bundle_has_no_token_text(tmp_path, monkeypatch):
+    """Camila: "Remove the token labels". The digest headers carry the layer and position only,
+    so no read-site token (which would spell out the expression) reaches the summarizer or the
+    judge."""
+    toks = ["Compute", "271", " Reply", "322"]  # " -" would match the headers' "pos -4"
+    rows = [
+        {"id": "sign-062", "layer": 56, "pos": p, "token": t, "samples": [f"readout {k} says -51"]}
+        for k, (p, t) in enumerate(zip([-4, -3, -2, -1], toks, strict=True))
+    ]
+    path = _write(tmp_path / "a.jsonl", rows)
+    fake = FakeLLM.install(monkeypatch, _arith_judge, digest=_all_lines)
+    ARITH.run(_legacy_args(path, tmp_path / "o", ARITH_PV, items=["sign-062"]))
+    for name, _s, user in fake.calls:
+        heads = re.findall(r"^\[L\d+ pos -?\d+\]$", user, flags=re.M)
+        if name == "digest":
+            assert heads == [f"[L56 pos {p}]" for p in (-4, -3, -2, -1)]
+        assert "token=" not in user
+        for t in toks:
+            assert t not in user, (name, t)
 
 
 # ---------------------------------------------------------------- chain

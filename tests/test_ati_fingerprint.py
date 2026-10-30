@@ -10,7 +10,10 @@ from wsbench.baselines import text_inversion as ti
 
 FROZEN = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
 # families whose bank or full read plan this campaign changes, so their bank_sha moves and they
-# are re-gated in the run phase (gpu.md G13); none of them changes in the infra PR itself
+# are re-gated in the run phase (gpu.md G13); none of them changes in the infra PR itself.
+# Checked here although their family PR touched the plan: arithmetic_intermediates (plan 0036: a
+# layers-only plan change, and layers are never hashed; its re-gate is re-judge-only, for the new
+# instrument).
 CHANGED_BY_FAMILY_PRS: set[str] = {
     "chain_intermediates",  # plan 0038: bank v2 (items_v2.json), re-gated at gpu R8 (new answers)
 }
