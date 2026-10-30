@@ -9,4 +9,4 @@ the git log.
 Later plans in this directory follow the same `NNNN-<name>.md` convention; 0032
 (`0032-wsb-bp-infra.md`) is the shared read / summarize / judge machinery of the 2026-10-30 fix
 campaign.
-0043 (`0043-wsb-bp-user-modeling.md`) is the user_modeling workstream (um-v3.1).
+0043 (`0043-wsb-bp-user-modeling.md`) is the user_modeling workstream (um-v3.2).

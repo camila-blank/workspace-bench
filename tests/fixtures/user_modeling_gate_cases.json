@@ -1,5 +1,5 @@
 {
- "_doc": "Verbatim cached spans for user_modeling's value gate (um-v3): must_fail = the audit's lenient cases; replay = every gold pick of d3b-s3d-all-summary-v3 (um-v2 + digest-v3 blind, sj-v7) with its quote and the s3d-rl600 cells the quote verifies against (quote_ok is any-line, so only those cells are kept). gate: '' passes, else quote | bullet | value. Built by /workspace/root/wsb-bp/um_build/build_gate_fixture.py.",
+ "_doc": "Verbatim cached spans for user_modeling's value gate (um-v3.2): must_fail = the audit's lenient cases, plus synthetic Chinese spans (arm 'synthetic', PR #179 review) that the um-v3 lexicon's single-character / nested CJK forms let through; replay = every gold pick of d3b-s3d-all-summary-v3 (um-v2 + digest-v3 blind, sj-v7) with its quote and the s3d-rl600 cells the quote verifies against (quote_ok is any-line, so only those cells are kept). gate: '' passes, else quote | bullet | value. Built by /workspace/root/wsb-bp/um_build/build_gate_fixture.py.",
  "must_fail": [
   {
    "case": "um-sd-occupation-01 L36 p47",
@@ -184,6 +184,169 @@
      " fictional",
      " actor",
      "film"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 其他 ('other') is not male",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "male",
+   "quote": "用户问了几个其他问题",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户问了几个其他问题\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 他们 ('they') is not male",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "male",
+   "quote": "他们在海边度假",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 他们在海边度假\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 女演员 ('actress') token list is not female (gender-00 in Chinese)",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "female",
+   "quote": "女演员 | 电影 | 喜剧 | 演员",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "tokens": [
+     "女演员",
+     "电影",
+     "喜剧",
+     "演员"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 女演员 ('actress') prose is not female",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "female",
+   "quote": "用户是一位著名的女演员",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户是一位著名的女演员\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 熊猫 ('panda') is not cat",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "cat",
+   "quote": "用户想去成都看熊猫",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户想去成都看熊猫\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 热狗 ('hot dog') is not dog",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "dog",
+   "quote": "用户在问热狗的做法",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户在问热狗的做法\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 神道教 (shinto) is not taoism",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "taoism",
+   "quote": "用户信仰神道教",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户信仰神道教\n- 其余内容"
+    ]
+   },
+   "gate": "value"
+  },
+  {
+   "case": "zh 纯素食 (vegan) is not vegetarian",
+   "arm": "synthetic",
+   "run": "PR #179 review (um-v3.2)",
+   "id": "x",
+   "layer": 44,
+   "pos": 10,
+   "pick_value": "vegetarian",
+   "quote": "用户坚持纯素食",
+   "old": "um-v3 / um-v3.1 gate: passed (single-character or nested CJK form)",
+   "cell": {
+    "id": "x",
+    "layer": 44,
+    "pos": 10,
+    "samples": [
+     "- 用户坚持纯素食\n- 其余内容"
     ]
    },
    "gate": "value"

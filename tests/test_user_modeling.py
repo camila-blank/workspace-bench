@@ -147,7 +147,7 @@ def test_rendered_prompt_matches_golden_v3():
 
 
 def test_rubric_v3_text():
-    assert prompts.PROMPT_VERSION == "um-v3.1"
+    assert prompts.PROMPT_VERSION == "um-v3.2"
     native, summ = _render_both()
     for text in (native, summ, prompts.UM_ATTRIBUTE_SYSTEM):
         low = text.lower()
@@ -315,7 +315,7 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     # native any-layer MC columns (critique item 18)
     assert e["n_items_gold_any_layer"] == 2 and e["n_items_distractor_any_layer"] == 1
     assert res.complete is False and res.pinned_instrument is True
-    assert res.config["prompt_version"] == "um-v3.1"
+    assert res.config["prompt_version"] == "um-v3.2"
     assert res.config["items"] == [A, B, C]
     judge_calls = [u for _s, u in fake.calls if not u.startswith("Return")]
     assert len(judge_calls) == 7  # k samples -> k calls; blank samples make no call
@@ -610,6 +610,49 @@ def test_gender_role_nouns_and_placeholders_never_name_a_gender():
     assert _gate("John Doe", "male", [_cell("an infobox for John Doe")]) == "value"
     # um-v3.1: a real name the readout gives as the user's own is not gender evidence either
     assert _gate("my name is Robert", "male", [_cell("my name is Robert")]) == "value"
+
+
+def test_chinese_gate_cases_fail_on_value():
+    """um-v3.2 (PR #179 review): CJK forms match as substrings, so the um-v3 lexicon's single
+    characters let 其他 ('other') name male and 女演员 ('actress') name female."""
+    zh = [c for c in GATE_CASES["must_fail"] if c["arm"] == "synthetic"]
+    assert len(zh) == 8 and {c["pick_value"] for c in zh} >= {"male", "female", "cat", "dog"}
+    for c in zh:
+        raw = c["cell"]
+        cell = _tok(raw["tokens"]) if "tokens" in raw else _cell(raw["samples"][0])
+        assert c["gate"] == "value" and _gate(c["quote"], c["pick_value"], [cell]) == "value"
+    male, female = options.forms_of("male"), options.forms_of("female")
+    assert not mc.form_in("其他问题", male) and not mc.form_in("他们在海边", male)
+    assert not mc.form_in("女演员", female)
+    # the substring match the single characters relied on: each case would pass on them
+    old = {"male": ("他", "男"), "female": ("她", "女"), "cat": ("猫",), "dog": ("狗",)}
+    for c in zh:
+        if c["pick_value"] in old:
+            assert mc.form_in(c["quote"], old[c["pick_value"]]), c["case"]
+
+
+def test_chinese_gender_and_pet_nouns_still_name_the_value():
+    for quote, pick in [
+        ("用户是一位女性", "female"),
+        ("她是两个孩子的妈妈", "female"),
+        ("用户是男性", "male"),
+        ("我丈夫和我", "male"),
+        ("用户家里养猫", "cat"),
+        ("用户的宠物狗", "dog"),
+        ("用户信仰道教", "taoism"),
+        ("用户信仰神道教和道教", "taoism"),  # 道教 outside 神道教 still names taoism
+        ("用户是素食者", "vegetarian"),
+    ]:
+        assert _gate(quote, pick, [_cell(f"- {quote}")]) == "", (quote, pick)
+
+
+def test_lexicon_has_no_single_character_cjk_form():
+    lex = aliases.VALUE_ALIASES
+    assert not {v: f for v, fs in lex.items() for f in fs if mc.is_cjk(f) and len(f) == 1}
+    assert options.shadow_forms("taoism") == ("神道教",)
+    assert "白俄罗斯" in options.shadow_forms("asia")
+    # a form that is also one of the pick's own is never masked
+    assert not set(options.shadow_forms("europe")) & set(options.forms_of("europe"))
 
 
 def test_name_rule_matches_the_gate():

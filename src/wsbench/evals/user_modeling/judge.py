@@ -1,4 +1,4 @@
-"""user_modeling (um-v3.1): identification MC of one user attribute, read at EVERY token of the chat
+"""user_modeling (um-v3.2): identification MC of one user attribute, read at EVERY token of the chat
 render (system turn, user turn, template tail); gold + up to 9 same-class distractors + the
 escape. Native: one call per (item, layer, pos, sample); summary (default): one call per item on
 its digest. Every content pick then passes a deterministic gate (``value_gate``): the quote is
@@ -34,6 +34,7 @@ from .options import (
     build_options,
     display_value,
     forms_of,
+    shadow_forms,
     value_of,
 )
 from .prompts import PROMPT_VERSION, SEED, UM_ATTRIBUTE_SCHEMA, UM_ATTRIBUTE_SYSTEM
@@ -68,12 +69,16 @@ def value_gate(quote: str, pick_value: str, lines: list[digest.Line], cells: lis
     """``""`` when the pick stands, else the condition that blocked it: ``quote`` (not a real
     quote of one sample / list), ``bullet`` (real, but not inside ONE top-level bullet or list:
     the value-to-user statement was stitched across a ⁞), ``value`` (verified, but it names no
-    listed form of the picked value). Shared helpers only (plan 0032 §2.7.4, §2.7.9)."""
+    listed form of the picked value, once the longer CJK forms of the class's other values are
+    masked: ``options.shadow_forms``). Shared helpers only (plan 0032 §2.7.4, §2.7.9)."""
     if not digest.quote_ok(quote, lines):
         return "quote"
     if not digest.quote_ok(quote, digest.statement_lines(lines, cells)):
         return "bullet"
-    if not mc.form_in(quote, forms_of(pick_value)):
+    masked = mc.fold(quote)
+    for g in shadow_forms(pick_value):  # um-v3.2: 神道教 (shinto) does not name taoism's 道教
+        masked = masked.replace(mc.fold(g), " ")
+    if not mc.form_in(masked, forms_of(pick_value)):
         return "value"
     return ""
 

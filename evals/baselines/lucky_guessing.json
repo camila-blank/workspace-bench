@@ -786,7 +786,7 @@
    ],
    "model": "claude-opus-5-5",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "um-v3.1",
+   "instrument": "um-v3.2",
    "written": "2026-10-30T14:45:28+00:00"
   },
   "described": {
@@ -810,7 +810,7 @@
    ],
    "model": "claude-opus-5-5",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "um-v3.1",
+   "instrument": "um-v3.2",
    "written": "2026-10-30T14:46:21+00:00"
   },
   "uniform": {
@@ -834,7 +834,7 @@
    ],
    "model": "seeded-uniform",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "um-v3.1",
+   "instrument": "um-v3.2",
    "written": "2026-10-30T14:46:21+00:00"
   }
  }
