@@ -598,3 +598,16 @@ def test_readme_counts_match_the_bank():
     _header, items = load_bank(registry.bank_path("poetry"))
     readme = (REPO / "evals/poetry/README.md").read_text(encoding="utf-8")
     assert f"{len(items)} items" in readme
+
+
+def test_packed_bullet4_keeps_verse_line_breaks():
+    """plan 0038: a cached packed x4 cell ("- g1\\n- g2...") splits into 4 generations, each
+    keeping its own line breaks, so ``line_final`` still sees where a verse line ends."""
+    from wsbench.readouts import normalize
+
+    packed = "- Her voice rang out like a trumpet's call.\nThe students listened\n- b\n- c\n- d"
+    (cell,), _d = normalize([Cell("x", 20, 16, (packed,), None, None)], "bullet4")
+    assert cell.samples[0] == "Her voice rang out like a trumpet's call.\nThe students listened"
+    assert score.line_final("call", cell.samples[0])
+    (ln,) = digest.native_lines([Cell("x", 20, 16, (cell.samples[0],), None, None)])
+    assert "\n" not in ln.text  # the bundle line is still one line

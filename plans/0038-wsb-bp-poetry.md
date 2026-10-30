@@ -887,3 +887,24 @@ Risks:
     no longer a targets judge), `tests/test_poetry.py::test_dry_run_on_the_toy_file`
     (`layers=20,36`; `n_items_without_readouts == n - 2`).
 11. Plan number 0038 (0033-0037 were claimed by sibling campaign PRs).
+12. Shared change: `readouts._bullets` (the `bullet4` split of a cached packed x4 cell) now keeps a
+    generation's continuation lines joined by `\n` instead of a space. The x4 generations are
+    several lines of verse; the space join erased every line end inside them, so `line_final`
+    could only see bullet ends (cached onchat x4 re-judge: summary 3/94 before the fix, 16/94
+    after; native 10/94 -> 19/94). Digest bundles are unchanged (`digest.sample_text` flattens
+    whitespace), so no digest cache or fingerprint moves.
+
+**Evidence (cached v1 readouts at the line-one newline = `reads=lite`, Opus 5.5 digest + judge,
+judge test only; full-read numbers need the GPU run phase).**
+
+| arm (sampling) | old native / summary (bank-2026-10-10) | new native / summary | native-summary agreement |
+|---|---|---|---|
+| s3d-rl600 (prose1) | 53/95 / 45/92 | 20/95 / 18/92 (33 and 27 PASS->FAIL, 0 FAIL->PASS) | 89/92 |
+| rl-onchat-x4 (bullet4, cached, judge test only) | -- | 19/95 / 16/94 | 85/94 |
+| ML-NLA 2k (prose1) | -- | 13/95 / 11/94 | 88/94 |
+| J-lens (tokens10) | -- | 2/94 / 2/95 | 94/94 |
+| Opus 5.5 ATI answers draws 0-2 (prompt-only) | 66 / 67 / 64 of 100 | 10/94, 10/94, 12/92 | -- |
+
+E0 proxy (no API; `scripts/poetry/proxy_e0.py`) on the 95 pool items: s3d 23, onchat 30, ML-NLA
+28, J-lens 2 (cross-item null 8 / 11 / 8 / 0); on the 59 v1 items of v2: 12 / 17 / 16 / 1 (null
+7 / 6 / 5 / 0).
