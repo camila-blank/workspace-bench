@@ -136,8 +136,9 @@ def test_quote_from_one_list_verifies_across_tokens():
     assert quote_verified("York", list(bp.cell_lines(cell)))
 
 
+# basic_readout left for the blind MC judge (plan 0039): it gets the OPTIONS form of the note
+# with its flat types (test_basic_readout_mc_judge_sees_the_options_note below)
 BASIC_TARGET_JUDGES = [
-    "basic_readout",
     "medical_diagnosis",
     "medical_diagnosis_alt",
     "multihop",
@@ -174,3 +175,28 @@ def test_basic_target_judges_never_see_the_lone_option_clause(
     assert users, family
     assert all(mc.TARGET_TOKEN_NOTE in u for u in users), family
     assert not any("only option on its line" in u for u in users), family
+
+
+@pytest.mark.parametrize("aggregate", ["summary", "native"])
+def test_basic_readout_mc_judge_sees_the_options_note(
+    aggregate, tmp_path, monkeypatch, real_families
+):
+    """Plan 0039: basic_readout's MC judge holds OPTIONS, so it receives
+    mc.token_note(spec.flat_types) (lone-option clause, overridden by its flat types), never the
+    targets form."""
+    registry.load_all()
+    spec = registry.FAMILIES["basic_readout"]
+    assert not spec.targets_judge
+    want = mc.token_note(spec.flat_types, multi_select=spec.multi_select)
+    assert digest.token_note_of("basic_readout") == want
+    path = _as_tokens(EX / "basic_readout.jsonl", tmp_path / "r.jsonl")
+    fake = FakeLLM.install(monkeypatch, judge=lambda s, u, sc: None)
+    args = summary_args(path, tmp_path / "o", "pv", allow_missing=True)
+    if aggregate == "native":
+        args = dataclasses.replace(args, extra={**args.extra, "aggregate": "native"})
+    with contextlib.suppress(Exception):
+        spec.run(args)
+    users = [u for name, _s, u in fake.calls if name != "digest"]
+    assert users
+    assert all(want in u for u in users)
+    assert not any(mc.TARGET_TOKEN_NOTE in u for u in users)

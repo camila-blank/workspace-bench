@@ -307,3 +307,29 @@ def test_association_lite_rule():
     for s in readplan.plan("association"):
         assert s.lite_positions == readplan.frozen_lite_rule("association")
         assert s.lite_positions == {"kind": "final_token"} and s.lite_layers is None
+
+
+def test_basic_readout_v2_all_chat_prefill():
+    """Plan 0039 C2b/C4: every v2 item is a chat question with the answer stem prefilled, read
+    from the first question token through the end; lite = the final token (the stem's ":")."""
+    rows = readplan.plan("basic_readout")
+    assert len(rows) == 100
+    for s in rows:
+        assert s.render == "chat_prefill" and s.prefill == readplan.ANSWER_STEM, s.id
+        assert s.positions == {"kind": "suffix_text_then_tail", "text": s.text}, s.id
+        assert s.text.endswith("? Answer in one word.") and s.layers == readplan.GRID
+        assert s.lite_positions == {"kind": "final_token"} and s.lite_layers is None
+
+
+def test_basic_readout_v2_positions():
+    q = "What is the day before Monday? Answer in one word."
+    toks = (
+        ["<|im_start|>", "user", "Ċ", "What", "Ġis", "Ġthe", "Ġday", "Ġbefore", "ĠMonday", "?",
+         "ĠAnswer", "Ġin", "Ġone", "Ġword", ".", "<|im_end|>", "Ċ", "<|im_start|>", "assistant",
+         "Ċ", "<think>", "ĊĊ", "</think>", "ĊĊ", "My", "Ġone", "-word", "Ġanswer", "Ġis", ":"]
+    )  # fmt: skip
+    got = readplan.resolve({"kind": "suffix_text_then_tail", "text": q}, toks)
+    assert got[0] == toks.index("What") and got[-1] == len(toks) - 1 and toks[got[-1]] == ":"
+    assert got == list(range(3, len(toks)))  # the template header before the question is not read
+    lite = readplan.lite_select(got, {"kind": "final_token"})
+    assert lite == [len(toks) - 1]
