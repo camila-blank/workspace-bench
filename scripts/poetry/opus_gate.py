@@ -181,7 +181,7 @@ def rejudge(out: Path, bank: Path, *, dry_run: bool = False, tag: str = GATE_TAG
             continue
         old = it.get("prompt_only_opus") or {}
         it["prompt_only_opus"] = {**old, "draws": e["draws"], "picked_gold": e["picked_gold"],
-                                  "instrument": e["instrument"]}  # fmt: skip
+                                  "instrument": e["instrument"], "kinds": e["kinds"]}  # fmt: skip
         if e["picked_gold"]:
             now_picked.append({"id": label_of(it["name"]), "kinds": e["kinds"]})
     report = {"n_items": len(raw["items"]), "now_picked": now_picked,
