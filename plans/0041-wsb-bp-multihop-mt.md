@@ -816,7 +816,7 @@ table; item 7 comes from the gpu R4 / R4b / R6 outputs.
 
 ## 7. Implementation notes (what the PR did differently from the text above, and why)
 
-Plan number 0040 (the next free one when this PR opened; campaign specs refer to this file as
+Plan number 0041 (the next free one when this PR opened; campaign specs refer to this file as
 `multihop_mt.md`). Every item below is also listed under "deviations" in the PR body.
 
 - **`min_full_positions = 15`, not 17.** The v2 builder measures `n_render_tokens` with the

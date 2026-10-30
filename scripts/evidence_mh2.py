@@ -1,4 +1,4 @@
-"""Offline evidence for plan 0040 (multihop_mt removal + multihop_mt_v2 fixes): CPU only, no API
+"""Offline evidence for plan 0041 (multihop_mt removal + multihop_mt_v2 fixes): CPU only, no API
 call, cached readouts and the v2 bank only. Writes the evidence files the plan's coverage table
 names under ``OUT/evidence/{multihop_mt,multihop_mt_v2}/``.
 

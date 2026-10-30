@@ -472,7 +472,7 @@ def _plan(family: str) -> list[ReadSpec]:
     ):
         return _final_token_families(family, "plain")
     if family == "multihop_mt_v2":
-        # bank v2 (plan 0040; Camila 2026-10-30: "read at every token not just final position
+        # bank v2 (plan 0041; Camila 2026-10-30: "read at every token not just final position
         # (except lite/fast should be last token)"): the item's `readout` block is the source,
         # every prompt token at every GRID layer, lite = its `lite` rule (the final token)
         _h, items = _bank(family)
