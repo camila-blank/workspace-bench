@@ -838,6 +838,16 @@ def split_word(quote: str, lines: Sequence[Line], max_parts: int = 4) -> list[Li
     return None
 
 
+_SPLIT_WHERE = re.compile(r"\[L-?\d+ pos -?\d+--?\d+\]")
+
+
+def is_split_word_line(ln: Line) -> bool:
+    """An evidence Line the digest built from a word split across adjacent positions of one
+    layer (``[L44 pos 13-14]``, one synthetic token): the regex scorers count passes that rest
+    on one (``split_word_hit``, plan 0033)."""
+    return ln.pieces is not None and _SPLIT_WHERE.fullmatch(ln.where) is not None
+
+
 def quote_ok(quote: str, lines: Sequence[Line]) -> bool:
     """THE quote verifier (plan 0032 §2.7.4): ``lines`` = ``col.evidence[item]`` in summary
     mode or :func:`native_lines` in native mode. A prose quote lies inside ONE sample (folded

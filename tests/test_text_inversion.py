@@ -81,6 +81,23 @@ def test_buggy_code_is_not_gated_since_plan_0030():
     assert "buggy_code" not in json.loads(ti.FROZEN.read_text(encoding="utf-8"))
 
 
+def test_typo_mt_is_not_gated(offline, real_families, tmp_path, capsys):
+    """plan 0033 M4 (Camila 2026-10-30: "This should not be in ati"): typo_mt left the subset;
+    a run under the flag skips it (exit 0) without reaching its scorer."""
+    frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
+    assert "typo_mt" in ti.NOT_GATED and "Camila 2026-10-30" in ti.NOT_GATED["typo_mt"]
+    assert "typo_mt" not in frozen and "typo_mt" in frozen["_not_gated"]
+    assert "typo_mt" not in ti.gated_families()
+    assert "typo_mt" not in ti.STRICTER_PASS_FIELD
+    with pytest.raises(ti.NotInScope):
+        ti.subset_entry("typo_mt")
+    r = tmp_path / "r.jsonl"
+    r.write_text("")
+    argv = ["judge", "family=typo_mt", f"readouts={r}", f"out={tmp_path / 'o'}"]
+    assert main([*argv, "anti_text_inversion=True"]) == 0
+    assert "skipped: typo_mt: not gated" in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------- gate
 
 

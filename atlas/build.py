@@ -40,7 +40,7 @@ FAMILY_DESC = {
     "directed_modulation": "The model is told to think (or not think) about a word while writing something else.",
     "multihop_mt": "Two-hop question whose bridge is a multi-token entity.",
     "multilingual_mt": "Multi-token concept described in another language.",
-    "typo_mt": "Typo'd multi-token word or number.",
+    "typo_mt": "Typo'd multi-token word (the hard typo family; typo is superseded by it).",
     "basic_readout_mt": "Multi-token answer (an entity) read before it is written.",
     "multilingual_multihop": "Two-hop question asked in another language.",
     "multilingual_typo": "Typo'd word inside a non-English prompt.",

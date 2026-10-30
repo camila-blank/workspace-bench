@@ -170,7 +170,8 @@ def test_plan_all_skips_superseded_but_names_still_plan(tmp_path, real_families)
     assert main(["plan", f"out={tmp_path / 'all'}", "limit=1"]) == 0
     written = {p.stem for p in (tmp_path / "all").glob("*.jsonl")}
     assert "multihop_mt_v2" in written and "multihop_mt" not in written
-    assert len(written) == len(readplan.families()) - 1
+    assert "typo_mt" in written and "typo" not in written  # plan 0033 T1
+    assert len(written) == len(readplan.families()) - 2
     assert main(["plan", "families=multihop_mt", f"out={tmp_path / 'v1'}", "limit=1"]) == 0
     assert (tmp_path / "v1" / "multihop_mt.jsonl").exists()
 

@@ -31,10 +31,23 @@ GOLDEN = json.loads((REPO / "tests/golden/mt_regex_matching.json").read_text(enc
 UNITS = json.loads((REPO / "tests/golden/mt_regex_units.json").read_text(encoding="utf-8"))
 
 
+# The port's sanctioned deviations from the source verdicts (the golden stays the source's).
+DEVIATIONS = {
+    # plan 0033 M2, Camila 2026-10-30: "Capitalised answer markers are not recognised
+    # ('**Answer:** 429', 'Result: 429' miss; matcher is case-sensitive on the sample) ... fix this"
+    ("435", "Answer: 435"): True,
+}
+
+
 def test_matcher_verdicts_match_the_source():
+    seen = set()
     for pair in GOLDEN["pairs"]:
+        key = (pair["form"], pair["sample"])
+        want = DEVIATIONS.get(key, pair["hit"])
+        seen.add(key)
         got = regex.unicode_word_matcher(pair["form"])(pair["sample"])
-        assert got is pair["hit"], (pair["form"], pair["sample"], pair["hit"])
+        assert got is want, (pair["form"], pair["sample"], want)
+    assert set(DEVIATIONS) <= seen  # every deviation names a real golden pair
     forms = {"en": ["Battle of Ain Jalut", "Ayn Jalut"], "zh": ["阿因贾鲁特战役", "艾因贾卢特"]}
     for sample, langs in GOLDEN["hit_forms"].items():
         assert regex.hit_forms([sample], forms) == langs, sample
@@ -180,7 +193,8 @@ def test_run_regex_prose(tmp_path):
         "spend_usd": 0.0,
     }
     assert r.pinned_instrument and not r.complete  # a subset run is never complete
-    assert r.config["judge_model"] == "regex" and r.config["prompt_version"] == SCORER_VERSION
+    assert r.config["judge_model"] == "regex"
+    assert r.config["prompt_version"] == f"{SCORER_VERSION}+typo-v2"  # plan 0033 M1 bank tag
     assert r.extras["n_calls"] == 0 and r.extras["unit_any_layer"] == {"correction": 1 / 3}
 
 
@@ -262,7 +276,7 @@ def test_dispatch_and_dry_run(tmp_path, capsys):
     path.write_text(json.dumps({"id": it["id"], "layer": 20, "pos": 1, "samples": ["x"]}) + "\n")
     r = fam.run_family(_args(path, tmp_path / "o", items=[it["id"]], dry_run=True), name="typo_mt")
     assert r.value is None and r.rows[0]["pass"] is None
-    assert "[regex] typo_mt: scorer mt-regex-2026-09-23" in capsys.readouterr().out
+    assert f"[regex] typo_mt: scorer {SCORER_VERSION}" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         fam.run_family(_args(path, tmp_path / "o", extra={"judge": "llm"}), name="typo_mt")
 
@@ -291,7 +305,8 @@ def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monke
     r = read_results(out)
     assert r.value is None and r.config["judge_model"] == "regex"
     assert "[regex]" in capsys.readouterr().out
-    assert spec.scorer == "regex" and spec.judge.prompt_version == SCORER_VERSION
+    tag = "+typo-v2" if name == "typo_mt" else ""  # plan 0033 M1: typo_mt's v2-bank tag
+    assert spec.scorer == "regex" and spec.judge.prompt_version == SCORER_VERSION + tag
 
 
 @pytest.mark.parametrize("name", MT)
@@ -363,3 +378,15 @@ def test_a_judge_flag_never_unpins_the_regex_instrument(tmp_path):
         _args(prose, tmp_path / "out2", items=[it["id"]], judge=judge), name="typo_mt"
     )
     assert r2.config["judge_model"] == "regex" and r2.pinned_instrument  # prose ignores the flag
+
+
+def test_numeric_answer_markers_are_case_insensitive():
+    """plan 0033 M2 (Camila 2026-10-30): "Capitalised answer markers are not recognised
+    ('**Answer:** 429', 'Result: 429' miss ...) fix this" (latent false negative tyh-arith-3a)."""
+    m = regex.unicode_word_matcher("429")
+    for hit in ("**Answer:** 429", "Result: 429", "ANSWER IS 429", "The Answer: 429"):
+        assert m(hit), hit
+    assert m("x Equals 429") and m("answer: 429") and m("TOTAL: 429")
+    for miss in ("Answer: 4290", "Answer: 429.5", "429 + 1 = 430", "Answer 1429"):
+        assert not m(miss), miss
+    assert SCORER_VERSION == "mt-regex-2026-10-30"  # the one campaign bump

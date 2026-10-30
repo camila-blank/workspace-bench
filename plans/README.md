@@ -8,4 +8,4 @@ the git log.
 
 Later plans in this directory follow the same `NNNN-<name>.md` convention; 0032
 (`0032-wsb-bp-infra.md`) is the shared read / summarize / judge machinery of the 2026-10-30 fix
-campaign.
+campaign; 0033 (`0033-wsb-bp-typo.md`) is that campaign's typo / typo_mt workstream.

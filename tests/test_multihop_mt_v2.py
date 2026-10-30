@@ -8,6 +8,7 @@ from wsbench import registry
 from wsbench.banks import load_bank
 from wsbench.multitoken.options import judged_roles, option_sets
 from wsbench.multitoken.prompts import CANNOT
+from wsbench.multitoken.regex import SCORER_VERSION  # one campaign bump (plan 0033 M2)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -71,4 +72,4 @@ def test_registered():
 
     registry.FAMILIES.setdefault(SPEC.name, SPEC)
     assert SPEC.group == "basic_mt" and SPEC.scorer == "regex"
-    assert SPEC.judge.prompt_version == "mt-regex-2026-09-23"
+    assert SPEC.judge.prompt_version == SCORER_VERSION
