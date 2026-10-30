@@ -225,7 +225,13 @@ def _holds_other(pieces: Sequence[str], others: list[str], block: dict[str, Any]
         values = {v for o in others if (v := numerals.word_value(o)) is not None}
         return any(numerals.numbers_in(t) & values for t in pieces)
     listed = block.get("distractor_aliases", {})
-    forms = [f for o in others for f in (o, *listed.get(o, ()))]
+    return pieces_hold(pieces, [f for o in others for f in (o, *listed.get(o, ()))])
+
+
+def pieces_hold(pieces: Sequence[str], forms: Sequence[str]) -> bool:
+    """One token list names one of ``forms``: per token with the CJK suffix guard; a
+    one-character CJK form only as the whole token (马 is horse, 马来西亚 is not); a multi-word
+    form also over the list joined ("North | America")."""
     toks = [mc.fold(t).strip() for t in pieces]
     for f in forms:
         ff = mc.fold(f).strip()

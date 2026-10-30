@@ -109,7 +109,7 @@ def test_floors_and_macro_follow_the_current_judge_not_the_stored_flag(real_fami
     from wsbench.results import floor_applies, on_family_judge
 
     # the family's current prompt version (plan 0039: association's own MC stamp)
-    gem = {"judge_model": "google/gemini-3.8-flash", "prompt_version": "assoc-mc-2026-10-30"}
+    gem = {"judge_model": "google/gemini-3.8-flash", "prompt_version": "assoc-mc-2026-10-31"}
     old = _res("association", config=gem)  # stored pinned_instrument=True
     new = _res("association", config={**gem, "judge_model": DEFAULT_JUDGE})
     assert not on_family_judge(old) and not floor_applies(old)

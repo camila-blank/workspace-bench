@@ -171,7 +171,7 @@ def _args(path, out, **kw):
     return native_args(**base)
 
 
-def test_run_regex_prose(tmp_path):
+def test_run_regex_prose(tmp_path, real_families):
     """typo_mt: A hits at one layer (pass); B blank everywhere (empty, a negative); C misses;
     D has a layer missing and no pass (undecided); no LLM call, spend 0, pinned, not complete
     (subset)."""

@@ -381,13 +381,13 @@ def test_all_blank_item_fails_rather_than_vanishing(family, tmp_path, monkeypatc
 
 
 def test_judge_calls_keyed_by_judge_prompt_version():
-    """Plan 0035: new judge prompts, new cache key (dm-2026-10-30c); the instrument carries
+    """Plan 0035: new judge prompts, new cache key (dm-2026-10-31); the instrument carries
     +expressed (the any-basis headline)."""
     from wsbench.evals.directed_modulation import judge as dmj
 
     src = __import__("inspect").getsource(dmj)
     assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
-    assert prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-30c"
+    assert prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-31"
     assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+expressed"
 
 
@@ -628,9 +628,10 @@ def _hornet_item() -> tuple[dict, list[str], int]:
 
 @pytest.mark.parametrize("aggregate", ["native", "summary"])
 def test_dm_lone_option_in_same_category_list_is_gold(aggregate, tmp_path, monkeypatch, family):
-    """G5: a lone shown option inside a same-category token list is singled out (gold, hit);
-    a line holding two shown options is cannot-tell. The judge message carries exactly the
-    spec's mc.token_note and not the retired digest sentence."""
+    """G5: the judge message carries exactly the spec's mc.token_note and not the retired
+    digest sentence; a line holding two shown options is cannot-tell. Decision Q4 (2026-10-31,
+    PR #191) retired G5's "a lone shown option inside a same-category list is singled out": the
+    prompt now says such a run singles out none of them, and the judge (faked here) decides."""
     it, o, g = _hornet_item()
     other = next(c for c in o if c != "hornet")
     rows = [
@@ -642,7 +643,8 @@ def test_dm_lone_option_in_same_category_list_is_gold(aggregate, tmp_path, monke
     assert want == mc.token_note() == prompts.token_note()
 
     def jud(sy: str, user: str, sc: dict) -> dict:
-        assert want in user and "singles out none of them" not in user
+        assert want in user and "even inside a list of other words of the same kind" not in user
+        assert "singles out none of them, even when only one of them is an option" in user
         if f"hornet | {other}" in user and "wasp" not in user:
             return _dm_answer(6)
         return _dm_answer(g, "hornet | wasp", "incidental")

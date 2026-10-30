@@ -163,7 +163,7 @@ SUMM = {"model": "claude-opus-5-5", "max_items": 10, "concurrency": None, "timeo
 
 def test_freeze_routes_summary_runs_and_refuses_mixed(tmp_path, monkeypatch, real_families):
     base = po.instrument_versions()["association"]
-    spv = f"{base}+digest-v4-task-extractive+sj-v8"
+    spv = f"{base}+digest-v4-task-extractive+sj-v9"
     run = tmp_path / "run"
     write_results(run / "association", _result("association", spv, "summary", SUMM))
     monkeypatch.setattr(po, "FROZEN_SUMMARY", tmp_path / "po_summary.json")
@@ -185,7 +185,7 @@ def test_freeze_routes_summary_runs_and_refuses_mixed(tmp_path, monkeypatch, rea
 
 
 def test_summary_rows_draw_only_their_own_summary_floor():
-    spv = "bank-x+digest-v4-task-extractive+sj-v8"
+    spv = "bank-x+digest-v4-task-extractive+sj-v9"
     entry = {
         "rate": 0.31,
         "instrument": spv,
@@ -239,7 +239,7 @@ def test_unhooked_family_fails_under_the_default(tmp_path, monkeypatch):
 def test_freeze_refuses_a_dst_of_the_other_mode(tmp_path, monkeypatch, real_families):
     base = po.instrument_versions()["association"]
     run = tmp_path / "run"
-    spv = f"{base}+digest-v4-task-extractive+sj-v8"
+    spv = f"{base}+digest-v4-task-extractive+sj-v9"
     write_results(run / "association", _result("association", spv, "summary", SUMM))
     monkeypatch.setattr(po, "FROZEN", tmp_path / "po.json")
     monkeypatch.setattr(po, "FROZEN_SUMMARY", tmp_path / "po_summary.json")

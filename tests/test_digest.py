@@ -279,7 +279,7 @@ def test_options_validated(tmp_path):
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v4-task-extractive+sj-v8"
+    assert digest.prompt_version("pv", a) == "pv+digest-v4-task-extractive+sj-v9"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
 
 
@@ -429,10 +429,10 @@ def test_summ_lang_label_rendered_but_not_gated(tmp_path):
 
 def test_summ_lang_stamp(tmp_path):
     assert digest.prompt_version("pv", _args(tmp_path), "multilingual_mt") == (
-        "pv+digest-v4-task-extractive-lang+sj-v8"
+        "pv+digest-v4-task-extractive-lang+sj-v9"
     )
     assert digest.prompt_version("pv", _args(tmp_path), "poetry") == (
-        "pv+digest-v4-task-extractive+sj-v8"
+        "pv+digest-v4-task-extractive+sj-v9"
     )
     assert "language" in digest.render_system(digest.settings(_args(tmp_path), "multilingual"), "")
 

@@ -317,7 +317,15 @@ def load(
     for c in cells:  # before the selection: lite keeps every position's token for context
         if c.token is not None:
             rep.site_tokens.setdefault(c.id, {}).setdefault(c.pos, c.token)
+    before = cells
     cells = select(cells, sp, m, reader=reader, declared=declared)
+    if m == "lite" and before and not cells:
+        # the rule kept nothing: a file that holds only the lite site, undeclared (a sidecar-less
+        # toy file), would otherwise judge zero cells and report n items as plain negatives
+        fail(
+            f"{path}: reads=lite kept no readout (lite rule {rep.lite_rule!r} over the file's "
+            "positions); a file produced at the lite site must declare reads=lite in its sidecar"
+        )
     partial: set[str] = set()
     if m == "full":
         partial |= (

@@ -107,7 +107,7 @@ def test_dm_one_call_per_item_and_gate(tmp_path, monkeypatch):
         digest.prompt_version(pv, summary_args(DM_EX, tmp_path, pv), "directed_modulation"),
         "full",
     )
-    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v8")
+    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v9")
     # native: the same cell counts
     FakeLLM.install(monkeypatch, lambda s_, u, sc: _dm_reply(6))
     n = dm_pkg.SPEC.run(
@@ -243,7 +243,7 @@ def test_mcdm_one_call_per_item_controls_included(tmp_path, monkeypatch):
     assert r.extras["control_pick_rate"] == 1.0 and "capacity" not in r.extras
     assert all(c["layer"] == digest.SUMMARY_LAYER for x in r.rows for c in x["cells"])
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v8")
+    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v9")
     FakeLLM.install(monkeypatch, lambda s, u, sc: {"picks": []})
     n = mcdm_pkg.SPEC.run(
         summary_args(MCDM_EX, tmp_path / "n", pv, items=MCDM_IDS, extra={"aggregate": "native"})
