@@ -150,6 +150,8 @@ class _RandomLLM:
             return rng.choice(["recognition", "noise", "other"])
         if t == "string" and key == "choice":
             return rng.choice("ABCDE")
+        if t == "string" and key == "quote" and fr and rng.random() < 0.5:
+            return rng.choice(fr)  # a whole-span quote (role_bound's gate needs both people)
         if t == "string":
             if fr and rng.random() < 0.85:
                 ws = rng.choice(fr).split()
