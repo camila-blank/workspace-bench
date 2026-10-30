@@ -246,3 +246,73 @@ def test_freeze_refuses_a_dst_of_the_other_mode(tmp_path, monkeypatch, real_fami
     with pytest.raises(ValueError, match="other mode"):
         po.freeze(run, tmp_path / "po.json")
     assert "association" in po.freeze(run, tmp_path / "custom.json")  # any other dst is the user's
+
+
+# ---------------------------------------------------------------- plan 0032 §2.5
+
+
+def test_native_only_is_exactly(real_families):
+    """NATIVE_ONLY = {jlens_concept_pr} (decision Q2); hallucination stays listed only until it
+    leaves WorkspaceBench (HallucinationBench PR, hb.md W1), and only while it is registered."""
+    leaving = {f for f in digest.LEAVING if f in real_families}
+    assert set(digest.NATIVE_ONLY) == {"jlens_concept_pr"} | leaving
+    assert "unverbalized_hint" not in digest.NATIVE_ONLY
+
+
+def test_library_default_is_summary():
+    args = JudgeArgs(
+        readouts=None,  # type: ignore[arg-type]
+        out=None,  # type: ignore[arg-type]
+        judge=None,  # type: ignore[arg-type]
+        layers=None,
+        items=None,
+        limit=0,
+        allow_missing=False,
+        concurrency=1,
+        rpm=1.0,
+        dry_run=True,
+        extra={},
+    )
+    assert digest.summary_mode(args) is True
+    assert digest.summary_mode(dataclasses_replace(args, extra={"aggregate": "native"})) is False
+
+
+def dataclasses_replace(args, **kw):
+    import dataclasses
+
+    return dataclasses.replace(args, **kw)
+
+
+def test_every_registered_family_is_summary_or_native_only(tmp_path, real_families):
+    """Every registered family either has a summary hook (its dry run under the summary default
+    prints a digest prompt) or is NATIVE_ONLY with a reason."""
+    ex = REPO / "examples/readouts"
+    for name, spec in sorted(real_families.items()):
+        if name in digest.NATIVE_ONLY:
+            assert digest.NATIVE_ONLY[name].startswith("native:"), name
+            continue
+        path = ex / f"{name}.jsonl"
+        if not path.exists():  # no toy file: one synthetic prose cell for the first plan row
+            from wsbench import readplan
+
+            first = readplan.plan(name)[0]
+            path = tmp_path / f"{name}.jsonl"
+            row = {"id": first.id, "layer": 44, "pos": -1, "samples": ["x"]}
+            path.write_text(json.dumps(row) + "\n")
+        r = spec.run(
+            JudgeArgs(
+                readouts=path,
+                out=tmp_path / name,
+                judge=resolve(spec.judge),
+                layers=None,
+                items=None,
+                limit=0,
+                allow_missing=True,
+                concurrency=1,
+                rpm=1e9,
+                dry_run=True,
+                aux_models=spec.judge.aux_models,
+                extra={"aggregate": "summary"},
+            )
+        )
+        assert r.config.get("aggregate") == "summary", name

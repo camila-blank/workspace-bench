@@ -227,9 +227,10 @@ def plan_layers_missing(
 def _spec_of(family: str) -> Any:
     from wsbench import registry
 
-    if family not in registry.FAMILIES:
-        registry.load_all()
-    return registry.FAMILIES.get(family)
+    try:
+        return registry._spec_for_bank(family)  # also when the registry was emptied
+    except SystemExit:
+        return None
 
 
 def load(

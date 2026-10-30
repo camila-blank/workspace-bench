@@ -978,50 +978,10 @@ _CJK_NUMERALS = "负零一二两三四五六七八九十百千万点"
 _NUMBER_KEY = re.compile(rf"[-\u2212+]?[{_D}][{_D},\uff0c.\uff0e]*|[{_CJK_NUMERALS}]+")
 
 
-_CJK_DIGIT = {
-    "零": 0,
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-}
-_CJK_UNIT = {"十": 10, "百": 100, "千": 1000}
+from wsbench import numerals as _numerals  # noqa: E402  (plan 0032 §2.7.5a: the CJK code moved)
 
-
-def _cjk_int(t: str) -> int | None:
-    """A CJK integer below 10^8 (``三十七``, ``两万零五``, ``十四``), else ``None``."""
-    if not t:
-        return None
-    if "万" in t:
-        hi, lo = t.split("万", 1)
-        h = _cjk_int(hi) if hi else None
-        if h is None or "万" in lo:
-            return None
-        rest = _cjk_int(lo) if lo else 0
-        return None if rest is None else h * 10000 + rest
-    total, digit, last_unit = 0, None, 10**9
-    for ch in t:
-        if ch in _CJK_DIGIT:
-            if digit is not None and digit != 0:
-                return None  # two digits in a row ("三四") is not one number
-            digit = _CJK_DIGIT[ch]
-        elif ch in _CJK_UNIT:
-            if _CJK_UNIT[ch] >= last_unit:
-                return None  # units must fall ("一十一十", "百百" are not numbers)
-            last_unit = _CJK_UNIT[ch]
-            total += (1 if digit is None else digit) * _CJK_UNIT[ch]
-            digit = None
-        else:
-            return None
-    if digit and len(t) >= 2 and last_unit >= 100 and t[-2] in _CJK_UNIT:
-        return total + digit * last_unit // 10  # colloquial 三百五 = 350, 两千三 = 2300
-    return total + (digit or 0)
+_CJK_DIGIT = {k: v for k, v in _numerals.CJK_DIGIT.items() if k != "\u3007"}
+_cjk_int = _numerals.cjk_int
 
 
 def number_value(key: str) -> float | None:
@@ -1030,7 +990,9 @@ def number_value(key: str) -> float | None:
     decimal point); ``None`` for anything else."""
     k = key.strip()
     if not _NUMBER_KEY.fullmatch(k):
-        return None
+        # plan 0032 §2.7.5a: one number word in any language ("eight", "sieben")
+        w = _numerals.word_value(k) if re.search(r"[^\W\d_]", k) else None
+        return None if w is None else float(w)
     if k[0] in _CJK_NUMERALS:
         neg = k.startswith("负")
         body = k[1:] if neg else k
@@ -1058,6 +1020,9 @@ def _number_key_ok(key: str, evidence: str) -> bool:
     k = key.strip()
     if number_value(k) is None:
         return False
+    if not _NUMBER_KEY.fullmatch(k):  # a number word: word-bounded, folded
+        fk = _numerals.fold(k)
+        return re.search(rf"(?<!\w){re.escape(fk)}(?!\w)", _numerals.fold(evidence)) is not None
     if k[0] in _CJK_NUMERALS:
         pat = rf"(?<![{_CJK_NUMERALS}]){re.escape(k)}(?![{_CJK_NUMERALS}])"
         return re.search(pat, evidence) is not None
