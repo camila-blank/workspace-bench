@@ -15,6 +15,7 @@ read). Every kind but ``correct`` fails; a missing judge answer leaves the item 
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from wsbench import digest, reads
@@ -73,6 +74,40 @@ _FAIL_ORDER = (
     "cannot",
     "empty",
 )
+
+
+LINE_BREAK = " / "  # how an in-sample line break is shown (SYSTEM rule (a) credits a "/")
+
+
+def show_breaks(s: str) -> str:
+    """One raw free-text sample with every in-sample line break (a newline, or a written-out
+    ``\\n``) rendered as :data:`LINE_BREAK`, so the judge and the summarizer SEE the line ends
+    that ``score.line_final`` reads (the shared one-line rendering ``digest.sample_text`` would
+    flatten them to a space). A newline that starts a top-level ``- `` bullet of a sample with
+    >= 2 bullets is kept: ``sample_text`` joins those with ``digest.BULLET_MARK``. Blank lines
+    collapse into the break. ``line_final`` credits "/" as it credits a newline, so the gates
+    read the same line ends on the rendered sample as on the raw one."""
+    lines = [ln.rstrip() for ln in s.replace("\\n", "\n").split("\n")]
+    lines = [ln for ln in lines if ln.strip()]
+    if not lines:
+        return s
+    bulleted = sum(1 for ln in lines if ln.startswith("- ")) >= 2
+    out = lines[0]
+    for ln in lines[1:]:
+        out += ("\n" if bulleted and ln.startswith("- ") else LINE_BREAK) + ln.strip()
+    return out
+
+
+def visible_breaks(cells: Sequence[Cell]) -> list[Cell]:
+    """Every prose cell with :func:`show_breaks` applied to each sample (token lists unchanged):
+    the ONE rendering poetry feeds to the native readout, the digest, ``digest.native_lines``
+    (the quote verifier) and the raw-sample map, so all of them agree."""
+    return [
+        c
+        if c.samples is None
+        else replace(c, samples=tuple(show_breaks(x) if x.strip() else x for x in c.samples))
+        for c in cells
+    ]
 
 
 def token_note() -> str:
@@ -171,6 +206,7 @@ def run_family(args: JudgeArgs) -> FamilyResult:
     by_id = {it["id"]: it for it in scope}
     opts = {i: option_set(by_id[i]) for i in ids}
     cells, rep = reads.load(args, NAME, ids=ids)
+    cells = visible_breaks(cells)
     layers = args.layers if args.layers is not None else rep.layers
     groups: dict[tuple[str, int], list[Cell]] = defaultdict(list)
     by_item: dict[str, list[Cell]] = defaultdict(list)
@@ -428,4 +464,14 @@ def options_of(item: dict[str, Any]) -> list[str]:
     return option_set(item)[0]
 
 
-__all__ = ["KINDS", "fold", "options_of", "readout_block", "run_family", "verdict"]
+__all__ = [
+    "KINDS",
+    "LINE_BREAK",
+    "fold",
+    "options_of",
+    "readout_block",
+    "run_family",
+    "show_breaks",
+    "verdict",
+    "visible_breaks",
+]
