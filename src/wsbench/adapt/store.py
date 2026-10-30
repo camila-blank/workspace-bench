@@ -22,7 +22,9 @@ def item_id(item: dict) -> str:
 
 def original_bank(family: str) -> tuple[dict[str, Any], list[dict]]:
     """The frozen bank, header and items, whether wrapped or a plain list."""
-    path = REPO_ROOT / "evals" / family / "items.json"
+    from wsbench.registry import frozen_bank_path
+
+    path = frozen_bank_path(family)
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, list):
         return {}, raw

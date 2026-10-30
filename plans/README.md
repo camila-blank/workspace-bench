@@ -5,3 +5,7 @@ and shared package. Historical: they record what was decided then, not the curre
 Numbering gaps (0009, 0011) are plans that were reverted. Families added later and every
 read-site change since are documented in the family READMEs (`evals/<family>/README.md`) and
 the git log.
+
+Later plans in this directory follow the same `NNNN-<name>.md` convention; 0032
+(`0032-wsb-bp-infra.md`) is the shared read / summarize / judge machinery of the 2026-10-30 fix
+campaign.

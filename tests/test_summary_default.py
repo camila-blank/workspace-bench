@@ -26,7 +26,8 @@ def test_parse_opts_defaults_to_summary():
     assert parse_opts(["cells=all"]) == {"cells": "all", "aggregate": "summary"}
     with pytest.raises(SystemExit):
         parse_opts(["aggregate=pooled"])
-    # a family called directly keeps its own (native) rule: the default lives at the entry
+    # plan 0032 §2.5.1: a family called directly runs summary too (the library default); a
+    # test that means native says so (conftest.native_args)
     args = JudgeArgs(
         readouts=None,  # type: ignore[arg-type]
         out=None,  # type: ignore[arg-type]
@@ -40,7 +41,7 @@ def test_parse_opts_defaults_to_summary():
         dry_run=True,
         extra={},
     )
-    assert digest.summary_mode(args) is False
+    assert digest.summary_mode(args) is True
 
 
 def test_cli_with_no_opts_runs_summary_and_records_it(tmp_path, monkeypatch, capsys):
@@ -99,7 +100,7 @@ def test_native_opt_out_is_the_pre_0024_run(tmp_path, monkeypatch):
             rpm=600.0,
             dry_run=False,
             aux_models=SPEC.judge.aux_models,
-            extra={},
+            extra={"aggregate": "native"},  # plan 0032: native is now the explicit opt-out
         )
     )
     write_results(direct_out, res)
@@ -162,7 +163,7 @@ SUMM = {"model": "claude-opus-5-5", "max_items": 10, "concurrency": None, "timeo
 
 def test_freeze_routes_summary_runs_and_refuses_mixed(tmp_path, monkeypatch, real_families):
     base = po.instrument_versions()["association"]
-    spv = f"{base}+digest-v3-blind-extractive+sj-v7"
+    spv = f"{base}+digest-v4-task-extractive+sj-v8"
     run = tmp_path / "run"
     write_results(run / "association", _result("association", spv, "summary", SUMM))
     monkeypatch.setattr(po, "FROZEN_SUMMARY", tmp_path / "po_summary.json")
@@ -184,7 +185,7 @@ def test_freeze_routes_summary_runs_and_refuses_mixed(tmp_path, monkeypatch, rea
 
 
 def test_summary_rows_draw_only_their_own_summary_floor():
-    spv = "bank-x+digest-v3-blind-extractive+sj-v7"
+    spv = "bank-x+digest-v4-task-extractive+sj-v8"
     entry = {
         "rate": 0.31,
         "instrument": spv,
@@ -238,10 +239,80 @@ def test_unhooked_family_fails_under_the_default(tmp_path, monkeypatch):
 def test_freeze_refuses_a_dst_of_the_other_mode(tmp_path, monkeypatch, real_families):
     base = po.instrument_versions()["association"]
     run = tmp_path / "run"
-    spv = f"{base}+digest-v3-blind-extractive+sj-v7"
+    spv = f"{base}+digest-v4-task-extractive+sj-v8"
     write_results(run / "association", _result("association", spv, "summary", SUMM))
     monkeypatch.setattr(po, "FROZEN", tmp_path / "po.json")
     monkeypatch.setattr(po, "FROZEN_SUMMARY", tmp_path / "po_summary.json")
     with pytest.raises(ValueError, match="other mode"):
         po.freeze(run, tmp_path / "po.json")
     assert "association" in po.freeze(run, tmp_path / "custom.json")  # any other dst is the user's
+
+
+# ---------------------------------------------------------------- plan 0032 §2.5
+
+
+def test_native_only_is_exactly(real_families):
+    """NATIVE_ONLY = {jlens_concept_pr} (decision Q2); hallucination stays listed only until it
+    leaves WorkspaceBench (HallucinationBench PR, hb.md W1), and only while it is registered."""
+    leaving = {f for f in digest.LEAVING if f in real_families}
+    assert set(digest.NATIVE_ONLY) == {"jlens_concept_pr"} | leaving
+    assert "unverbalized_hint" not in digest.NATIVE_ONLY
+
+
+def test_library_default_is_summary():
+    args = JudgeArgs(
+        readouts=None,  # type: ignore[arg-type]
+        out=None,  # type: ignore[arg-type]
+        judge=None,  # type: ignore[arg-type]
+        layers=None,
+        items=None,
+        limit=0,
+        allow_missing=False,
+        concurrency=1,
+        rpm=1.0,
+        dry_run=True,
+        extra={},
+    )
+    assert digest.summary_mode(args) is True
+    assert digest.summary_mode(dataclasses_replace(args, extra={"aggregate": "native"})) is False
+
+
+def dataclasses_replace(args, **kw):
+    import dataclasses
+
+    return dataclasses.replace(args, **kw)
+
+
+def test_every_registered_family_is_summary_or_native_only(tmp_path, real_families):
+    """Every registered family either has a summary hook (its dry run under the summary default
+    prints a digest prompt) or is NATIVE_ONLY with a reason."""
+    ex = REPO / "examples/readouts"
+    for name, spec in sorted(real_families.items()):
+        if name in digest.NATIVE_ONLY:
+            assert digest.NATIVE_ONLY[name].startswith("native:"), name
+            continue
+        path = ex / f"{name}.jsonl"
+        if not path.exists():  # no toy file: one synthetic prose cell for the first plan row
+            from wsbench import readplan
+
+            first = readplan.plan(name)[0]
+            path = tmp_path / f"{name}.jsonl"
+            row = {"id": first.id, "layer": 44, "pos": -1, "samples": ["x"]}
+            path.write_text(json.dumps(row) + "\n")
+        r = spec.run(
+            JudgeArgs(
+                readouts=path,
+                out=tmp_path / name,
+                judge=resolve(spec.judge),
+                layers=None,
+                items=None,
+                limit=0,
+                allow_missing=True,
+                concurrency=1,
+                rpm=1e9,
+                dry_run=True,
+                aux_models=spec.judge.aux_models,
+                extra={"aggregate": "summary"},
+            )
+        )
+        assert r.config.get("aggregate") == "summary", name

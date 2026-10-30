@@ -46,7 +46,7 @@ class FakeJudge:
     async def _create(self, **kw: Any) -> Any:
         user = kw["messages"][1]["content"]
         self.calls.append(user)
-        readout = user.split("<lens_output>\n", 1)[1].split("\n</lens_output>", 1)[0]
+        readout = user.split("<readout>\n", 1)[1].split("\n</readout>", 1)[0]
         for opts, gold_pos in self.options.values():
             gold = opts[gold_pos - 1]
             if gold.lower() in readout.lower() and f"1. {opts[0]}" in user:
@@ -382,4 +382,7 @@ def test_judge_calls_keyed_by_judge_prompt_version():
 
     src = __import__("inspect").getsource(dmj)
     assert "prompt_version=JUDGE_PROMPT_VERSION" in src and "pv_calls" in src
-    assert prompts.PROMPT_VERSION == prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29"
+    # plan 0032 §2.8.1: the tool-free prompt text adds +neutral to the instrument
+    assert prompts.PROMPT_VERSION == (
+        prompts.JUDGE_PROMPT_VERSION + "+present-2026-10-29+neutral-2026-10-30b"
+    )

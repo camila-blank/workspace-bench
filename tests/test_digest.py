@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import bpe, digest
 from wsbench.cache import Cache
@@ -14,7 +15,7 @@ from wsbench.registry import JudgeArgs
 
 
 def _args(tmp_path: Path, **extra: str) -> JudgeArgs:
-    return JudgeArgs(
+    return native_args(
         readouts=tmp_path / "r.jsonl",
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version="t")),
@@ -116,7 +117,8 @@ def test_evidence_token_pieces_never_join():
     assert digest.evidence_line("fence post", lines) is None
     assert digest.evidence_line("post", lines) is not None
     assert digest.evidence_line("fence | post", lines) is not None
-    assert digest.evidence_line("post | fence", lines) is None
+    # plan 0032 §2.7.3: tokens of ONE list may be quoted together in any order
+    assert digest.evidence_line("post | fence", lines) is not None
 
 
 def _result(*items: tuple[str, str, str]) -> dict:
@@ -223,7 +225,8 @@ def test_collapse_caches_and_fingerprints(tmp_path, scripted):
     replies["alpha"] = _result(("alpha", "", "alpha"))
     by_item = {"a": [_prose("a", 20, 1, "alpha")]}
     with Cache(tmp_path / "c.jsonl") as cache:
-        for extra in ({}, {}, {"summ_render": "abstractive"}, {"summ_variant": "task"}):
+        # plan 0032 §2.8.2: task is the default variant; blind is the ablation that re-asks
+        for extra in ({}, {}, {"summ_render": "abstractive"}, {"summ_variant": "blind"}):
             digest.collapse(
                 "fam",
                 by_item,
@@ -234,7 +237,7 @@ def test_collapse_caches_and_fingerprints(tmp_path, scripted):
                 task_note="ZEBRA-NOTE",
             )
     assert len(seen) == 2  # cached on repeat and across renders; the variant re-asks
-    assert "ZEBRA-NOTE" in seen[1][0] and "ZEBRA-NOTE" not in seen[0][0]
+    assert "ZEBRA-NOTE" in seen[0][0] and "ZEBRA-NOTE" not in seen[1][0]
     rows = (tmp_path / "c.jsonl").read_text().splitlines()
     assert all('"digest:a|all"' in r for r in rows)
 
@@ -270,11 +273,13 @@ def test_options_validated(tmp_path):
     ):
         with pytest.raises(SystemExit):
             digest.validate({"aggregate": "summary", **bad})
-    digest.validate({"summ_variant": "x"})  # native: summary option values are not read
+    # native: summary option values are not read (plan 0032: summary is the default, so a
+    # native probe says so)
+    digest.validate({"aggregate": "native", "summ_variant": "x"})
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v3-blind-extractive+sj-v7"
+    assert digest.prompt_version("pv", a) == "pv+digest-v4-task-extractive+sj-v8"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
 
 
@@ -323,3 +328,339 @@ def test_v2_cjk_and_accent_keys_and_duplicate_counter():
     dups = [0]
     kept, dropped = digest.ground(res, lines, 10, dups)
     assert len(kept) == 1 and dropped == 0 and dups == [1]
+
+
+# ---------------------------------------------------------------- plan 0032 (digest-v4)
+
+
+def _pl(text: str, layer: int = 20, pos: int = 1) -> digest.Line:
+    return digest.Line(digest.sample_text(text), None, f"[L{layer} pos {pos}]", layer, pos)
+
+
+def _tl(layer: int, pos: int, *toks: str) -> digest.Line:
+    return digest.Line(digest.TOKEN_SEP.join(toks), toks, f"[L{layer} pos {pos}]", layer, pos)
+
+
+def test_default_overflow_is_hierarchical(tmp_path):
+    assert digest.DEFAULT_OVERFLOW == "hierarchical"
+    assert digest.settings(_args(tmp_path)).overflow == "hierarchical"
+
+
+def test_single_global_token_cap(tmp_path, real_families):
+    allowed = digest.FAMILY_DEFAULT_KEYS
+    assert allowed == {
+        "summ_concurrency",
+        "summ_timeout",
+        "summ_fallback",
+        "summ_max",
+        "summ_rare",
+        "summ_numbers",
+        "summ_lang",
+    }
+    for name in real_families:
+        assert digest.settings(_args(tmp_path), name).token_cap == digest.DEFAULT_TOKEN_CAP
+        assert set(digest.FAMILY_DEFAULTS.get(name, {})) <= allowed, name
+    assert digest.DEFAULT_TOKEN_CAP == 920_000
+
+
+def test_every_loaded_line_is_bundled(tmp_path, monkeypatch):
+    cells = [
+        Cell("a", L, p, tuple(f"s{L}-{p}-{k}" for k in range(4)), None, None)
+        for L in (20, 24, 28)
+        for p in range(30)
+    ]
+    seen: list[str] = []
+
+    def stream_json(prompts, *, on_result, **kw):
+        for i, (_s, user) in enumerate(prompts):
+            seen.append(user)
+            line = next(ln[2:] for ln in user.splitlines() if ln.startswith("- "))
+            on_result(i, {"items": [{"statement": "s", "key": "", "where": "", "evidence": line}]})
+
+    monkeypatch.setattr("wsbench.llm.stream_json", stream_json)
+    monkeypatch.setattr("wsbench.llm.count_tokens", lambda m, ps, concurrency=8: [10**6] * len(ps))
+    monkeypatch.setattr(digest, "COUNT_TOKENS_ABOVE", 0.0)
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "fam",
+            {"a": cells},
+            args=_args(tmp_path, summ_token_cap="20000"),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+            expect_all=cells,
+        )
+    assert col.diag["n_readouts_in"] == col.diag["n_readouts_bundled"] == 3 * 30 * 4
+    chunks = [u for u in seen if "(support:" not in u]  # the final call reads the union
+    bundled = {ln[2:] for u in chunks for ln in u.splitlines() if ln.startswith("- ")}
+    assert bundled == {s for c in cells for s in c.samples}  # the union of chunks = the input
+
+
+def test_served_by_in_extras(tmp_path, scripted):
+    _seen, replies = scripted
+    replies["alpha"] = _result(("alpha", "", "alpha"))
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "fam",
+            {"a": [_prose("a", 20, 1, "alpha")]},
+            args=_args(tmp_path),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+        )
+    assert col.extras()["digest_served_by"] == {"claude-opus-5-5": 1}
+
+
+def test_summ_lang_label_rendered_but_not_gated(tmp_path):
+    from wsbench import mc
+
+    ln = _pl("The answer is the hourglass")
+    g = digest.Grounded("s", "one", ln.text, ln, "hourglass", "items", "Russian")
+    text, evid = digest.render_summary([g], "extractive", lang=True)
+    assert text == "[one] [in Russian] The answer is the hourglass"
+    assert evid[0].text == ln.text and evid[0].language == "Russian"
+    # the label is never gated on: a Russian-form unit is decided on the evidence text only
+    assert not mc.form_in(evid[0].text, ["песочные часы"])
+    _plain, evid2 = digest.render_summary([g], "extractive", lang=False)
+    assert mc.form_in(evid2[0].text, ["hourglass"]) == mc.form_in(evid[0].text, ["hourglass"])
+
+
+def test_summ_lang_stamp(tmp_path):
+    assert digest.prompt_version("pv", _args(tmp_path), "multilingual_mt") == (
+        "pv+digest-v4-task-extractive-lang+sj-v8"
+    )
+    assert digest.prompt_version("pv", _args(tmp_path), "poetry") == (
+        "pv+digest-v4-task-extractive+sj-v8"
+    )
+    assert "language" in digest.render_system(digest.settings(_args(tmp_path), "multilingual"), "")
+
+
+def test_token_evidence_noncontiguous_same_line_verifies():
+    line = _tl(52, 42, "lion", "x", "bow", "tie")
+    assert digest.quote_ok("tie | lion", [line]) and digest.evidence_line("bow | tie", [line])
+
+
+def test_token_evidence_across_lines_rejected():
+    lines = [_tl(52, 42, "lion", "x"), _tl(52, 43, "tamer", "y")]
+    assert not digest.quote_ok("lion | tamer", lines)
+
+
+def test_adjacent_positions_spell_one_word_only():
+    lines = [_tl(44, 11, " Khach", "x"), _tl(44, 12, "aturian", "y"), _tl(48, 13, "aturian")]
+    assert digest.quote_ok("Khachaturian", lines)
+    assert not digest.quote_ok("x y", lines)  # two whole words of adjacent positions
+    far = [_tl(44, 11, " Khach"), _tl(44, 13, "aturian")]
+    assert not digest.quote_ok("Khachaturian", far)  # not adjacent
+    other = [_tl(44, 11, " Khach"), _tl(48, 12, "aturian")]
+    assert not digest.quote_ok("Khachaturian", other)  # different layers
+
+
+def test_quote_ok_strips_scores_and_markdown():
+    scored = digest.native_lines(
+        [Cell("q", 20, 1, None, ("九", "nine", "x"), (15.19, 14.1, 3.0), None)]
+    )
+    assert digest.quote_ok("九 (15.19) | nine (14.10)", scored)
+    assert digest.quote_ok("九 | nine", scored)
+    assert digest.quote_ok("**Khachaturian**", [_pl("composer Khachaturian wrote it")])
+    assert not digest.quote_ok("  **  ", [_pl("anything")])
+
+
+def test_number_flood():
+    assert digest.number_flood(_tl(20, 1, "equal", "twelve", "six", "eight", "seven", "eleven"))
+    assert not digest.number_flood(_tl(20, 1, "12", "the", "dog", "5"))
+
+
+def test_worked_chain_prose_is_not_flood():
+    assert not digest.number_flood(_pl("87 \u2212 12 = 75, then 75 / 3 = 25, plus 4 gives 29"))
+
+
+def test_comma_number_list_is_flood():
+    assert digest.number_flood(_pl("12, 6, 8, 7, 11"))
+    assert digest.number_flood(_pl("twelve six eight seven eleven"))
+
+
+def test_pronoun_one_not_counted():
+    assert not digest.number_flood(_pl("the one who came, the one who left, two more, 5 and 6"))
+
+
+def test_bulleted_number_list_is_flood():
+    assert digest.number_flood(_pl("- 12\n- 15\n- 17\n- 19\n- 23"))
+
+
+def test_bulleted_worked_chain_is_not_flood():
+    text = "- Halving 30 gives 15\n- 15 times 3 is 45\n- 45 minus 4 equals 41"
+    assert not digest.number_flood(_pl(text))
+
+
+def test_number_flood_rejects_statement_line():
+    cells = [Cell("a", 20, 1, ("- 12\n- 15",), None, None)]
+    (b0, _b1) = digest.statement_lines([_pl("- 12\n- 15")], cells)
+    with pytest.raises(ValueError):
+        digest.number_flood(b0)
+
+
+def test_digest_system_records_flat_lists():
+    assert "record it as a list" in digest.DIGEST_SYSTEM
+    assert "singles out none" not in digest.DIGEST_SYSTEM
+
+
+def test_no_rank1_exception_text(real_families):
+    import importlib
+
+    from wsbench.basic import prompts as bp
+
+    bad = "ranked first among the candidates of its type"
+    texts = [*digest.PROMPTS.values(), *bp.PROMPTS.values()]
+    for name in real_families:
+        texts += list(importlib.import_module(f"wsbench.evals.{name}.prompts").PROMPTS.values())
+    assert not any(bad in str(t) for t in texts)
+
+
+def test_statement_lines_splits_bullets():
+    cells = [Cell("a", 20, 1, ("x",), None, None)]
+    lines = digest.statement_lines([_pl("- Ann hits Bob\n- Bob cries")], cells)
+    assert [(ln.text, ln.bullet) for ln in lines] == [("Ann hits Bob", 0), ("Bob cries", 1)]
+    with pytest.raises(ValueError):
+        digest.statement_lines([_pl("- a\n- b", layer=99)], cells)
+
+
+def test_relation_across_two_bullets_fails():
+    cells = [Cell("a", 20, 1, ("x",), None, None)]
+    lines = [_pl("- the landlord\n- has a sibling")]
+    q = "the landlord has a sibling"
+    assert digest.quote_ok(q, lines) and not digest.quote_ok(
+        q, digest.statement_lines(lines, cells)
+    )
+
+
+def test_relation_in_one_bullet_passes():
+    cells = [Cell("a", 20, 1, ("x",), None, None)]
+    lines = [_pl("- the landlord's sibling\n- a tenant")]
+    assert digest.quote_ok("the landlord's sibling", digest.statement_lines(lines, cells))
+
+
+def test_unbulleted_sample_is_one_statement():
+    cells = [Cell("a", 20, 1, ("x",), None, None)]
+    (ln,) = digest.statement_lines([_pl("Ann thinks Bob - the tall one - left.")], cells)
+    assert ln.bullet == 0 and "Bob - the tall one - left" in ln.text
+
+
+def test_token_lines_pass_through():
+    cells = [Cell("a", 20, 1, None, ("x",), None)]
+    t = _tl(20, 1, "a", "b")
+    assert digest.statement_lines([t], cells) == [t]
+
+
+def test_digest_line_shows_bullet_boundaries(tmp_path, scripted):
+    seen, replies = scripted
+    sample = "- apples\n- bananas\n- cherries"
+    replies["apples"] = _result(("fruit", "", "apples ⁞ bananas ⁞ cherries"))
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "fam",
+            {"a": [_prose("a", 20, 1, sample)]},
+            args=_args(tmp_path),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+        )
+    assert "- apples ⁞ bananas ⁞ cherries" in seen[0][1]
+    (ev,) = col.evidence["a"]
+    assert ev.text == "apples ⁞ bananas ⁞ cherries"
+    cells = [_prose("a", 20, 1, sample)]
+    assert digest.quote_ok("apples bananas", [ev])
+    assert not digest.quote_ok("apples bananas", digest.statement_lines([ev], cells))
+    assert digest.quote_ok("apples", digest.statement_lines([ev], cells))
+
+
+def test_digest_keeps_named_restatement(tmp_path, scripted):
+    assert "names a specific object, person, place, name or term is recorded" in (
+        digest.DIGEST_SYSTEM
+    )
+    _seen, replies = scripted
+    replies["giraffe"] = {
+        "items": [{"statement": "restates", "key": "giraffe", "where": "", "evidence": "giraffe"}]
+    }
+    with Cache(tmp_path / "c.jsonl") as cache:
+        col = digest.collapse(
+            "fam",
+            {"a": [_prose("a", 20, 1, "think about the giraffe")]},
+            args=_args(tmp_path),
+            cache=cache,
+            spend=Spend(),
+            preflight=None,
+            task_note="",
+        )
+    assert col.statements["a"][0]["key"] == "giraffe"
+
+
+def test_per_item_task_note_fingerprints_per_item(tmp_path, scripted):
+    seen, replies = scripted
+    replies["alpha"] = _result(("alpha", "", "alpha"))
+    replies["beta"] = _result(("beta", "", "beta"))
+    by_item = {"a": [_prose("a", 20, 1, "alpha")], "b": [_prose("b", 20, 1, "beta")]}
+    notes = {"a": "NOTE-A", "b": "NOTE-B"}
+    with Cache(tmp_path / "c.jsonl") as cache:
+        digest.collapse(
+            "fam", by_item, args=_args(tmp_path), cache=cache, spend=Spend(),
+            preflight=None, task_note=notes,
+        )  # fmt: skip
+        with pytest.raises(ValueError):
+            digest.collapse(
+                "fam", by_item, args=_args(tmp_path), cache=cache, spend=Spend(),
+                preflight=None, task_note={"a": "x"},
+            )  # fmt: skip
+        digest.collapse(
+            "fam", by_item, args=_args(tmp_path), cache=cache, spend=Spend(),
+            preflight=None, task_note={**notes, "b": "NOTE-B2"},
+        )  # fmt: skip
+    systems = {s.split("TASK CONTEXT")[-1] for s, _u in seen}
+    assert any("NOTE-A" in x for x in systems) and any("NOTE-B2" in x for x in systems)
+    assert len(seen) == 3  # a cached; b re-asked under its new note
+
+
+def test_gate_texts_joined_returns_split_word():
+    col = digest.Collapse()
+    col.cells["a"] = Cell("a", digest.SUMMARY_LAYER, 1, ("",), None, None)
+    col.evidence["a"] = (_tl(44, 11, " Khach", "x"), _tl(44, 12, "aturian", "y"))
+    got = digest.gate_texts(col.cells["a"], col, joined=True, forms=["Khachaturian", "Ravel"])
+    assert "Khachaturian" in got and "Ravel" not in got
+
+
+def test_bullet4_renders_four_lines_per_cell():
+    from wsbench.readouts import normalize
+
+    (c,), _d = normalize([Cell("a", 20, 1, ("- g1\n- g2\n- g3\n- g4",), None, None)], "bullet4")
+    text, lines, _t = digest.bundle([c], digest.DEFAULT_TOKEN_CAP)
+    assert len(lines) == 4 and text.count("\n- ") == 4
+
+
+def test_truncated_item_is_incomplete(tmp_path):
+    from wsbench.results import FamilyResult
+    from wsbench.runner import finalize_reads
+
+    col = digest.Collapse()
+    col.truncated.add("a")
+    r = FamilyResult(
+        family="f", metric="pass_rate", value=0.5, ci95=None, n_items=1, higher_is_better=True,
+        chance=None, chance_label=None, complete=True, pinned_instrument=True, config={},
+        counts={}, extras={"summary": col.extras()},
+    )  # fmt: skip
+    finalize_reads(_args(tmp_path), r)
+    assert r.complete is False and col.extras()["summary_complete"] is False
+
+
+def test_quote_ok_rejects_made_up_parenthesised_numbers():
+    """Review of PR #140: a number the readout never contains must not verify by riding in a
+    "(n)" annotation, on prose lines or on token lines."""
+    assert not digest.quote_ok("final number (6)", [_pl("the final number is unclear")])
+    assert not digest.quote_ok("Tambora (1815)", [_pl("Tambora erupted")])
+    assert digest.quote_ok("Tambora (1815)", [_pl("Tambora (1815) erupted")])
+    assert not digest.quote_ok("nine (7)", [_tl(20, 1, "nine", "eight")])  # no scores on line
+    scored = digest.native_lines([Cell("q", 20, 1, None, ("nine", "eight"), (14.1, 9.0), None)])
+    assert not digest.quote_ok("nine (7)", scored)  # not nine's score
+    assert not digest.quote_ok("nine (9.00)", scored)  # eight's score, not nine's
+    assert digest.quote_ok("nine (14.10)", scored) and digest.quote_ok("nine (14.1)", scored)

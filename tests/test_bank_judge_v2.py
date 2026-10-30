@@ -4,13 +4,15 @@ import importlib
 import json
 from pathlib import Path
 
+from conftest import native_args
+
+from wsbench import mc
 from wsbench.banks import load_bank
 from wsbench.basic import family as bfam
 from wsbench.basic import judge as bjudge
 from wsbench.basic import prompts as P  # noqa: N812
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.readouts import Cell
-from wsbench.registry import JudgeArgs
 
 REPO = Path(__file__).resolve().parents[1]
 CELL = Cell(id="x", layer=20, pos=3, samples=("a sample",), tokens=None, scores=None)
@@ -49,7 +51,10 @@ def test_family_rules_and_per_family_prompts():
         extra = set(mod.PROMPTS) - set(P.PROMPTS)
         assert extra == ({own[f]} if f in own else set()), f
         assert set(P.PROMPTS) <= set(mod.PROMPTS)
-    assert "ranked first among the candidates of its type" in P.KIND_NOTE_TOKENS
+    # plan 0032 §2.7 (decision Q4): the rank-1 exception is deleted; the native token note is
+    # the shared mc.TOKEN_NOTE, and only pieces of DIFFERENT samples never combine
+    assert "ranked first among the candidates of its type" not in P.KIND_NOTE_TOKENS
+    assert P.KIND_NOTE_TOKENS == mc.TARGET_TOKEN_NOTE  # a TARGETS judge (review of PR #140)
     assert "overrides the rules" in P.SYSTEM and "NEVER combine" in P.SYSTEM
 
 
@@ -66,7 +71,7 @@ def test_family_run_sends_the_items_own_forbidden_answer(tmp_path, monkeypatch):
     rows = [{"id": it["id"], "layer": 20, "pos": 5, "samples": ["something"]}]
     path = tmp_path / "r.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    args = JudgeArgs(
+    args = native_args(
         readouts=path,
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version=P.PROMPT_VERSION)),

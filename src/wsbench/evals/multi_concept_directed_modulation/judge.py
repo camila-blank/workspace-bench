@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.banks import load_bank
 from wsbench.cache import Cache
 from wsbench.family import (
@@ -16,16 +16,16 @@ from wsbench.family import (
     pass_rate_result,
     quote_in,
     rate,
+    render_bag,
     require_cells,
     tri_state,
 )
 from wsbench.llm import Spend
 from wsbench.mc import letter_index
 from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_readout_count
-from wsbench.readouts import Cell, LoadReport, load_readouts
+from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
-from wsbench.summarizer import SUMMARIZER_PROMPT_VERSION, aux_judge, render_bag, summarize
 
 from .options import option_sets, partner_of
 from .prompts import (
@@ -183,7 +183,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         - {str(c) for c in it.get("concepts") or []}
         for it in items
     }
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, NAME, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
 
     # the write window per item, from the rows' tokens (any layer), in forward order
@@ -237,17 +237,8 @@ def run(args: JudgeArgs) -> FamilyResult:
             bundles = {
                 c.key: render_bag(c.tokens or (), c.scores) for c in judged_cells if c.tokens
             }
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                bundles,
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = dict(bundles)
             texts = {k: v for k, v in summ.items() if v is not None}
             empty = {(c.id, c.layer, c.pos) for c in judged_cells if not c.tokens}
         else:
@@ -342,7 +333,6 @@ def run(args: JudgeArgs) -> FamilyResult:
         chance_label=CHANCE_LABEL,
         config_extra={
             "layers_judged": layers,
-            "summarizer": SUMMARIZER_PROMPT_VERSION if rep.kind == "tokens" else None,
         },
         extras={
             "n_calls": len(calls),
@@ -469,7 +459,7 @@ def _run_summary(
             task_note=DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=NAME)
         calls = [
             Call(
                 key=f"{i}|L{c.layer:03d}|p{c.pos}",

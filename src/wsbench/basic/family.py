@@ -4,7 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.banks import exact_targets, item_targets, load_bank
 from wsbench.basic.judge import CellKey, JudgeOutcome, judge_cells
 from wsbench.basic.prompts import (
@@ -13,13 +13,14 @@ from wsbench.basic.prompts import (
     FAMILY_RULES,
     forbidden_line,
     prompt_version_of,
+    token_note_for,
 )
 from wsbench.cache import Cache
 from wsbench.family import pass_rate_result, require_cells, tri_state
 from wsbench.judge_config import JudgeConfig
 from wsbench.llm import Spend
 from wsbench.mcjudge import Preflighter, item_scope, with_readout_count
-from wsbench.readouts import Cell, load_readouts
+from wsbench.readouts import Cell
 from wsbench.registry import EvalSpec, JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
@@ -36,8 +37,15 @@ def bank_family(
     n_layers: int = 11,
     sources: str = "",
     not_in_macro: str = "",
+    bank: Path | None = None,
+    min_full_positions: int = 1,
+    full_contiguous: bool = True,
+    flat_types: tuple[str, ...] = (),
 ) -> EvalSpec:
-    bank = Path("evals") / name / "items.json"
+    """A bank-judge family. ``bank`` defaults to ``evals/<name>/items.json`` (a versioned bank:
+    ``items_v<N>.json``, plan 0032 §2.12). ``min_full_positions`` defaults to 1: these plans read
+    one position per layer until a family spec widens its read span."""
+    bank = bank or Path("evals") / name / "items.json"
     return EvalSpec(
         name=name,
         title=title,
@@ -50,6 +58,11 @@ def bank_family(
         calls_per_arm=f"≈ {n_items * n_layers / 1000:.1f}k",
         sources=sources,
         not_in_macro=not_in_macro,
+        min_full_positions=min_full_positions,
+        full_contiguous=full_contiguous,
+        task_note=DIGEST_TASK_NOTES.get(name, ""),
+        flat_types=flat_types,
+        targets_judge=True,  # a TARGETS judge: no lone-option clause (review of PR #140)
     )
 
 
@@ -71,7 +84,7 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
     targets = {it["id"]: targets_of(it) for it in scope}
     family_rule = FAMILY_RULES.get(name, "")
     forbidden = {it["id"]: forbidden_line(name, it) for it in scope}
-    cells, rep = load_readouts(args.readouts, ids=ids, layers=args.layers)
+    cells, rep = reads.load(args, name, ids=ids)
     layers = args.layers if args.layers is not None else rep.layers
     groups = group_cells(cells)
     expected = [(i, layer) for i in ids for layer in layers]
@@ -110,6 +123,7 @@ def run_family(args: JudgeArgs, *, name: str, bank: Path) -> FamilyResult:
             dry_run=args.dry_run,
             # None (the judge's shared default) unless the family has its own stamp (plan 0027)
             prompt_version=FAMILY_PROMPT_VERSIONS.get(name),
+            token_note=token_note_for(name),
         )
 
     rows = [_item_row(i, layers, groups, targets[i], outcome) for i in ids]
@@ -178,7 +192,7 @@ def _run_summary(
             args=args,
             cache=cache,
             spend=spend,
-            preflight=pre.for_judge(digest.summarizer_judge(args)),
+            preflight=pre.for_judge(digest.summarizer_judge(args, name)),
             task_note=DIGEST_TASK_NOTES.get(name, ""),
         )
         source_kind = digest.as_prose(rep)
@@ -201,8 +215,8 @@ def _run_summary(
             rpm=args.rpm,
             dry_run=args.dry_run,
             summary=col,
-            summary_note=digest.summary_note(args, source_kind),
-            prompt_version=digest.prompt_version(prompt_version_of(name), args),
+            summary_note=digest.summary_note(args, source_kind, name),
+            prompt_version=digest.prompt_version(prompt_version_of(name), args, name),
         )
     rows = []
     for i in ids:
@@ -219,7 +233,7 @@ def _run_summary(
     result = pass_rate_result(
         name=name,
         args=args,
-        prompt_version=digest.prompt_version(prompt_version_of(name), args),
+        prompt_version=digest.prompt_version(prompt_version_of(name), args, name),
         rows=rows,
         cells=cells,
         rep=rep,
@@ -229,10 +243,10 @@ def _run_summary(
         n_empty=outcome.n_empty,
         spend=spend,
         chance_label=CHANCE_LABEL,
-        config_extra={**digest.config(args, source_kind), "layers_judged": args.layers},
+        config_extra={**digest.config(args, source_kind, name), "layers_judged": args.layers},
         extras={"n_calls": outcome.n_calls, "summary": col.extras()},
         n_items=len(ids),
-        pinned=digest.pinned(args),
+        pinned=digest.pinned(args, name),
     )
     return with_readout_count(result, scope, cells)
 

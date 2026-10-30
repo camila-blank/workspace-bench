@@ -9,6 +9,10 @@ NOT_IN_MACRO = "hillclimbing: not yet reviewed"
 
 SPEC = register(
     bank_family(
-        "medical_diagnosis", "Medical diagnosis", sources=SOURCES, not_in_macro=NOT_IN_MACRO
+        "medical_diagnosis",
+        "Medical diagnosis",
+        sources=SOURCES,
+        not_in_macro=NOT_IN_MACRO,
+        min_full_positions=2,
     )
 )

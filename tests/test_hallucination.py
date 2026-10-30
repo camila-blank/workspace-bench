@@ -448,48 +448,6 @@ def test_partly_judged_cell_is_unjudged_and_retried(tmp_path, fake_llm, mk_args)
     assert res2.counts["n_unjudged_cells"] == 0 and res2.value == pytest.approx(4 / 12)
 
 
-def test_topk_rows_are_summarised_then_judged_k1(tmp_path, fake_llm, mk_args):
-    fake = fake_llm(_responder)
-    res = hc.run(mk_args(TOPK, items=["chat-dailydialog-0000"], allow_missing=True))
-    users = [u for s, u in fake.calls if s != hp.VERIFY_SYSTEM and not u.startswith("Return")]
-    assert len(users) == 2 and users[0].startswith("TOKEN READOUTS:\n AI (9.10) |  spouse (8.40)")
-    assert len(_verify_calls(fake)) == 1  # the summary is verified as one readout
-    assert res.config["kind"] == "tokens" and res.config["k"] == 1
-    assert res.config["summary_prompt_version"] == "interp-v1-decoded"
-    row = res.rows[0]
-    assert row["samples"] == ["The model is about to say it is an AI with no spouse."]
-    assert row["tokens"][:2] == [" AI", " spouse"]
-    assert "ĠAI" not in users[1] and row["samples"][0] in users[1]
-    assert res.extras["n_readouts"] == 1 and res.extras["n_short_cells"] == 0
-    assert res.value == 0.0  # the toy responder flags idx 1 only, so a k=1 cell is consistent
-
-
-def test_failed_resummary_never_reuses_the_old_summary(tmp_path, fake_llm, mk_args):
-    src = tmp_path / "r.jsonl"
-    row = {
-        "id": "chat-dailydialog-0000",
-        "layer": 36,
-        "pos": 23,
-        "tokens": ["Ġv1"],
-        "scores": [1.0],
-    }
-    write_jsonl(src, [row])
-    fake_llm(_responder)
-    args = mk_args(src, items=["chat-dailydialog-0000"], allow_missing=True)
-    hc.run(args)
-    write_jsonl(src, [{**row, "tokens": ["Ġv2", "Ġnew"], "scores": [2.0, 1.0]}])
-
-    def summaries_fail(system, user):
-        if user.startswith("TOKEN READOUTS:"):
-            return None
-        return _responder(system, user)
-
-    fake_llm(summaries_fail)
-    res = hc.run(args)
-    assert res.rows[0]["samples"] is None and res.rows[0]["verdict"] is None
-    assert res.counts["n_unjudged_cells"] == 1 and res.extras["n_readouts"] == 0
-
-
 def test_malformed_mixed_and_empty_rows(tmp_path, fake_llm, mk_args):
     rows = [
         [1, 2],
@@ -576,10 +534,10 @@ def test_dry_run_prints_the_prompt_and_makes_no_calls(tmp_path, mk_args, capsys,
     assert res.value is None and res.ci95 is None and res.rows == []
     assert res.config["dry_run"] is True and res.complete is False and res.n_items == 149
     assert res.counts["n_missing_cells"] == 1123 - 4 and res.counts["spend_usd"] == 0.0
-    # a tokens file prints only the summarizer prompt
+    # plan 0032 §2.3: a tokens file is judged on its raw tokens (no interpretation prompt)
     hc.run(mk_args(TOPK, dry_run=True))
     out = capsys.readouterr().out
-    assert "TOKEN READOUTS:" in out and hp.JUDGE_SYSTEM not in out
+    assert "TOKEN READOUTS:" not in out and hp.JUDGE_SYSTEM in out
 
 
 # ------------------------------------------------------------------ stage 2: claim verification

@@ -6,9 +6,9 @@ import re
 import sys
 from typing import Any
 
-from wsbench import digest
+from wsbench import digest, reads
 from wsbench.cache import Cache
-from wsbench.family import fail
+from wsbench.family import fail, render_bag
 from wsbench.llm import Spend
 from wsbench.mcjudge import (
     Call,
@@ -20,10 +20,9 @@ from wsbench.mcjudge import (
     run_calls,
     with_readout_count,
 )
-from wsbench.readouts import Cell, LoadReport, expected_cells, load_readouts, missing_cells
+from wsbench.readouts import Cell, LoadReport, expected_cells, missing_cells
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult
-from wsbench.summarizer import aux_judge, render_bag, summarize
 
 from . import prompts, score
 from .prompts import MARKER, PROMPT_VERSION, READOUT_CLASSES, READOUT_SCHEMA, READOUT_SYSTEM, norm
@@ -170,9 +169,7 @@ def run(args: JudgeArgs) -> FamilyResult:
         fail(f"{FAMILY}: opts=read= must be span or punct (got {regime!r})")
     grid = punct_positions if regime == "punct" else grid_positions
     positions = {it["id"]: grid(it["read"]) for it in scope}
-    cells, rep = load_readouts(
-        args.readouts, ids=list(by_id), layers=args.layers, positions=positions
-    )
+    cells, rep = reads.load(args, FAMILY, ids=list(by_id), positions=positions)
     layers = args.layers if args.layers is not None else rep.layers
     expected = expected_cells(positions, layers)
     missing = missing_cells(cells, expected)
@@ -193,17 +190,10 @@ def run(args: JudgeArgs) -> FamilyResult:
     with Cache(args.out / "cells.jsonl") as cache:
         readouts: dict[str, list[str]] = {}
         if rep.kind == "tokens":
-            sjudge = aux_judge(args.judge, args.aux_models, "summarizer")
-            summ = summarize(
-                {c.key: render_bag(c.tokens or (), c.scores) for c in nonempty},
-                judge=sjudge,
-                cache=cache,
-                spend=spend,
-                concurrency=args.concurrency,
-                rpm=args.rpm,
-                dry_run=args.dry_run,
-                preflight=pre.for_judge(sjudge),
-            )
+            # plan 0032 §2.3: no interpretation step; the raw ranked tokens are judged
+            summ: dict[str, str | None] = {
+                c.key: render_bag(c.tokens or (), c.scores) for c in nonempty
+            }
             n_summary_failed = sum(1 for v in summ.values() if v is None)
             readouts = {k: [v] for k, v in summ.items() if v is not None}
         else:
@@ -318,7 +308,7 @@ def _run_summary(
             task_note=prompts.DIGEST_TASK_NOTE,
         )
         source_kind = digest.as_prose(rep)
-        note = digest.summary_note(args, source_kind)
+        note = digest.summary_note(args, source_kind, family=FAMILY)
         readouts: dict[str, list[str]] = {}
         calls: list[Call] = []
         for i, c in col.cells.items():

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 
 from wsbench import registry
 from wsbench.banks import load_bank
@@ -20,7 +21,6 @@ from wsbench.evals.buggy_code.prompts import (
     render_infer,
 )
 from wsbench.judge_config import JudgeConfig, resolve
-from wsbench.registry import JudgeArgs
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]
@@ -48,7 +48,7 @@ def _args(tmp_path, ids, **over):
         "rpm": 1.0,
         "dry_run": False,
     }
-    return JudgeArgs(**{**base, **over})
+    return native_args(**{**base, **over})
 
 
 def _example_ids():

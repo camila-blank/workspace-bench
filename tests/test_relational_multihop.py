@@ -145,43 +145,6 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     assert fake3.calls == []
 
 
-def test_tokens_kind_routes_through_summarizer(tmp_path, fake_llm, mk_args):
-    seen: list[str] = []
-
-    def responder(system, user):
-        if user.startswith("Return"):
-            return {"a": 1}
-        if user.startswith("TOKEN READOUTS:"):
-            seen.append(user)
-            return {"interpretation": "the landlord's sibling"} if "L020" not in user else None
-        assert "the landlord's sibling" in user and "Ġlandlord" not in user
-        which = "x" if "What is X" in user else "y"
-        return {"choice": GOLDEN[A][f"{which}_gold_pos"], "quote": "landlord"}
-
-    fake_llm(responder)
-    res = judge.run(mk_args(TOKENS, items=[A]))
-    assert seen[0] == (
-        'TOKEN READOUTS:\n[position "\'s"]  landlord (11.20) |  sibling (10.40) | '
-        " brother (6.10) |  tenant (5.90)"
-    )
-    assert res.value == 1.0 and res.extras["n_cells_interp_missing"] == 0
-    assert len(res.rows) == 2
-
-
-def test_summary_failure_skips_cell(tmp_path, fake_llm, mk_args):
-    def responder(system, user):
-        if user.startswith("Return"):
-            return {"a": 1}
-        if user.startswith("TOKEN READOUTS:"):
-            return None
-        pytest.fail("no judge call without a summary")
-
-    fake_llm(responder)
-    res = judge.run(mk_args(TOKENS, items=[A]))
-    assert res.value == 0.0 and res.rows == []
-    assert res.extras["n_cells_interp_missing"] == 2 and res.counts["n_unjudged_cells"] == 2
-
-
 def test_dry_run_prints_and_makes_no_calls(tmp_path, mk_args, capsys, monkeypatch):
     monkeypatch.setattr("wsbench.llm._make_client", lambda r, k: pytest.fail("no client"))
     res = judge.run(mk_args(EXAMPLE, dry_run=True))
@@ -191,7 +154,8 @@ def test_dry_run_prints_and_makes_no_calls(tmp_path, mk_args, capsys, monkeypatc
     capsys.readouterr()
     res = judge.run(mk_args(TOKENS, dry_run=True))
     out = capsys.readouterr().out
-    assert "TOKEN READOUTS:" in out and "What is X" not in out  # summarizer prompt only
+    # plan 0032 §2.3: the raw token bag is judged directly (no interpretation prompt)
+    assert "TOKEN READOUTS:" not in out and "What is X" in out
 
 
 def test_split_blank_last_piece_accepted(tmp_path):

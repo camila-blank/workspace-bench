@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import native_args
 from summary_fakes import FakeLLM, summary_args
 
 from wsbench import digest, llm, registry
@@ -26,7 +27,7 @@ from wsbench.registry import JudgeArgs
 
 
 def _args(tmp_path: Path, **extra: str) -> JudgeArgs:
-    return JudgeArgs(
+    return native_args(
         readouts=tmp_path / "r.jsonl",
         out=tmp_path / "out",
         judge=resolve(JudgeConfig(prompt_version="t")),
@@ -173,6 +174,7 @@ def test_fingerprint_moves_with_rare_and_numbers(tmp_path, scripted):
 
 def test_hierarchical_chunk_with_only_rare_contributes(tmp_path, monkeypatch):
     fam = "test_0022_hier"
+    monkeypatch.setattr(digest, "COUNT_TOKENS_ABOVE", 0.0)  # pin the real-count path
     monkeypatch.setitem(
         digest.FAMILY_DEFAULTS,
         fam,

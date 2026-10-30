@@ -59,7 +59,7 @@ The readout describes a relation of the form "X's Y". What is {role}?
 
 ### `BUNDLE`
 
-The readout handed to the judge (prose) or to the summarizer (tokens): `{token!r}` = the Python repr of the row's `token` (`"'s"`), or `p<pos>` when the row carries no token; `{txt}` = the non-empty samples joined by `" | "` (tokens: `render_bag`).
+The readout handed to the judge (prose or tokens): `{token!r}` = the Python repr of the row's `token` (`"'s"`), or `p<pos>` when the row carries no token; `{txt}` = the non-empty samples joined by `" | "` (tokens: `render_bag`).
 
 ```text
 [position {token!r}] {txt}
@@ -122,15 +122,16 @@ pass}`. `extras` = `per_layer_pass {"L20": {pass, judged}, …}`, `pair_consiste
 
 ## Token (J-lens) readouts
 
-A `tokens` readouts file goes through the shared summarizer first (`docs/summarizer.md`,
-`SUMMARIZER_PROMPT_VERSION = "interp-v1-decoded"`): the bundle is the `BUNDLE` template above with `{txt} = render_bag(tokens, scores)` — the `[position …]` prefix IS part of the summarizer input, as in the source (L269). Deliberate deviation: the source sent that bundle with NO `TOKEN READOUTS:` prefix, whereas the shared summarizer always adds it. The judge then sees the interpretation
-text in place of the readout. A cell whose summary fails is skipped (counted in
-`n_unjudged_cells`); an empty string is never judged.
+A `tokens` readouts file is judged on its raw tokens: plan 0032 §2.3 deleted the per-cell
+J-lens interpretation step (`interp-v1-decoded`, `summ:` cache keys). Natively
+(`opts=aggregate=native`) the judge sees the `BUNDLE` template above with
+`{txt} = render_bag(tokens, scores)` (the decoded tokens best first, joined by `" | "`, no scores
+shown) in place of the readout; an empty bag is never judged. Under summary mode (the default since plan 0024) the token lens goes through the same digest as every other method (`docs/summarizer.md` § Item digest).
 
 **Legacy note.** The source script carried its own copy of the interpretation prompt
-(`INTERP_SYSTEM` L88-92, identical to the shared prompt);
-this repo uses the one shared prompt. The original is quoted here for provenance only — it is
-not what this family sends:
+(`INTERP_SYSTEM` L88-92, identical to the deleted shared summarizer's prompt);
+this repo runs no interpretation prompt at all (plan 0032 §2.3). The original is quoted here for
+provenance only — it is not what this family sends:
 
 ```text
 You are shown the top-10 token readouts from an interpretability lens at oneposition inside a language model that was reading a passage you cannot see. Tokens may includenoise, fragments, other languages (translate them), or byte artifacts. In one or two sentences,state what these outputs are collectively trying to say — the situation or mental content theypoint to. Commit to the most specific reading the tokens support; do not just say they are noisy.
@@ -202,7 +203,7 @@ digest.
 The digest note (`summ_render=extractive`, the default); `{note}` below.
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 ### `SUMMARY_NOTE_ABSTRACTIVE`
@@ -210,7 +211,7 @@ The readout below is a digest of the lens's readouts across every read layer and
 `{note}` under `summ_render=abstractive` (ablation).
 
 ```text
-The readout below is a digest of the lens's readouts across every read layer and position, written by a note-taker who did not see the passage, most prominent first, then content seen in only one or a few samples. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
+The readout below is a digest of the readouts across every read layer and position, written by a note-taker who did not see the passage, most prominent first, then content seen in only one or a few samples. Each line is one statement in the note-taker's words, how many samples carried it, and a verbatim evidence span from one real readout sample. The statements are not evidence: judge what the evidence spans show, treat each line as a separate sample (pieces on different lines never combine), and copy any quote from inside one evidence span.
 ```
 
 ### `SUMMARY_NOTE_TOKENS`
@@ -218,7 +219,7 @@ The readout below is a digest of the lens's readouts across every read layer and
 Appended to `{note}` (after a newline) when the readouts file is `tokens`.
 
 ```text
-A line whose items are separated by " | " is one ranked list of the lens's top vocabulary tokens, best first, and each token in it is its own sample: a quote from such a line must be exactly one token. A token ranked first among the candidates of its type in such a list is singled out, even if unrelated tokens rank above it; a token ranked below another candidate of its type, in a list made mostly of such candidates, is not.
+A line whose items are separated by " | " is one ranked list of the top vocabulary tokens read from ONE activation, best first. Several tokens of the same line may jointly express one meaning, and a quote from such a line is one token or several tokens of that same line joined by " | ". Tokens of adjacent positions at the same layer may be joined only to spell one word split across them; such a quote is that word. Tokens on different lines never combine otherwise, and a relation (who does what to whom) must be stated within one sample (for a free-text sample, within one of its "- " bullets; in a free-text sample, bullets are separated by ⁞). A line that holds two or more of the options singles out none of those options, whatever their rank; an option that is the only option on its line is singled out by that line, even if the line holds other words of the same kind.
 ```
 
 ### `DIGEST_TASK_NOTE`

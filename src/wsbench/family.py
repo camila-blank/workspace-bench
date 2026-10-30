@@ -5,16 +5,41 @@ import re
 import sys
 import unicodedata
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, NoReturn
 
+from wsbench import reads
+from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend
 from wsbench.mc import fold
 from wsbench.mcjudge import base_config, base_counts, is_subset
 from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult, bootstrap_ci, completeness
-from wsbench.summarizer import render_bag
+
+
+def render_bag(
+    tokens: Sequence[str], scores: Sequence[float] | None = None, *, show_scores: bool = False
+) -> str:
+    """One ranked token list as ``tok | tok | …``, best first (score order when scores are
+    given). Scores are shown only with ``show_scores=True`` (``tok (12.34)``): no native token
+    prompt shows them (plan 0032 §2.3.1; moved here from the deleted ``summarizer.py``)."""
+    if scores is None:
+        return " | ".join(tokens)
+    pairs = sorted(zip(tokens, scores, strict=True), key=lambda p: -p[1])
+    if show_scores:
+        return " | ".join(f"{t} ({s:.2f})" for t, s in pairs)
+    return " | ".join(t for t, _s in pairs)
+
+
+def aux_judge(judge: ResolvedJudge, aux_models: Mapping[str, str], role: str) -> ResolvedJudge:
+    """The judge used for an auxiliary stage: ``aux_models[role]`` if set, else the judge."""
+    import dataclasses
+
+    model = aux_models.get(role, judge.model)
+    if model == judge.model:
+        return judge
+    return dataclasses.replace(judge, model=model)
 
 
 def fail(msg: str) -> NoReturn:
@@ -156,6 +181,7 @@ def pass_rate_result(
             spend=spend,
         ),
         extras={
+            **{k: v for k, v in reads.extras_of(args).items() if v},  # plan 0032 §2.0
             **extras,
             "n_items_decided": len(decided),
             "n_items_undecided": len(rows) - len(decided),

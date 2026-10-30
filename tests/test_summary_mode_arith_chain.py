@@ -68,7 +68,7 @@ def _arith_rows(drop: tuple[str, ...] = ()) -> list[dict]:
 def _arith_judge(system: str, user: str, schema: dict) -> dict:
     if schema.get("name") == "arith_free_batch":  # native cells=all
         return {"entries": [{"k": 1, "values": [], "basis": "none", "quote": ""}]}
-    assert system == ARITH_SYSTEM and "digest of the lens's readouts" in user
+    assert system == ARITH_SYSTEM and "digest of the readouts" in user
     if "alpha" in user:  # -68 is in an evidence sample, -99 nowhere
         return {"states_value": True, "values": [-51, -68, -99], "basis": "arithmetic", "quote": ""}
     if "beta" in user:  # 21 only in the summarizer's statement
@@ -92,7 +92,7 @@ def test_arith_one_call_per_item_all_positions(tmp_path, monkeypatch):
     assert rows["addmul-000"]["pass"] is False
     assert "summary_evidence" in rows["sign-062"] and "earliest_layer" not in rows["sign-062"]
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v3-blind-extractive+sj-v7"
+    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v4-task-extractive+sj-v8"
     assert "per_layer_hit_rate" not in r.extras and r.extras["summary"]["n_items_summarized"] == 3
 
     native = ARITH.run(
@@ -183,7 +183,7 @@ def _chain_rows(drop: tuple[tuple[str, int], ...] = ()) -> list[dict]:
 
 
 def _chain_judge(system: str, user: str, schema: dict) -> dict:
-    summary = "digest of the lens's readouts" in user  # native runs share this fake
+    summary = "digest of the readouts" in user  # native runs share this fake
     assert system == (CHAIN_SYSTEM if summary else CHAIN_NATIVE_SYSTEM)
     if "alpha" in user:  # top value is the answer; the verified second value is gold
         return {"states_value": True, "values": [2, 11], "basis": "stated_result", "quote": "2"}
@@ -210,7 +210,7 @@ def test_chain_any_of_3_all_positions(tmp_path, monkeypatch):
     assert "layer_protocols" not in r.extras and "null_top1_near" not in r.extras
     assert r.extras["null_near"] == 0.0
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v3-blind-extractive+sj-v7"
+    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v4-task-extractive+sj-v8"
 
     native = CHAIN.run(
         _legacy_args(
