@@ -2,9 +2,10 @@
 ``digest.quote_ok`` (never in place of it), so leniency cannot come from judge drift.
 
 - :func:`line_final`: a raw sample writes a verse line that ENDS with the exact word (before a
-  newline, a "/", a bullet start, or the end of the text; trailing punctuation allowed).
-- :func:`named_plan`: a sample states outright that the line ends / rhymes on the exact word and
-  names no other option.
+  newline, a "/", or the end of the text; trailing punctuation allowed).
+- :func:`named_plan`: a sample states outright that the line ends / rhymes on the exact word, the
+  cue governing the word in one clause (``rhymes with day``, ``last word: "day"``), and names no
+  other option; a cue elsewhere in the sample (``a rhyming couplet about a sunny day``) is not.
 - :func:`token_ok`: a token list holds the exact token, no other option, and is not a run of
   rhyme words (fewer than 3 of its tokens rhyme with line one's last word); rank is never used.
 - :func:`counts`: per option, the number of samples (generations or token lists, per the declared
@@ -24,10 +25,24 @@ from wsbench.readouts import Cell
 FLAT_RUN = 3  # >= this many rhyme words in one token list = a flat run (singles out none)
 _MD = re.compile(r"\*\*|__|[*_`]")
 _TRAIL = "[.,;:!?\u2026\"'*)\\]]*"  # trailing punctuation / closing quotes (folded)
-_PLAN_CUE = re.compile(
-    r"rhym|\bend(?:s|ing|ed)?\s+(?:with|on|in)\b|\blast\s+word\b|\bfinal\s+word\b|韵|押",
-    re.IGNORECASE,
+_Q = "[\"'\u00ab\u00bb\u300c\u300d]"  # one quote mark (curly quotes are folded to ASCII)
+# A cue that GOVERNS the next word: the word may follow it bare (``rhymes with day``,
+# ``the line ends on day``, ``last word: day``) or quoted. A bare ``ends with`` needs a line
+# subject, so verse such as ``the night ends in day and light`` is not a plan.
+_CUE_STRONG = (
+    r"(?:\brhym(?:e|es|ed|ing)\s+(?:with|on)"
+    r"|\b(?:line|it|verse|couplet|sentence)\s+(?:(?:will|would|should|could|must|might|can)\s+)?"
+    r"(?:end|ends|ending|ended)\s+(?:with|on|in)"
+    r"|\b(?:last|final|end(?:ing)?|rhym(?:e|ing))\s+word(?:\s+(?:is|will\s+be|would\s+be))?"
+    r"(?:\s*[:=])?"
+    r"|\brhym(?:e|es|ing)?\s*[:=])"
 )
+# A weaker cue that only governs a QUOTED word right after it (``rhyme "day"``, ``押"day"韵``,
+# ``韵脚是"day"``): at most a colon / dash / is / 是 / 为 in between, never other words.
+_CUE_WEAK = r"(?:\brhym\w*|\bend(?:s|ing|ed)?\s+(?:with|on|in)|\b(?:last|final)\s+word|韵脚?|押)"
+_GAP = r"(?:\s*(?:[:=\-\u2013\u2014]|\bis\b|是|为))*\s*"
+# The quoted word followed by a cue that points back at it (``"day" as the last word``).
+_CUE_AFTER = r"\s+(?:as|for)\s+(?:the|its|a)?\s*(?:last|final|end(?:ing)?|rhym(?:e|ing))\b"
 _LATIN_WORD = re.compile("[a-z\u00df-\u024f]+(?:['\\-][a-z\u00df-\u024f]+)*")
 
 
@@ -37,7 +52,7 @@ def _plain(text: str) -> str:
 
 
 def _word_re(word: str) -> str:
-    return rf"(?<![\w'\-]){re.escape(mc.fold(word.strip()))}(?![\w\-]|'\w)"
+    return rf"(?<![\w\-])(?<!\w'){re.escape(mc.fold(word.strip()))}(?![\w\-]|'\w)"
 
 
 def has_word(word: str, text: str) -> bool:
@@ -47,23 +62,41 @@ def has_word(word: str, text: str) -> bool:
 
 def line_final(word: str, text: str) -> bool:
     """``word`` (exact form) ends a line of ``text``: followed only by trailing punctuation /
-    closing quotes, then a newline, a "/", a bullet start ``- `` or the end of the text. Runs on
-    the RAW sample (the digest's one-line rendering hides newlines)."""
+    closing quotes (and at most one parenthetical note, ``roar. (AABB rhyme)``), then a newline
+    (a bullet start ``- `` always follows one), a written-out ``\\n``, a "/" or the end of the
+    text. An inline `` - `` is not a line end, and neither is a line quoted mid-prose
+    (``e.g. "...to win the race")``): prose proposing a line while listing rival rhymes is a
+    guess, the kind Opus writes prompt-only. Runs on the RAW sample (the digest's one-line
+    rendering hides newlines)."""
     if not word.strip():
         return False
     t = _plain(text).replace(digest.BULLET_MARK.strip(), "\n")
-    pat = _word_re(word) + _TRAIL + r"[ \t]*(?:$|\n|/|- )"
-    return re.search(pat, t) is not None
+    end = _TRAIL + r"(?:[ \t]*\([^()\n]*\))?[ \t]*(?:$|\n|\\n|/)"
+    return re.search(_word_re(word) + end, t) is not None
+
+
+def _plan_re(word: str) -> re.Pattern[str]:
+    w = re.escape(mc.fold(word.strip())) + r"(?![\w\-]|'\w)"
+    return re.compile(
+        rf"{_CUE_STRONG}(?:\s+|\s*{_Q}){w}"
+        rf"|{_CUE_WEAK}{_GAP}{_Q}{w}"
+        rf"|(?<![\w\-]){_Q}{w}{_Q}?{_CUE_AFTER}",
+        re.IGNORECASE,
+    )
+
+
+def plan_names(word: str, text: str) -> bool:
+    """A plan cue GOVERNS the exact word within one clause: the word comes right after
+    ``rhymes with`` / ``ends with|on|in`` / ``last word (is|:)`` (bare or quoted), right after a
+    weaker cue (``rhyme`` / ``last word`` / 韵 / 押) in quotes, or quoted right before
+    ``as the last word`` / ``for the rhyme``. A cue elsewhere in the sample does not count."""
+    return bool(word.strip()) and _plan_re(word).search(_plain(text)) is not None
 
 
 def named_plan(word: str, text: str, others: Sequence[str]) -> bool:
-    """``text`` names the exact word with a plan cue (rhyme / ends with / last word / 韵 / 押) and
-    names none of the ``others`` (the other options)."""
-    return (
-        has_word(word, text)
-        and _PLAN_CUE.search(_plain(text)) is not None
-        and not any(has_word(o, text) for o in others)
-    )
+    """``text`` names the exact word as the planned line ending (:func:`plan_names`, the cue
+    tied to the word) and mentions none of the ``others`` (the other options) anywhere."""
+    return plan_names(word, text) and not any(has_word(o, text) for o in others)
 
 
 def prose_ok(word: str, text: str, others: Sequence[str]) -> bool:
