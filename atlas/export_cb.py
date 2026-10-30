@@ -42,7 +42,6 @@ sys.path.insert(0, str(AGAM / "gw-olens/scripts/ola/ar_ablate"))
 CB_MANIFEST = Path("/tmp/cbviewer/manifest.json")
 CB_URL = "https://safety-sahan-2-camila-blank--wsbench-viewer-web.modal.run"
 SKIP_FAMS = {
-    "hallucination",
     "agentic_misalignment",
     "jlens_concept_pr",
 }  # not in her viewer either

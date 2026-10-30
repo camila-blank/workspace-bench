@@ -17,6 +17,7 @@ WSB = AGAM / "workspace-bench"
 sys.path.insert(0, str(WSB / "src"))
 from wsbench.viewer.build import GROUPS, _family_view, _header, _items, _read_gates  # noqa: E402
 from wsbench.viewer.build import view_item as view_item_full  # noqa: E402,F401
+from wsbench.registry import REMOVED_FAMILIES  # noqa: E402
 
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_FILE = CACHE_DIR / "index.pkl"
@@ -24,8 +25,8 @@ CACHE_VERSION = 3
 
 ORIGINAL = "qwen3.6-27b"
 FAMILY_ORDER = [f for _, fams in GROUPS for f in fams]
-FAMILY_GROUP = {f: g for g, fams in GROUPS for f in fams} | {"hallucination_onpolicy": "Precision"}
-EXTRA_FAMILIES = ["hallucination_onpolicy"]
+FAMILY_GROUP = {f: g for g, fams in GROUPS for f in fams}
+EXTRA_FAMILIES: list[str] = []
 
 MODEL_LABELS = {
     "qwen3.6-27b": "Qwen3.6-27B",
@@ -86,8 +87,6 @@ def stage_of_tag(tag: str) -> str:
 
 
 def fam_sort_key(f: str) -> tuple:
-    if f == "hallucination_onpolicy":
-        return (FAMILY_ORDER.index("hallucination") + 0.5, f)
     return (FAMILY_ORDER.index(f) if f in FAMILY_ORDER else 999, f)
 
 
@@ -673,15 +672,9 @@ def discover() -> dict:
                         files=fams,
                         notes="synthetic readouts written to test the judges (gold = should pass, foil / irrelevant = should fail)",
                     )
-    # fold each <tag>.hal_onpolicy run into <tag> as the extra family hallucination_onpolicy
+    # <tag>.hal_onpolicy runs scored only a family that left the bench (plan 0040): not shown
     for hr in [r for r in runs if r.get("hal_onpolicy")]:
-        base_tag = hr["tag"][: -len(".hal_onpolicy")]
-        twin = next(
-            (r for r in runs if r["id"].startswith("olens.") and r["tag"] == base_tag), None
-        )
-        if twin is not None:
-            twin["summary_hal"] = hr["summary"]
-            runs.remove(hr)
+        runs.remove(hr)
 
     # merge readout-only sweep copies into the matching scored OLens tag (same subject/stage/bank)
     for ro in [r for r in runs if r["id"].startswith("olensro.")]:
@@ -840,19 +833,12 @@ def build_index(force: bool = False) -> dict:
         cells: dict[str, dict] = {}
         if r.get("summary"):
             fams, head = _summary_scores(r["summary"])
-            if r.get("hal_onpolicy"):
-                fams = {
-                    "hallucination_onpolicy": v for k, v in fams.items() if k == "hallucination"
-                }
-            scores.update(fams)
+            # a removed family (registry.REMOVED_FAMILIES) is never shown, also in old runs
+            scores.update({k: v for k, v in fams.items() if k not in REMOVED_FAMILIES})
             r["head"] = head
             if r.get("headline") is None:
                 r["headline"] = head.get("headline_23") or head.get("headline")
                 r["headline_ci"] = head.get("headline_23_ci95") or head.get("headline_ci95")
-        if r.get("summary_hal"):
-            hal, _ = _summary_scores(r["summary_hal"])
-            if "hallucination" in hal:
-                scores["hallucination_onpolicy"] = hal["hallucination"]
         if r.get("combo_scores"):
             scores.update(r.pop("combo_scores"))
         for fam, e in r["files"].items():

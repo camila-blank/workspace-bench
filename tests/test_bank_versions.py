@@ -18,7 +18,6 @@ ALLOWED_LITERALS = {
     "multitoken/family.py",  # mt_family's default path
     "readplan.py",  # jlens_concept_pr's adapted rollout ids (bank_dir/items.json)
     "nocot.py",
-    "adapt/hal.py",  # hallucination's original capture rows (leaves WorkspaceBench)
 }
 
 

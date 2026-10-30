@@ -172,7 +172,7 @@ def test_subset_entry_refusals(tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="policy refusal"):
         ti.subset("fam", _frozen(tmp_path, None, {"fam": "policy refusal: 90%"}))
     with pytest.raises(SystemExit, match="not gated"):
-        ti.subset("hallucination", _frozen(tmp_path, None))
+        ti.subset("jlens_concept_pr", _frozen(tmp_path, None))
 
 
 # ---------------------------------------------------------------- readout write policy
@@ -480,7 +480,7 @@ def test_gate_merge_keeps_skipped_families_and_takes_generators(tmp_path, two_fa
 
 def test_gate_refuses_design_exclusions(tmp_path, two_families):
     with pytest.raises(ValueError, match="excluded by design"):
-        ti.gate(tmp_path, dst=None, families=["hallucination"])
+        ti.gate(tmp_path, dst=None, families=["jlens_concept_pr"])
 
 
 def test_gated_families_skip_superseded(real_families):

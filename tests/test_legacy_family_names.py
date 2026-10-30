@@ -225,3 +225,39 @@ def test_brew_intermediates_is_removed(real_families):
     assert "brew_intermediates" not in readplan.families()
     frozen = json.loads(ti.FROZEN.read_text())
     assert "brew_intermediates" not in frozen
+
+
+def test_hallucination_is_removed(real_families):
+    # plan 0040: hallucination left WorkspaceBench for HallucinationBench (its index is reported
+    # by wsbench.hbindex); stale results.json stays out of the macro with reason "removed"
+    from wsbench import readplan
+    from wsbench.results import FamilyResult, macro
+
+    assert "hallucination" in registry.REMOVED_FAMILIES
+    assert "HallucinationBench" in registry.REMOVED_FAMILIES["hallucination"]
+    assert "hallucination" not in registry.FAMILIES
+    assert "hallucination" not in readplan.families()
+    for path in sorted((REPO / "evals" / "baselines").glob("*.json")):
+        frozen = json.loads(path.read_text())
+        assert "hallucination" not in frozen, path.name
+        assert "hallucination" not in frozen.get("_not_gated", {}), path.name
+    assert not (REPO / "evals" / "hallucination").exists()
+    assert not list((REPO / "adapted").glob("*/hallucination*.json"))
+    old = FamilyResult(
+        family="hallucination",
+        metric="hallucination_rate",
+        value=0.3,
+        ci95=(0.2, 0.4),
+        n_items=149,
+        higher_is_better=False,
+        chance=None,
+        chance_label=None,
+        complete=True,
+        pinned_instrument=True,
+        config={"judge_model": "m", "prompt_version": "v5c"},
+        counts={},
+    )
+    m = macro([old])
+    assert m["families"] == []
+    assert [(e["family"], e["reason"]) for e in m["excluded"]] == [("hallucination", "removed")]
+    assert "HallucinationBench" in m["excluded"][0]["why"]
