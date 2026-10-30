@@ -1,5 +1,5 @@
 """Stamp the tokenizer-dependent fields of a bank for one tokenizer: `probe_token_lens` (the six
-multi-token families), multihop `readout.offsets`, brew `eval_positions`/`regions`.
+multi-token families) and multihop `readout.offsets`.
 
     uv run --with transformers --with jinja2 python \\
         .claude/skills/wsb-new-questions/scripts/restamp.py \\
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gate_hf import brew_cells, multihop_offsets, stamp_mt
+from gate_hf import multihop_offsets, stamp_mt
 from validate_bank import MT_FAMILIES, load_any
 
 
@@ -28,7 +28,7 @@ def main() -> int:
     ap.add_argument("--tokenizer", default="Qwen/Qwen3.6-27B")
     ap.add_argument("--out", type=Path, default=None)
     a = ap.parse_args()
-    if a.family not in (*MT_FAMILIES, "multihop", "brew_intermediates"):
+    if a.family not in (*MT_FAMILIES, "multihop"):
         print(f"{a.family}: nothing tokenizer-dependent to stamp", file=sys.stderr)
         return 0
     from transformers import AutoTokenizer  # type: ignore[import-not-found]
@@ -41,8 +41,6 @@ def main() -> int:
             bad.append(it.get("name"))
         elif a.family == "multihop":
             multihop_offsets(it, tok)
-        elif a.family == "brew_intermediates":
-            brew_cells(it, tok)
     out = a.out or a.bank
     obj = items if is_list else {**header, "items": items}
     out.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
