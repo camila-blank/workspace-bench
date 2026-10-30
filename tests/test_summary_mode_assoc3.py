@@ -68,10 +68,10 @@ def _generic(system: str, user: str, schema: dict) -> dict:
     if name == "interp":
         return {"interpretation": "a reading"}
     if name == "relation_mc_v2":
-        return {"choice": 9, "quote": ""}
+        return {"choice": 14, "quote": ""}
     if name == "readout_mc" and "q1_choice" in json.dumps(schema):
         return {"q1_choice": 6, "q2_choice": 6, "q3_choice": 6, "evidence": ""}
-    return {"choice": 11, "quote": ""}
+    return {"choice": 14, "quote": ""}
 
 
 def _no_statements(fake: FakeLLM, schema: str) -> list[str]:
@@ -121,7 +121,7 @@ def test_conjunctive_one_call_per_item(tmp_path, monkeypatch):
 def test_conjunctive_tokens_skip_interp(tmp_path, monkeypatch):
     _register(CONJ)
     path = _as_tokens(CONJ_EX, tmp_path / "t.jsonl")
-    fake = FakeLLM.install(monkeypatch, lambda s, u, sc: {"choice": 11, "quote": ""})
+    fake = FakeLLM.install(monkeypatch, lambda s, u, sc: {"choice": 14, "quote": ""})
     r = CONJ.run(_s(CONJ, path, tmp_path / "s", conj_prompts.PROMPT_VERSION))
     assert fake.n("interp") == 0 and fake.n("digest") == 2 and fake.n("readout_mc") == 2
     assert r.config["source_kind"] == "tokens"
@@ -163,7 +163,7 @@ def _rel_judge():
         assert "[position" not in user and schema["name"] == "relation_mc_v2"
         if listing(opts_a.shown) in user:  # item a: the gold chain, quoted from one bullet
             return {"choice": opts_a.gold, "quote": "Avery's landlord's sibling"}
-        return {"choice": 9, "quote": ""}
+        return {"choice": 14, "quote": ""}
 
     return judge
 

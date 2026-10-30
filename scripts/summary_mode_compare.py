@@ -83,7 +83,7 @@ REGEX_FAMILIES = MT_FAMILIES | {"directed_modulation_obscure"}
 PER_CALL_CHANCE: dict[str, float] = {
     "user_modeling": 1 / 6,
     "conjunctive_association": 1 / 11,
-    "relational_multihop": 1 / 8,  # rel-v2: one 8-way composed-relation pick
+    "relational_multihop": 1 / 13,  # rel-v2: one 13-way composed-relation pick
     "role_bound_association": (1 / 6) ** 3,
 }
 

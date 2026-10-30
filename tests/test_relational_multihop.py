@@ -90,21 +90,30 @@ def test_options_v2_golden():
     for iid, it in BANK.items():
         o = build_options(iid, it["hop1"], it["hop2"])
         assert {"shown": o.shown, "classes": o.classes, "gold_pos": o.gold} == GOLDEN[iid], iid
-        assert len(o.shown) == 9 and o.shown[-1] == CANNOT and len(set(o.shown)) == 9
+        assert len(o.shown) == 14 and o.shown[-1] == CANNOT and len(set(o.shown)) == 14
         h1, h2 = it["hop1"], it["hop2"]
         assert o.shown[o.gold - 1] == f"{h1}'s {h2}" and f"{h2}'s {h1}" in o.shown
-        want = ["gold", "reversed", "one_relation", "near_miss", "other"]
-        assert sorted(o.classes[:-1]) == sorted([*want, *want[2:]])
+        assert sorted(o.classes[:-1]) == sorted(
+            ["gold", "reversed", *["other"] * 6, *["one_relation"] * 4, "near_miss"]
+        )
+        # symmetric: four words, each the outer word of 2 chains and the inner word of 2, and
+        # each alone once; nothing in the list marks which two are the hops
+        chains = [t.split("'s ") for t in o.shown if "'s " in t]
+        words = {w for c in chains for w in c}
+        assert len(chains) == 8 and len(words) == 4 and {h1, h2} <= words
+        for w in words:
+            assert sum(c[0] == w for c in chains) == sum(c[1] == w for c in chains) == 2
+            assert prompts.ONE_RELATION.replace("{rel}", w) in o.shown
         # no option other than G states the gold chain (no lexicon synonym of the gold)
         for text, cls in zip(o.shown, o.classes, strict=True):
             assert gate.states(digest.fold_quote(text), h1, h2) == (cls == "gold"), (iid, text)
 
 
 def test_options_end_with_cannot(tmp_path, monkeypatch):
-    _res, fake = _run_one(tmp_path, monkeypatch, A, ["- x"], "", choice=9)
+    _res, fake = _run_one(tmp_path, monkeypatch, A, ["- x"], "", choice=14)
     (user,) = [u for n, _s, u in fake.calls if n == "relation_mc_v2"]
     listed = [ln for ln in user.splitlines() if ln.startswith("  ")]
-    assert listed[-1] == f"  9. {mc.CANNOT}" and len(listed) == 9
+    assert listed[-1] == f"  14. {mc.CANNOT}" and len(listed) == 14
 
 
 def test_lexicon_covers_all_relations():
@@ -194,7 +203,7 @@ def test_full_mode_first_token_must_be_full_stop(tmp_path):
 def _counting_judge(users):
     def judge_(system, user, schema):
         users.append(user)
-        return {"choice": 9, "quote": ""}
+        return {"choice": 14, "quote": ""}
 
     return judge_
 
@@ -259,7 +268,7 @@ def test_prompt_only_reader_skips_token_checks(tmp_path, monkeypatch):
     block_a = mc.listing(GOLDEN[A]["shown"])
 
     def pick(u):
-        return (_gold(A), "landlord's sibling") if block_a in u else (9, "")
+        return (_gold(A), "landlord's sibling") if block_a in u else (14, "")
 
     FakeLLM.install(monkeypatch, _scripted(pick))
     for agg in ("native", "summary"):
@@ -277,7 +286,7 @@ def test_prompt_only_reader_skips_token_checks(tmp_path, monkeypatch):
 def test_summary_layer_subset_only_feeds_those_layers(tmp_path, monkeypatch):
     _register()
     path = write_jsonl(tmp_path / "r.jsonl", _span_rows(A, layers=readplan.GRID))
-    fake = FakeLLM.install(monkeypatch, _scripted(lambda u: (9, "")))
+    fake = FakeLLM.install(monkeypatch, _scripted(lambda u: (14, "")))
     res = SPEC.run(
         summary_args(path, tmp_path / "one", prompts.PROMPT_VERSION, items=[A], layers=[44])
     )
@@ -445,7 +454,7 @@ def test_token_rank_is_not_order(tmp_path, monkeypatch):
 
 def test_native_tokens_no_interp_call(tmp_path, monkeypatch):
     _register()
-    fake = FakeLLM.install(monkeypatch, _scripted(lambda u: (9, "")))
+    fake = FakeLLM.install(monkeypatch, _scripted(lambda u: (14, "")))
     SPEC.run(_native(TOKENS, tmp_path / "o", [A, B]))
     assert fake.n("interp") == 0 and fake.n("relation_mc_v2") == 4
     users = [u for n, _s, u in fake.calls if n == "relation_mc_v2"]
@@ -485,7 +494,7 @@ def test_extras_pick_classes_and_reversed_diag(tmp_path, monkeypatch):
     rows = [{"id": A, "layer": L, "pos": 20, "samples": t, "token": "'s"} for L, t in text.items()]
     path = write_jsonl(tmp_path / "r.jsonl", rows)
     picks = {20: (_gold(A), "landlord's sibling"), 36: (_opt(A, "sibling's landlord"), "x"),
-             44: (_gold(A), "Avery's landlord's sibling"), 48: (9, ""), 52: (9, "")}  # fmt: skip
+             44: (_gold(A), "Avery's landlord's sibling"), 48: (14, ""), 52: (14, "")}  # fmt: skip
     FakeLLM.install(
         monkeypatch, _scripted(lambda u: picks[int(u.split("[L", 1)[1].split(" ", 1)[0])])
     )
@@ -495,8 +504,8 @@ def test_extras_pick_classes_and_reversed_diag(tmp_path, monkeypatch):
     assert e["pick_classes"]["cannot_tell"] == 2 and e["pass_rate_without_order_gate"] == 1.0
     # raw units: the gold chain in 2 bullets (L20, L44), the reversed in 3 -> reported
     assert e["reversed_also_stated"] == 1
-    assert res.value == 1.0 and res.chance_label.startswith("per (item, layer) 1/8")
-    assert e["any_of_layers_floor"] == pytest.approx(1 - (7 / 8) ** 5)
+    assert res.value == 1.0 and res.chance_label.startswith("per (item, layer) 1/13")
+    assert e["any_of_layers_floor"] == pytest.approx(1 - (12 / 13) ** 5)
 
 
 # ---------------------------------------------------------------- run, dry run
@@ -508,7 +517,7 @@ def test_run_verdicts_and_numbers(tmp_path, monkeypatch):
     def pick(u):
         if "Avery's landlord's sibling" in u:  # item a's blank cell: the gold, quoted
             return _gold(A), "Avery's landlord's sibling"
-        return 9, ""
+        return 14, ""
 
     fake = FakeLLM.install(monkeypatch, _scripted(pick))
     a = _native(EXAMPLE, tmp_path / "o", [A, B])
