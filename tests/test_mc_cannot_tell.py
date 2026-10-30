@@ -97,5 +97,7 @@ def test_token_note_rendered_from_spec(family):
     spec = registry.FAMILIES.get(family)
     if spec is None:
         pytest.skip("not registered")
-    want = mc.token_note(spec.flat_types, multi_select=spec.multi_select)
+    want = mc.token_note(
+        spec.flat_types, multi_select=spec.multi_select, targets=spec.targets_judge
+    )
     assert digest.token_note_of(family) == want

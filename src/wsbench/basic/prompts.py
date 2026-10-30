@@ -9,13 +9,14 @@ from wsbench.family import render_bag
 from wsbench.llm import schema_block
 from wsbench.readouts import Cell, Kind
 
-# plan 0032 §2.8.1: tool-free SYSTEM, the shared token note (decision Q4), new task notes
-PROMPT_VERSION = "bank-2026-10-30"
+# plan 0032 §2.8.1: tool-free SYSTEM, the shared token note (decision Q4), new task notes;
+# bank-2026-10-30b: the token note in its TARGETS form (no lone-option clause, review of PR #140)
+PROMPT_VERSION = "bank-2026-10-30b"
 # families added after the shared version was frozen carry their own stamp (plan 0027), so a new
 # family rule never makes the older families' ATI entries and floors stale
 FAMILY_PROMPT_VERSIONS: dict[str, str] = {
-    "medical_diagnosis": "bank-2026-10-30-md",
-    "medical_diagnosis_alt": "bank-2026-10-30-md",
+    "medical_diagnosis": "bank-2026-10-30b-md",
+    "medical_diagnosis_alt": "bank-2026-10-30b-md",
 }
 
 
@@ -95,10 +96,12 @@ DIGEST_TASK_NOTES: dict[str, str] = {
 DIGEST_TASK_NOTES_TEXT = "\n".join(f"{f}: {n}" for f, n in DIGEST_TASK_NOTES.items())
 
 KIND_NOTE_PROSE = "The samples below are free-text readouts."
-# the ONE token-list rule (decision Q4; plan 0032 §2.7.2): the rank-1 exception is deleted. This
-# is the spec-free default; a family's judge renders ``mc.token_note(spec.flat_types)`` instead
-# (``token_note_for``), and every token cell is ONE ``render_bag`` line (``cell_lines``)
-KIND_NOTE_TOKENS = mc.TOKEN_NOTE
+# the ONE token-list rule (decision Q4; plan 0032 §2.7.2) in its TARGETS form: these judges hold
+# targets, not options, so the lone-option clause is dropped (review of PR #140) and a same-type
+# run singles out none of its words, whatever the rank. This is the spec-free default; a family's
+# judge renders ``mc.token_note(spec.flat_types, targets=True)`` (``token_note_for``), and every
+# token cell is ONE ``render_bag`` line (``cell_lines``)
+KIND_NOTE_TOKENS = mc.TARGET_TOKEN_NOTE
 USER = "targets: {targets}\n{kind_note}{family_rule}{forbidden}\n\n{blocks}"
 BLOCK = "[position {pos}]\n{samples}"
 
@@ -148,7 +151,8 @@ PROMPTS: dict[str, str] = {
     "DIGEST_TASK_NOTES": DIGEST_TASK_NOTES_TEXT,
     "SUMMARY_NOTE": digest.SUMMARY_NOTE,
     "SUMMARY_NOTE_ABSTRACTIVE": digest.SUMMARY_NOTE_ABSTRACTIVE,
-    "SUMMARY_NOTE_TOKENS": digest.SUMMARY_NOTE_TOKENS,
+    # the token note these judges receive in summary mode too (targets form, review of PR #140)
+    "SUMMARY_NOTE_TOKENS": KIND_NOTE_TOKENS,
 }
 
 

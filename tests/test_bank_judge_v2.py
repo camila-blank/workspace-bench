@@ -54,7 +54,7 @@ def test_family_rules_and_per_family_prompts():
     # plan 0032 §2.7 (decision Q4): the rank-1 exception is deleted; the native token note is
     # the shared mc.TOKEN_NOTE, and only pieces of DIFFERENT samples never combine
     assert "ranked first among the candidates of its type" not in P.KIND_NOTE_TOKENS
-    assert P.KIND_NOTE_TOKENS == mc.TOKEN_NOTE
+    assert P.KIND_NOTE_TOKENS == mc.TARGET_TOKEN_NOTE  # a TARGETS judge (review of PR #140)
     assert "overrides the rules" in P.SYSTEM and "NEVER combine" in P.SYSTEM
 
 

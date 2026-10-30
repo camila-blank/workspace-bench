@@ -478,7 +478,8 @@ def prompt_version(pv: str, args: JudgeArgs, family: str | None = None) -> str:
 
 
 def token_note_of(family: str | None) -> str:
-    """``mc.token_note`` of the family's own spec (``flat_types``, ``multi_select``)."""
+    """``mc.token_note`` of the family's own spec (``flat_types``, ``multi_select``,
+    ``targets_judge``)."""
     from wsbench import registry
 
     if family and family not in registry.FAMILIES:
@@ -486,7 +487,9 @@ def token_note_of(family: str | None) -> str:
     spec = registry.FAMILIES.get(family or "")
     if spec is None:
         return SUMMARY_NOTE_TOKENS
-    return _mc.token_note(spec.flat_types, multi_select=spec.multi_select)
+    return _mc.token_note(
+        spec.flat_types, multi_select=spec.multi_select, targets=spec.targets_judge
+    )
 
 
 def summary_note(

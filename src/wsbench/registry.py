@@ -148,6 +148,9 @@ class EvalSpec:
     # singles out none (mc.token_note). multi_select: the judge may pick several options.
     flat_types: tuple[str, ...] = ()
     multi_select: bool = False
+    # the judge holds TARGETS, not options (the basic bank families): mc.token_note(targets=True)
+    # drops the lone-option clause (review of PR #140)
+    targets_judge: bool = False
 
 
 def register(spec: EvalSpec) -> EvalSpec:

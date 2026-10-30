@@ -62,6 +62,7 @@ def bank_family(
         full_contiguous=full_contiguous,
         task_note=DIGEST_TASK_NOTES.get(name, ""),
         flat_types=flat_types,
+        targets_judge=True,  # a TARGETS judge: no lone-option clause (review of PR #140)
     )
 
 

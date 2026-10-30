@@ -361,7 +361,8 @@ def test_tokens_kind_readouts(family, tmp_path, monkeypatch):
     assert main(argv) == 0
     r = read_results(out)
     assert r.config["kind"] == "tokens" and r.value == 1.0 and r.rows[0]["earliest_layer"] == 20
-    assert mc.TOKEN_NOTE in fake.calls[0]  # plan 0032 §2.7.2: the shared token note
+    # plan 0032 §2.7.2: the shared token note, in its TARGETS form (review of PR #140)
+    assert mc.TARGET_TOKEN_NOTE in fake.calls[0]
 
 
 def test_run_command_scores_the_family(family, tmp_path, monkeypatch):
