@@ -1,4 +1,4 @@
-# 0037 — conjunctive_association: all layers, no partial / inverted credit, token lists combine
+# 0049 — conjunctive_association: all layers, no partial / inverted credit, token lists combine
 
 Workstream "conjunctive" of the 2026-10-30 WorkspaceBench fix campaign (Camila's
 "Conjunctive association" section). Builds on plan 0032 (shared infra). The workstream spec

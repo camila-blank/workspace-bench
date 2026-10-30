@@ -30,13 +30,13 @@ from wsbench.digest import (
 )
 from wsbench.mc import READOUT_PHRASE
 
-# Stages A/B (describer, consolidator). v2 (plan 0038 §4b/§9): tool-free wording and the
+# Stages A/B (describer, consolidator). v2 (plan 0052 §4b/§9): tool-free wording and the
 # declared-sampling cell text (bullet4 cells join their 4 generations)
 STAGE_AB_VERSION = "am-narrative-v2"
-# Stage C: concrete action targets (plan 0012 §3.1). v3 (plan 0038 §4): tool-free wording, the
+# Stage C: concrete action targets (plan 0012 §3.1). v3 (plan 0052 §4): tool-free wording, the
 # read scope, one-line designed act, token note rendered from the spec
 STAGE_C_VERSION = "am-design-v3"
-# The result stamp (plans 0031 / 0038): the pair-scored instrument. Only the stamp carries
+# The result stamp (plans 0031 / 0052): the pair-scored instrument. Only the stamp carries
 # PAIRS_VERSION; the Stage A/B/C fingerprints and cache keys stay on STAGE_AB_VERSION /
 # STAGE_C_VERSION (native) and SUMMARY_C_VERSION (summary), so the pair rule re-asks no call.
 PAIRS_VERSION = "pairs-v2"
@@ -374,7 +374,7 @@ def _ordinal(n: int) -> str:
 
 
 def read_scope(mode: str, lite_rule: Mapping[str, Any] | None = None) -> str:
-    """The ``{read_scope}`` of :data:`DESIGN_SCORE_PROMPT_SUMMARY` (plan 0038 §4a): every
+    """The ``{read_scope}`` of :data:`DESIGN_SCORE_PROMPT_SUMMARY` (plan 0052 §4a): every
     position under ``reads=full``; under ``reads=lite`` the family's lite rule in words (the read
     plan's ``every_nth_plus_tail``: "every 16th, plus the last 8")."""
     if mode != "lite":

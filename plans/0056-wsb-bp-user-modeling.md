@@ -1,4 +1,4 @@
-# 0043 — WorkspaceBench fix campaign: user_modeling ("user_modeling" workstream)
+# 0056 — WorkspaceBench fix campaign: user_modeling ("user_modeling" workstream)
 
 Status: implemented in this PR (camila/wsb-bp-user_modeling), on top of the merged infra (plan
 0032, `34005ac`). Campaign source of truth: `/workspace/root/wsb-bp/plans/{user_modeling,

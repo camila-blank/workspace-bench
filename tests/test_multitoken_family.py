@@ -28,7 +28,7 @@ MT = [
 ]
 OPTS = ["alpha", "beta", "gamma", "delta", "epsilon", CANNOT]
 # opts=judge=mc is an unpinned diagnostic only where the regex contract is the scorer of record
-# (basic_readout_mt's MC judge IS its instrument since plan 0037; tests/test_basic_readout_mt.py)
+# (basic_readout_mt's MC judge IS its instrument since plan 0051; tests/test_basic_readout_mt.py)
 MC_DIAGNOSTIC = [n for n in MT if n != "basic_readout_mt"]
 
 
@@ -205,7 +205,8 @@ def test_dry_run_on_the_toy_file(name, tmp_path, capsys, monkeypatch):
     assert main([*argv, "opts=judge=mc,aggregate=native"]) == 0
     r = read_results(out)
     # opts=judge=mc is a regex family's unpinned diagnostic, an mc family's pinned instrument
-    assert r.value is None and r.family == name and r.pinned_instrument == (spec.scorer == "")
+    # (multihop_mt_v2, plan 0041), and an mc+regex family's unpinned MC leg (plan 0054 B5)
+    assert r.value is None and r.family == name and r.pinned_instrument == (name in fam.MC_PROFILES)
     assert "[user]" in capsys.readouterr().out
 
 
@@ -228,7 +229,7 @@ def test_scorer_enum_assignment(real_families):
 
 
 def test_regex_families_unchanged(real_families):
-    # plan 0040 items 5 / 12: the two multilingual regex families register their v2 bank tag
+    # plan 0054 items 5 / 12: the two multilingual regex families register their v2 bank tag
     tag = {"multilingual_mt": "+v2", "multilingual_typo": "+v2", "typo_mt": "+typo-v2"}
     for name in ("multilingual_mt", "multilingual_typo", "typo_mt"):
         spec = real_families[name]
@@ -258,7 +259,7 @@ def test_multi_position_file_is_judged(name, tmp_path, real_families, monkeypatc
     path = tmp_path / "two.jsonl"
     path.write_text("".join(_json.dumps(r) + "\n" for r in two))
     spec = real_families[name]
-    if not spec.scorer:  # an LLM-judged family (plan 0037): no network call in a unit test
+    if not spec.scorer:  # an LLM-judged family (plan 0051): no network call in a unit test
         from summary_fakes import FakeLLM
 
         FakeLLM.install(monkeypatch, judge=lambda system, user, schema: None)

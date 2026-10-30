@@ -1,4 +1,4 @@
-"""basic_readout_mt (plan 0037): the v2 question bank, every-position reads, the MC judge of
+"""basic_readout_mt (plan 0051): the v2 question bank, every-position reads, the MC judge of
 record with the name gate, the any-language headline and its report columns. The v1 option
 golden (``items.json``) stays pinned; the regex contract is ``test_mt_regex.py``'s."""
 

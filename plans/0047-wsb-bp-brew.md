@@ -1,4 +1,4 @@
-# 0033 — WorkspaceBench fix campaign: brew_intermediates stays retired ("brew" workstream)
+# 0047 — WorkspaceBench fix campaign: brew_intermediates stays retired ("brew" workstream)
 
 Status: implemented in this PR (camila/wsb-bp-brew), on top of plan 0032 (infra, #140). Campaign
 source of truth: `/workspace/root/wsb-bp/plans/{brew,SHARED_API,_fable_decisions}.md`; this file

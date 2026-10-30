@@ -200,7 +200,7 @@ def test_user_modeling_token_file_skips_interp(tmp_path, monkeypatch):
     r = um.run(summary_args(path, tmp_path / "s", ump.PROMPT_VERSION, items=[UA]))
     assert fake.n("interp") == 0 and fake.n("um_attribute") == 1
     assert r.config["source_kind"] == "tokens"
-    # plan 0043 (um-v3): the judge gets the token rule of UM's own spec (flat_types), never the
+    # plan 0056 (um-v3): the judge gets the token rule of UM's own spec (flat_types), never the
     # bare SUMMARY_NOTE_TOKENS
     user = next(u for n, _s, u in fake.calls if n == "um_attribute")
     assert digest.token_note_of("user_modeling") in user and digest.SUMMARY_NOTE_TOKENS not in user

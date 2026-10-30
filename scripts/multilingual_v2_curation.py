@@ -1,4 +1,4 @@
-"""Hand-reviewed curation tables of the four multilingual v2 banks (plan 0040 §3), read only by
+"""Hand-reviewed curation tables of the four multilingual v2 banks (plan 0054 §3), read only by
 ``scripts/build_multilingual_v2.py``. Every entry is a judgment call written down once, so the
 builder stays deterministic. Prompts, targets and ids are never changed here."""
 

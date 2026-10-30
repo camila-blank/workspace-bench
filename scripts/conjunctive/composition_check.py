@@ -1,4 +1,4 @@
-"""Lexical composition diagnostic for conjunctive_association (plan 0037 C2; no LLM).
+"""Lexical composition diagnostic for conjunctive_association (plan 0049 C2; no LLM).
 
 For every passing row of a ``results.json``, does the judge's own quote contain a bank ``credit``
 word for EACH of the item's ``varied_axes`` (word-bounded, case-folded; an axis with several

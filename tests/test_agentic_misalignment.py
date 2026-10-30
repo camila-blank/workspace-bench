@@ -642,7 +642,7 @@ def test_tokens_kind_goes_straight_to_stage_a(tmp_path, fake_text, am_args):
 
 
 def test_lite_and_layers(tmp_path, fake_text, am_args):
-    """Plan 0038 §3/§5: the retired opts=stride= is replaced by reads=lite (every 16th position +
+    """Plan 0052 §3/§5: the retired opts=stride= is replaced by reads=lite (every 16th position +
     the last 8, via reads.load); layers= still restricts the layers."""
     seen: list[str] = []
 

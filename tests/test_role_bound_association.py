@@ -71,7 +71,7 @@ def test_blocks_match_source_golden():
 
 
 def test_rendered_prompt_matches_golden_v1_builder():
-    # plan 0042 C3.1: renamed from test_rendered_prompt_matches_golden; the PV and schema
+    # plan 0055 C3.1: renamed from test_rendered_prompt_matches_golden; the PV and schema
     # asserts moved to test_rendered_prompt_matches_golden_v2 (the v1 golden is unchanged)
     bank = load_bank("role_bound_association")
     block, _ = build_block(bank[0], bank)
@@ -258,7 +258,7 @@ def _responder(system, user):
 
 
 def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
-    # plan 0042 C3.1 (sanctioned rewrite): scripted answers carry a quote, golds come from the
+    # plan 0055 C3.1 (sanctioned rewrite): scripted answers carry a quote, golds come from the
     # v2 golden, native via conftest.native_args (mk_args); the numbers are kept
     fake = fake_llm(_responder)
     args = mk_args(_scripted(tmp_path), items=[AB, BA])
@@ -370,7 +370,7 @@ def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_
 
 
 def test_tokens_native_judges_raw_list(tmp_path, fake_llm, mk_args):
-    # replaces test_tokens_kind_routes_through_summarizer (deleted, plan 0032 §2.3 / 0042 C1.7)
+    # replaces test_tokens_kind_routes_through_summarizer (deleted, plan 0032 §2.3 / 0055 C1.7)
     rows = [{"id": AB, "layer": 20, "pos": 1, "tokens": ["Marcus", "chased", "Dylan"],
              "scores": [3.0, 2.0, 1.0]}]  # fmt: skip
     path = write_jsonl(tmp_path / "t.jsonl", rows)

@@ -1,5 +1,5 @@
 """Multilingual (multi-token): the concept in English or the model's native language AND the
-language's name, regex contract on the v2 bank (plan 0040)."""
+language's name, regex contract on the v2 bank (plan 0054)."""
 
 from pathlib import Path
 

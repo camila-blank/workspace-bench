@@ -36,7 +36,7 @@ POEM = [
 
 def test_every_family_plans_and_rows_serialize():
     fams = readplan.families()
-    assert len(fams) == 34  # + 4 (plan 0016), - ttt (0017), + unverbalized_hint, + 2 (0027),
+    assert len(fams) == 32  # + 4 (plan 0016), - ttt (0017), + unverbalized_hint, + 2 (0027),
     # - brew_intermediates (0029), - wrong_bridge_true (2026-10-30), - hallucination (0040),
     # - multihop_mt (removed 2026-10-30)
     for fam in fams:
@@ -70,7 +70,7 @@ def test_plans_match_the_bank_specs():
     conj = readplan.plan("conjunctive_association")[0]
     assert conj.layers == readplan.GRID and conj.suffix == readplan.SUMMARIZE_SUFFIX
     assert conj.lite_positions == {"kind": "final_token"} and conj.lite_layers is None
-    multihop = readplan.plan("multihop")  # plan 0036 C2 (sanctioned): full = every token
+    multihop = readplan.plan("multihop")  # plan 0048 C2 (sanctioned): full = every token
     assert {s.positions["kind"] for s in multihop} == {"all_from_end"}
     assert {s.lite_positions["kind"] for s in multihop} == {"offset_from_end"}
     poetry = readplan.plan("poetry")[0]
@@ -276,7 +276,7 @@ def test_relational_reads_from_full_stop():
 
 
 def test_user_modeling_reads_every_position():
-    """Camila 2026-10-30 ("We should read at all positions", plan 0043): the UM full read is
+    """Camila 2026-10-30 ("We should read at all positions", plan 0056): the UM full read is
     every token of the chat render (system turn, user turn, template tail); lite = the final
     token, a subset of it."""
     rows = readplan.plan("user_modeling")

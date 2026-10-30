@@ -1,5 +1,5 @@
 """Basic readout (multi-token): a question whose answer is one multi-word name, read at every
-position of the chat render; the MC judge with the name gate is the instrument (plan 0037)."""
+position of the chat render; the MC judge with the name gate is the instrument (plan 0051)."""
 
 from pathlib import Path
 

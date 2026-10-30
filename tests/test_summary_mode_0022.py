@@ -360,7 +360,7 @@ def test_chain_end_to_end_numbers_digest(tmp_path, monkeypatch, _registered):
 
 
 def test_um_summary_credits_synonyms_native_unchanged():
-    # plan 0043 (um-v3): native and summary share ONE echo standard, the plan-0022 summary one
+    # plan 0056 (um-v3): native and summary share ONE echo standard, the plan-0022 summary one
     for s in (um.UM_ATTRIBUTE_USER_SUMMARY, um.UM_ATTRIBUTE_USER):
         assert um.SUMMARY_ECHO in s and um.SUMMARY_BASIS in s
         assert '"Danish" where the prompt says Denmark' in s and "a form of that word" in s

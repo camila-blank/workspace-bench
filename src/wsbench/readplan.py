@@ -114,7 +114,7 @@ def frozen_lite_rule(family: str) -> dict[str, Any]:
 
 
 def _adapted_offset(rule: dict[str, Any], header: dict[str, Any]) -> bool:
-    """role_bound plan 0042 C3.3: an ``offset_from_end`` lite rule counts positions of the Qwen
+    """role_bound plan 0055 C3.3: an ``offset_from_end`` lite rule counts positions of the Qwen
     chat tail, so an adapted bank (``$WSB_BANK_ROOT``) reads ``final_token`` instead unless its
     header's ``readout`` block names a ``lite`` source key."""
     if not os.environ.get(BANK_ROOT_ENV) or rule.get("kind") not in (
@@ -384,7 +384,7 @@ def _final_token_families_items(
         item_lite = lite
         spec = it.get("readout") or {}
         if spec.get("kind") == "question_through_end":
-            # plan 0039 (basic_readout v2): every token from the first token of the user question
+            # plan 0053 (basic_readout v2): every token from the first token of the user question
             # through the prefilled answer stem; lite = the bank's lite rule (the stem's ":")
             out.append(
                 ReadSpec(
@@ -405,7 +405,7 @@ def _final_token_families_items(
             k = -int(spec["offsets"][0])
             rule = {"kind": "final_token"} if k == 1 else {"kind": "offset_from_end", "k": k}
         elif spec.get("kind") == "all_positions":
-            # every token of the render (wrong_bridge v2, plan 0037); the bank's `lite` key is
+            # every token of the render (wrong_bridge v2, plan 0050); the bank's `lite` key is
             # the reads=lite site, copied into the plan row (the judge never reads the bank for it)
             rule = {"kind": "all"}
             item_lite = dict(spec.get("lite") or FINAL)
@@ -622,7 +622,7 @@ def _plan(family: str) -> list[ReadSpec]:
         ]
     if family == "multihop":
         return _multihop()
-    if family == "basic_readout_mt":  # plan 0037: a question, every position of the chat render
+    if family == "basic_readout_mt":  # plan 0051: a question, every position of the chat render
         _h, items = _bank(family)
         out = []
         for it in items:
@@ -646,6 +646,7 @@ def _plan(family: str) -> list[ReadSpec]:
                 )
             else:  # the v1 completion bank (WSB_BANK_FILE_BASIC_READOUT_MT=items.json)
                 out += _final_token_families_items(family, [it], "plain")
+        return out
     if family == "multihop_mt_v2":
         # bank v2 (plan 0041; Camila 2026-10-30: "read at every token not just final position
         # (except lite/fast should be last token)"): the item's `readout` block is the source,

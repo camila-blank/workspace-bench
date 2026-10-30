@@ -242,7 +242,7 @@ def test_macro_still_excludes_design_score():
 
 
 def test_markdown_table_omits_removed_family_rows():
-    # plan 0033: a stale results.json of a removed family (brew_intermediates, ttt_move) in an
+    # plan 0047: a stale results.json of a removed family (brew_intermediates, ttt_move) in an
     # old run dir printed a full score row with no floor; it now appears only as "Not in macro"
     rs = [
         _res("brew_intermediates", value=0.905),

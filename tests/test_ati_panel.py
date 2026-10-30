@@ -559,7 +559,7 @@ def test_regex_multi_unit_families_count_any_unit_for_the_gate(tmp_path):
         {"id": "b", "pass": False, "any_hit": False},
         {"id": "c", "pass": None, "any_hit": False},  # a missing layer stays undecided
     ]
-    # plan 0040 item 10: the multilingual families gate on content_hit instead
+    # plan 0054 item 10: the multilingual families gate on content_hit instead
     # (test_multilingual_gate_ignores_language_unit); typo_mt is out of ATI by design (plan 0033)
     for fam in ("basic_readout_mt",):
         p = tmp_path / fam / "results.json"

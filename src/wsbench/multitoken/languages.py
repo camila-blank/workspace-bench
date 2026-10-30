@@ -1,4 +1,4 @@
-"""The language table of the four multilingual families' v2 banks (plan 0040 B1).
+"""The language table of the four multilingual families' v2 banks (plan 0054 B1).
 
 ``LANGUAGES[code].names[k]`` is the language's NAME written in language ``k``: ``en`` (the
 English name), ``zh`` (the Chinese name) and the language's own code (the autonym, with the

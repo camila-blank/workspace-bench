@@ -1,4 +1,4 @@
-"""The prompts this family sends (plan 0039): the blind forced-choice bank judge
+"""The prompts this family sends (plan 0053): the blind forced-choice bank judge
 (``basic/mcjudge_basic.py``), the shared token note rendered from this family's flat types, and
 the digest's judge-side notes in summary mode."""
 

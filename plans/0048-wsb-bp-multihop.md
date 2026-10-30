@@ -1,4 +1,4 @@
-# Plan 0036 — workstream spec: `multihop` (single-token basic family), round 3
+# Plan 0048 — workstream spec: `multihop` (single-token basic family), round 3
 
 Code of record: `/root/wsb-bp-base` @ `cd6b0fa`. Feedback: `/workspace/root/wsb-bp/notes/feedback.md`,
 section **multihop** (4 sentences + 1 worked example) plus GENERAL / D1-D10.

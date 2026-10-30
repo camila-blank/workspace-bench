@@ -1056,9 +1056,9 @@ verdicts plus any G9 audit failure for this family under New errors found.
 
 ---
 
-## 7. As implemented (PR for plan 0039, 2026-10-30)
+## 7. As implemented (PR for plan 0053, 2026-10-30)
 
-Spec copied verbatim above from the campaign's `basic_readout.md` (round 3); plan number 0039
+Spec copied verbatim above from the campaign's `basic_readout.md` (round 3); plan number 0053
 (0033-0038 are claimed by the sibling campaign PRs). Where the implementation differs:
 
 - **Gate outcome.** 242 candidates gated on Qwen3.6-27B in the eval render (3 Modal jobs, 1 H200

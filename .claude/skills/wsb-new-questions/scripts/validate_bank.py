@@ -697,7 +697,7 @@ def check_guards(
 def bank_name(repo: Path, family: str) -> str:
     """The file name of the family's registered bank (``EvalSpec.bank``: ``items.json``, or a
     versioned ``items_v<N>.json`` once the family switched, plan 0032 §2.12; the multilingual
-    families judge ``items_v2.json`` since plan 0040)."""
+    families judge ``items_v2.json`` since plan 0054)."""
     for name in sorted((repo / "evals" / family).glob("items_v*.json"), reverse=True):
         init = repo / "src" / "wsbench" / "evals" / family / "__init__.py"
         if init.exists() and name.name in init.read_text(encoding="utf-8"):

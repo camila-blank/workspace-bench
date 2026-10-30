@@ -19,13 +19,13 @@ CHANGED_BY_FAMILY_PRS: set[str] = {
     "introspection",  # plan 0045 bank v2
     # plan 0043 C1: full plan final_token -> suffix_text (bank byte-identical); re-judge at R8
     "relational_multihop",
-    "user_modeling",  # plan 0043: full plan reads every position (re-judge at gpu R8)
+    "user_modeling",  # plan 0056: full plan reads every position (re-judge at gpu R8)
     "knowledge_cutoff",  # plan 0044: bank v2 (cs01301 out)
     "moral_rationale",  # plan 0046: bank v2 + every-position plan
     "association",  # plan 0039: bank v2 + summarize-suffix plan
-    "basic_readout",  # plan 0039: v2 bank (question form)
-    "wrong_bridge",  # plan 0037: bank v2 (mc block, all positions)
-    "basic_readout_mt",  # plan 0037: bank v2 (question form)
+    "basic_readout",  # plan 0053: v2 bank (question form)
+    "wrong_bridge",  # plan 0050: bank v2 (mc block, all positions)
+    "basic_readout_mt",  # plan 0050: bank v2 (question form)
     # plan 0040: v2 banks (units, natural forms, names-only language units) and the
     # all-positions read plan; prompts and the last read position are unchanged, so the
     # re-gate is re-judge only (test_multilingual.py::test_multilingual_panel_prompt_sha_...)
