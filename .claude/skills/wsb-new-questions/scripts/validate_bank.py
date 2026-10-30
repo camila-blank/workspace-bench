@@ -438,6 +438,11 @@ def check_schema(
                     f"contract.{k}={c.get(k)} differs from the frozen bank ({fc.get(k)}): "
                     "a different instrument"
                 )
+        langs = c.get("native_langs")
+        if not langs:  # plan 0032 §2.10: measured per subject (references/gating.md §0)
+            err("contract block lacks 'native_langs' (ISO codes, English first; gating.md §0)")
+        elif not isinstance(langs, list) or langs[0] != "en":
+            err(f"contract.native_langs={langs!r}: a list of ISO codes with 'en' first")
     candidate = is_candidate(family, items)
     if candidate:
         print(
