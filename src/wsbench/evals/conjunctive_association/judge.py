@@ -54,6 +54,62 @@ BPE_JUNK = re.compile(r"[ĠĊ▁]")  # tokens arrive decoded (no-op on them); pr
 
 Opts = tuple[list[str], int, int | None]
 
+# re-audit r2 (round 3): the all-layer union digest runs ~58K chars / ~237 lines per item against
+# ~5.7K at one layer, and lone gold lines present in it were missed in 2 of 3 draws. A digest
+# longer than SHARD_CHARS is judged in consecutive line shards of at most SHARD_CHARS each, every
+# shard with the full 3-draw MC and quote gate; the item passes when one shard's majority is
+# gold and no shard's majority is the inverted twin. Every single-layer digest (max ~7.3K) is ONE
+# shard, judged and keyed exactly as before.
+SHARD_CHARS = 8000
+SHARD_VERSION = "+shard8k"
+
+
+def shard_digest(
+    text: str, evidence: Sequence[digest.Line], cap: int | None = None
+) -> list[tuple[str, list[digest.Line]]]:
+    """``[(shard text, its evidence lines)]``: consecutive rendered lines, at most ``cap`` chars a
+    shard (a longer line is a shard alone). Extractive digests render one line per evidence line,
+    so each shard's quotes verify against its own lines; otherwise every shard keeps them all."""
+    cap = SHARD_CHARS if cap is None else cap
+    lines = text.split("\n") if text else [""]
+    paired = len(lines) == len(evidence)
+    out: list[tuple[str, list[digest.Line]]] = []
+    cur: list[int] = []
+    size = 0
+    for i, ln in enumerate(lines):
+        if cur and size + 1 + len(ln) > cap:
+            out.append(_shard(lines, cur, evidence, paired))
+            cur, size = [], 0
+        cur.append(i)
+        size += len(ln) + (1 if size else 0)
+    out.append(_shard(lines, cur, evidence, paired))
+    return out
+
+
+def _shard(
+    lines: list[str], idx: list[int], evidence: Sequence[digest.Line], paired: bool
+) -> tuple[str, list[digest.Line]]:
+    text = "\n".join(lines[i] for i in idx)
+    return text, [evidence[i] for i in idx] if paired else list(evidence)
+
+
+def unit_id(iid: str, j: int, n: int) -> str:
+    """A shard's unit id: the item id itself for a one-shard digest (keys unchanged)."""
+    return iid if n == 1 else f"{iid}@s{j}"
+
+
+def shards_pick(picks: Sequence[str]) -> str:
+    """The item pick over its shards' picks: any inverted shard vetoes; else an undecided shard
+    leaves the item undecided (it could be gold or inverted); else any gold shard passes; else
+    the first shard's pick."""
+    if "inverted" in picks:
+        return "inverted"
+    if "api_fail" in picks:
+        return "api_fail"
+    if "gold" in picks:
+        return "gold"
+    return picks[0]
+
 
 def norm_token(t: str) -> str:
     t = BPE_JUNK.sub(" ", t)
@@ -570,24 +626,30 @@ def _run_summary(
         source_kind = digest.as_prose(rep)
         note = digest.summary_note(args, source_kind, family=FAMILY)
         judged = [iid for iid in kept if iid not in col.unsummarized and iid not in col.empty]
+        shards = {
+            iid: shard_digest((col.cells[iid].samples or ("",))[0], list(col.evidence.get(iid, ())))
+            for iid in judged
+        }
+        units = {
+            unit_id(iid, j, len(shards[iid])): (iid, sh)
+            for iid in judged
+            for j, sh in enumerate(shards[iid])
+        }
         calls = [
             Call(
-                draw_key(f"{iid}|L{digest.SUMMARY_LAYER}", k),
+                draw_key(f"{u}|L{digest.SUMMARY_LAYER}", k),
                 SYSTEM_SUMMARY,
-                prompts.render_user_summary(
-                    note,
-                    (col.cells[iid].samples or ("",))[0],
-                    prompts.render_question(options[iid][0]),
-                ),
+                prompts.render_user_summary(note, sh[0], prompts.render_question(options[iid][0])),
                 {
-                    "id": iid,
+                    "id": u,
+                    "item": iid,
                     "draw": k,
                     "gold_pos": options[iid][1],
                     "contrast_pos": options[iid][2],
                     "n_shown": len(options[iid][0]),
                 },
             )
-            for iid in judged
+            for u, (iid, sh) in units.items()
             for k in range(n)
         ]
         results = (
@@ -608,16 +670,16 @@ def _run_summary(
         )
         draws: dict[str, list[dict]] = defaultdict(list)
         for c in calls:
-            iid, r = c.meta["id"], results.get(c.key)
-            draws[iid].append(
+            u, iid, r = c.meta["id"], c.meta["item"], results.get(c.key)
+            draws[u].append(
                 dict(_FAILED_DRAW)
                 if r is None
                 else gate.verdict(
-                    by_it[iid],
+                    {**by_it[iid], "id": u},
                     options[iid],
                     choice_of(r),
                     quote_of(r),
-                    list(col.evidence.get(iid, ())),
+                    units[u][1][1],
                     by_cells[iid],
                     system=SYSTEM_SUMMARY,
                     draw=c.meta["draw"],
@@ -638,9 +700,25 @@ def _run_summary(
                 # not judged: a fail through the empty path, or an unjudged unit
                 pick = "empty" if iid in col.empty else "unsummarized"
                 row.update({"pick": pick, "correct": False, "quote": "", "quote_ok": False})
-            else:
+            elif len(shards[iid]) == 1:
                 row.update(gate.combine(iid, draws[iid]))
                 n_api_failed += row["pick"] == "api_fail"
+            else:
+                us = [unit_id(iid, j, len(shards[iid])) for j in range(len(shards[iid]))]
+                per = [gate.combine(u, draws[u]) for u in us]
+                pick = shards_pick([x["pick"] for x in per])
+                rep_ = next((x for x in per if x["pick"] == pick), per[0])
+                row.update(
+                    {
+                        **rep_,
+                        "pick": pick,
+                        "correct": pick == "gold",
+                        "n_shards": len(us),
+                        "shard_picks": [x["pick"] for x in per],
+                        "shard_of_pick": per.index(rep_),
+                    }
+                )
+                n_api_failed += pick == "api_fail"
             row.update(col.row(iid))
             rows.append(row)
     counts = base_counts(
@@ -650,9 +728,25 @@ def _run_summary(
         skipped_rows=sum(rep.skipped.values()),
         spend=spend,
     )
-    stamp = digest.prompt_version(PROMPT_VERSION + RULE_VERSION + draws_stamp(n), args, FAMILY)
+    n_shards = {iid: len(sh) for iid, sh in shards.items()}
+    sharded = any(v > 1 for v in n_shards.values())
+    stamp = digest.prompt_version(
+        PROMPT_VERSION + RULE_VERSION + draws_stamp(n) + (SHARD_VERSION if sharded else ""),
+        args,
+        FAMILY,
+    )
+    if sharded:  # any shard may pass: the floor of the rule actually used
+        chance = score.mean_chance(
+            [options[i][0] for i in judged], n, shards=[n_shards[i] for i in judged]
+        )
     config = base_config(
-        args, stamp, char_cap=None, draws=n, **digest.config(args, source_kind, FAMILY)
+        args,
+        stamp,
+        char_cap=None,
+        draws=n,
+        shard_chars=SHARD_CHARS,
+        n_shards_max=max(n_shards.values(), default=1),
+        **digest.config(args, source_kind, FAMILY),
     )
     return with_readout_count(
         score.score(
