@@ -15,7 +15,7 @@ BANK = load_bank("role_bound_association")
 
 def test_version_is_stamped():
     raw = json.loads(gate.LEXICON.read_text(encoding="utf-8"))
-    assert raw["version"] == LEX.version == prompts.ROLES_LEXICON == "roles-v1.1"
+    assert raw["version"] == LEX.version == prompts.ROLES_LEXICON == "roles-v1.2"
 
 
 def test_every_bank_role_has_terms():

@@ -315,17 +315,33 @@ def _person_of(label: str) -> tuple[str, str] | None:
     return name, role
 
 
-def option_named(quote: str, label: str, lex: gate.Lexicon) -> bool:
-    """A shown person option is named in ``quote``: by its name or a lexicon term of its role
-    (``gate.person_ref``), or by its role or one of the terms shown beside it
-    (:func:`role_terms_shown`, the same rule for every option, gold or distractor)."""
+def _role_words(role: str, lex: gate.Lexicon) -> list[str]:
+    """Every term a role is matched by: its lexicon terms (every role an option can show has an
+    entry since roles-v1.2) and the terms shown beside its option."""
+    return list(dict.fromkeys([role, *lex.terms(role), *role_terms_shown(role, lex)]))
+
+
+def option_named(
+    quote: str, label: str, lex: gate.Lexicon, counterpart_label: str | None = None
+) -> bool:
+    """A shown person option is named in ``quote``: by its name or a term of its role
+    (``gate.person_ref``, the other picked person's role never a conflicting attachment), or by
+    its role or a term shown beside it (:func:`role_terms_shown`). The same rule for every
+    option, gold or distractor."""
     p = _person_of(label)
     if p is None:
         return False
     name, role = p
-    if gate.person_ref(quote, name, role, lex):
+    cp = _person_of(counterpart_label) if counterpart_label else None
+    if gate.person_ref(quote, name, role, lex, counterpart=cp[1] if cp else None):
         return True
-    return mc.form_in(gate.split_scripts(quote), [role, *role_terms_shown(role, lex)])
+    return mc.form_in(gate.split_scripts(quote), _role_words(role, lex))
+
+
+def _objects(label: str, lex: gate.Lexicon) -> list[str]:
+    """The words that name a person option as the object of an action (``gate.action_ref``)."""
+    p = _person_of(label)
+    return [] if p is None else [p[0], *_role_words(p[1], lex)]
 
 
 def pick_problems(
@@ -352,10 +368,10 @@ def pick_problems(
         out.append("the quote is not a verbatim span of the readouts")
     elif not digest.quote_ok(quote, digest.statement_lines(lines, cells)):
         out.append(f"the quote runs across two statements (a {prompts.BULLET_MARK} mark)")
-    for q, lab in (("Q1", picked[0]), ("Q3", picked[2])):
-        if not option_named(quote, lab, lex):
+    for q, lab, other in (("Q1", picked[0], picked[2]), ("Q3", picked[2], picked[0])):
+        if not option_named(quote, lab, lex, other):
             out.append(f'the quote does not name your {q} pick "{bare_label(lab)}"')
-    if not gate.action_ref(quote, picked[1]):
+    if not gate.action_ref(quote, picked[1], _objects(picked[2], lex)):
         out.append(f'the quote does not state your Q2 pick "{picked[1]}"')
     return out
 
@@ -665,10 +681,14 @@ def _pin_two_person_lines(
         b = blocks[i]
         people = list(b.people)
 
-        def pred(ln: digest.Line, people: list = people, acts: tuple = b.actions) -> bool:
+        objects = [w for lab in people for w in _objects(lab, lex)]
+
+        def pred(
+            ln: digest.Line, people: list = people, acts: tuple = b.actions, objs: list = objects
+        ) -> bool:
             for part in ln.text.split(prompts.BULLET_MARK):
                 n = sum(option_named(part, lab, lex) for lab in people)
-                if n >= 2 and any(gate.action_ref(part, a) for a in acts):
+                if n >= 2 and any(gate.action_ref(part, a, objs) for a in acts):
                     return True
             return False
 
