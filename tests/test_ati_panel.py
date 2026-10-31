@@ -779,3 +779,66 @@ def test_cli_frontier_parsing(value, want):
     t.stage = "gate"
     t.finalize()
     assert t.frontier is None and t.panel_label == ""
+
+
+# ---------------------------------------------------------------- items a missing reader decides
+
+
+def _reduced(status: dict[str, list[str]], order=("qwen", "opus", "astra")) -> dict:
+    return {"status_order": list(order), "status": status}
+
+
+@pytest.mark.parametrize(
+    ("st", "decisive"),
+    [
+        (["solved", "failed", "failed"], True),  # argon solving it takes it out
+        (["undecided", "failed", "failed"], True),  # argon solving / undecided takes it out
+        (["failed", "failed", "failed"], False),  # Qwen failed: ATI whatever argon answers
+        (["solved", "solved", "failed"], False),  # a present frontier reader solved it
+        (["solved", "undecided", "failed"], False),  # unverified or invertible, never ATI
+        (["undecided", "failed", "undecided"], False),
+    ],
+)
+def test_decisive_items_rule(st, decisive):
+    assert ti.decisive_items(_reduced({"x": st})) == (["x"] if decisive else [])
+
+
+def test_decisive_items_two_missing_readers_and_full_panel():
+    # qwen+opus panel (astra and argon missing): Qwen solved, Opus failed -> either can move it
+    e = _reduced({"x": ["solved", "failed"], "y": ["failed", "solved"]}, order=("qwen", "opus"))
+    assert ti.missing_readers(e) == ["astra", "argon"] and ti.decisive_items(e) == ["x"]
+    assert ti.missing_readers({"status": {}}) == [] and ti.decisive_items({"status": {}}) == []
+
+
+def test_frozen_argon_decisive_counts_match_the_statuses():
+    """Every entry recording ``argon_decisive_items`` agrees with its own frozen statuses, and is
+    provisional exactly when that count is non-zero (decision R1-ATI argon)."""
+    frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
+    recorded = {
+        f: e
+        for f, e in frozen.items()
+        if not f.startswith("_") and isinstance(e, dict) and "status_order" in e
+    }
+    assert recorded, "no reduced-panel entry in the ATI file"
+    for fam, e in recorded.items():
+        assert "argon_decisive_items" in e, fam
+        assert ti.missing_readers(e) == ["argon"], fam
+        assert len(ti.decisive_items(e)) == e["argon_decisive_items"], fam
+        assert bool(e.get("provisional")) == (e["argon_decisive_items"] > 0), fam
+        assert "argon unavailable" in e["panel"], fam
+
+
+def test_full_gate_carries_a_cleared_reduced_entry_over(tmp_path, fams, monkeypatch):
+    monkeypatch.setattr(ti, "gated_families", lambda: ["fam", "wrong_bridge"])
+    out = tmp_path / "o"
+    _standard(out)
+    _two_readers(out, "wrong_bridge")
+    dst = tmp_path / "ati.json"
+    ti.gate(out, dst=dst, families=["wrong_bridge"], frontier=[], panel_label=LABEL)
+    d = json.loads(dst.read_text())
+    del d["wrong_bridge"]["provisional"]  # cleared: no item the missing readers could move
+    dst.write_text(json.dumps(d))
+    ti.gate(out, dst=dst)  # full gate: wrong_bridge is skipped, its cleared entry kept
+    written = json.loads(dst.read_text())
+    wb = written["wrong_bridge"]
+    assert wb["panel"] == LABEL and "provisional" not in wb
