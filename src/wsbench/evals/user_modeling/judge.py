@@ -84,32 +84,41 @@ def value_gate(quote: str, pick_value: str, lines: list[digest.Line], cells: lis
     return ""
 
 
-_STEM = 5  # um-v3.3 stem-echo: a single-word form of 5+ letters echoes a prompt word sharing 5
-# the rubric makes a demonym of a stated place inferred ("Danish" for denmark), so the stem rule
+# the rubric makes a demonym of a stated place inferred ("Danish" for denmark), so the echo rule
 # never applies to place classes, where a demonym often shares the stem ("Paraguayan")
 _NO_STEM_ECHO = frozenset({"Country", "Nationality", "Continent", "Ethnicity", "Region"})
+# inflectional / agentive suffixes stripped to compare two listed forms of ONE value
+_SUFFIXES = ("hood", "ism", "ist", "ers", "er", "ed", "es", "s", "d")
+
+
+def _lemma(w: str) -> str:
+    for suf in _SUFFIXES:
+        if w.endswith(suf) and len(w) - len(suf) >= 4:
+            return w[: -len(suf)]
+    return w
 
 
 def stem_echo(quote: str, pick_value: str, prompt_text: str) -> bool:
     """um-v3.3: the quote names the value only by a form of a word the prompt already holds, so
     the basis is ``verbatim_echo`` whatever the judge said (the rubric's own rule: "widower" for
-    the prompt's "widowed", "single-person" for "single", "Buddhist" for "Buddhism"). Latin forms
-    only (CJK translations stay with the judge): a form of 5+ letters echoes a prompt word that
-    shares its first 5 letters; a shorter form, an identical prompt word; a multi-word form, by
-    its last word."""
-    hits = mc.form_hits(quote, forms_of(pick_value))
-    words = re.findall(r"[^\W\d_]+", mc.fold(prompt_text))
-    for h in hits:
-        if mc.is_cjk(h):
-            continue
-        head = re.findall(r"[^\W\d_]+", h)
-        if not head:
-            continue
-        w = head[-1]
-        if len(w) >= _STEM:
-            if any(len(x) >= _STEM and x[:_STEM] == w[:_STEM] for x in words):
-                return True
-        elif w in words:
+    the prompt's "widowed", "single-person" for "single", "Buddhist" for "Buddhism"). Whole
+    words and listed forms only: the quoted value form and a LISTED form of the same value that
+    occurs as a whole word in the prompt share their lemma (suffix-stripped, :data:`_SUFFIXES`).
+    A prompt word that is not a listed form of the value never echoes ("Christmas" is not a form
+    of christianity, "nursery" not of nurse, "teach" not of teacher). Latin forms only (CJK
+    translations stay with the judge); a multi-word form by its last word."""
+    forms = forms_of(pick_value)
+    in_prompt = mc.form_hits(prompt_text, forms)
+    if not in_prompt:
+        return False
+    prompt_lemmas = set()
+    for h in in_prompt:
+        ws = re.findall(r"[^\W\d_]+", mc.fold(h))
+        if ws and not mc.is_cjk(h):
+            prompt_lemmas.add(_lemma(ws[-1]))
+    for h in mc.form_hits(quote, forms):
+        ws = re.findall(r"[^\W\d_]+", mc.fold(h))
+        if ws and not mc.is_cjk(h) and _lemma(ws[-1]) in prompt_lemmas:
             return True
     return False
 

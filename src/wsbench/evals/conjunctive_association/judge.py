@@ -138,7 +138,6 @@ def _excluded(bags: dict[tuple[str, int], str], layers: list[int], rep: LoadRepo
 
 
 N_DRAWS = 3  # F9 (audit 2026-10-31): every judged item is asked N_DRAWS times; majority wins
-QUOTE_JUDGES = 3  # final r1: independent quote-only re-judges of each gold draw's quote
 
 
 def n_draws(args: JudgeArgs) -> int:
@@ -162,28 +161,6 @@ def draws_stamp(n: int) -> str:
 def draw_key(key: str, k: int) -> str:
     """Draw ``k``'s cache key (draw 0 keeps the single-draw key)."""
     return key if k == 0 else f"{key}#d{k}"
-
-
-def quote_key(key: str, draw: int, q: int) -> str:
-    """Quote re-judge ``q`` of draw ``draw`` (q 0 keeps the F9 single re-judge's key)."""
-    base = draw_key(key, draw)
-    return base if q == 0 else f"{base}#q{q}"
-
-
-def quote_verdict(answers: Sequence[object], gold_pos: int, inv: int | None) -> str:
-    """final r1: a gold draw's pick from its quote re-judges: ``gold`` when a majority of
-    :data:`QUOTE_JUDGES` answer the gold; ``api_fail`` while failed calls could still make that
-    majority; ``inverted`` when a majority answer the twin; else ``gold_partial``."""
-    n = len(answers)
-    n_gold = sum(a == gold_pos for a in answers)
-    n_fail = sum(a is None for a in answers)
-    if 2 * n_gold > n:
-        return "gold"
-    if 2 * (n_gold + n_fail) > n:
-        return "api_fail"
-    if inv is not None and 2 * sum(a == inv for a in answers) > n:
-        return "inverted"
-    return "gold_partial"
 
 
 def majority(picks: Sequence[str]) -> str:
@@ -238,22 +215,14 @@ class _Gate:
             bullet = in_lines
         if pick in ("gold", "inverted") and in_statement:
             q = prompts.render_question(shown)
-            # final r1: a gold draw's quote gets QUOTE_JUDGES independent re-judges
-            for k in range(QUOTE_JUDGES if pick == "gold" else 1):
-                self.pending.append(
-                    Call(
-                        quote_key(f"{it['id']}|quote", draw, k),
-                        system,
-                        prompts.render_quote_user(quote, q, tokens=self.tokens),
-                        {
-                            "id": it["id"],
-                            "draw": draw,
-                            "q": k,
-                            "gold_pos": gold_pos,
-                            "inverted_pos": inv,
-                        },
-                    )
+            self.pending.append(
+                Call(
+                    draw_key(f"{it['id']}|quote", draw),
+                    system,
+                    prompts.render_quote_user(quote, q, tokens=self.tokens),
+                    {"id": it["id"], "draw": draw, "gold_pos": gold_pos, "inverted_pos": inv},
                 )
+            )
         return {
             "choice": choice,
             "pick": pick,
@@ -282,30 +251,28 @@ class _Gate:
         )
 
     def apply(self, draws: dict[str, list[dict]], results: dict[str, dict | None]) -> None:
-        """Fold the re-judges into each draw. A gold draw's pick becomes
-        :func:`quote_verdict` of its :data:`QUOTE_JUDGES` re-judges (``failed_stage =
-        "quote_check"`` when undecided by failed calls); an inverted pick stays inverted whatever
-        its one re-judge says. Each re-judged draw records its answers as ``quote_checks`` (None =
-        a failed call) and the first as ``quote_check``; ``checks_draws[id]`` lists the first
-        answer of each re-judged draw in draw order."""
-        answers: dict[tuple[str, int], list[object]] = defaultdict(list)
-        meta: dict[tuple[str, int], dict] = {}
+        """Fold the re-judge into each draw: a gold pick stays gold only when the quote alone
+        re-judges to the gold; to the twin -> ``inverted``; anything else -> ``gold_partial``;
+        a failed call -> ``api_fail`` (``failed_stage = "quote_check"``). Each re-judged draw
+        records its answer as ``quote_check`` (None = a failed call); ``checks_draws[id]`` lists
+        them in draw order."""
         for c in self.pending:
-            r = results.get(c.key)
-            k = (c.meta["id"], c.meta["draw"])
-            answers[k].append(None if r is None else choice_of(r))
-            meta[k] = c.meta
-        for (iid, k), ans in answers.items():
+            iid, k = c.meta["id"], c.meta["draw"]
             d = draws[iid][k]
-            d["quote_check"] = ans[0]
-            d["quote_checks"] = ans
-            self.checks_draws.setdefault(iid, []).append(ans[0])
-            if d["pick"] != "gold":
+            r = results.get(c.key)
+            if r is None:
+                d["quote_check"] = None
+                self.checks_draws.setdefault(iid, []).append(None)
+                if d["pick"] == "gold":
+                    d.update({"pick": "api_fail", "failed_stage": "quote_check"})
                 continue
-            m = meta[(iid, k)]
-            d["pick"] = quote_verdict(ans, m["gold_pos"], m["inverted_pos"])
-            if d["pick"] == "api_fail":
-                d["failed_stage"] = "quote_check"
+            ch = choice_of(r)
+            d["quote_check"] = ch
+            self.checks_draws.setdefault(iid, []).append(ch)
+            if d["pick"] != "gold" or ch == c.meta["gold_pos"]:
+                continue  # an inverted pick stays inverted whatever the quote re-judges to
+            inv = c.meta["inverted_pos"]
+            d["pick"] = "inverted" if inv is not None and ch == inv else "gold_partial"
 
     def combine(self, iid: str, ds: list[dict]) -> dict:
         """An item's row fields from its draws: ``pick`` = :func:`majority` of the draw picks,
@@ -313,9 +280,14 @@ class _Gate:
         with that pick, ``draw_picks`` in order.
         ``n_gold_raw`` / ``n_unverified_bullet`` count items (a majority of raw gold picks; a
         ``gold_unverified`` item whose quote lay in a line but crossed a bullet)."""
-        # final r1: ANY draw whose gold quote re-judged to the gold makes the item gold; else
-        # the F9 majority over the draw picks
-        pick = "gold" if any(d["pick"] == "gold" for d in ds) else majority([d["pick"] for d in ds])
+        pick = majority([d["pick"] for d in ds])
+        # final r1: an inverted draw vetoes a gold majority (the twin was picked or re-judged to),
+        # and a draw whose quote re-judge failed leaves the item undecided (it might have been
+        # gold or inverted)
+        if pick == "gold" and any(d["pick"] == "inverted" for d in ds):
+            pick = "inverted"
+        if any(d.get("failed_stage") == "quote_check" for d in ds):
+            pick = "api_fail"
         rep = next((d for d in ds if d["pick"] == pick), ds[0])
         if "quote_check" in rep:
             self.checks[iid] = rep["quote_check"]
@@ -328,7 +300,6 @@ class _Gate:
             "quote": rep.get("quote", ""),
             "quote_ok": bool(rep.get("quote_ok")),
             "draw_picks": [d["pick"] for d in ds],
-            "quote_checks": rep.get("quote_checks"),
             "n_draws": len(ds),
         }
         if pick == "api_fail":
@@ -372,7 +343,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     for c in cells:
         by_cells[c.id].append(c)
     options = {it["id"]: build_options(it) for it in items}
-    chance = score.mean_chance([o[0] for o in options.values()])
+    chance = score.mean_chance([o[0] for o in options.values()], n_draws(args))
     if digest.summary_mode(args):
         return _run_summary(
             args,
