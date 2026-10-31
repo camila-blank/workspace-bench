@@ -1027,12 +1027,13 @@ def number_flood(line: Line, *, min_distinct: int = 5) -> bool:
     return best >= min_distinct
 
 
-@functools.lru_cache(maxsize=1 << 16)
 @functools.lru_cache(maxsize=1 << 18)
 def _plain(s: str) -> str:
-    """Casefolded, accent-stripped, whitespace-normalised (the support counter's form). Memoised:
-    ``support_of`` folds every bundle line once per key, and the final hierarchical render asks
-    it once per union line over the FULL bundle (tens of thousands of lines per item)."""
+    """Casefolded, accent-stripped, whitespace-normalised (the support counter's form). Memoised
+    with room for 2^18 lines: the final hierarchical render calls ``support_of`` once per union
+    line over the FULL bundle, and an all-layer bundle holds tens of thousands of lines per item
+    (a 2^16 cache cycled on them and missed every time). Worst case ~0.5-1 GB of cached
+    strings for very long lines."""
     s = unicodedata.normalize("NFKD", s.casefold())
     return " ".join("".join(c for c in s if not unicodedata.combining(c)).split())
 

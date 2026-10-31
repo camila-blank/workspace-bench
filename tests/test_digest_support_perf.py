@@ -1,6 +1,6 @@
-"""support_of / _key_hits keep their exact results after the substring precheck and the _plain
-memo (perf fix: the hierarchical final render calls support_of once per union line over the full
-bundle; jailbreak_recognition's all-layer run spent > 1 CPU-hour there)."""
+"""support_of / _key_hits keep their exact results after the substring precheck and the larger
+_plain memo (perf fix: the hierarchical final render calls support_of once per union line over
+the full bundle; jailbreak_recognition's all-layer run spent > 1 CPU-hour there)."""
 
 import re
 
@@ -47,7 +47,6 @@ def test_support_of_buckets_unchanged() -> None:
     assert digest.support_of("absent", lines) == "one"
 
 
-def test_plain_is_memoised() -> None:
-    digest._plain.cache_clear()
-    digest._plain("Ärger"), digest._plain("Ärger")
-    assert digest._plain.cache_info().hits >= 1
+def test_plain_has_one_cache_large_enough_for_an_all_layer_bundle() -> None:
+    assert digest._plain.cache_info().maxsize == 1 << 18
+    assert not hasattr(digest._plain.__wrapped__, "cache_info")  # one cache, not two stacked
