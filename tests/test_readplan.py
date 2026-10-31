@@ -329,10 +329,24 @@ def test_association_reads_summarize_suffix():
     assert got == list(range(4, 23)) and len(got) == 19
 
 
-def test_association_lite_rule():
+def test_association_lite_rule(monkeypatch):
+    # round 3 (gpu R4d): the frozen support-share choice is the assistant header's <|im_start|>
     for s in readplan.plan("association"):
         assert s.lite_positions == readplan.frozen_lite_rule("association")
-        assert s.lite_positions == {"kind": "final_token"} and s.lite_layers is None
+        assert s.lite_positions == {"kind": "offset_from_end", "k": 7} and s.lite_layers is None
+    # it is one of the 19 full sites: the 7th from the end of the real Qwen tail is <|im_start|>
+    toks = ["Os", "Ġtambores", ".", "ĊĊ", "Sum", "mar", "ize", "Ġthe", "Ġpreceding", "Ġstory",
+            "Ġin", "Ġone", "Ġsentence", ".", "<|im_end|>", "Ċ", "<|im_start|>", "assistant", "Ċ",
+            "<think>", "ĊĊ", "</think>", "ĊĊ"]  # fmt: skip
+    full = readplan.resolve(readplan.plan("association")[0].positions, toks)
+    assert toks[full[-7]] == "<|im_start|>"
+    # an adapted bank (another chat template) without its own lite source reads the final token
+    assert readplan._adapted_offset({"kind": "offset_from_end", "k": 7}, {}) is False
+    monkeypatch.setenv(readplan.BANK_ROOT_ENV, "/nonexistent")
+    assert readplan._adapted_offset({"kind": "offset_from_end", "k": 7}, {}) is True
+    assert not readplan._adapted_offset(
+        {"kind": "offset_from_end", "k": 7}, {"readout": {"lite": "x"}}
+    )
 
 
 def test_basic_readout_v2_all_chat_prefill():
