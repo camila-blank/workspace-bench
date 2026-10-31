@@ -5,7 +5,7 @@
 
 The only writer of the vendored file. It refuses (exit 2) an index whose ``git_sha`` is not
 ``HB_SHA`` (a 7+ hex prefix of it is accepted as the argument; the full sha is stored), or whose
-``version`` is not ``hindex-v5`` (decision Q6: the index stays v5). It keeps only the methods
+``version`` is not ``hbindex.VERSION`` (``hindex-v6``, plan 0057). It keeps only the methods
 named in ``evals/hallucinationbench/methods.json`` and, per row, ``method``, ``layer``,
 ``full`` / ``matched`` and each family's ``{v, ci, n, n_items}``. The dev-box ``sources`` paths
 and the per-reader ``safety`` meta are dropped. A refresh is a new commit with a new ``hb_sha``.

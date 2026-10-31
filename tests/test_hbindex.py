@@ -33,7 +33,7 @@ def _cell(v: float, lo: float, hi: float) -> dict:
 FIXTURE = {
     "hb_repo": "github.com/camila-blank/hallucination-bench",
     "hb_sha": "0123456789abcdef0123456789abcdef01234567",
-    "version": "hindex-v5",
+    "version": "hindex-v6",
     "rows": [
         {"method": "m-full", "layer": 20, "full": _cell(0.10, 0.08, 0.12),
          "matched": _cell(0.09, 0.07, 0.11)},
@@ -47,7 +47,7 @@ FIXTURE = {
 
 def test_vendored_index_schema_and_version():
     idx = hbindex.load()
-    assert idx["version"] == "hindex-v5" == hbindex.VERSION
+    assert idx["version"] == "hindex-v6" == hbindex.VERSION
     assert re.fullmatch(r"[0-9a-f]{7,40}", idx["hb_sha"])
     assert idx["hb_repo"] == "github.com/camila-blank/hallucination-bench"
     assert idx["families"] == ["main", "agentic_misalignment", "sibling", "story", "overrefusal"]
@@ -74,14 +74,14 @@ def test_vendored_index_schema_and_version():
 
 
 def test_vendored_numbers_match_hb_results_doc():
-    # HB docs/results/0021_index_v5.md: s3d-rl600 L44 full 12.8 [11.5, 14.0]; jlens has no full
+    # HB docs/results/0022_index_v6.md: s3d-rl600 L44 full 13.2 [12.0, 14.4]; jlens has no full
     got = hbindex.lookup("s3d-rl600", [44])
     assert got is not None
     (row,) = got["rows"]
     assert row["kind"] == "full"
     assert (round(100 * row["value"], 1), [round(100 * x, 1) for x in row["ci"]]) == (
-        12.8,
-        [11.5, 14.0],
+        13.2,
+        [12.0, 14.4],
     )
     jl = hbindex.lookup("jlens", [44])
     assert jl is not None and jl["rows"][0]["kind"] == "matched (no sibling)"
@@ -166,7 +166,7 @@ def test_report_appends_hb_block(tmp_path, capsys):
     capsys.readouterr()
     plain, with_hb = (base / "summary.md").read_text(), (hb / "summary.md").read_text()
     assert "HallucinationBench" not in plain  # no method resolves: no block
-    block = "HallucinationBench index (hindex-v5 @ 8faef7f, lower is better): s3d-rl600 full "
+    block = "HallucinationBench index (hindex-v6 @ b1043b4, lower is better): s3d-rl600 full "
     assert with_hb.startswith(plain) and block in with_hb
     assert with_hb.rstrip().endswith("at L44")
     # the macro value is unchanged: the HB index is a separate number
@@ -181,7 +181,7 @@ def test_report_appends_hb_block(tmp_path, capsys):
     assert hbj["rows"][0]["layer"] == 44 and hbj["rows"][0]["kind"] == "full"
     # the argument wins over run.json
     assert main(["report", f"dir={hb}", "floors=False", "hb_method=jlens"]) == 0
-    assert "jlens matched (no sibling) 2.2% [1.7, 2.7] at L44" in (hb / "summary.md").read_text()
+    assert "jlens matched (no sibling) 2.3% [1.8, 2.9] at L44" in (hb / "summary.md").read_text()
 
 
 def test_run_stores_hb_method_in_run_json(tmp_path):
@@ -211,18 +211,18 @@ def test_vendor_script_refuses_sha_or_version_mismatch(tmp_path):
         "git_sha": FIXTURE["hb_sha"],
         "sources": {"main": ["/workspace/dev-box/path"]},
         "weights": {"family": {"main": 9.0, "sibling": 2.0}},
-        "notes": {"m-full.main": "kept", "other": "dropped", "hindex-v5": "kept"},
+        "notes": {"m-full.main": "kept", "other": "dropped", "hindex-v6": "kept"},
     }
     p = tmp_path / "index.json"
     p.write_text(json.dumps(src))
     out = vend.vendor(p, "0123456", methods)
     assert out["hb_sha"] == FIXTURE["hb_sha"] and out["families"] == ["main", "sibling"]
     assert {r["method"] for r in out["rows"]} == {"m-full"} and "sources" not in out
-    assert set(out["notes"]) == {"m-full.main", "hindex-v5"}
+    assert set(out["notes"]) == {"m-full.main", "hindex-v6"}
     with pytest.raises(ValueError, match="is not HB_SHA"):
         vend.vendor(p, "fedcba9", methods)
-    p.write_text(json.dumps({**src, "version": "hindex-v4"}))
-    with pytest.raises(ValueError, match="is not hindex-v5"):
+    p.write_text(json.dumps({**src, "version": "hindex-v5"}))
+    with pytest.raises(ValueError, match="is not hindex-v6"):
         vend.vendor(p, "0123456", methods)
     assert vend.main([f"SRC={p}", "HB_SHA=0123456", f"DST={tmp_path / 'o.json'}"]) == 2
     assert not (tmp_path / "o.json").exists()
@@ -237,3 +237,17 @@ def test_methods_json_keys_are_campaign_arms():
     assert set(m["methods"].values()) <= present
     # W2.2: mlnla-rl2-2000 is never assumed to equal an HB NLA method
     assert "mlnla-rl2-2000" in m["not_measured"]
+
+
+def test_final_olens_arm_is_mapped_and_full():
+    # plan 0057: the campaign's final O-lens arm (HB plan 0024)
+    m = hbindex.methods()
+    assert m["methods"]["final-olens-rl600-x4"] == "final-olens-rl600-x4"
+    got = hbindex.lookup("final-olens-rl600-x4", list(range(20, 61, 4)))
+    assert got is not None and not got["missing_layers"]
+    assert {r["kind"] for r in got["rows"]} == {"full"}
+    (l44,) = [r for r in got["rows"] if r["layer"] == 44]
+    assert (round(100 * l44["value"], 1), [round(100 * x, 1) for x in l44["ci"]]) == (
+        16.6,
+        [15.1, 18.2],
+    )
