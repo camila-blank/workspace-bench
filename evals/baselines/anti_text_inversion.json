@@ -22,7 +22,7 @@
   "buggy_pass_score": 6,
   "max_refused_share": 0.2,
   "max_unverified_share": 0.2,
-  "written": "2026-10-31T13:03:16+00:00"
+  "written": "2026-10-31T15:15:44+00:00"
  },
  "_not_gated": {
   "jlens_concept_pr": "precision against the J-lens top-10, not a bar a lens clears",
@@ -48,7 +48,7 @@
    "astra": "openai/gpt-6-astra",
    "argon": "google/gemini-4-argon"
   },
-  "instrument": "arith-free-2026-10-30+exact-small+keys-union",
+  "instrument": "arith-free-2026-10-30+exact-int+keys-union",
   "judge_model": "claude-opus-5-5",
   "layers_judged": [
    56,
@@ -63,7 +63,7 @@
    "qwen": [
     0.4262,
     0.4362,
-    0.4463
+    0.4446
    ],
    "opus": [
     0.7752,
@@ -5798,7 +5798,7 @@
     "muladd-096": [
      false,
      true,
-     true
+     false
     ],
     "muladd-097": [
      true,

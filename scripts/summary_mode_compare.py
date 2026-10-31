@@ -46,9 +46,9 @@ BASE_PAIRS: dict[str, dict[str, str]] = {
     "arithmetic_intermediates": {
         "arith-free-batched-2026-09-23": "arith-free-2026-09-23",
         "arith-free-batched-2026-10-30": "arith-free-2026-10-30",  # plan 0036 (no token labels)
-        # final r1: both stamps carry the rule version (+exact-small+keys-union)
-        "arith-free-batched-2026-10-30+exact-small+keys-union": (
-            "arith-free-2026-10-30+exact-small+keys-union"
+        # final r1: both stamps carry the rule version (+exact-int+keys-union)
+        "arith-free-batched-2026-10-30+exact-int+keys-union": (
+            "arith-free-2026-10-30+exact-int+keys-union"
         ),
     },
     # final r1: summary mode pins model-voice reactions (+pins-r1); native is unchanged
