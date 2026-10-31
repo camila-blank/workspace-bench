@@ -515,7 +515,9 @@ def test_dm_restated_concept_reaches_judge(tmp_path, monkeypatch, family):
 
     def dig(user: str) -> dict:
         lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
-        hit = next(ln for ln in lines if "barnacles" in ln)
+        hit = next((ln for ln in lines if "barnacles" in ln), None)
+        if hit is None:  # audit F1: a per-layer digest of a layer without the mention
+            return {"items": []}
         return {"items": [{"statement": "barnacles", "where": "", "evidence": hit}]}
 
     def jud(sy: str, user: str, sc: dict) -> dict:

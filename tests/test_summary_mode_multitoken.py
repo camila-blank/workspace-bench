@@ -10,14 +10,14 @@ from summary_fakes import FakeLLM, digest_lines, summary_args
 from wsbench import digest, registry
 from wsbench.evals.multihop_mt_v2 import SPEC as MH2
 from wsbench.evals.multilingual_mt import SPEC as ML
-from wsbench.multitoken.prompts import PROMPT_VERSION
+from wsbench.multitoken.prompts import PROMPT_VERSION, V2_NAMING_TAG
 from wsbench.multitoken.regex import SCORER_VERSION
 
 HOUR, OCTO = "mlh-ar-hourglass", "mlh-ar-octopus"
 MH = "mh2-coeur-de-lion-brother-charter-q2"
-SUFFIX = "+digest-v4-task-extractive+sj-v9"
+SUFFIX = "+digest-v5-task-extractive+sj-v10"
 # plan 0032 §2.2.2: multilingual_mt's digest records each evidence span's language (summ_lang)
-ML_SUFFIX = "+digest-v4-task-extractive-lang+sj-v9"
+ML_SUFFIX = "+digest-v5-task-extractive-lang+sj-v10"
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,7 @@ def test_regex_one_digest_per_item_and_relaxed_conjunction(tmp_path, monkeypatch
     )
     fake = FakeLLM.install(monkeypatch, _no_judge)
     r = ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR, OCTO]))
-    assert fake.n("digest") == 2 and len(fake.calls) == 2  # no judge call, no interp call
+    assert fake.n("digest") == 2 * 2 and len(fake.calls) == 2 * 2  # no judge call, no interp call
     rows = {x["id"]: x for x in r.rows}
     assert rows[HOUR]["pass"] is True  # one sample names both units
     # natively the units never share a layer; pooled over the evidence samples they do
@@ -97,7 +97,7 @@ def test_token_file_digest_only_and_multiword_reachable_via_joined_line(tmp_path
     args = summary_args(path, tmp_path / "o", SCORER_VERSION, items=[MH])
     args.extra["judge"] = "regex"  # multihop_mt_v2 is MC-scored since plan 0041; regex = opt-in
     r = MH2.run(args)
-    assert fake.n("interp") == 0 and fake.n("digest") == 1  # no per-cell interp-v1 call
+    assert fake.n("interp") == 0 and fake.n("digest") == 1 * 2  # no per-cell interp-v1 call
     assert r.config["source_kind"] == "tokens"
     row = r.rows[0]
     # "Richard I of England" / "John of England" are reachable only on the space-joined lines
@@ -125,7 +125,7 @@ def test_mc_one_call_per_item_unit_and_quote_gate(tmp_path, monkeypatch):
     args = summary_args(path, tmp_path / "o", PROMPT_VERSION, items=[HOUR, OCTO])
     args.extra["judge"] = "mc"
     r = ML.run(args)
-    assert fake.n("digest") == 2 and fake.n("pick") == 4  # 2 items x (concept, language)
+    assert fake.n("digest") == 2 * 2 and fake.n("pick") == 4  # 2 items x (concept, language)
     users = [u for n, _s, u in fake.calls if n == "pick"]
     assert all(digest.SUMMARY_NOTE in u and digest_lines(u) for u in users)
     rows = {x["id"]: x for x in r.rows}
@@ -148,7 +148,7 @@ def test_missing_cell_non_pass_is_undecided_and_no_cell_keeps_native(tmp_path, m
         )
     )
     by = {x["id"]: x for x in r.rows}
-    assert fake.n("digest") == 2  # the cell-less item is never digested
+    assert fake.n("digest") == 3  # 2 + 1 layers; the cell-less item is never digested
     assert by[HOUR]["pass"] is False and by[OCTO]["pass"] is None and by[third]["pass"] is None
     assert "summary" not in by[third] and by[third]["layers"] == {}
     assert r.counts["n_missing_cells"] == 3 and r.counts["n_expected_cells"] == 6
@@ -182,7 +182,7 @@ def _unpin(monkeypatch):
         monkeypatch.delenv(f"WSB_BANK_FILE_{name.upper()}", raising=False)
 
 
-V2_SUFFIX = "+v2" + ML_SUFFIX
+V2_SUFFIX = "+" + V2_NAMING_TAG + ML_SUFFIX
 
 
 def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypatch):
@@ -198,13 +198,13 @@ def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypa
     )
     fake = FakeLLM.install(monkeypatch, _no_judge)
     r = ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR, OCTO]))
-    assert fake.n("digest") == 2 and len(fake.calls) == 2
+    assert fake.n("digest") == 2 * 2 and len(fake.calls) == 2 * 2
     rows = {x["id"]: x for x in r.rows}
     assert {x["id"]: x["pass"] for x in native.rows} == {HOUR: True, OCTO: False}
     assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is True
     assert rows[HOUR]["content_hit"] is True
     assert r.config["prompt_version"] == SCORER_VERSION + V2_SUFFIX
-    assert native.config["prompt_version"] == SCORER_VERSION + "+v2"
+    assert native.config["prompt_version"] == SCORER_VERSION + "+" + V2_NAMING_TAG
 
 
 def _positions_rows(item, layers, texts):
@@ -221,7 +221,8 @@ def test_all_positions_reach_the_digest(tmp_path, monkeypatch):
     path = _write(tmp_path / "r.jsonl", _positions_rows(HOUR, [20, 36], ["a", "b", "c"]))
     fake = FakeLLM.install(monkeypatch, _no_judge)
     ML.run(summary_args(path, tmp_path / "o", SCORER_VERSION, items=[HOUR]))
-    user = next(u for n, _s, u in fake.calls if n == "digest")
+    # audit F1: one digest per read layer; together they carry every position of every layer
+    user = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     headers = re.findall(r"^\[L\d+ pos \d+\]$", user, flags=re.M)
     assert len(headers) == 6 and "[L20 pos 0]" in headers and "[L36 pos 2]" in headers
 

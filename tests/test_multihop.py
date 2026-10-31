@@ -496,8 +496,9 @@ def test_summary_gets_all_positions_and_task_note(tmp_path, monkeypatch):
         tmp_path, monkeypatch, rows, aggregate="summary", items=["atomic-26-symbol"]
     )
     digests = [(s, u) for name, s, u in fake.calls if name == "digest"]
-    assert len(digests) == 1
-    system, user = digests[0]
+    assert len(digests) == 2  # audit F1: one digest per read layer (20, 24), one system prompt
+    assert len({s for s, _u in digests}) == 1
+    system, user = digests[0][0], "\n".join(u for _s, u in digests)
     for layer in (20, 24):
         for p in (-3, -2, -1):
             assert f"[L{layer} pos {p}]" in user

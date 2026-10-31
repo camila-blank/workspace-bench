@@ -37,6 +37,6 @@ def test_prompt_only_uses_family_scorer(name, tmp_path, monkeypatch):
     r = spec.run(summary_args(path, tmp_path / "o", spec.judge.prompt_version, items=ids))
     assert fake.n("digest") == 2
     assert r.config["reads_checked"] == "prompt_only"
-    assert r.config["prompt_version"].startswith(spec.judge.prompt_version + "+digest-v4")
+    assert r.config["prompt_version"].startswith(spec.judge.prompt_version + "+digest-v5")
     assert not r.extras.get("partial_ids")
     assert [row["pass"] for row in r.rows] == [False, False]

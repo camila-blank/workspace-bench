@@ -745,7 +745,8 @@ def test_summary_gets_every_position_and_layer(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _scripted("9", "10 - 1 = 9"), digest=_digest_all)
     spec, args = _args(path, tmp_path / "o", summary=True, layers=(20, 24, 28))
     spec.run(args)
-    (_n, _sys, user) = next(c for c in fake.calls if c[0] == "digest")
+    # audit F1: one digest per read layer; together they carry every cell
+    user = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     for row in (json.loads(x) for x in path.read_text().splitlines()):
         assert f"[L{row['layer']} pos {row['pos']}]" in user, row
 

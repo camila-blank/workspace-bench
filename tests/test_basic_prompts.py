@@ -11,7 +11,10 @@ PINNED = {
     # the token note in its TARGETS form (review of PR #140)
     # re-pinned by plan 0050 (wrong_bridge / wrong_bridge_true task-note lines deleted before any
     # result was stamped bank-2026-10-30b; the sha constant only)
-    "bank-2026-10-30b": "62c6de61dd14d8c467976599ac0151945ff3a9c534f15b7ec0849023edaa1838",
+    # re-pinned by the audit-fix digest PR (F1/F2: digest.SUMMARY_NOTE* rewritten for per-claim
+    # counts and the per-layer merge; those strings are versioned by digest.SUMMARY_JUDGE_VERSION
+    # sj-v10, in every summary-mode stamp; no native bank prompt changed; the sha constant only)
+    "bank-2026-10-30b": "13dc65e2609121da2d0e8f6295274ef381ebab80d9b23734b4a8f67d8b652fea",
 }
 
 

@@ -14,6 +14,7 @@ from wsbench.cli import main
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.multitoken import family as fam
 from wsbench.multitoken import regex
+from wsbench.multitoken.prompts import V2_NAMING_TAG
 from wsbench.multitoken.regex import SCORER_VERSION, ScoredUnit
 from wsbench.results import read_results
 
@@ -322,7 +323,11 @@ def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monke
     assert "[regex]" in capsys.readouterr().out
     # plan 0033 M1: typo_mt's v2-bank tag; plan 0054 item 5: the multilingual regex families
     # register the v2 bank tag
-    tag = {"typo_mt": "+typo-v2", "multilingual_mt": "+v2", "multilingual_typo": "+v2"}
+    tag = {
+        "typo_mt": "+typo-v2",
+        "multilingual_mt": "+" + V2_NAMING_TAG,
+        "multilingual_typo": "+" + V2_NAMING_TAG,
+    }
     assert spec.scorer == "regex" and spec.judge.prompt_version == SCORER_VERSION + tag.get(
         name, ""
     )

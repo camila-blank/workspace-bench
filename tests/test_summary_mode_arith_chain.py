@@ -22,8 +22,10 @@ from wsbench.evals.chain_intermediates.prompts import SYSTEM_SUMMARY as CHAIN_SY
 
 def _legacy_args(*a, **kw):
     """These tests pin the plan 0020 evidence gate, so they run without the plan 0022 numbers
-    digest (``summ_numbers=0``); the numbers digest has its own tests."""
-    kw["extra"] = {"summ_numbers": "0", **kw.get("extra", {})}
+    digest (``summ_numbers=0``); the numbers digest has its own tests. A real (numbers) digest
+    of these families runs joint, so the legacy one does too (``summ_layers=joint``; audit F1
+    made the per-layer union the default for non-numbers digests)."""
+    kw["extra"] = {"summ_numbers": "0", "summ_layers": "joint", **kw.get("extra", {})}
     return summary_args(*a, **kw)
 
 
@@ -110,7 +112,7 @@ def test_arith_one_call_per_item_all_positions(tmp_path, monkeypatch):
     assert rows["addmul-000"]["pass"] is False
     assert "summary_evidence" in rows["sign-062"] and "earliest_layer" not in rows["sign-062"]
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v4-task-extractive+sj-v9"
+    assert r.config["prompt_version"] == f"{ARITH_PV}+digest-v5-task-extractive-joint+sj-v10"
     assert "per_layer_hit_rate" not in r.extras and r.extras["summary"]["n_items_summarized"] == 3
 
     native = ARITH.run(
@@ -249,7 +251,7 @@ def test_chain_any_of_3_all_positions(tmp_path, monkeypatch, chain_v1):
     assert "layer_protocols" not in r.extras and "null_top1_near" not in r.extras
     assert r.extras["null_near"] == 0.0
     assert r.config["aggregate"] == "summary" and r.config["cells"] == "all"
-    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v4-task-extractive+sj-v9"
+    assert r.config["prompt_version"] == f"{CHAIN_PV}+digest-v5-task-extractive-joint+sj-v10"
 
     native = CHAIN.run(
         _chain_args(

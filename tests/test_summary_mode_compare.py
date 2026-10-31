@@ -221,11 +221,17 @@ class _RandomLLM:
 
 
 def _oracle(orig, rng: random.Random):
+    # one coin per judged question: the repeated draws of a multi-draw judge (keys ``…#d<k>``,
+    # audit F9) agree, as a consistent judge would, so a majority over draws can still pass
+    coins: dict[str, bool] = {}
+
     def run_calls(calls, **kw):
         res = orig(calls, **kw)
         for c in calls:
             r = res.get(c.key)
-            if not isinstance(r, dict) or rng.random() < 0.5:
+            base = re.sub(r"#d\d+$", "", c.key)
+            skip = coins.setdefault(base, rng.random() < 0.5)
+            if not isinstance(r, dict) or skip:
                 continue
             m = c.meta or {}
             if "golds" in m:

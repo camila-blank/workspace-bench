@@ -737,8 +737,11 @@ def _run_summary(
     return with_readout_count(result, scope, cells)
 
 
-_EXTRACTIVE_SUPPORT = re.compile(r"\[(one|few|several|many)\] ")
-_ABSTRACTIVE_SUPPORT = re.compile(r"\[support: (one|few|several|many)\] — evidence: \"")
+# digest-v5 (audit F2): the marker is the per-claim count, "[N samples]" / "[N samples, M layers]";
+# the digest-v4 bucket words are still read (cached v4 digests)
+_SUPPORT = rf"one|few|several|many|{digest.SUPPORT_PATTERN}"
+_EXTRACTIVE_SUPPORT = re.compile(rf"\[({_SUPPORT})\] ")
+_ABSTRACTIVE_SUPPORT = re.compile(rf"\[support: ({_SUPPORT})\] — evidence: \"")
 
 
 def _read_site_tokens(cells: Sequence[Cell], rep: LoadReport) -> dict[str, dict[int, str]]:

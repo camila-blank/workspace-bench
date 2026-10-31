@@ -194,8 +194,8 @@ def order_gate(
 
     ``prominence`` (default ``statements``) = the statements that rule counts over. Summary mode
     passes every loaded cell's statements: its digest keeps ONE sample line per entry (support
-    shown as [many]/[one]), so counting the digest's lines would tie a gold seen in many samples
-    with a rival seen once."""
+    shown as a per-claim count), so counting the digest's lines would tie a gold seen in many
+    samples with a rival seen once."""
     fq = fold(quote)
     if not fq or "|" in fq:
         return "order"

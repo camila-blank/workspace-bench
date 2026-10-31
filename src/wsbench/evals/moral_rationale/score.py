@@ -36,7 +36,7 @@ def _kind_rate(label: str, elig: list[str], by_item: dict[str, list[dict]]) -> d
 
 
 def _subset(scope: list[dict], ok: dict[str, bool], keep: bool) -> dict:
-    ids = [it["id"] for it in scope if bool(it.get("gate_pass", True)) is keep]
+    ids = [it["id"] for it in scope if bool(it.get("gate_pass", True)) is keep and it["id"] in ok]
     n_pass = sum(ok[i] for i in ids)
     return {"n": len(ids), "pass": n_pass, "rate": _rate(n_pass, len(ids))}
 
@@ -70,13 +70,16 @@ def score(
     n_items_scope: int | None = None,
     pinned: bool | None = None,
     kinds: dict[str, list[str]] | None = None,
+    undecided: set[str] | frozenset[str] = frozenset(),
 ) -> FamilyResult:
     """Native scoring, or summary mode (``summary`` = ``Collapse.extras()``): one row per item
     and side, the 5% empty rule taken against ``n_items_scope`` items; ``pinned`` is
     ``digest.pinned``. ``kinds`` = ``{"opposite": [ids], "same_side": [ids]}``: the items whose
     lists carry an option of that kind (the denominators of ``extras.opposite`` /
     ``extras.same_side``). No grid floor is computed (plan 0046 §2.3: with all-position reads
-    the 1-(5/6)^n formula is meaningless; the floors are measured)."""
+    the 1-(5/6)^n formula is meaningless; the floors are measured). ``undecided`` (summary mode,
+    audit F3): items whose digest was never served (a refusal, a collapse) are undecided and
+    leave the denominator, never fails; counted in ``extras.n_items_undecided``."""
     pinned = args.judge.pinned if pinned is None else pinned
     by_item: dict[str, list[dict]] = defaultdict(list)
     for v in rows:
@@ -85,13 +88,16 @@ def score(
     def side_correct(vs: list[dict], side: str) -> bool:
         return any(v["correct"] for v in vs if v["side"] == side)
 
-    committed = [it for it in scope if it["reason_class"] == "committed"]
-    delib = [it for it in scope if it["reason_class"] == "deliberative"]
+    decided_scope = [it for it in scope if it["id"] not in undecided]  # audit F3
+    committed = [it for it in decided_scope if it["reason_class"] == "committed"]
+    delib = [it for it in decided_scope if it["reason_class"] == "deliberative"]
     indicators: list[float] = []
     ok_by_id: dict[str, bool] = {}
     comm_pass = 0
     yes_any = no_any = both = 0
     for it in scope:
+        if it["id"] in undecided:
+            continue
         vs = by_item.get(it["id"], [])
         if it["reason_class"] == "committed":
             ok = any(v["correct"] for v in vs)
@@ -106,6 +112,7 @@ def score(
         ok_by_id[it["id"]] = bool(ok)
 
     n_items = len(scope)
+    n_decided = len(indicators)
     passes = int(sum(indicators))
 
     def item_rate(key: str) -> float | None:
@@ -154,11 +161,14 @@ def score(
     extras["pair_consistency"] = pair_consistency(scope, ok_by_id)
     if summary is not None:  # one judged summary per item: there is no grid
         extras["summary"] = summary
+    extras["n_items_decided"] = n_decided
+    extras["n_items_undecided"] = n_items - n_decided
+    extras["undecided_ids"] = sorted(it["id"] for it in scope if it["id"] in undecided)
     return FamilyResult(
         family="moral_rationale",
         metric="pass_rate",
-        value=_rate(passes, n_items) if not args.dry_run else None,
-        ci95=bootstrap_ci(indicators) if n_items and not args.dry_run else None,
+        value=_rate(passes, n_decided) if not args.dry_run else None,
+        ci95=bootstrap_ci(indicators) if n_decided and not args.dry_run else None,
         n_items=n_items,
         higher_is_better=True,
         chance=None,

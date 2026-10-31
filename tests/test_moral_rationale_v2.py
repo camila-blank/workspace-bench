@@ -293,7 +293,8 @@ def test_summary_gets_every_position(tmp_path, monkeypatch):
             extra={"reads": mode},
         )  # fmt: skip
         r = mr.run(args)
-        (dig,) = [u for name, _s, u in fake.calls if name == "digest"]
+        # audit F1: one digest per read layer; together they carry every cell
+        dig = "\n".join(u for name, _s, u in fake.calls if name == "digest")
         assert len(re.findall(r"^\[L\d+ pos \d+\]$", dig, flags=re.M)) == n_headers, mode
         want = reads.stamp(digest.prompt_version("ec-v4.1", args, FAMILY), mode)
         assert r.config["prompt_version"] == want
@@ -672,7 +673,9 @@ def test_summary_v2_deliberative_one_call_per_side(tmp_path, monkeypatch):
         monkeypatch, lambda s, u, sc: {"choice": 6, "quote": ""}, digest=first_lines_digest
     )
     r = mr.run(summary_args(path, tmp_path / "s", mrp.PROMPT_VERSION, items=[it["id"]]))
-    assert fake.n("digest") == 1 and fake.n("ec_reason_mc") == 2
+    assert (
+        fake.n("digest") == 1 * 2 and fake.n("ec_reason_mc") == 2
+    )  # audit F1: per item and read layer
     users = [u for n, _s, u in fake.calls if n == "ec_reason_mc"]
     assert any("reason to answer 'yes'" in u for u in users)
     assert any("reason to answer 'no'" in u for u in users)

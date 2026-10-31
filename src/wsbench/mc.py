@@ -191,19 +191,88 @@ def is_cjk(form: str) -> bool:
     return bool(_CJK.search(form))
 
 
-def form_in(text: str, forms: Sequence[str]) -> bool:
-    """A listed form occurs in ``text`` (both folded): a form in a script without spaces between
-    words (CJK, kana, Hangul) as an exact substring, any other form (Latin, Cyrillic, Greek…)
-    between Unicode word boundaries. A text without Latin letters is never accepted by default:
-    it passes only if it holds a listed form of its own script."""
-    t = fold(text)
+_HANGUL = re.compile(r"[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]")
+# Arabic-script folding for :func:`form_hits` ``clitics=True`` (plan F4): Persian / Arabic letter
+# variants unified, hamza seats dropped to a bare alif, tatweel removed (``fold`` already drops
+# the harakat, which are combining marks)
+_AR_LETTERS = str.maketrans(
+    {"\u06cc": "\u064a", "\u0649": "\u064a", "\u06a9": "\u0643", "\u0623": "\u0627",
+     "\u0625": "\u0627", "\u0622": "\u0627", "\u0671": "\u0627", "\u0640": None}
+)  # fmt: skip
+_AR_WORD = re.compile(r"[\u0600-\u06ff]+")
+# a leading conjunction (wa-, fa-), then a preposition (bi-, li-, ka-), then the article (al-);
+# "lil-" is li- + al- with the alif elided
+_AR_CLITIC = re.compile(
+    r"^(?:[\u0648\u0641])?(?:\u0644\u0644|[\u0628\u0644\u0643]?(?:\u0627\u0644)?)"
+)
+AR_MIN_STEM = 3  # a clitic is stripped only when this many letters remain
+
+
+def _ar_stem(word: str) -> str:
+    w = word.translate(_AR_LETTERS)
+    m = _AR_CLITIC.match(w)
+    if m and m.end() and len(w) - m.end() >= AR_MIN_STEM:
+        return w[m.end() :]
+    return w
+
+
+def ar_fold(text: str) -> str:
+    """``fold`` plus, in every Arabic-script word, the letter variants unified and a leading
+    conjunction / preposition / article stripped (``والطوسي`` -> ``طوسي``, Persian ``طوسی`` ->
+    ``طوسي``); other scripts unchanged."""
+    return _AR_WORD.sub(lambda m: _ar_stem(m.group(0)), fold(text))
+
+
+SUFFIX_MIN_STEM = 5  # a form gets suffix tolerance only when it is this many letters or longer
+
+
+def form_hits(
+    text: str,
+    forms: Sequence[str],
+    *,
+    suffix: int = 0,
+    clitics: bool = False,
+    hangul: bool = False,
+) -> list[str]:
+    """The listed forms that occur in ``text`` (both folded), with the text word each one hit
+    (in form order). A form in a script without spaces between words (CJK, kana) is an exact
+    substring; any other form (Latin, Cyrillic, Greek…) sits between Unicode word boundaries.
+    ``hangul`` (plan F4): a Hangul form is an exact substring too, compared in NFC (``fold``'s
+    NFKD splits a syllable into jamo, so without it a Hangul form falls to the word-boundary
+    rule and never matches before a particle, ``일연입니다``; NFC also keeps ``가`` out of
+    ``갈``). ``suffix`` (an inflecting source language,
+    plan F4): a form of at least :data:`SUFFIX_MIN_STEM` letters may run on into up to
+    ``suffix`` further word letters (``Åland`` -> ``Ålands``, ``Ahvenanmaa`` -> ``Ahvenanmaalla``).
+    ``clitics``: Arabic-script text and forms are compared after :func:`ar_fold`."""
+    t = ar_fold(text) if clitics else fold(text)
+    t_nfc = unicodedata.normalize("NFC", text).casefold()
+    out: list[str] = []
     for f in forms:
-        ff = fold(f).strip()
+        if hangul and _HANGUL.search(f):
+            ff = unicodedata.normalize("NFC", f).casefold().strip()
+            if ff and ff in t_nfc:
+                out.append(ff)
+            continue
+        ff = (ar_fold(f) if clitics else fold(f)).strip()
         if not ff:
             continue
         if _CJK.search(ff):
             if ff in t:
-                return True
-        elif re.search(rf"(?<!\w){re.escape(ff)}(?!\w)", t):
-            return True
-    return False
+                out.append(ff)
+            continue
+        tail = ""
+        if suffix > 0 and len(ff) >= SUFFIX_MIN_STEM and ff[-1].isalpha():
+            tail = rf"[^\W\d_]{{0,{int(suffix)}}}"
+        m = re.search(rf"(?<!\w){re.escape(ff)}{tail}(?!\w)", t)
+        if m:
+            out.append(m.group(0))
+    return out
+
+
+def form_in(text: str, forms: Sequence[str]) -> bool:
+    """A listed form occurs in ``text`` (both folded): :func:`form_hits` with no suffix or
+    clitic tolerance. A form in a script without spaces between words (CJK, kana, Hangul) is an
+    exact substring, any other form (Latin, Cyrillic, Greek…) sits between Unicode word
+    boundaries. A text without Latin letters is never accepted by default: it passes only if it
+    holds a listed form of its own script."""
+    return bool(form_hits(text, forms))

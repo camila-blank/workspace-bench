@@ -201,7 +201,8 @@ def test_full_digest_gets_all_positions_and_layers(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _picker())
     args = summary_args(path, tmp_path / "o", P.MH2_PROMPT_VERSION, items=[COEUR])
     r = SPEC.run(args)
-    (digest_user,) = [u for n_, _s, u in fake.calls if n_ == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    digest_user = "\n".join(u for n_, _s, u in fake.calls if n_ == "digest")
     headers = set(re.findall(r"\[L(\d+) pos (\d+)\]", digest_user))
     assert headers == {(str(L), str(p)) for L in readplan.GRID for p in range(n)}
     assert r.config["reads_checked"] == "sidecar" and not r.extras.get("partial_ids")
@@ -479,7 +480,9 @@ def test_mc_is_pinned_scorer_of_record(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _picker({f"{SABRE}|bridge1": "Khachaturian"}))
     args = summary_args(path, tmp_path / "o", P.MH2_PROMPT_VERSION, items=[SABRE])
     r = SPEC.run(args)
-    assert fake.n("pick") == 1 and fake.n("digest") == 1
+    assert fake.n("pick") == 1 and fake.n("digest") == len(
+        readplan.GRID
+    )  # audit F1: per item and read layer
     assert r.pinned_instrument is True
     row = r.rows[0]
     assert row["pass"] is True and row["credit"] == {"bridge1": "surname"}

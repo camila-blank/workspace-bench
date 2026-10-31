@@ -290,7 +290,8 @@ def test_layers_arbitrary_summary_and_native(tmp_path, bank, scripted, monkeypat
         sm = judge.run(summary_args(p, tmp_path / f"s{len(layers)}", PROMPT_VERSION,
                                     items=["k1"], layers=layers))  # fmt: skip
         assert sm.config["layers_judged"] == layers
-        heads = set(re.findall(r"\[L(\d+) pos -\d+\]", bundles[0]))
+        # audit F1: one digest per read layer; together they carry every layer
+        heads = set(re.findall(r"\[L(\d+) pos -\d+\]", "\n".join(bundles)))
         assert heads == {str(L) for L in layers}
 
 
@@ -307,8 +308,10 @@ def test_summary_bundles_every_loaded_line(tmp_path, bank, monkeypatch):
                     digest=lambda u: seen.append(u) or first_lines_digest(u))  # fmt: skip
     r = judge.run(summary_args(p, tmp_path / "o", PROMPT_VERSION, items=["k1", "k2"],
                                layers=[20, 40, 60]))  # fmt: skip
-    # 3 layers x 30 positions x 4 samples per item; 720 lines over the two items
-    assert [sum(1 for ln in u.splitlines() if ln.startswith("- ")) for u in seen] == [360, 360]
+    # 3 layers x 30 positions x 4 samples per item; 720 lines over the two items (audit F1: one
+    # digest per item and read layer, 30 x 4 = 120 lines each; each re-asked once, audit F3: the
+    # fake keeps 3 < digest.COLLAPSE_MIN entries from 120 >= COLLAPSE_READOUTS readouts)
+    assert [sum(1 for ln in u.splitlines() if ln.startswith("- ")) for u in seen] == [120] * 12
     s = r.extras["summary"]
     assert s["n_readouts_in"] == s["n_readouts_bundled"] == 720
 

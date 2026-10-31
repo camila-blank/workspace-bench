@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
-from summary_fakes import FakeLLM, digest_lines, summary_args
+from summary_fakes import FakeLLM, digest_lines, n_item_layers, summary_args
 
 from wsbench import digest, reads, registry
 from wsbench.banks import load_bank
@@ -86,7 +86,8 @@ def test_dm_one_call_per_item_and_gate(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _dm_judge)
     pv = dm_prompts.PROMPT_VERSION
     r = dm_pkg.SPEC.run(summary_args(DM_EX, tmp_path / "s", pv, items=DM_IDS))
-    assert fake.n("digest") == 3 and fake.n("dm_concept") == 3
+    # audit F1: one digest per item and read layer
+    assert fake.n("digest") == n_item_layers(DM_EX, DM_IDS) and fake.n("dm_concept") == 3
     assert all(digest_lines(u) for n, _s, u in fake.calls if n == "dm_concept")
     rows = {v["item"]: v for v in r.rows}
     assert len(r.rows) == 3 and {v["layer"] for v in r.rows} == {digest.SUMMARY_LAYER}
@@ -107,7 +108,7 @@ def test_dm_one_call_per_item_and_gate(tmp_path, monkeypatch):
         digest.prompt_version(pv, summary_args(DM_EX, tmp_path, pv), "directed_modulation"),
         "full",
     )
-    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v9")
+    assert r.config["prompt_version"].startswith(pv + "+digest-v5-task-extractive+sj-v10")
     # native: the same cell counts
     FakeLLM.install(monkeypatch, lambda s_, u, sc: _dm_reply(6))
     n = dm_pkg.SPEC.run(
@@ -144,9 +145,14 @@ def _keyword_digest(words: list[str]):
     def fake(user: str) -> dict:
         lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
         hits = [ln for ln in lines if any(w in ln for w in words)]
+        # no hit: a statement naming baharat / Loki over a NEUTRAL evidence line (audit F1: the
+        # per-layer bundle of a layer whose lines all name a concept reports nothing instead)
+        neutral = [
+            ln for ln in lines if ln in ("A contract on the desk.", "The renewal was approved.")
+        ]
         return {
             "items": [{"statement": "STATEMENT", "where": "", "evidence": ln} for ln in hits]
-            or [{"statement": "baharat Loki", "where": "", "evidence": lines[0]}]
+            or [{"statement": "baharat Loki", "where": "", "evidence": ln} for ln in neutral[:1]]
         }
 
     return fake
@@ -164,7 +170,9 @@ def test_dmo_one_regex_per_item_no_judge(tmp_path, monkeypatch):
     monkeypatch.setattr(dmo_judge, "cell_hits", lambda s, m: n_scored.append(1) or real(s, m))
     pv = dmo_prompts.PROMPT_VERSION
     r = dmo_pkg.SPEC.run(summary_args(DMO_EX, tmp_path / "s", pv, items=DMO_IDS))
-    assert [c[0] for c in fake.calls] == ["digest", "digest"] and len(n_scored) == 2
+    # one digest per item and read layer (audit F1), nothing more
+    assert [c[0] for c in fake.calls] == ["digest"] * n_item_layers(DMO_EX, DMO_IDS)
+    assert len(n_scored) == 2
     rows = {x["id"]: x for x in r.rows}
     spice, trick = rows["middle_eastern_spice_blend"], rows["trickster_figure"]
     assert spice["pass"] is True and spice["distractor_rate"] == 0.5
@@ -175,7 +183,7 @@ def test_dmo_one_regex_per_item_no_judge(tmp_path, monkeypatch):
     assert r.config["judge_model"] == digest.DEFAULT_MODEL and r.pinned_instrument
     # plan 0034 G8: the summary gate joins token lines, stamped +joined (native unchanged)
     assert r.config["aggregate"] == "summary" and r.config["scorer_version"].startswith(
-        dmo_prompts.SUMMARY_PROMPT_VERSION + "+digest-v4-task-extractive"
+        dmo_prompts.SUMMARY_PROMPT_VERSION + "+digest-v5-task-extractive"
     )
     n = dmo_pkg.SPEC.run(
         summary_args(DMO_EX, tmp_path / "n", pv, items=DMO_IDS, extra={"aggregate": "native"})
@@ -217,7 +225,7 @@ def _mcdm_judge(system: str, user: str, schema: dict) -> dict:
     shown = [o for _l, o in _LETTER_LINE.findall(user)]
     item = next(i for i, (o, _g) in opts.items() if o == shown)
     lines = digest_lines(user)
-    quote = re.sub(r"^\[\w+\] ", "", lines[0])[:12]
+    quote = re.sub(r"^\[[^\]]*\] ", "", lines[0])[:12]  # minus the support marker
     _o, gold = opts[item]
     cb = "content_bound"  # plan 0025: every pick carries a basis
     if item == "d-plumber":
@@ -234,7 +242,8 @@ def test_mcdm_one_call_per_item_controls_included(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _mcdm_judge)
     pv = mcdm_prompts.PROMPT_VERSION
     r = mcdm_pkg.SPEC.run(summary_args(MCDM_EX, tmp_path / "s", pv, items=MCDM_IDS))
-    assert fake.n("digest") == 3 and fake.n("picks") == 3 and r.extras["n_calls"] == 3
+    assert fake.n("digest") == n_item_layers(MCDM_EX, MCDM_IDS)  # audit F1: per item and layer
+    assert fake.n("picks") == 3 and r.extras["n_calls"] == 3
     rows = {x["id"]: x for x in r.rows}
     assert rows["d-plumber"]["pass"] is True and rows["d-plumber"]["capacity"] is None
     assert len(rows["d-plumber"]["concepts_surfaced"]) == 3
@@ -243,7 +252,7 @@ def test_mcdm_one_call_per_item_controls_included(tmp_path, monkeypatch):
     assert r.extras["control_pick_rate"] == 1.0 and "capacity" not in r.extras
     assert all(c["layer"] == digest.SUMMARY_LAYER for x in r.rows for c in x["cells"])
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"].startswith(pv + "+digest-v4-task-extractive+sj-v9")
+    assert r.config["prompt_version"].startswith(pv + "+digest-v5-task-extractive+sj-v10")
     FakeLLM.install(monkeypatch, lambda s, u, sc: {"picks": []})
     n = mcdm_pkg.SPEC.run(
         summary_args(MCDM_EX, tmp_path / "n", pv, items=MCDM_IDS, extra={"aggregate": "native"})

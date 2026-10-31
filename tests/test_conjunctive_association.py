@@ -327,7 +327,9 @@ def test_layer_subset_digest_sees_only_those_layers(tmp_path, monkeypatch):
     assert heads == {"44"}
     seen.clear()
     judge.run(summary_args(path, tmp_path / "b", "pv", items=[QA]))
-    assert set(re.findall(r"\[L(\d+) pos \d+\]", seen[-1])) == {str(L) for L in readplan.GRID}
+    # audit F1: one digest per read layer; together they carry every cell
+    every = "\n".join(seen)
+    assert set(re.findall(r"\[L(\d+) pos \d+\]", every)) == {str(L) for L in readplan.GRID}
 
 
 def test_summary_bundle_has_every_cell(tmp_path, monkeypatch):
@@ -339,8 +341,8 @@ def test_summary_bundle_has_every_cell(tmp_path, monkeypatch):
         digest=lambda u: seen.append(u) or None,
     )
     judge.run(summary_args(_cells_file(tmp_path, rows), tmp_path / "o", "pv", items=[QA]))
-    for r in rows:
-        assert f"[L{r['layer']} pos {r['pos']}]" in seen[0]
+    for r in rows:  # audit F1: one digest per read layer; together they carry every cell
+        assert f"[L{r['layer']} pos {r['pos']}]" in "\n".join(seen)
 
 
 def test_all_layer_producer_file_is_judged(tmp_path, monkeypatch):
@@ -808,8 +810,9 @@ def test_reads_lite_keeps_final_position(tmp_path, monkeypatch):
             path, tmp_path / "o", "pv", items=[QA], layers=[20, 44], extra={"reads": "lite"}
         )
     )
-    assert sorted(set(re.findall(r"\[L\d+ pos (\d+)\]", seen[0]))) == ["49"]
-    assert set(re.findall(r"\[L(\d+) pos \d+\]", seen[0])) == {"20", "44"}
+    every = "\n".join(seen)  # audit F1: one digest per read layer
+    assert sorted(set(re.findall(r"\[L\d+ pos (\d+)\]", every))) == ["49"]
+    assert set(re.findall(r"\[L(\d+) pos \d+\]", every)) == {"20", "44"}
 
 
 def test_reads_lite_stamp(tmp_path, monkeypatch):
