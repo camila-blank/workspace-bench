@@ -64,7 +64,7 @@ def test_flat_types_and_versions():
     assert MH2.flat_types == ("names of people", "place names", "titles of works")
     assert "place names" in BRMT.flat_types and "names of people" in BRMT.flat_types
     assert MH2.judge.prompt_version == "mh2-mc-2026-10-31b"
-    assert BRMT.judge.prompt_version == "mc-brmt-2026-10-31d"
+    assert BRMT.judge.prompt_version == "mc-brmt-2026-10-31r+rv-2026-10-31e"
     assert assoc_prompts.PROMPT_VERSION == "assoc-mc-2026-10-31"
     assert rb_prompts.PROMPT_VERSION == "oa-v2.3"
     assert digest.SUMMARY_JUDGE_VERSION == "sj-v10"
