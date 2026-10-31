@@ -329,7 +329,8 @@ def test_summary_bundle_has_every_position_and_layer(tmp_path, monkeypatch, real
     fake = FakeLLM.install(monkeypatch, judge=_cannot)
     args = _args(path, tmp_path / "out", extra={"aggregate": "summary"}, layers=(40, 44))
     registry.FAMILIES[NAME].run(dict_replace(args, items=[it["id"]]))
-    (user,) = [u for n, _s, u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    user = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     for layer in (40, 44):
         for p in range(-30, 0):
             assert f"[L{layer} pos {p}]" in user and f"s{layer}{p}" in user

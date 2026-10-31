@@ -8,7 +8,7 @@ from typing import Any
 
 from conftest import native_args
 
-from wsbench import llm
+from wsbench import digest, llm
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.llm import Spend
 from wsbench.registry import JudgeArgs
@@ -77,4 +77,22 @@ def summary_args(readouts: Path, out: Path, prompt_version: str, **kw: Any) -> J
 
 def digest_lines(user: str) -> list[str]:
     """The judged digest lines in a summary-mode judge prompt (``[support] sample``)."""
-    return re.findall(r"^\[(?:many|several|few|one)\] .*$", user, flags=re.M)
+    return re.findall(rf"^\[(?:{digest.SUPPORT_PATTERN})\] .*$", user, flags=re.M)
+
+
+def n_item_layers(path: Path, ids: list[str] | None = None) -> int:
+    """How many per-layer digests a summary run makes for ``ids`` of a readouts file (audit F1:
+    one digest per item and read layer): the distinct (item, layer) pairs with a non-blank
+    sample or token."""
+    import json
+
+    pairs: set[tuple[str, int]] = set()
+    for ln in Path(path).read_text(encoding="utf-8").splitlines():
+        if not ln.strip():
+            continue
+        r = json.loads(ln)
+        if ids is not None and r["id"] not in ids:
+            continue
+        if any(str(x).strip() for x in (r.get("samples") or r.get("tokens") or [])):
+            pairs.add((r["id"], int(r["layer"])))
+    return len(pairs)

@@ -38,7 +38,9 @@ def _judge(system: str, user: str, schema: dict) -> dict:
 def test_one_call_per_item_and_gate(tmp_path, monkeypatch):
     fake = FakeLLM.install(monkeypatch, _judge)
     r = SPEC.run(summary_args(EXAMPLE, tmp_path / "o", PROMPT_VERSION, items=IDS))
-    assert fake.n("digest") == 3 and fake.n("bank_verdict") == 3
+    assert (
+        fake.n("digest") == 3 * 2 and fake.n("bank_verdict") == 3
+    )  # audit F1: per item and read layer
     rows = {x["id"]: x for x in r.rows}
     assert rows["br-ent-ath-ali"]["pass"] is True
     assert rows["br-imp-cardgame"]["pass"] is False  # STATEMENT quote not in any evidence sample
@@ -46,7 +48,7 @@ def test_one_call_per_item_and_gate(tmp_path, monkeypatch):
     assert list(rows["br-ent-ath-ali"]["layers"]) == ["-1"]
     assert rows["br-ent-ath-ali"]["summary_evidence"][0] == "He is a heavyweight fighter."
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"].startswith(PROMPT_VERSION + "+digest-v4-task-extractive")
+    assert r.config["prompt_version"].startswith(PROMPT_VERSION + "+digest-v5-task-extractive")
     assert r.counts["n_expected_cells"] == 6 and r.counts["n_missing_cells"] == 0
     assert "layer_protocols" not in r.extras and r.extras["summary"]["n_items_summarized"] == 3
     judged = [u for n, _s, u in fake.calls if n == "bank_verdict"]

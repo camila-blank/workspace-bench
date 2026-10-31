@@ -298,7 +298,13 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `digest.NATIVE_ONLY` family (jlens_concept_pr) native and fails
   any other family that did not report
   `config.aggregate = "summary"`. Never bind a module constant (e.g. `PROMPT_VERSION`) as a
-  default argument: tests monkeypatch it.
+  default argument: tests monkeypatch it. digest-v5 (audit fixes, `docs/summarizer.md`
+  "Audit fixes"): a multi-layer item is digested per layer and merged (`summ_layers=union`, so
+  a test's digest-call count is items x read layers; `joint` is the ablation, and every numbers
+  digest stays joint), every entry carries a per-claim `count` rendered `[N samples]`, a
+  collapsed digest (< 5 entries from >= 100 readouts) is re-asked once, an unsummarized item is
+  undecided (never a fail), and `results` marks a row with > 20% undecided not measurable.
+  Tests that drive the chunk machinery with multi-layer cells pin `summ_layers=joint`.
 
 ## Driver (`runner.py`, `cli.py`)
 - `run all=True|families=a,b readouts_root=DIR out=DIR [family_workers=3] [json=True]` reads

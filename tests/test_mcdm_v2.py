@@ -725,7 +725,8 @@ def test_mcdm_arbitrary_layers(tmp_path, monkeypatch):
     assert "lion L56" in dig and "lion L44" not in dig
     fake = FakeLLM.install(monkeypatch, lambda s, u, sc: {"picks": []})
     pkg.SPEC.run(summary_args(path, tmp_path / "b", prompts.PROMPT_VERSION, items=["d-lion"]))
-    (dig,) = [u for name, _s, u in fake.calls if name == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    dig = "\n".join(u for name, _s, u in fake.calls if name == "digest")
     assert all(f"lion L{L}" in dig for L in readplan.GRID)
 
 

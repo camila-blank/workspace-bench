@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from summary_fakes import FakeLLM, summary_args
+from summary_fakes import FakeLLM, n_item_layers, summary_args
 
 from wsbench import digest, readplan, reads, registry
 from wsbench.baselines import text_inversion as ti
@@ -148,7 +148,8 @@ def test_dmo_derangement_null_is_offline(tmp_path, monkeypatch):
     r = pkg.SPEC.run(
         summary_args(FIXTURE_READOUTS, tmp_path / "s", prompts.PROMPT_VERSION, items=ids)
     )
-    assert [c[0] for c in fake.calls] == ["digest", "digest"]  # one digest per item, nothing more
+    # one digest per item and read layer (audit F1), nothing more
+    assert [c[0] for c in fake.calls] == ["digest"] * n_item_layers(FIXTURE_READOUTS, ids)
     assert r.extras["derangement_n"] == 2 and r.extras["derangement_rate"] is not None
     n = pkg.SPEC.run(
         summary_args(
@@ -159,7 +160,7 @@ def test_dmo_derangement_null_is_offline(tmp_path, monkeypatch):
             extra={"aggregate": "native"},
         )
     )
-    assert len(fake.calls) == 2  # native: no call at all
+    assert len(fake.calls) == n_item_layers(FIXTURE_READOUTS, ids)  # native: no call at all
     perm = judge.derangement(sorted(ids))
     assert all(perm[i] != i for i in ids)
     # native: an item's gold matched against the OTHER item's cells, never its own
@@ -251,5 +252,5 @@ def test_dmo_summary_gate_joins_token_lines(tmp_path, monkeypatch):
         NAME,
     )
     assert re.search(
-        r"\+joined-2026-10-30\+digest-v4-task-extractive\+sj-v9$", r.config["prompt_version"]
+        r"\+joined-2026-10-30\+digest-v5-task-extractive\+sj-v10$", r.config["prompt_version"]
     )

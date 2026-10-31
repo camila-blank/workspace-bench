@@ -449,17 +449,40 @@ class ReportRuns(Command):
         return text, payload
 
     def _by_layer(self) -> int:
+        from wsbench.results import layer_union_check
+
         rows: dict[str, dict[str, object]] = {}
+        res: dict[str, dict[str, FamilyResult]] = {}
         for p in sorted(self.dir.glob("*/*/results.json")):
             r = read_results(p.parent)
             if r.family in registry.REMOVED_FAMILIES:  # plan 0033: no floorless stale rows
                 continue
             rows.setdefault(r.family, {})[p.parent.name] = r.value
+            res.setdefault(r.family, {})[p.parent.name] = r
         tags = sorted({t for d in rows.values() for t in d}, key=lambda t: (t != "all", t))
         lines = ["| family | " + " | ".join(tags) + " |", "|---" * (len(tags) + 1) + "|"]
         for fam, d in sorted(rows.items()):
             cells = ["—" if d.get(t) is None else f"{float(d[t]):.3f}" for t in tags]  # type: ignore[arg-type]
             lines.append(f"| {fam} | " + " | ".join(cells) + " |")
+        # audit F1: the all-layer row should pass every item some single-layer row passes
+        checks: dict[str, object] = {}
+        for fam, by_tag in sorted(res.items()):
+            single = {t: r for t, r in by_tag.items() if t != "all" and t.startswith("L")}
+            if "all" not in by_tag or not single:
+                continue
+            chk = layer_union_check(by_tag["all"], single)
+            if chk is None:
+                continue
+            checks[fam] = chk
+            if chk["n_missing"]:
+                ids = ", ".join(list(chk["missing"])[:8])
+                lines.append(
+                    f"\nWARN {fam}: {chk['n_missing']} of the {chk['n_union']} items a "
+                    f"single-layer row passes fail all-layer (audit them): {ids}"
+                )
+        (self.dir / "layer_union_check.json").write_text(
+            json.dumps(checks, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
         text = "\n".join(lines) + "\n"
         (self.dir / "summary_by_layer.md").write_text(text, encoding="utf-8")
         print(text, end="")

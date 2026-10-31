@@ -194,7 +194,7 @@ A line whose items are separated by " | " is one ranked list of the top vocabula
 The digest note in summary mode (`SUMMARY_NOTE`, shared; `docs/summarizer.md`):
 
 ```text
-The readout below is a digest of the readouts across every read layer and position: a note-taker who did not see the passage picked the most prominent readout samples, most prominent first, then samples carrying content seen in only one or a few samples, and each line is marked with how many readout samples contain its key content ([many], [several], [few], [one]; counted mechanically). Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
+The readout below is a digest of the readouts across every read layer and position: for each read layer, a note-taker who did not see the passage picked the most prominent readout samples, then samples carrying content seen in only one or a few samples, and the layers' picks are merged, the most-stated first. Each line is marked with how many readout samples state its content ([N samples], or [N samples, M layers] when it was seen at M read layers): counted per claim, so a sample that only lists the word among others of its kind, or only restates the question, is not counted; compare these counts when weighing lines against each other. Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). Treat each line as a separate sample: pieces on different lines never combine. Any quote must be copied from inside one line, without the bracketed marker.
 ```
 
 ## History
