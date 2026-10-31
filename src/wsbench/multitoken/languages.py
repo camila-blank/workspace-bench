@@ -315,7 +315,10 @@ def case_sensitive_forms() -> frozenset[str]:
 # genre / medium nouns after X ("Greek News Agency", "Russian Prose Poetry", "Russian School
 # textbooks"); "στα ελληνικά" before a noun ("στα Ελληνικά δρόμους") and "Deutsch-" compounds
 # name no language
-NAMING_VERSION = "ln-2026-10-31b"  # bump on any edit of NAMING / naming_forms
+# ln-2026-10-31c (final r1): "in X in ..." (_EN_NEXT 'in'), up to 3 words before a text noun or
+# prose / register / writing / style (never across is/are/was/were/has/have), and the ru forms
+# "в/на русском варианте/тексте/переводе", "русский текст/вариант/перевод"
+NAMING_VERSION = "ln-2026-10-31c"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
 # what may follow "in X" for it to name the language: punctuation, the end, or a verb /
@@ -326,7 +329,7 @@ _EN_NEXT = (
     r"as|would|will|we|you|they|one|its|for|and|or|but|to|of|can|could|has|have|there|here|"
     r"which|when|like|translates?|translated|called|spelled|spelt|written|becomes?|reads?|"
     r"gives?|says?|said|uses?|word|words|term|terms|text|literally|simply|also|both|would|"
-    r"with|by|at|on|from|so|because|if|since|while|where|first|instead|rather|only)\b)"
+    r"with|by|at|on|from|so|because|if|since|while|where|first|instead|rather|only|in)\b)"
 )
 # "X word / text / sentence ..." (at most one modifier between: "Greek definitional riddle",
 # "Hebrew news-style sentence"), "X says / means / reads" (the text in X), never a people /
@@ -343,15 +346,21 @@ _TEXT_NOUNS = (
     r"declensions?|conjugations?|inflections?|particles?|quiz(?:zes)?|fill-in-the-blank|"
     r"usage|grammatical|morphological|translit\w*"
 )
+# up to three modifier words ("Finnish political or news prose"), never a copula / have
+# ("Arabic is the official language" names a state's language, not the text's)
+_MODS = r"(?:(?!(?:is|are|was|were|has|have|had)\b)[\w\-]+\s+){0,3}"
 _EN_AFTER = (
-    rf"(?i:-language|\s+(?:[\w\-]+\s+){{0,2}}(?:{_TEXT_NOUNS})\b"
+    rf"(?:(?i:-language|\s+{_MODS}(?:{_TEXT_NOUNS})\b"
     r"|\s+(?:for|says|means|meant|reads|translates|translated|renders|calls)\b)"
+    # lower-case prose / writing / style only: "Finnish news prose", never a title ("Russian
+    # Prose Poetry")
+    rf"|\s+{_MODS}(?:prose|writing|style)\b)"
 )
 
 
 # after "<register> X" a text-style noun names the language too ("formal Greek historical
 # prose"); after a bare "X" it does not ("Russian Prose Poetry", a title)
-_EN_AFTER_REG = rf"(?i:\s+(?:[\w\-]+\s+){{0,2}}(?:{_TEXT_NOUNS}|prose|writing|style|speech)\b)"
+_EN_AFTER_REG = rf"(?i:\s+{_MODS}(?:{_TEXT_NOUNS}|prose|writing|style|speech)\b)"
 
 
 _REGISTERS = (
@@ -456,7 +465,12 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
     ),
     "ru": (
         "по-русски",
-        *_rx(r"(?i)(?<![^\W_])русск\w*\s+язык\w*", r"(?i)(?<![^\W_])(?:на|в)\s+русском" + _RU_NEXT),
+        *_rx(
+            r"(?i)(?<![^\W_])русск\w*\s+язык\w*",
+            r"(?i)(?<![^\W_])(?:на|в)\s+русском" + _RU_NEXT,
+            r"(?i)(?<![^\W_])(?:в|на)\s+русск\w+\s+(?:вариант|текст|перевод)\w*",
+            r"(?i)(?<![^\W_])русск\w+\s+(?:текст|вариант|перевод)\w*",
+        ),
     ),
     "sw": ("Kiswahili", *_rx(r"(?i)(?<![^\W_])(?:kutoka|kwa|katika)\s+swahili(?![^\W_])")),
     "tr": ("Türk dili", *_rx(r"(?i)(?<![^\W_])turkce\w*")),
