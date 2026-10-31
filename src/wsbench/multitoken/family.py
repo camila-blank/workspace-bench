@@ -10,6 +10,7 @@ mode (the default) every method goes through ``digest.collapse`` only."""
 
 import dataclasses
 import json
+import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -1123,6 +1124,30 @@ def _named_langs(
     ]
 
 
+def _stem_hit(text: str, option: str, src: str | None) -> bool:
+    """For an inflecting source language, another option also counts as named when a word of
+    ``text`` starts with its stem (each word of the option cut by 2 letters, at least 5 kept:
+    ``Gotland`` -> ``gotla…`` finds ``Gotlannissa``). Used only to BLOCK a line rescue, so a
+    looser match here can only make the gate stricter."""
+    if src not in INFLECTING:
+        return False
+    ws = [mc.fold(w) for w in option.split() if w.strip()]
+    if not ws or any(len(w) < 6 or not w.isalpha() for w in ws):
+        return False
+    pat = r"\s+".join(rf"(?<!\w){re.escape(w[: max(5, len(w) - 2)])}\w*" for w in ws)
+    return re.search(pat, mc.fold(text)) is not None
+
+
+def _other_named(text: str, option: str, olang: str, src: str | None) -> bool:
+    """Another shown option is named in ``text``: strictly, as tolerantly as the gold, or by its
+    stem in an inflecting source language (review r2 of PR #195)."""
+    return (
+        mc.form_in(text, [option])
+        or tolerant_names(text, [option], olang, src, [])
+        or _stem_hit(text, option, src)
+    )
+
+
 def singles_out(
     ln: digest.Line,
     forms_by_lang: Mapping[str, Sequence[str]],
@@ -1144,8 +1169,11 @@ def singles_out(
             return []
         return _named_langs(_texts_of(ln), forms_by_lang, src, others)
     langs: list[str] = []
+    olang = src if src in INFLECTING else "en"
     for text in _texts_of(ln):
-        if any(mc.form_in(text, [o]) for o in others):
+        # another option is matched as tolerantly as the gold (case endings, clitics, fuzzy;
+        # review r2 of PR #195: "Ahvenanmaalla vai Gotlannissa?" names Gotland too)
+        if any(_other_named(text, o, olang, src) for o in others):
             continue
         langs += [x for x in _named_langs([text], forms_by_lang, src, others) if x not in langs]
     return langs

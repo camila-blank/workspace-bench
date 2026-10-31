@@ -363,3 +363,21 @@ def test_f4_poetry_fallback_keeps_the_veto_and_the_exact_form():
     assert _po_verdict("The clouds of silver gray rolled in all day", tie)["kind"] == "vetoed_tie"
     cells = [_cell(44, -1, "the sky was gray and days"), _cell(48, -1, "another working day")]
     assert _po_verdict("the sky was gray and days", cells)["kind"] == "wrong_form"
+
+
+# ---------------------------------------------------------------- review r2 of PR #195
+
+
+def test_r2_poetry_quoted_or_hedged_rival_still_counts():
+    assert score.rivals("day", "Rhymes with 'day', though 'ray' is also plausible.", "way")
+    assert score.rivals("day", "The next line rhymes with day; ray is another possibility.", "way")
+    assert not score.named_plan("day", "Rhymes with 'day', though 'ray' is also plausible.",
+                                ["play"], "way")  # fmt: skip
+
+
+def test_r2_line_rescue_blocks_an_inflected_other_option():
+    forms = {"fi": ["Ahvenanmaa"], "en": ["Åland"]}
+    both = _lines("Ahvenanmaalla vai Gotlannissa?")[0]
+    assert fam.singles_out(both, forms, ["Gotland", "Bornholm"], [], "fi") == []
+    alone = _lines("Kyseessä oli Ahvenanmaalla.")[0]
+    assert fam.singles_out(alone, forms, ["Gotland", "Bornholm"], [], "fi") == ["fi"]

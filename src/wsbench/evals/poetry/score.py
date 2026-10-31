@@ -82,17 +82,35 @@ def rivals(word: str, text: str, end: str) -> set[str]:
     return {x for x in cands if _proposed(x, t)}
 
 
+_RIVAL_CUE = re.compile(
+    r"\b(?:also|another|other|possib\w*|alternativ\w*|perhaps|maybe|instead|could|might|or|"
+    r"plausible|option\w*|candidate\w*|likely|probabl\w*)\b"
+)
+_CUE_WINDOW = 4  # words on either side of a rhyme in which a hedge / option cue makes it a rival
+
+
 def _proposed(x: str, t: str) -> bool:
-    """Rhyme word ``x`` ends a line / "/" segment of ``t`` or is an item of a word run."""
+    """Rhyme word ``x`` is PROPOSED as an ending in ``t``: it ends a line / "/" segment, is an
+    item of a word run, is quoted (``'ray' is also plausible``), or has a hedge / option cue
+    within :data:`_CUE_WINDOW` words (``ray is another possibility``; review r2 of PR #195). Only
+    a bare word in running text with no cue near it (``"storm" form a pair``) is not."""
     xr = _word_re(x)
     tail = _TRAIL + r"[ \t]*(?:$|\n|\\n|/|\))"
     run_after = rf"{_ITEM}\s*(?:,|\bor\b|\band\b|/)"
     run_before = rf"(?:,|\bor\b|\band\b|/)\s*{_ITEM}"
-    return (
+    if (
         re.search(xr + tail, t) is not None
         or re.search(xr + run_after, t) is not None
         or re.search(run_before + xr, t) is not None
-    )
+        or re.search(rf"{_Q}{xr}{_Q}", t) is not None
+    ):
+        return True
+    for m in re.finditer(xr, t):
+        before = _LATIN_WORD.findall(t[: m.start()])[-_CUE_WINDOW:]
+        after = _LATIN_WORD.findall(t[m.end() :])[:_CUE_WINDOW]
+        if _RIVAL_CUE.search(" ".join([*before, *after])):
+            return True
+    return False
 
 
 def names_rival(word: str, text: str, others: Sequence[str], end: str = "") -> bool:

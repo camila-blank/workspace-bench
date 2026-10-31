@@ -332,8 +332,8 @@ def other_option_forms(ctx: "_Ctx", item_id: str, role: str) -> list[dict[str, l
         forms = [o, *per.get(" ".join(o.casefold().split()), [])]
         if role == LANGUAGE_ROLE:
             lg = next((x for x in LANGUAGES.values() if o in x.names["en"]), None)
-            if lg is not None:
-                forms += [*lg.names["en"], *lg.names.get("zh", ())]
+            if lg is not None:  # every name of it, the autonym too (review r2 of PR #195)
+                forms += [f for fs in lg.names.values() for f in fs]
         out.append({"o": list(dict.fromkeys(forms))})
     return out
 
