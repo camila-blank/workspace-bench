@@ -599,6 +599,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     result.rows = head + rest
     if scope_name != "all":
         result.complete = False
+        result.extras["incomplete_reason"] = f"scope={scope_name}"  # runner.refusals_only
     result.extras["n_items_without_readouts"] = sum(
         1 for it in scope if it.get("readout_of", it["id"]) not in present
     )
@@ -774,6 +775,7 @@ def _run_summary(
     result.rows = head + rest
     if scope_name != "all":
         result.complete = False
+        result.extras["incomplete_reason"] = f"scope={scope_name}"  # runner.refusals_only
     result.extras["n_items_without_readouts"] = sum(
         1 for it in scope if it.get("readout_of", it["id"]) not in col.cells
     )

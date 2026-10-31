@@ -141,7 +141,8 @@ def singling_lines(
     ``language`` also its names). A line that names two options singles out neither, and a piece
     that is a flat run of candidates (``regex.flat_run``) singles out none."""
     out = []
-    number = any(regex.is_number_form(f) for fs in forms.values() for f in fs)
+    gold = [f for fs in forms.values() for f in fs if not f.startswith("re:")]
+    number = any(regex.is_number_form(f) for f in gold)
     for ln in lines:
         texts = _pieces(ln)
         # the piece naming the gold must not be a flat run of candidates (review of #195)
@@ -151,7 +152,7 @@ def singling_lines(
             if regex.hit_forms(
                 [t], forms, numeric_match=numeric_match, case_sensitive=case_sensitive
             )
-            and not regex.flat_run(t, number=number)
+            and not regex.flat_run(t, gold, number=number)
         ]
         if not hits:
             continue

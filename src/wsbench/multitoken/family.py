@@ -1170,9 +1170,12 @@ def singles_out(
         return _named_langs(_texts_of(ln), forms_by_lang, src, others)
     langs: list[str] = []
     olang = src if src in INFLECTING else "en"
-    number = any(regex.is_number_form(f) for fs in forms_by_lang.values() for f in fs)
+    gold = [f for fs in forms_by_lang.values() for f in fs]
+    number = any(regex.is_number_form(f) for f in gold)
     for text in _texts_of(ln):
-        if regex.flat_run(text, number=number):  # a flat run singles out none (review of #195)
+        if regex.flat_run(
+            text, gold, number=number
+        ):  # a flat run singles out none (review of #195)
             continue
         # another option is matched as tolerantly as the gold (case endings, clitics, fuzzy;
         # review r2 of PR #195: "Ahvenanmaalla vai Gotlannissa?" names Gotland too)

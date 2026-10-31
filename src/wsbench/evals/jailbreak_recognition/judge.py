@@ -438,6 +438,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     )
     if regime != "span":  # a sub-grid of the regime of record: never complete, never in the macro
         result = dataclasses.replace(result, complete=False)
+        result.extras["incomplete_reason"] = f"regime={regime}"  # runner.refusals_only
     return with_readout_count(result, scope, cells)
 
 
@@ -545,4 +546,5 @@ def _run_summary(
     )
     if regime != "span":
         result = dataclasses.replace(result, complete=False)
+        result.extras["incomplete_reason"] = f"regime={regime}"  # runner.refusals_only
     return with_readout_count(result, scope, cells)
