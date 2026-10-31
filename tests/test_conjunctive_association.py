@@ -127,8 +127,10 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args, v1_bank):
     fake = fake_llm(_responder)
     args = mk_args(_scripted(tmp_path), items=[QA, QB, "q02_a", "q02_b", "q03_a"])
     res = judge.run(args)
-    # q02_a excluded (missing L36); q03_a has no readouts (fail); q02_b all-empty (fail)
-    assert res.n_items == 4 and res.value == 0.25 and res.chance == pytest.approx(1 / 11)
+    # q02_a excluded (missing L36); q03_a has no readouts (fail); q02_b all-empty (fail); final r1
+    # (campaign-lead decision on #200): QB's failed call is undecided, out of the denominator
+    assert res.n_items == 4 and res.value == pytest.approx(1 / 3)
+    assert res.chance == pytest.approx(1 / 11) and res.extras["n_items_undecided"] == 1
     c = res.counts
     assert c["n_expected_cells"] == 6 and c["n_empty_cells"] == 2 and c["n_unjudged_cells"] == 2
     rows = {r["id"]: r for r in res.rows}

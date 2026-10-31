@@ -25,8 +25,11 @@ def test_inverted_draw_vetoes_a_gold_majority():
     assert _combine(["gold", "gold", "inverted"]) == "inverted"
 
 
-def test_failed_quote_check_is_undecided():
-    assert _combine(["gold", "gold", "api_fail"], failed=(2,)) == "api_fail"
+def test_failed_draw_undecided_only_when_it_could_change_the_verdict():
+    assert _combine(["gold", "gold", "api_fail"]) == "api_fail"  # inverted would veto it
+    assert _combine(["gold", "api_fail", "cannot_tell"]) == "api_fail"
+    assert _combine(["cannot_tell", "cannot_tell", "api_fail"]) == "cannot_tell"  # fails anyway
+    assert cj.item_pick(["inverted", "gold", "api_fail"]) != "gold"
 
 
 def test_chance_matches_the_rule():
