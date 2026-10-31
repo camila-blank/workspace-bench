@@ -26,7 +26,6 @@ from wsbench.digest import Line, fold_quote
 
 from .prompts import OTHER_RELATION_WORDS, REL_LEXICON
 
-GATE_VERSION = "relgate-v2"  # F12: blanks break links (the result stamp only; no call re-asked)
 MAX_QUOTE_WORDS = 15
 MAX_QUOTE_CJK = 40
 _CJK = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
