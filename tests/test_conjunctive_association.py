@@ -143,6 +143,7 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args, v1_bank):
         "quote",
         "quote_ok",
         "draw_picks",  # comp-v3 (F9): the per-draw picks behind the majority pick
+        "quote_checks",  # final r1: the gold draw's quote re-judge answers
         "n_draws",
     }
     assert rows[QB]["pick"] == "api_fail" and rows[QB]["correct"] is False
@@ -152,7 +153,9 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args, v1_bank):
     }  # fmt: skip
     assert res.extras["n_items_excluded"] == 1 and res.extras["char_cap"] == 200000
     assert res.config["char_cap"] == 200000
-    assert len([u for _s, u in fake.calls if not u.startswith("Return")]) == 3
+    assert (
+        len([u for _s, u in fake.calls if not u.startswith("Return")]) == 3 + judge.QUOTE_JUDGES - 1
+    )  # final r1: 3 quote re-judges
     third = [u for _s, u in fake.calls if not u.startswith("Return")][2]
     assert third.startswith("READOUT (one span quoted from the readouts):\nR:q01-a:L36:p2")
     prompt = next(u for _s, u in fake.calls if "R:q01-a" in u)
@@ -403,10 +406,15 @@ def test_partial_quote_fails_composition_check(tmp_path, fake_llm, mk_args):
     assert row["pick"] == "gold_partial" and row["correct"] is False
     assert res.extras["n_gold_raw"] == 1 and res.extras["quote_checks"] == {Q08C: len(shown)}
     rejudge = [u for _s, u in fake.calls if u.startswith(REJUDGE)]
-    assert rejudge == [
-        "READOUT (one span quoted from the readouts):\nSam quietly stole Leo's algorithm\n\n"
-        + prompts.render_question(shown)
-    ]
+    # final r1: a gold draw's quote gets judge.QUOTE_JUDGES independent re-judges
+    assert (
+        rejudge
+        == [
+            "READOUT (one span quoted from the readouts):\nSam quietly stole Leo's algorithm\n\n"
+            + prompts.render_question(shown)
+        ]
+        * judge.QUOTE_JUDGES
+    )
 
 
 def test_unverified_quote_fails(tmp_path, fake_llm, mk_args):
@@ -822,7 +830,9 @@ def test_reads_lite_stamp(tmp_path, monkeypatch):
         path, tmp_path / "o", "pv", items=[QA], layers=[20, 44], extra={"reads": "lite"}
     )
     r = judge.run(args)
-    pv = digest.prompt_version(prompts.PROMPT_VERSION, args, "conjunctive_association")
+    pv = digest.prompt_version(
+        prompts.PROMPT_VERSION + prompts.RULE_VERSION, args, "conjunctive_association"
+    )
     assert r.config["prompt_version"] == reads.stamp(pv, "lite") == pv + reads.LITE_STAMP
     assert json.loads(r.config["lite_rule"]) == [
         {"layers": None, "positions": {"kind": "final_token"}}

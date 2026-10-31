@@ -104,7 +104,8 @@ def test_f9_conjunctive_two_of_three_gold_draws_pass(tmp_path, fake_llm, mk_args
     shown, gold, _c = _opts(Q07A)
     g = {"choice": gold, "quote": TEXT_Q07A}
     cannot = {"choice": len(shown), "quote": ""}
-    res, fake = _conj(tmp_path, fake_llm, mk_args, [g, cannot, g], [gold, gold])
+    # final r1: each gold draw's quote gets cj.QUOTE_JUDGES re-judges
+    res, fake = _conj(tmp_path, fake_llm, mk_args, [g, cannot, g], [gold] * 6)
     row = res.rows[0]
     assert row["pick"] == "gold" and row["correct"] and row["n_draws"] == 3
     assert sorted(row["draw_picks"]) == ["cannot_tell", "gold", "gold"]
@@ -116,15 +117,18 @@ def test_f9_conjunctive_lenient_shapes_still_fail(tmp_path, fake_llm, mk_args):
     shown, gold, _c = _opts(Q07A)
     g = {"choice": gold, "quote": TEXT_Q07A}
     cannot = {"choice": len(shown), "quote": ""}
-    # one gold draw of three: no majority for gold
-    res, _ = _conj(tmp_path / "a", fake_llm, mk_args, [g, cannot, cannot], [gold])
+    c = len(shown)
+    # final r1: one gold draw of three passes only if a majority of its quote re-judges is gold
+    res, _ = _conj(tmp_path / "a", fake_llm, mk_args, [g, cannot, cannot], [gold, c, c])
     assert res.rows[0]["pick"] == "cannot_tell" and res.value == 0.0
-    # three gold picks, but two quotes re-judge to cannot tell: the re-judge gate per draw holds
-    res, _ = _conj(tmp_path / "b", fake_llm, mk_args, [g, g, g], [gold, len(shown), len(shown)])
+    res, _ = _conj(tmp_path / "a2", fake_llm, mk_args, [g, cannot, cannot], [gold, gold, c])
+    assert res.rows[0]["pick"] == "gold" and res.value == 1.0
+    # three gold picks, but every quote re-judges to cannot tell: the re-judge gate holds
+    res, _ = _conj(tmp_path / "b", fake_llm, mk_args, [g, g, g], [c] * 9)
     assert res.rows[0]["pick"] == "gold_partial" and res.value == 0.0
     # gold picks whose quote is not in the readout stay unverified in every draw
     bad = {"choice": gold, "quote": "relief at good news, hidden from her spouse"}
-    res, _ = _conj(tmp_path / "c", fake_llm, mk_args, [bad, bad, g], [gold])
+    res, _ = _conj(tmp_path / "c", fake_llm, mk_args, [bad, bad, g], [c, c, c])
     assert res.rows[0]["pick"] == "gold_unverified" and res.value == 0.0
 
 
