@@ -7,8 +7,15 @@ Everything runs on ``digest.fold_quote`` text. A statement is scanned into relat
 between them is one possessive (``X's Y`` / ``X的Y``, an optional short parenthesised gloss of X
 allowed) or ``Y of (det|Name's){0,2} X``. A chain ``(outer, inner)`` is *embedded* when the
 mention before it links into it, the mention after it links out of it, or a possessive with
-nothing after it follows it (``landlord's sibling's ___``). Rank is never order: a quote holding
-the token-list joiner ``" | "`` never passes."""
+nothing after it follows it (``landlord's sibling's ___``), or a possessive and a blank follow it
+(``cousin's boss's ___. Here's why``). Rank is never order: a quote holding the token-list
+joiner ``" | "`` never passes.
+
+Blanks (audit F12, 2026-10-31): ``fold_quote`` strips ``_`` as markdown, so the fill-in frame
+``landlord's _______ cousin`` folded to ``landlord's cousin`` and counted as stating the chain.
+:func:`fold` first replaces a free-standing underscore run and a bracketed placeholder with
+:data:`BLANK`, a token that is no relation and breaks every link; every text and quote the gate
+reads goes through it."""
 
 import itertools
 import re
@@ -19,6 +26,7 @@ from wsbench.digest import Line, fold_quote
 
 from .prompts import OTHER_RELATION_WORDS, REL_LEXICON
 
+GATE_VERSION = "relgate-v2"  # F12: blanks break links (the result stamp only; no call re-asked)
 MAX_QUOTE_WORDS = 15
 MAX_QUOTE_CJK = 40
 _CJK = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
@@ -55,7 +63,20 @@ _LINK_POSS = re.compile(
 )
 _DET = r"(?:the|a|an|my|your|his|her|their|our|its|one's|someone's|[^\W\d_][\w-]*'s)"
 _LINK_OF = re.compile(rf"\s+of\s+(?:{_DET}\s+){{0,2}}")
-_POSS_END = re.compile(rf"\s*{_POSS}[\s_.…?!,;:]*$")
+BLANK = "~blank~"
+# a run of underscores not touching a letter or digit ("___", not the emphasis of "__word__"),
+# and a bracketed placeholder ("(blank)", "[___]", "(?)", "[relationship]")
+_BLANK_RUN = re.compile(r"(?<!\w)_+(?!\w)")
+_BLANK_BRACKET = re.compile(
+    r"[(\[]\s*(?:_+|blank|relation(?:ship)?|\?+|\.{3}|…|x)\s*[)\]]", re.IGNORECASE
+)
+_POSS_END = re.compile(rf"\s*{_POSS}(?:[\s_.…?!,;:]|{re.escape(BLANK)})*$")
+_POSS_BLANK = re.compile(rf"\s*{_POSS}\s*{re.escape(BLANK)}")
+
+
+def fold(text: str) -> str:
+    """``digest.fold_quote`` after the blanks are replaced with :data:`BLANK` (module doc)."""
+    return fold_quote(_BLANK_RUN.sub(f" {BLANK} ", _BLANK_BRACKET.sub(f" {BLANK} ", text)))
 
 
 @dataclass(frozen=True)
@@ -127,6 +148,7 @@ def chains(text: str) -> list[Chain]:
             (i > 0 and links[i - 1] is not None)
             or (i + 1 < len(links) and links[i + 1] is not None)
             or bool(_POSS_END.match(text[b.end :]))
+            or bool(_POSS_BLANK.match(text[b.end :]))
         )
         out.append(Chain(outer, inner, a.start, b.end, embedded))
     return out
@@ -175,14 +197,14 @@ def order_gate(
     passes every loaded cell's statements: its digest keeps ONE sample line per entry (support
     shown as [many]/[one]), so counting the digest's lines would tie a gold seen in many samples
     with a rival seen once."""
-    fq = fold_quote(quote)
+    fq = fold(quote)
     if not fq or "|" in fq:
         return "order"
     found_two = found = False
     for ln in statements:
         if ln.pieces is not None:
             continue  # a token list carries no order (only a " | " quote spans its tokens)
-        text = fold_quote(ln.text)
+        text = fold(ln.text)
         hit = any(states(text, *gold, within=(s, s + len(fq))) for s in _occurrences(text, fq))
         if not hit:
             continue
@@ -203,4 +225,4 @@ def order_gate(
 def count_units(statements: Sequence[Line], chain: tuple[str, str]) -> int:
     """Statements (bullets) stating ``chain`` non-embedded: the raw-unit count behind
     ``extras.reversed_also_stated``."""
-    return sum(1 for ln in statements if ln.pieces is None and states(fold_quote(ln.text), *chain))
+    return sum(1 for ln in statements if ln.pieces is None and states(fold(ln.text), *chain))

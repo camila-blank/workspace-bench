@@ -110,8 +110,12 @@ def test_introspection_one_call_per_unit_on_a_shared_digest(tmp_path, monkeypatc
     assert r.extras["floors"]["protocol|b4"]["beta0"] is not None
     assert "headline_per_layer_any_position" not in r.extras
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    assert r.config["prompt_version"] == digest.prompt_version(II_PV, _ii_args(tmp_path))
-    assert r.config["prompt_version"].startswith(II_PV + "+digest-v4-task-extractive")
+    # the result stamp adds the regex-leg version (F12) to the base, before the digest suffix
+    want = digest.prompt_version(f"{II_PV}+{ij.REGEX_LEG_VERSION}", _ii_args(tmp_path))
+    assert r.config["prompt_version"] == want
+    assert r.config["prompt_version"].startswith(
+        f"{II_PV}+{ij.REGEX_LEG_VERSION}+digest-v4-task-extractive"
+    )
     assert r.extras["summary"]["n_items_summarized"] == 3
 
     # n_expected / n_missing are the native accounting
