@@ -230,25 +230,39 @@ def test_block_words_are_not_name_variants():
     "quote",
     [
         "Mia hugs Aunt Ruth",
+        "Mia hugs Auntie Ruth",
         "Mia hugs Mother Ruth",
+        "Mia hugs her mom Ruth",
+        "Mia hugs her aunt, Ruth",
+        "Mia hugs her stepmother Ruth",
+        "Mia hugs her step-mother Ruth",
+        "Mia hugs her mother-in-law Ruth",
+        "Mia hugs her great-grandmother Ruth",
         "Mia hugs Ruth, the aunt",
+        "Mia hugs Ruth the aunt",
         "Mia hugs Ruth, who is an aunt",
         "Mia hugs Ruth, the parent",
+        "Mia hugs Ruth, her mother",
+        "Mia hugs Ruth, who is her mother",
+        "Mia hugs Ruth (her mom)",
+        "Mia hugs Ruth, Mia's mom",
+        "Mia hugs Ruth, a loving mother",
+        "Mia hugs Ruth, an elderly aunt",
     ],
 )
 def test_name_with_a_conflicting_role_is_not_the_gold_role(quote):
     """Camila: 'parent' must not pass for 'grandparent'. A name stands for the gold role only
-    when the same quote attaches no different role to it."""
+    when the same quote attaches no conflicting (near-role / block) role to it."""
     assert gate.conflicting_role(quote, "Ruth", "grandparent", LEX)
     assert not gate.person_ref(quote, "Ruth", "grandparent", LEX)
     g = _check(quote, [_prose(quote)])
     assert g["quote_ok"] and g["agent_ref"] and g["patient_ref"] is False and g["ok"] is False
 
 
-def test_named_client_called_an_accountant_is_not_the_client():
-    q = "Dale, who works as an accountant, calls the receptionist"
+def test_named_client_called_a_near_role_is_not_the_client():
+    q = "Dale, who works as a receptionist, calls Priya"
     assert not gate.person_ref(q, "Dale", "client", LEX)
-    assert gate.person_ref("Dale calls the receptionist", "Dale", "client", LEX)
+    assert gate.person_ref("Dale calls Priya", "Dale", "client", LEX)
 
 
 @pytest.mark.parametrize(
@@ -257,15 +271,41 @@ def test_named_client_called_an_accountant_is_not_the_client():
         "Mia hugs Ruth",
         "Mia hugs Grandma Ruth",
         "Mia hugs Ruth, the grandmother",
+        "Mia hugs Ruth, a loving grandmother",
         "Mia's aunt watches as she hugs Ruth",
         "Ruth hugs Mia and her mother",
+        "Mia hugs Ruth and her mother",
+        "Mia, hugging her mother, smiles at Ruth",
     ],
 )
 def test_plain_or_own_role_name_still_resolves(quote):
     """A plain name, or one with its own role term, resolves as before; a role term the name
-    does not attach to (possessive, another person) is no conflict."""
+    does not attach to (possessive, another person, a conjunction) is no conflict."""
     g = _check(quote, [_prose(quote)])
     assert g["agent_ref"] and g["patient_ref"] and g["ok"], g
+
+
+@pytest.mark.parametrize(
+    ("quote", "name", "role"),
+    [
+        ("Diane, the parent, was angry at Kyle", "Diane", "mother"),
+        ("Martin, the parent, worried about Elise", "Martin", "father"),
+        ("Marta, a grandparent, indulged Eli", "Marta", "grandmother"),
+        ("Diane was angry at Kyle, the boy", "Kyle", "son"),
+        ("Diane was angry at Kyle, the teenager", "Kyle", "son"),
+        ("Martin worried about Elise, the little girl", "Elise", "daughter"),
+        ("Marta indulged Eli, a child", "Eli", "grandson"),
+        ("Marcus ejected Devin, a customer", "Devin", "patron"),
+        ("Daniel warned Omar, the athlete", "Omar", "player"),
+        ("Tomas, the butler, bowed to Aldric", "Tomas", "servant"),
+        ("Dale, who works as an accountant, calls Priya", "Dale", "client"),
+    ],
+)
+def test_compatible_or_non_near_role_never_conflicts(quote, name, role):
+    """Only near roles (the lexicon's close distractors) and block kin forms conflict: a broader
+    or compatible role on the name ("Diane, the parent" for a gold mother) resolves as before."""
+    assert not gate.conflicting_role(quote, name, role, LEX)
+    assert gate.person_ref(quote, name, role, LEX)
 
 
 def test_agent_name_beside_the_patient_role_term_is_no_conflict():
