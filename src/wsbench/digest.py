@@ -23,8 +23,12 @@ from wsbench.registry import JudgeArgs
 
 # v4 (plan 0032): tool-free wording, the Q4 token rule, task context on, named restatements,
 # bullet marks, number words; the language label (summ_lang) adds "-lang"
-DIGEST_PROMPT_VERSION = "digest-v4"
-SUMMARY_JUDGE_VERSION = "sj-v9"  # bump on any SUMMARY_NOTE* or family summary-variant edit
+# v5 (audit fixes F1/F2/F3/F11, 2026-10-31): every entry carries the note-taker's per-claim
+# sample "count" (capped mechanically at the samples holding its key); a multi-layer item is
+# digested layer by layer and the per-layer digests are merged (summ_layers=union); a
+# hierarchical merge keeps every chunk claim seen in >= CHUNK_KEEP_MIN samples
+DIGEST_PROMPT_VERSION = "digest-v5"
+SUMMARY_JUDGE_VERSION = "sj-v10"  # bump on any SUMMARY_NOTE* or family summary-variant edit
 SUMMARY_LAYER = -1  # the sentinel layer of a synthetic summary cell
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "default"
@@ -41,6 +45,13 @@ VARIANTS = ("blind", "task")
 DEFAULT_VARIANT = "task"  # plan 0032 §2.8.2: the family's task note reaches the summarizer
 RENDERS = ("extractive", "abstractive")
 OVERFLOWS = ("stride", "hierarchical")
+# audit F1 (2026-10-31): how a multi-layer item is digested. "union" (default): one digest per
+# read layer (each at the single-layer budget, so the all-layer budget scales with the layers and
+# every layer keeps its own rare tier), merged by key with per-claim counts summed; "joint": the
+# old single call over every layer (an ablation). A numbers digest (summ_numbers > 0) always runs
+# joint: its five-number budget is deliberately fixed (plan 0022 Part B).
+LAYER_MODES = ("union", "joint")
+DEFAULT_LAYER_MODE = "union"
 DEFAULT_OVERFLOW = "hierarchical"  # plan 0032 §2.2.1: never drops a readout; stride = ablation
 BULLET_MARK = " \u205e "  # " ⁞ ": joins the top-level bullets of one free-text sample
 DEFAULT_RENDER = "extractive"
@@ -92,8 +103,11 @@ generic restatements of the input's wording.
 Every entry, in either list, has: "statement" (one short line in the readouts' own terms), "key" \
 (the one to four words, copied exactly from the evidence, that name this entry's content, e.g. a \
 name, number or term), "where" (the [L<layer> pos <index>] header of the group the evidence comes \
-from), and "evidence" (one span copied character for character from ONE sample or ONE token \
-list, that shows the statement and contains the key; from a token list, copy whole tokens)."""
+from), "evidence" (one span copied character for character from ONE sample or ONE token \
+list, that shows the statement and contains the key; from a token list, copy whole tokens), and \
+"count" (how many samples state this entry's content: count the samples that make the same \
+claim, not the samples that merely contain the key word; a sample that only lists the key among \
+other words of its kind, or only restates the input's wording, does not count; at least 1)."""
 # the language label (summ_lang=1; multilingual families, plan 0032 §2.2.2): shown, never gated
 DIGEST_LANG_LINE = """For every entry also give "language": the language the evidence span is \
 written in (e.g. English, Russian; "mixed: Russian + English" when it mixes). Record it; never \
@@ -121,9 +135,10 @@ on their own. Return "rare" as an empty list.
 
 Every entry has: "statement" (one short line in the readouts' own terms), "key" (the number, \
 copied exactly from the evidence), "where" (the [L<layer> pos <index>] header of the group the \
-evidence comes from), and "evidence" (one span copied character for character from ONE sample or \
+evidence comes from), "evidence" (one span copied character for character from ONE sample or \
 ONE token list, that shows the number in context and contains the key; from a token list, copy \
-whole tokens)."""
+whole tokens), and "count" (how many samples state this number as their own, not inside a list \
+of numbers or a restatement of the input; at least 1)."""
 )
 DIGEST_TASK_LINE = """TASK CONTEXT: while these readouts were taken, {task_note}. Use this only \
 to judge what in the readouts is relevant to this kind of task: record every mention that bears \
@@ -131,21 +146,28 @@ on it, even one that appears in a single sample or at one layer, rather than dis
 noise. Do not use the context to guess, answer, translate or add anything the readouts do not \
 say."""
 DIGEST_USER = "READOUTS:\n{bundle}"
-SUMMARY_NOTE = """The readout below is a digest of the readouts across every read layer \
-and position: a note-taker who did not see the passage picked the most prominent readout samples, \
-most prominent first, then samples carrying content seen in only one or a few samples, and each \
-line is marked with how many readout samples contain its key content ([many], [several], [few], \
-[one]; counted mechanically). \
+_COUNT_NOTE = """Each line is marked with how many readout samples state its content \
+([N samples], or [N samples, M layers] when it was seen at M read layers): counted per claim, \
+so a sample that only lists the word among others of its kind, or only restates the question, \
+is not counted; compare these counts when weighing lines against each other."""
+SUMMARY_NOTE = (
+    """The readout below is a digest of the readouts across every read layer \
+and position: for each read layer, a note-taker who did not see the passage picked the most \
+prominent readout samples, then samples carrying content seen in only one or a few samples, and \
+the layers' picks are merged, the most-stated first. """
+    + _COUNT_NOTE
+    + """ \
 Each line is one real readout sample (a free-text generation, or one ranked list of top tokens). \
 Treat each line as a separate sample: pieces on different lines never combine. Any quote must be \
 copied from inside one line, without the bracketed marker."""
+)
 SUMMARY_NOTE_ABSTRACTIVE = """The readout below is a digest of the readouts across every \
-read layer and position, written by a note-taker who did not see the passage, most prominent \
-first, then content seen in only one or a few samples. Each line is one \
-statement in the note-taker's words, how many samples carried it, and a verbatim evidence span \
-from one real readout sample. The statements are not evidence: judge what the evidence spans \
-show, treat each line as a separate sample (pieces on different lines never combine), and copy \
-any quote from inside one evidence span."""
+read layer and position, written layer by layer by a note-taker who did not see the passage, \
+most prominent first, then content seen in only one or a few samples. Each line is one \
+statement in the note-taker's words, how many samples state it (counted per claim), and a \
+verbatim evidence span from one real readout sample. The statements are not evidence: judge \
+what the evidence spans show, treat each line as a separate sample (pieces on different lines \
+never combine), and copy any quote from inside one evidence span."""
 # the ONE token-list rule (decision Q4; plan 0032 §2.7.2): mc.token_note() with no flat types.
 # A family with flat_types / multi_select renders mc.token_note(...) of its own spec instead.
 SUMMARY_NOTE_TOKENS = _mc.TOKEN_NOTE
@@ -155,8 +177,21 @@ _RARE_CLAUSE_ABS = ", then content seen in only one or a few samples"
 assert (
     SUMMARY_NOTE.count(_RARE_CLAUSE) == 1 and SUMMARY_NOTE_ABSTRACTIVE.count(_RARE_CLAUSE_ABS) == 1
 )
-SUMMARY_NOTE_NO_RARE = SUMMARY_NOTE.replace(_RARE_CLAUSE, "")
-SUMMARY_NOTE_ABSTRACTIVE_NO_RARE = SUMMARY_NOTE_ABSTRACTIVE.replace(_RARE_CLAUSE_ABS, "")
+# the rare-free numbers digest runs joint (one call over every layer), never layer by layer
+_UNION_CLAUSE = """for each read layer, a note-taker who did not see the passage picked the most \
+prominent readout samples, and \
+the layers' picks are merged, the most-stated first."""
+_UNION_CLAUSE_ABS = "written layer by layer by a note-taker"
+SUMMARY_NOTE_NO_RARE = SUMMARY_NOTE.replace(_RARE_CLAUSE, "").replace(
+    _UNION_CLAUSE,
+    "a note-taker who did not see the passage picked the most prominent readout samples, most "
+    "prominent first.",
+)
+SUMMARY_NOTE_ABSTRACTIVE_NO_RARE = SUMMARY_NOTE_ABSTRACTIVE.replace(_RARE_CLAUSE_ABS, "").replace(
+    _UNION_CLAUSE_ABS, "written by a note-taker"
+)
+assert "layer by layer" not in SUMMARY_NOTE_ABSTRACTIVE_NO_RARE
+assert "for each read layer" not in SUMMARY_NOTE_NO_RARE
 EXTRACTIVE_LINE = "[{support}] {evidence}"
 EXTRACTIVE_LINE_LANG = "[{support}] [in {language}] {evidence}"
 ABSTRACTIVE_LINE = '- {statement} [support: {support}] — evidence: "{evidence}"'
@@ -173,6 +208,7 @@ PROMPTS: dict[str, str] = {
     "SUMMARY_NOTE_NO_RARE": SUMMARY_NOTE_NO_RARE,
     "SUMMARY_NOTE_ABSTRACTIVE_NO_RARE": SUMMARY_NOTE_ABSTRACTIVE_NO_RARE,
     "EXTRACTIVE_LINE": EXTRACTIVE_LINE,
+    "COUNT_NOTE": _COUNT_NOTE,
     "EXTRACTIVE_LINE_LANG": EXTRACTIVE_LINE_LANG,
     "ABSTRACTIVE_LINE": ABSTRACTIVE_LINE,
 }
@@ -180,12 +216,13 @@ PROMPTS: dict[str, str] = {
 _ENTRY = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["statement", "key", "where", "evidence"],
+    "required": ["statement", "key", "where", "evidence", "count"],
     "properties": {
         "statement": {"type": "string"},
         "key": {"type": "string"},
         "where": {"type": "string"},
         "evidence": {"type": "string"},
+        "count": {"type": "integer"},
     },
 }
 DIGEST_SCHEMA = schema_block(
@@ -270,8 +307,17 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "multilingual_multihop": {"summ_lang": "1"},
     "multilingual_typo": {"summ_lang": "1"},
     # plan 0045 C1: 8-11% of introspection digests are refused by Opus 5.5 and were undecided;
-    # a declined digest re-runs server-side on a fallback model (extras.digest_served_by)
-    "introspection": {"summ_fallback": "default"},
+    # a declined digest re-runs server-side on a fallback model (extras.digest_served_by).
+    # Audit F3 (2026-10-31): the jailbreak route for every family whose digests Opus 5.5 declines
+    # (all-layer: medical_diagnosis 39/92, medical_diagnosis_alt 43/89, introspection 9/125
+    # undecided, moral_rationale 5, user_modeling 3, model_specific_DM 1): a still-declined digest
+    # re-runs on Sonnet 5 (client-side), counted in extras.digest_served_by
+    "introspection": {"summ_fallback": "default+claude-sonnet-5"},
+    "medical_diagnosis": {"summ_fallback": "default+claude-sonnet-5"},
+    "medical_diagnosis_alt": {"summ_fallback": "default+claude-sonnet-5"},
+    "moral_rationale": {"summ_fallback": "default+claude-sonnet-5"},
+    "user_modeling": {"summ_fallback": "default+claude-sonnet-5"},
+    "model_specific_directed_modulation": {"summ_fallback": "default+claude-sonnet-5"},
 }
 assert all(set(d) <= FAMILY_DEFAULT_KEYS for d in FAMILY_DEFAULTS.values())
 
@@ -297,6 +343,12 @@ class Settings:
     # declined after it re-runs once on <model> (client-side; plan 0037 J10)
     fallback: str = "none"
     lang: bool = False  # summ_lang=1: each entry records the language of its evidence
+    layer_mode: str = DEFAULT_LAYER_MODE  # summ_layers (audit F1): union | joint
+
+    @property
+    def per_layer(self) -> bool:
+        """A multi-layer item is digested layer by layer (never for a numbers digest)."""
+        return self.layer_mode == "union" and self.numbers == 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -315,6 +367,7 @@ class Settings:
             "timeout": self.timeout,
             "fallback": self.fallback,
             "lang": self.lang,
+            "layer_mode": self.layer_mode,
         }
 
     @property
@@ -427,6 +480,7 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
         else None,
         timeout=float(_int_opt(args, "summ_timeout", 1)) if "summ_timeout" in args.extra else None,
         lang=_choice(args, "summ_lang", ("0", "1"), "0") == "1",
+        layer_mode=_choice(args, "summ_layers", LAYER_MODES, DEFAULT_LAYER_MODE),
     )
 
 
@@ -462,6 +516,7 @@ KNOWN_KEYS = frozenset(
         "summ_rare",
         "summ_numbers",
         "summ_lang",
+        "summ_layers",
     }
 )
 
@@ -511,10 +566,12 @@ def pinned(args: JudgeArgs, family: str | None = None) -> bool:
 
 
 def prompt_version(pv: str, args: JudgeArgs, family: str | None = None) -> str:
-    """The summary-mode instrument string: ``<pv>+digest-v4-<variant>-<render>[-lang][-stride]
-    +sj-v9`` (defaults: ``<pv>+digest-v4-task-extractive+sj-v9``). Cite this, never a literal."""
+    """The summary-mode instrument string: ``<pv>+digest-v5-<variant>-<render>[-lang][-stride]
+    [-joint]+sj-v10`` (defaults: ``<pv>+digest-v5-task-extractive+sj-v10``). Cite this, never a
+    literal."""
     s = settings(args, family)
     tail = ("-lang" if s.lang else "") + ("-stride" if s.overflow == "stride" else "")
+    tail += "-joint" if s.layer_mode == "joint" and s.numbers == 0 else ""
     return f"{pv}+{DIGEST_PROMPT_VERSION}-{s.variant}-{s.render}{tail}+{SUMMARY_JUDGE_VERSION}"
 
 
@@ -1058,23 +1115,56 @@ def _key_hits(key: str, ln: Line) -> bool:
     return re.search(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", t) is not None
 
 
+def key_count(key: str, lines: Sequence[Line]) -> int:
+    """How many bundle samples contain ``key`` as whole words (a whole token for a token line);
+    at least 1 (the evidence sample itself). The mechanical CAP on a per-claim count."""
+    return max(1, sum(1 for ln in lines if _key_hits(key, ln)))
+
+
 def support_of(key: str, lines: Sequence[Line]) -> str:
-    """How many bundle samples contain the item's key content as whole words (a whole token for a
-    token line), bucketed: 1 one, 2-3 few, 4-9 several, 10+ many. Mechanical, never the
-    summarizer's word."""
-    n = max(1, sum(1 for ln in lines if _key_hits(key, ln)))
+    """:func:`key_count` bucketed: 1 one, 2-3 few, 4-9 several, 10+ many. Kept for the key-word
+    diagnostic only: since digest-v5 the judged marker is the per-claim count
+    (:func:`support_text`), because a key word also hits option lists and restated questions
+    (audit F2)."""
+    n = key_count(key, lines)
     return "one" if n == 1 else "few" if n <= 3 else "several" if n <= 9 else "many"
+
+
+# the judged support marker's text, as a regex (families that parse a rendered digest line)
+SUPPORT_PATTERN = r"\d+ samples?(?:, \d+ layers)?(?:; [^\]]+)?"
+
+
+def support_text(count: int, n_layers: int = 1, consensus: str = "") -> str:
+    """The judged support marker (audit F2): ``N samples`` (``1 sample``), plus ``, M layers``
+    when the claim was seen at M > 1 read layers, plus a first-number consensus note (F11)."""
+    out = f"{count} sample" + ("" if count == 1 else "s")
+    if n_layers > 1:
+        out += f", {n_layers} layers"
+    return out + (f"; {consensus}" if consensus else "")
+
+
+def claim_count(raw: object, key: str, lines: Sequence[Line]) -> int:
+    """The note-taker's per-claim ``count`` (audit F2), capped at :func:`key_count` (a sample
+    that states the claim must contain its key) and at least 1. A missing or non-integer count
+    falls back to the cap (the key-word count, the pre-v5 rule)."""
+    cap = key_count(key, lines)
+    if isinstance(raw, bool) or not isinstance(raw, int | float) or raw != raw:
+        return cap
+    return max(1, min(int(raw), cap))
 
 
 @dataclass(frozen=True)
 class Grounded:
     statement: str
-    support: str  # mechanical (support_of on the key)
+    support: str  # the judged marker (support_text of count / layers / consensus)
     evidence: str  # the summarizer's span
     line: Line  # the whole bundle sample the span came from
     key: str = ""  # the item's key content (verified inside the evidence), or the evidence
     tier: str = "items"  # "items" (prominent), "rare" or "numbers" (plan 0022)
     language: str = ""  # summ_lang: the summarizer's label for the evidence's language
+    count: int = 1  # samples stating the claim (claim_count; summed over layers when merged)
+    layers: tuple[int, ...] = ()  # the read layers whose digests carried the claim
+    consensus: str = ""  # F11: the first-number consensus note of a number, else ""
 
 
 # a numbers-digest key is ONE numeral token (plan 0022 Rev 3 #3): ASCII / fullwidth digits with
@@ -1148,11 +1238,13 @@ def has_entries(result: object, max_rare: int = 1) -> bool:
     return bool(result.get("items")) or (max_rare > 0 and isinstance(rare, list) and bool(rare))
 
 
-def caps(s: Settings) -> dict[str, Any]:
+def caps(s: Settings, spare: int = 0) -> dict[str, Any]:
     """``ground``'s tier caps under settings ``s``: the numbers digest caps ``items`` at
-    ``s.numbers`` and requires a numeral in every key; otherwise ``max_items`` / ``max_rare``."""
+    ``s.numbers`` (plus ``spare``, audit F11: the spare numbers asked for so that restated
+    operands can be demoted; the judged slots are cut back to ``s.numbers`` afterwards) and
+    requires a numeral in every key; otherwise ``max_items`` / ``max_rare``."""
     if s.numbers > 0:
-        return {"max_items": s.numbers, "max_rare": s.max_rare, "numbers": True}
+        return {"max_items": s.numbers + spare, "max_rare": s.max_rare, "numbers": True}
     return {"max_items": s.max_items, "max_rare": s.max_rare, "numbers": False}
 
 
@@ -1217,9 +1309,9 @@ def ground(
         seen_keys.add(dkey)
         lab = d.get("language") if lang else ""
         lab = _one_line(lab) if isinstance(lab, str) else ""
-        kept.append(
-            Grounded(_one_line(st), support_of(k, support_lines or lines), ev1, ln, k, tier, lab)
-        )
+        n = claim_count(d.get("count"), k, support_lines or lines)
+        lay = () if ln.layer is None else (ln.layer,)
+        kept.append(Grounded(_one_line(st), support_text(n), ev1, ln, k, tier, lab, n, lay))
     return kept, dropped
 
 
@@ -1282,19 +1374,37 @@ class Collapse:
     served_by: dict[str, str] = field(default_factory=dict)  # items a refusal fallback served
     diag: dict[str, int] = field(default_factory=dict)
     model: str = ""  # the digest model of record (items no fallback served)
+    grounded: dict[str, list[Grounded]] = field(default_factory=dict)  # the judged entries
+    # audit F3: summarized items some of whose layers (or chunks) stayed unserved -> those layers
+    partial: dict[str, list[int]] = field(default_factory=dict)
+    # audit F1: per item, read layer -> judged evidence lines from it (logged, never gated)
+    layer_hist: dict[str, dict[int, int]] = field(default_factory=dict)
+    # why an item (or per-layer part) was not served: all_dropped | refused | too_long, or why
+    # it is empty although it had readouts: zero (the digest reported nothing)
+    reasons: dict[str, str] = field(default_factory=dict)
 
     def extras(self) -> dict[str, Any]:
         served: dict[str, int] = {}
         for i in self.summaries:
             m = self.served_by.get(i) or self.model or DEFAULT_MODEL
             served[m] = served.get(m, 0) + 1
+        hist: dict[int, int] = {}
+        for h in self.layer_hist.values():
+            for layer, n in h.items():
+                hist[layer] = hist.get(layer, 0) + n
+        total = sum(hist.values())
         return {
             **self.diag,
             "n_items_summarized": len(self.summaries),
             "n_items_unsummarized": len(self.unsummarized),
             "n_items_empty": len(self.empty),
+            "n_items_partial": len(self.partial),
+            "summary_partial_ids": sorted(self.partial),
             "n_truncated_items": len(self.truncated),
             "digest_served_by": served,
+            # F1: where the judged lines come from (one layer dominating = an unbalanced merge)
+            "summary_layer_hist": {str(k): hist[k] for k in sorted(hist)},
+            "summary_top_layer_share": (max(hist.values()) / total) if total else None,
             **completeness_flags(self),
             "count_units": {"expected/missing": "cells", "unjudged/empty": "items"},
         }
@@ -1310,6 +1420,10 @@ class Collapse:
             "summary_hierarchical": item_id in self.chunks,
             "summary_chunks": self.chunks.get(item_id, 1),
             "summary_served_by": self.served_by.get(item_id),
+            "summary_partial_layers": self.partial.get(item_id),
+            "summary_layers": {
+                str(k): v for k, v in sorted(self.layer_hist.get(item_id, {}).items())
+            },
             "summary_state": (
                 "unsummarized"
                 if item_id in self.unsummarized
@@ -1370,9 +1484,11 @@ def gate_texts(
     return [s for s in (cell.samples or ()) if s.strip()]
 
 
-def _digest_fp(s: Settings, task_note: str, text: str) -> str:
+def _digest_fp(s: Settings, task_note: str, text: str, salt: str = "") -> str:
     """The digest fingerprint, ONE definition for the stride and hierarchical paths (the task
-    note of THAT item, so per-item notes key their own entries)."""
+    note of THAT item, so per-item notes key their own entries). ``salt``: a re-ask of a
+    collapsed digest (audit F3) keys its own entry; a numbers digest asking for spare numbers
+    (F11) keys its own too."""
     return fingerprint(
         DIGEST_PROMPT_VERSION,
         s.model,
@@ -1386,12 +1502,15 @@ def _digest_fp(s: Settings, task_note: str, text: str) -> str:
         *(["lang"] if s.lang else []),  # summ_lang keys its own entries (absent: unchanged)
         task_note if s.variant == "task" else "",
         text,
+        *([salt] if salt else []),
     )
 
 
-def render_system(s: Settings, task_note: str) -> str:
+def render_system(s: Settings, task_note: str, spare: int = 0) -> str:
+    """``spare`` > 0 (a numbers digest whose restated operands are demoted, audit F11): ask for
+    that many numbers beyond ``s.numbers``, so the operands do not take the judged slots."""
     if s.numbers > 0:
-        system = DIGEST_SYSTEM_NUMBERS.replace("{max_items}", str(s.numbers))
+        system = DIGEST_SYSTEM_NUMBERS.replace("{max_items}", str(s.numbers + spare))
     else:
         system = DIGEST_SYSTEM.replace("{max_items}", str(s.max_items)).replace(
             "{max_rare}", str(s.max_rare)
@@ -1456,6 +1575,97 @@ def _synthetic(item_id: str, last: Cell, pos: int | None) -> Cell:
     )
 
 
+# audit F3 (2026-10-31): a digest that kept fewer than COLLAPSE_MIN entries from at least
+# COLLAPSE_READOUTS readouts collapsed; it is re-asked once and the fuller answer kept
+COLLAPSE_MIN = 5
+COLLAPSE_READOUTS = 100
+# audit F1: a hierarchical merge keeps every chunk claim stated by at least this many samples,
+# whether or not the final (re-summarizing) call kept it
+CHUNK_KEEP_MIN = 5
+# audit F11: a numbers digest whose restated operands are demoted asks for this many spare numbers
+NUMBERS_SPARE = 4
+# audit F11: a first-number consensus = at least CONSENSUS_MIN samples, and at least
+# CONSENSUS_SHARE of the samples, of ONE activation (layer, position) begin with the same value
+CONSENSUS_MIN = 3
+CONSENSUS_SHARE = 0.75
+_PID = "\x1f"  # joins an item id and a layer into one per-layer digest part id (never in an id)
+
+
+def _statement(g: Grounded) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "statement": g.statement,
+        "key": g.key,
+        "support": g.support,
+        "count": g.count,
+        "layers": list(g.layers),
+        "evidence": g.evidence,
+        "tier": g.tier,
+    }
+    if g.consensus:
+        out["consensus"] = g.consensus
+    return out
+
+
+def _set_summary(col: Collapse, item_id: str, kept: Sequence[Grounded], s: Settings) -> None:
+    """Record ``kept`` as the item's judged digest: text, evidence, statements, layer histogram
+    and the synthetic cell's one sample."""
+    text, evid = render_summary(kept, s.render, lang=s.lang)
+    col.summaries[item_id] = text
+    col.evidence[item_id] = tuple(evid)
+    col.statements[item_id] = [_statement(g) for g in kept]
+    col.grounded[item_id] = list(kept)
+    hist: dict[int, int] = {}
+    for ln in evid:
+        if ln.layer is not None:
+            hist[ln.layer] = hist.get(ln.layer, 0) + 1
+    col.layer_hist[item_id] = hist
+    col.cells[item_id] = dataclasses.replace(col.cells[item_id], samples=(text,))
+
+
+def claim_key(g: Grounded) -> str:
+    """The identity two digest entries share when they report the same content: a number's value
+    (numbers tier), else the key folded (case, whitespace, markdown)."""
+    if g.tier == "numbers":
+        return f"#{number_value(g.key)}"
+    return _norm(_MD.sub("", g.key)) or _norm(g.evidence)
+
+
+def merge_grounded(gs: Sequence[Grounded]) -> list[Grounded]:
+    """Audit F1: entries of several digests (one per read layer, or one per chunk) merged by
+    :func:`claim_key`. A merged entry keeps the evidence of its best-supported member, the SUM of
+    the members' per-claim counts (each capped inside its own bundle, so the sum never exceeds the
+    samples holding the key), the union of their layers, and the prominent tier if any member had
+    it. Order: prominent entries, then rare ones, each by count; ties by the entry's rank inside
+    its own digest (so equally supported layers interleave), then first seen."""
+    groups: dict[str, list[Grounded]] = {}
+    rank: dict[str, int] = {}
+    seen_in: dict[tuple[int, ...], int] = {}
+    for g in gs:
+        r = seen_in.get(g.layers, 0)
+        seen_in[g.layers] = r + 1
+        ck = claim_key(g)
+        groups.setdefault(ck, []).append(g)
+        rank[ck] = min(rank.get(ck, r), r)
+    out: list[tuple[int, Grounded]] = []
+    for ck, members in groups.items():
+        rep = max(members, key=lambda g: g.count)
+        total = sum(g.count for g in members)
+        layers = tuple(sorted({x for g in members for x in g.layers}))
+        tier = rep.tier
+        if tier == "rare" and any(g.tier != "rare" for g in members):
+            tier = next(g.tier for g in members if g.tier != "rare")
+        merged = dataclasses.replace(
+            rep,
+            count=total,
+            layers=layers,
+            tier=tier,
+            support=support_text(total, len(layers), rep.consensus),
+        )
+        out.append((rank[ck], merged))
+    out.sort(key=lambda rg: (rg[1].tier == "rare", -rg[1].count, rg[0]))
+    return [g for _r, g in out]
+
+
 def collapse(
     name: str,
     cells_by_item: Mapping[str, Sequence[Cell]],
@@ -1467,6 +1677,8 @@ def collapse(
     task_note: str | Mapping[str, str],
     pos: int | None = None,
     expect_all: Sequence[Cell] | None = None,
+    operands: Mapping[str, Sequence[float]] | None = None,
+    consensus: bool = False,
 ) -> Collapse:
     """Digest every item's cells into one synthetic prose Cell (``layer = SUMMARY_LAYER``;
     ``pos`` / ``token`` copied from the item's last cell unless ``pos`` is given). Items with no
@@ -1475,15 +1687,30 @@ def collapse(
     failing the evidence check -> ``unsummarized``. Both get a ``("",)`` cell. Cache key
     ``digest:<id>|<layers>``; the render is not fingerprinted (one digest serves both).
 
+    Audit F1 (``summ_layers=union``, the default under the hierarchical overflow): an item read
+    at several layers is digested LAYER BY LAYER (cache key ``digest:<id>|<layer>``, the same
+    key a single-layer run uses) and the per-layer digests are merged (:func:`merge_grounded`):
+    the all-layer budget is the per-layer budget times the layers, each layer keeps its own rare
+    tier, and the judged lines carry per-claim counts summed over layers. An item some of whose
+    layers stay unserved is summarized from the rest and listed in ``partial``. A numbers digest
+    (``summ_numbers`` > 0) runs joint.
+
     ``task_note``: one note for every item, or a Mapping per item id covering every item
     (``ValueError`` otherwise). ``expect_all``: the loaded cells of the read span; a passed item
     missing one of its non-blank cells raises ``ValueError`` (plan 0032 §2.2.6). Under the
-    default ``hierarchical`` overflow every non-blank readout line is bundled (asserted)."""
+    default ``hierarchical`` overflow every non-blank readout line is bundled (asserted).
+
+    Audit F11 (numbers digests only): ``operands`` (per item, the values the input itself
+    states) never take a judged number slot while another number is available (the digest asks
+    for :data:`NUMBERS_SPARE` spare numbers); ``consensus=True`` marks every number that is the
+    first number of at least 3 of the 4 samples of one activation (:func:`consensus_claims`)
+    with that count, and such a number fills a slot the summarizer left free."""
     s = settings(args, name)
     notes = _notes(name, cells_by_item, task_note)
     _check_expect_all(name, cells_by_item, expect_all)
+    spare = NUMBERS_SPARE if s.numbers > 0 and operands is not None else 0
     if s.overflow == "hierarchical":
-        return _collapse_hierarchical(
+        col = _collapse_layers(
             name,
             cells_by_item,
             args=args,
@@ -1493,8 +1720,42 @@ def collapse(
             preflight=preflight,
             notes=notes,
             pos=pos,
+            spare=spare,
         )
-    system_of = {i: render_system(s, notes[i]) for i in cells_by_item}
+    else:
+        col = _collapse_stride(
+            name,
+            cells_by_item,
+            args=args,
+            s=s,
+            cache=cache,
+            spend=spend,
+            preflight=preflight,
+            notes=notes,
+            pos=pos,
+            spare=spare,
+        )
+    if s.numbers > 0 and (operands is not None or consensus) and not args.dry_run:
+        _numbers_pass(col, cells_by_item, s, operands or {}, consensus)
+    return col
+
+
+def _collapse_stride(
+    name: str,
+    cells_by_item: Mapping[str, Sequence[Cell]],
+    *,
+    args: JudgeArgs,
+    s: Settings,
+    cache: Cache,
+    spend: Spend,
+    preflight: Callable[[], None] | None,
+    notes: Mapping[str, str],
+    pos: int | None,
+    spare: int = 0,
+) -> Collapse:
+    """``collapse`` under the ``stride`` ablation: one capped bundle per item, one call."""
+    salt = f"spare{spare}" if spare else ""
+    system_of = {i: render_system(s, notes[i], spare) for i in cells_by_item}
     schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
     layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
     col = Collapse()
@@ -1526,7 +1787,7 @@ def collapse(
             continue
         col.diag["n_bundle_tokens_est"] += est_tokens(text)
         lines_of[item_id] = lines
-        fp = _digest_fp(s, notes[item_id], text)
+        fp = _digest_fp(s, notes[item_id], text, salt)
         pending.append((item_id, fp, render_user(text)))
     if args.dry_run:
         if pending:
@@ -1616,7 +1877,7 @@ def collapse(
             continue
         dups, nds = [0], [0]
         kept, dropped = ground(
-            r, lines_of[item_id], duplicates=dups, numeral_drops=nds, lang=s.lang, **caps(s)
+            r, lines_of[item_id], duplicates=dups, numeral_drops=nds, lang=s.lang, **caps(s, spare)
         )
         col.diag["n_key_duplicates"] += dups[0]
         col.diag["n_evidence_kept"] += len(kept)
@@ -1631,21 +1892,326 @@ def collapse(
             fp = next(f for i, f, _u in pending if i == item_id)
             cache.put(f"digest:{item_id}|{layers_tag}", fp, {"result": None, "meta": {"raw": r}})
             continue
-        text, evid = render_summary(kept, s.render, lang=s.lang)
-        col.summaries[item_id] = text
-        col.evidence[item_id] = tuple(evid)
-        col.statements[item_id] = [
-            {
-                "statement": g.statement,
-                "key": g.key,
-                "support": g.support,
-                "evidence": g.evidence,
-                "tier": g.tier,
-            }
-            for g in kept
-        ]
-        col.cells[item_id] = dataclasses.replace(col.cells[item_id], samples=(text,))
+        _set_summary(col, item_id, kept, s)
     return col
+
+
+def _collapse_layers(
+    name: str,
+    cells_by_item: Mapping[str, Sequence[Cell]],
+    *,
+    args: JudgeArgs,
+    s: Settings,
+    cache: Cache,
+    spend: Spend,
+    preflight: Callable[[], None] | None,
+    notes: Mapping[str, str],
+    pos: int | None,
+    spare: int,
+) -> Collapse:
+    """The hierarchical overflow, per read layer when ``s.per_layer`` (audit F1): each item is cut
+    into one part per layer, every part is digested (``_collapse_hierarchical``), a collapsed
+    part is re-asked once (F3), and the parts are merged back per item."""
+    layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
+    parts: dict[str, list[Cell]] = {}
+    owner: dict[str, str] = {}
+    layer_of: dict[str, int | None] = {}
+    stems: dict[str, str] = {}
+    for item_id, cells in cells_by_item.items():
+        if not cells:
+            raise ValueError(f"{name}: collapse() got no cells for {item_id}")
+        by_layer: dict[int, list[Cell]] = {}
+        for c in cells:
+            by_layer.setdefault(c.layer, []).append(c)
+        if s.per_layer and len(by_layer) > 1:  # one layer: the joint bundle IS the layer's
+            for layer in sorted(by_layer):
+                pid = f"{item_id}{_PID}{layer}"
+                parts[pid], owner[pid], layer_of[pid] = by_layer[layer], item_id, layer
+                stems[pid] = f"digest:{item_id}|{layer}"
+        else:
+            parts[item_id], owner[item_id], layer_of[item_id] = list(cells), item_id, None
+            stems[item_id] = f"digest:{item_id}|{layers_tag}"
+    pnotes = {pid: notes[owner[pid]] for pid in parts}
+    salt = f"spare{spare}" if spare else ""
+    kw: dict[str, Any] = {
+        "args": args,
+        "s": s,
+        "cache": cache,
+        "spend": spend,
+        "notes": pnotes,
+        "pos": pos,
+        "stems": stems,
+        "spare": spare,
+    }
+    part = _collapse_hierarchical(name, parts, preflight=preflight, salt=salt, **kw)
+    part.diag.update(n_digest_reasked=0, n_digest_reask_better=0, n_digest_collapsed=0)
+    if s.numbers == 0 and not args.dry_run:
+        _reask_collapsed(name, part, parts, salt=salt, kw=kw)
+    return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
+
+
+def _reask_collapsed(
+    name: str, part: Collapse, parts: Mapping[str, Sequence[Cell]], *, salt: str, kw: dict
+) -> None:
+    """Audit F3: a digest that kept fewer than :data:`COLLAPSE_MIN` entries (or none) from at
+    least :data:`COLLAPSE_READOUTS` readouts collapsed: re-ask it once (its own fingerprint) and
+    keep whichever answer holds more entries. ``n_digest_collapsed`` counts the parts still
+    collapsed after the re-ask."""
+    low = [
+        p
+        for p in parts
+        if (p in part.summaries or p in part.empty)
+        and len(part.grounded.get(p, ())) < COLLAPSE_MIN
+        and _n_readouts(parts[p]) >= COLLAPSE_READOUTS
+    ]
+    if not low:
+        return
+    print(f"{name} digest: re-asking {len(low)} collapsed digest(s)")
+    again = _collapse_hierarchical(
+        name, {p: parts[p] for p in low}, preflight=None, salt=salt + "|reask1", **kw
+    )
+    better = still = 0
+    for p in low:
+        g2 = again.grounded.get(p, [])
+        if len(g2) > len(part.grounded.get(p, ())):
+            better += 1
+            part.empty.discard(p)
+            part.reasons.pop(p, None)
+            for attr in ("summaries", "evidence", "statements", "grounded", "layer_hist"):
+                getattr(part, attr)[p] = getattr(again, attr)[p]
+            part.cells[p] = again.cells[p]
+            for attr in ("served_by", "chunks", "partial"):
+                d = getattr(part, attr)
+                d.pop(p, None)
+                if p in getattr(again, attr):
+                    d[p] = getattr(again, attr)[p]
+        still += len(part.grounded.get(p, ())) < COLLAPSE_MIN
+    part.diag["n_digest_reasked"] = len(low)
+    part.diag["n_digest_reask_better"] = better
+    part.diag["n_digest_collapsed"] = still
+
+
+def _merge_parts(
+    part: Collapse,
+    parts: Mapping[str, Sequence[Cell]],
+    owner: Mapping[str, str],
+    layer_of: Mapping[str, int | None],
+    cells_by_item: Mapping[str, Sequence[Cell]],
+    s: Settings,
+    pos: int | None,
+) -> Collapse:
+    """The per-item Collapse from the per-part one: an item is summarized when any part is (its
+    unserved layers listed in ``partial``), unsummarized when none is and any part was not
+    served, else empty."""
+    col = Collapse()
+    col.model = part.model
+    col.diag = dict(part.diag)
+    col.diag["n_digest_parts"] = len(parts)
+    col.diag["n_parts_unsummarized"] = len(part.unsummarized)
+    # the part-level reason counts, and item-level ones below (an item counts once)
+    for why in ("all_dropped", "refused", "too_long"):
+        col.diag[f"n_parts_{why}"] = sum(1 for r in part.reasons.values() if r == why)
+    col.truncated = set(part.truncated)
+    pids_of: dict[str, list[str]] = {}
+    for pid, item_id in owner.items():
+        pids_of.setdefault(item_id, []).append(pid)
+    for item_id, cells in cells_by_item.items():
+        last = max(cells, key=lambda c: (c.layer, c.pos))
+        col.cells[item_id] = _synthetic(item_id, last, pos)
+        pids = pids_of.get(item_id, [])
+        done = [p for p in pids if p in part.summaries]
+        lost = [p for p in pids if p not in part.summaries and p not in part.empty]
+        if not done:
+            (col.unsummarized if lost else col.empty).add(item_id)
+            if not lost and any(part.reasons.get(p) == "zero" for p in pids):
+                col.reasons[item_id] = "zero"  # an item-level zero-entry digest
+            whys = {part.reasons[p] for p in lost if p in part.reasons}
+            for why in ("refused", "too_long", "all_dropped"):  # first matching reason
+                if why in whys:
+                    col.reasons[item_id] = why
+                    break
+            continue
+        miss: set[int] = set()
+        for p in done:
+            miss.update(part.partial.get(p, ()))
+        for p in lost:
+            layer = layer_of[p]
+            miss.update([layer] if layer is not None else {c.layer for c in parts[p]})
+        if miss:
+            col.partial[item_id] = sorted(miss)
+        if len(pids) == 1:
+            kept = part.grounded[done[0]]
+        else:
+            kept = merge_grounded([g for p in done for g in part.grounded[p]])
+        _set_summary(col, item_id, kept, s)
+        n_chunks = sum(part.chunks[p] for p in done if p in part.chunks)
+        if n_chunks:
+            col.chunks[item_id] = n_chunks
+        models = sorted(
+            {m for p in done if p in part.served_by for m in part.served_by[p].split(",")}
+        )
+        if models:
+            col.served_by[item_id] = ",".join(models)
+    col.diag["n_hierarchical_items"] = len(col.chunks)
+    col.diag["n_fallback_served_items"] = len(col.served_by)
+    col.diag["n_items_all_dropped"] = sum(1 for r in col.reasons.values() if r == "all_dropped")
+    col.diag["n_digest_refused"] = sum(1 for r in col.reasons.values() if r == "refused")
+    col.diag["n_digest_too_long"] = sum(1 for r in col.reasons.values() if r == "too_long")
+    col.diag["n_parts_zero_nonempty"] = part.diag.get("n_digest_zero_nonempty", 0)
+    col.diag["n_digest_zero_nonempty"] = sum(1 for r in col.reasons.values() if r == "zero")
+    return col
+
+
+# ---------------------------------------------------------------- numbers digest (audit F11)
+
+
+@dataclass(frozen=True)
+class Consensus:
+    """At ONE activation (layer, position), ``k`` of the ``n`` samples begin with ``value``."""
+
+    value: float
+    key: str  # the numeral as the first such sample writes it
+    layer: int
+    pos: int
+    k: int
+    n: int
+    line: Line  # the first such sample
+
+
+_LEAD_JUNK = re.compile(r"(?:[\s*#_>`$\\\[\](]|-\s|\u205e)*")
+_LEAD_NUM = re.compile(rf"[-\u2212]?[{_D}][{_D},]*(?:[.\uff0e][{_D}]+)?")
+_NOT_A_LEAD = re.compile(r"[.)\uff0e:]\s|[.)\uff0e]$|\)|:\d|/\s*\d|[^\W\d_]")
+
+
+def lead_number(text: str) -> tuple[str, float] | None:
+    """The number a sample BEGINS with (after markdown / math / bullet marks), as written and as
+    a value; ``None`` when the sample does not begin with one, or begins with a list marker
+    (``2. Problem``, ``1)``, ``3:``), an ordinal or unit (``1st``, ``3x``) or a fraction."""
+    m = _LEAD_JUNK.match(text)
+    t = text[m.end() if m else 0 :]
+    n = _LEAD_NUM.match(t)
+    if n is None or _NOT_A_LEAD.match(t[n.end() :]):
+        return None
+    v = number_value(n.group(0))
+    return None if v is None else (n.group(0), v)
+
+
+def consensus_claims(
+    cells: Sequence[Cell], *, min_k: int = CONSENSUS_MIN, share: float = CONSENSUS_SHARE
+) -> list[Consensus]:
+    """Every first-number consensus among ``cells``: per prose cell with at least ``min_k``
+    samples, each value that at least ``min_k`` samples AND at least ``share`` of the samples
+    begin with (:func:`lead_number`). Mechanical and gold-blind (the bullet4 single-bullet
+    O-lens reads 4 samples per activation, so 3 of 4 or 4 of 4)."""
+    out: list[Consensus] = []
+    for c in sorted(cells, key=lambda c: (c.layer, c.pos)):
+        if c.tokens is not None:
+            continue
+        lines = _group(c).lines
+        if len(lines) < min_k:
+            continue
+        by_val: dict[float, list[tuple[str, Line]]] = {}
+        for ln in lines:
+            lead = lead_number(ln.text)
+            if lead is not None:
+                by_val.setdefault(round(lead[1], 9), []).append((lead[0], ln))
+        for v, hits in by_val.items():
+            if len(hits) >= min_k and len(hits) >= share * len(lines):
+                out.append(
+                    Consensus(v, hits[0][0], c.layer, c.pos, len(hits), len(lines), hits[0][1])
+                )
+    return out
+
+
+def _consensus_note(cs: Sequence[Consensus]) -> str:
+    best = max(cs, key=lambda c: (c.k / c.n, c.k))
+    more = len(cs) - 1
+    tail = f" and at {more} more activation{'s' if more > 1 else ''}" if more else ""
+    return f"first number of {best.k} of {best.n} samples at [L{best.layer} pos {best.pos}]{tail}"
+
+
+def rank_numbers(
+    gs: Sequence[Grounded], cons: Sequence[Consensus], operands: Sequence[float], cap: int
+) -> list[Grounded]:
+    """The judged number slots (audit F11): the summarizer's numbers that are not a restated
+    operand, in its order; then consensus values it did not key (most activations first); then
+    the operands; at most ``cap``. Every non-operand number with a consensus carries its note (a
+    restated operand leading the samples is not a computed value)."""
+
+    def val(x: float | None) -> float | None:
+        return None if x is None else round(x, 9)
+
+    ops = {val(o) for o in operands}
+    by_val: dict[float, list[Consensus]] = {}
+    for c in cons:
+        by_val.setdefault(c.value, []).append(c)
+
+    def annotate(g: Grounded) -> Grounded:
+        v = val(number_value(g.key))
+        if v is None or v not in by_val:
+            return g
+        note = _consensus_note(by_val[v])
+        return dataclasses.replace(
+            g, consensus=note, support=support_text(g.count, len(g.layers), note)
+        )
+
+    head = [annotate(g) for g in gs if val(number_value(g.key)) not in ops]
+    tail = [g for g in gs if val(number_value(g.key)) in ops]  # an operand is never marked
+    have = {val(number_value(g.key)) for g in gs}
+    fill: list[Grounded] = []
+    ranked = sorted(by_val.items(), key=lambda kv: (-len(kv[1]), -sum(c.k for c in kv[1])))
+    for v, cs in ranked:
+        if v in ops or v in have:
+            continue
+        first = cs[0]
+        note = _consensus_note(cs)
+        total = sum(c.k for c in cs)
+        layers = tuple(sorted({c.layer for c in cs}))
+        fill.append(
+            Grounded(
+                f"{first.k} of {first.n} samples at [L{first.layer} pos {first.pos}] begin with "
+                f"{first.key}",
+                support_text(total, len(layers), note),
+                first.key,
+                first.line,
+                first.key,
+                "numbers",
+                count=total,
+                layers=layers,
+                consensus=note,
+            )
+        )
+    return (head + fill + tail)[:cap]
+
+
+def _numbers_pass(
+    col: Collapse,
+    cells_by_item: Mapping[str, Sequence[Cell]],
+    s: Settings,
+    operands: Mapping[str, Sequence[float]],
+    consensus: bool,
+) -> None:
+    """Re-rank every served numbers digest with :func:`rank_numbers`. An item whose digest was
+    not served stays unsummarized (undecided); an empty one gains the consensus values, if any."""
+    n_cons = n_filled = n_ops_demoted = 0
+    for item_id, cells in cells_by_item.items():
+        if item_id in col.unsummarized or item_id not in col.cells:
+            continue
+        cons = consensus_claims(cells) if consensus else []
+        gs = col.grounded.get(item_id, [])
+        kept = rank_numbers(gs, cons, operands.get(item_id, ()), s.numbers)
+        keyed = {claim_key(g) for g in gs}
+        top = {claim_key(g) for g in gs[: s.numbers]}
+        n_cons += bool(cons)
+        n_filled += any(claim_key(g) not in keyed for g in kept)
+        n_ops_demoted += bool(top - {claim_key(g) for g in kept})
+        if not kept:
+            continue
+        col.empty.discard(item_id)
+        _set_summary(col, item_id, kept, s)
+    col.diag["n_items_with_consensus"] = n_cons
+    col.diag["n_items_consensus_filled"] = n_filled
+    col.diag["n_items_numbers_reranked"] = n_ops_demoted
 
 
 # ---------------------------------------------------------------- hierarchical overflow (plan 0021)
@@ -1656,6 +2222,9 @@ MAX_HALVINGS = 2
 DIGEST_ATTEMPTS = 3  # a 1800 s call must not be retried 12 times
 _UNCOUNTED_RATIO = 1.7  # worst measured real/est ratio, used when a count fails
 COUNT_TOKENS_ABOVE = 0.6  # real counts (count_tokens) only for estimates above this share of cap
+
+
+_CHUNK_KEY = re.compile(r"\|h\d+\|c\d+of\d+$")
 
 
 def _fp(*parts: Any) -> str:
@@ -1696,13 +2265,12 @@ def _layer_chunks(groups: Sequence[_Group], scale: float, budget: int) -> list[l
     return chunks
 
 
-def _union_render(union: Sequence[Line], full: Sequence[Line]) -> str:
+def _union_render(union: Sequence[Line], counts: Mapping[int, int]) -> str:
     """The final-stage bundle: each union sample under its original header, the header carrying
-    the mechanical support of the sample (bundle samples containing it, over the FULL bundle)."""
+    the per-claim count the chunk digests gave it (``counts``: ``id(line)`` -> samples)."""
     out: list[str] = []
     for ln in union:
-        sup = support_of(ln.text, full)
-        out.append(f"{ln.where} (support: {sup})")
+        out.append(f"{ln.where} (support: {support_text(counts.get(id(ln), 1))})")
         out.append(f"- {ln.text}")
     return "\n".join(out)
 
@@ -1726,19 +2294,31 @@ def _collapse_hierarchical(
     preflight: Callable[[], None] | None,
     notes: Mapping[str, str],
     pos: int | None,
+    stems: Mapping[str, str] | None = None,
+    salt: str = "",
+    spare: int = 0,
 ) -> Collapse:
     """``collapse`` under ``overflow="hierarchical"``: every item's FULL bundle (no stride). It is
     sized by real tokens (cached ``count_tokens``); a bundle that fits ``min(token_cap, window)``
     is ONE digest call. Otherwise it is cut into layer-boundary chunks, each chunk is digested with
     the same prompt, and a final digest reads the union of the chunks' verified evidence samples
-    (each under its original header with its mechanical support over the full bundle). A refused
-    or too-long call moves the item to chunks at half the budget (at most ``MAX_HALVINGS``); the
-    level is cached, so a rerun never re-sends a known-refused call. Keys:
-    ``digest:<id>|<layers>`` (single), ``…|h<k>|c<i>of<n>`` (chunks), ``…|h<k>|final``,
-    ``…|level`` (the persisted fallback), ``ntok:<id>|<layers>`` (the count)."""
-    system_of = {i: render_system(s, notes[i]) for i in cells_by_item}
-    schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
+    (each under its original header with the per-claim count the chunks gave it). The final
+    digest's entries take their counts from the chunk claims, and every chunk claim stated by at
+    least :data:`CHUNK_KEEP_MIN` samples is kept even when the final call dropped it (audit F1).
+    A refused or too-long call moves the item to chunks at half the budget (at most
+    ``MAX_HALVINGS``); the level is cached, so a rerun never re-sends a known-refused call. Out of
+    halvings (or with an unusable final), the item is judged on its chunk digests directly (audit
+    F3; chunks still refused leave their layers in ``partial``) rather than given up.
+
+    ``stems``: per item (a per-layer part under ``summ_layers=union``) the cache-key stem
+    ``digest:<id>|<layers>`` (default: ``args.layers``). Keys: ``<stem>`` (single),
+    ``<stem>|h<k>|c<i>of<n>`` (chunks), ``<stem>|h<k>|final``, ``<stem>|level`` (the persisted
+    fallback), ``ntok:<id>|<layers>`` (the count). ``salt``: keys a re-ask's fingerprints."""
     layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
+    if stems is None:
+        stems = {i: f"digest:{i}|{layers_tag}" for i in cells_by_item}
+    system_of = {i: render_system(s, notes[i], spare) for i in cells_by_item}
+    schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
     budget0 = min(s.token_cap, CONTEXT_WINDOW - MAX_TOKENS - CONTEXT_MARGIN)
     conc = s.concurrency or args.concurrency
     timeout = s.timeout or DIGEST_TIMEOUT
@@ -1758,6 +2338,8 @@ def _collapse_hierarchical(
         "n_fallback_events": 0,
         "n_readouts_in": 0,
         "n_readouts_bundled": 0,
+        "n_chunk_claims_kept": 0,
+        "n_items_chunk_direct": 0,
     }
     col.model = s.model
     groups_of: dict[str, list[_Group]] = {}
@@ -1798,11 +2380,14 @@ def _collapse_hierarchical(
         col.unsummarized.update(items)
         return col
 
+    def ntok_key(i: str) -> str:
+        return "ntok:" + stems[i][len("digest:") :]
+
     # ---- real token counts (cached by bundle text)
     counts: dict[str, int] = {}
     need: list[str] = []
     for i in items:
-        row = cache.get(f"ntok:{i}|{layers_tag}", _fp("ntok", s.model, system_of[i], text_of[i]))
+        row = cache.get(ntok_key(i), _fp("ntok", s.model, system_of[i], text_of[i]))
         if row is not None and isinstance((row.get("result") or {}).get("tokens"), int):
             counts[i] = row["result"]["tokens"]
         else:
@@ -1825,25 +2410,32 @@ def _collapse_hierarchical(
                 continue
             counts[i] = n
             cache.put(
-                f"ntok:{i}|{layers_tag}",
+                ntok_key(i),
                 _fp("ntok", s.model, system_of[i], text_of[i]),
                 {"result": {"tokens": n}},
             )
+
+    def level_fp(i: str) -> str:
+        return _fp(
+            "level",
+            s.model,
+            s.reasoning,
+            s.fallback,
+            system_of[i],
+            text_of[i],
+            *([salt] if salt else []),
+        )
 
     # ---- the persisted fallback level per item
     level: dict[str, int] = {}
     persisted_kind: dict[str, str] = {}
     for i in items:
-        row = cache.get(
-            f"digest:{i}|{layers_tag}|level",
-            _fp("level", s.model, s.reasoning, s.fallback, system_of[i], text_of[i]),
-            include_failed=True,
-        )
+        row = cache.get(f"{stems[i]}|level", level_fp(i), include_failed=True)
         level[i] = int(row.get("halvings", 0)) if row else 0
         if row and row.get("fallback"):
             persisted_kind[i] = str(row["fallback"])
 
-    single_fp = {i: _digest_fp(s, notes[i], text_of[i]) for i in items}
+    single_fp = {i: _digest_fp(s, notes[i], text_of[i], salt) for i in items}
     final: dict[str, object] = {}  # item -> final digest result (dict) or None
     final_key: dict[str, tuple[str, str]] = {}  # item -> (cache key, fp) its final result came from
     served_keys: dict[str, str] = {}  # cache key -> fallback model that served it
@@ -1851,20 +2443,26 @@ def _collapse_hierarchical(
     final_fp: dict[str, str] = {}
     scale_of: dict[str, float] = {i: counts[i] / max(1, est_tokens(text_of[i])) for i in items}
     final_lines: dict[str, list[Line]] = {}
+    # F1/F3: the verified chunk claims of the level that produced an item's final digest, and the
+    # best chunk claims seen at any level for an item that may run out of halvings
+    chunk_claims: dict[str, list[Grounded]] = {}
+    fallback: dict[str, tuple[list[Grounded], list[int]]] = {}
+    direct: dict[str, tuple[list[Grounded], list[int]]] = {}
     done: set[str] = set()
     if preflight is not None:
         preflight()
 
-    def item_of(key: str) -> str:
-        # cache keys are "digest:<item id>|<layers>…"; an item id may itself hold "|"
-        return next(i for i in items if key.startswith(f"digest:{i}|{layers_tag}"))
+    def remember(i: str, claims: list[Grounded], lost: list[int]) -> None:
+        old = fallback.get(i)
+        if claims and (old is None or (len(lost), -len(claims)) < (len(old[1]), -len(old[0]))):
+            fallback[i] = (claims, lost)
 
-    def run_batch(calls: list[tuple[str, str, str]]) -> dict[str, object]:
-        """``calls``: (cache key, fp, user). Cached results are reused; the rest go out at
+    def run_batch(calls: list[tuple[str, str, str, str]]) -> dict[str, object]:
+        """``calls``: (item, cache key, fp, user). Cached results are reused; the rest go out at
         ``conc`` with refusal / too-long markers."""
         out: dict[str, object] = {}
-        todo: list[tuple[str, str, str]] = []
-        for key, fp, user in calls:
+        todo: list[tuple[str, str, str, str]] = []
+        for i, key, fp, user in calls:
             row = _cached(cache, key, fp)
             res0 = row.get("result") if row is not None else None
             if isinstance(res0, dict) and res0.get(llm.SERVED_BY):
@@ -1872,12 +2470,12 @@ def _collapse_hierarchical(
             if row is not None:
                 out[key] = row.get("result")
             else:
-                todo.append((key, fp, user))
+                todo.append((i, key, fp, user))
         if todo:
-            col.diag["n_chunk_calls"] += sum(1 for k, _f, _u in todo if "|c" in k)
+            col.diag["n_chunk_calls"] += sum(1 for _i, k, _f, _u in todo if _CHUNK_KEY.search(k))
 
             def on_result(j: int, r: dict | None) -> None:
-                key, fp, _u = todo[j]
+                _i, key, fp, _u = todo[j]
                 if _marker(r) is None:
                     cache.put(key, fp, {"result": r})
                 if isinstance(r, dict) and r.get(llm.SERVED_BY):
@@ -1885,7 +2483,7 @@ def _collapse_hierarchical(
                 out[key] = r
 
             llm.stream_json(
-                [(system_of[item_of(k)], u) for k, _f, u in todo],
+                [(system_of[i], u) for i, _k, _f, u in todo],
                 schema=schema,
                 model=s.model,
                 reasoning=s.reasoning,
@@ -1893,18 +2491,18 @@ def _collapse_hierarchical(
                 concurrency=conc,
                 rpm=args.rpm,
                 max_tokens=MAX_TOKENS,
-                timeout=max(timeout, _timeout_for(s, [u for _k, _f, u in todo])),
+                timeout=max(timeout, _timeout_for(s, [u for _i, _k, _f, u in todo])),
                 spend=spend,
                 mark_refusals=True,
                 attempts=DIGEST_ATTEMPTS,
                 fallbacks=s.server_fallback,
             )
-            again = [t for t in todo if _marker(out.get(t[0])) == "refused"]
+            again = [t for t in todo if _marker(out.get(t[1])) == "refused"]
             if again and s.refusal_model:
                 retry_on(again, out)
         return out
 
-    def retry_on(again: list[tuple[str, str, str]], out: dict[str, object]) -> None:
+    def retry_on(again: list[tuple[str, str, str, str]], out: dict[str, object]) -> None:
         """Re-run the still-declined calls once on ``s.refusal_model``; a served result carries
         that model as SERVED_BY (cached with it, so provenance survives a rerun)."""
         model = str(s.refusal_model)
@@ -1912,7 +2510,7 @@ def _collapse_hierarchical(
         print(f"{name} digest: {len(again)} declined call(s) re-run on {model}")
 
         def on_retry(j: int, r: dict | None) -> None:
-            key, fp, _u = again[j]
+            _i, key, fp, _u = again[j]
             if isinstance(r, dict) and _marker(r) is None:  # served (else: stays "refused")
                 r = {**r, llm.SERVED_BY: model}
                 cache.put(key, fp, {"result": r})
@@ -1920,7 +2518,7 @@ def _collapse_hierarchical(
                 out[key] = r
 
         llm.stream_json(
-            [(system_of[item_of(k)], u) for k, _f, u in again],
+            [(system_of[i], u) for i, _k, _f, u in again],
             schema=schema,
             model=model,
             reasoning=s.reasoning,
@@ -1928,7 +2526,7 @@ def _collapse_hierarchical(
             concurrency=conc,
             rpm=args.rpm,
             max_tokens=MAX_TOKENS,
-            timeout=max(timeout, _timeout_for(s, [u for _k, _f, u in again])),
+            timeout=max(timeout, _timeout_for(s, [u for _i, _k, _f, u in again])),
             spend=spend,
             mark_refusals=True,
             attempts=DIGEST_ATTEMPTS,
@@ -1941,9 +2539,7 @@ def _collapse_hierarchical(
         col.diag["n_fallback_events"] += 1
         k = level[i] + 1
         cache.put(
-            f"digest:{i}|{layers_tag}|level",
-            _fp("level", s.model, s.reasoning, s.fallback, system_of[i], text_of[i]),
-            {"result": None, "fallback": kind, "halvings": k},
+            f"{stems[i]}|level", level_fp(i), {"result": None, "fallback": kind, "halvings": k}
         )
         level[i] = k
 
@@ -1954,24 +2550,22 @@ def _collapse_hierarchical(
             break
         # single calls: level 0 and the bundle fits
         singles = [i for i in active if level[i] == 0 and counts[i] <= budget0]
-        res = run_batch(
-            [(f"digest:{i}|{layers_tag}", single_fp[i], render_user(text_of[i])) for i in singles]
-        )
+        res = run_batch([(i, stems[i], single_fp[i], render_user(text_of[i])) for i in singles])
         for i in singles:
-            r = res.get(f"digest:{i}|{layers_tag}")
+            r = res.get(stems[i])
             kind = _marker(r)
             if kind is not None:
                 bump(i, kind)
                 continue
             final[i], final_lines[i] = r, lines_of[i]
-            final_key[i] = (f"digest:{i}|{layers_tag}", single_fp[i])
+            final_key[i] = (stems[i], single_fp[i])
             done.add(i)
         # chunked items: over budget, or pushed down a level
         chunked = [i for i in active if i not in done and (level[i] > 0 or counts[i] > budget0)]
         if not chunked:
             continue
         plan: dict[str, list[list[_Group]]] = {}
-        calls: list[tuple[str, str, str]] = []
+        calls: list[tuple[str, str, str, str]] = []
         for i in chunked:
             k = level[i]
             if k > MAX_HALVINGS:
@@ -1984,11 +2578,11 @@ def _collapse_hierarchical(
             n = len(ch)
             for c_i, gs in enumerate(ch, 1):
                 t = _render(gs)
-                ckey = f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}"
+                ckey = f"{stems[i]}|h{k}|c{c_i}of{n}"
                 chunk_fp[ckey] = single_fp[i] + _fp("chunk", c_i, n, t)
-                calls.append((ckey, chunk_fp[ckey], render_user(t)))
+                calls.append((i, ckey, chunk_fp[ckey], render_user(t)))
         res = run_batch(calls)
-        finals: list[tuple[str, str, str]] = []
+        finals: list[tuple[str, str, str, str]] = []
         union_of: dict[str, list[Line]] = {}
         for i, ch in plan.items():
             k, n = level[i], len(ch)
@@ -1996,83 +2590,117 @@ def _collapse_hierarchical(
             seen: set[int] = set()
             failed: str | None = None
             any_items = False
+            claims: list[Grounded] = []
+            lost: set[int] = set()
             for c_i, gs in enumerate(ch, 1):
-                r = res.get(f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}")
+                ckey = f"{stems[i]}|h{k}|c{c_i}of{n}"
+                r = res.get(ckey)
                 kind = _marker(r)
-                if kind is not None:
-                    failed = kind
-                    break
-                if not isinstance(r, dict) or not isinstance(r.get("items"), list):
-                    failed = "failed"
-                    break
+                if (
+                    kind is not None
+                    or not isinstance(r, dict)
+                    or not isinstance(r.get("items"), list)
+                ):
+                    # a refusal outranks a parse failure (it gets the smaller-chunk fallback)
+                    if failed not in ("refused", "too_long"):
+                        failed = kind or "failed"
+                    lost.update(g.layer for g in gs)
+                    continue
                 if not has_entries(r, s.max_rare):
                     continue  # a chunk with nothing to report contributes nothing
                 chunk_lines = [ln for g in gs for ln in g.lines]
                 nds = [0]
-                kept, dropped = ground(r, chunk_lines, numeral_drops=nds, lang=s.lang, **caps(s))
+                kept, dropped = ground(
+                    r, chunk_lines, numeral_drops=nds, lang=s.lang, **caps(s, spare)
+                )
                 if not kept and not dropped and nds[0]:
                     continue  # no number in this chunk: contributes nothing
                 any_items = True
                 if not kept:  # every span failed: invalidate the cached chunk so a rerun re-asks
-                    ckey = f"digest:{i}|{layers_tag}|h{k}|c{c_i}of{n}"
                     cache.put(ckey, chunk_fp[ckey], {"result": None, "meta": {"raw": r}})
-                    failed = "failed"
-                    break
+                    if failed not in ("refused", "too_long"):
+                        failed = "failed"
+                    lost.update(g.layer for g in gs)
+                    continue
+                claims.extend(kept)
                 for g in kept:
                     if id(g.line) not in seen:
                         seen.add(id(g.line))
                         union.append(g.line)
             if failed in ("refused", "too_long"):
+                remember(i, claims, sorted(lost))
                 bump(i, failed)
                 continue
             if failed == "failed":
                 last_kind[i] = "failed"
-                col.unsummarized.add(i)
-                done.add(i)
+                remember(i, claims, sorted(lost))
+                done.add(i)  # F3: judged on the served chunks below, if any, never given up
                 continue
             if not any_items:
                 col.empty.add(i)
                 col.diag["n_digest_zero_nonempty"] += 1
+                col.reasons[i] = "zero"
                 done.add(i)
                 continue
             order = {id(ln): j for j, ln in enumerate(lines_of[i])}
             union.sort(key=lambda ln: order.get(id(ln), 0))
-            t = _union_render(union, lines_of[i])
+            line_count: dict[int, int] = {}
+            for g in merge_grounded(claims):
+                line_count[id(g.line)] = max(line_count.get(id(g.line), 0), g.count)
+            t = _union_render(union, line_count)
             if est_tokens(t) * scale_of[i] > budget0:  # the union itself is too large
-                col.unsummarized.add(i)
                 last_kind[i] = "too_long"
+                remember(i, claims, [])
                 col.chunks.pop(i, None)
-                done.add(i)
+                done.add(i)  # F3: judged on the chunk digests directly
                 continue
             union_of[i] = union
+            chunk_claims[i] = claims
             col.chunks[i] = n
             final_fp[i] = single_fp[i] + _fp("final", n, t)
-            finals.append((f"digest:{i}|{layers_tag}|h{k}|final", final_fp[i], render_user(t)))
+            finals.append((i, f"{stems[i]}|h{k}|final", final_fp[i], render_user(t)))
         res = run_batch(finals)
         for i, union in union_of.items():
-            r = res.get(f"digest:{i}|{layers_tag}|h{level[i]}|final")
+            r = res.get(f"{stems[i]}|h{level[i]}|final")
             kind = _marker(r)
             if kind is not None:
+                remember(i, chunk_claims[i], [])
                 bump(i, kind)
                 col.chunks.pop(i, None)
                 continue
             final[i], final_lines[i] = r, union
-            final_key[i] = (f"digest:{i}|{layers_tag}|h{level[i]}|final", final_fp[i])
+            final_key[i] = (f"{stems[i]}|h{level[i]}|final", final_fp[i])
             done.add(i)
-    for i in items:
-        if i not in done:  # out of halvings
+    for i in items:  # out of halvings, or a failed chunk level: the chunk digests, judged directly
+        if i in final or i in col.empty:
+            continue
+        if i in fallback:
+            direct[i] = fallback[i]
+        else:
             col.unsummarized.add(i)
     for i in items:  # per-item refusal / too-long counts, from the final state (rerun-stable)
         if i in col.unsummarized:
             kind = last_kind.get(i) or persisted_kind.get(i)
             if kind in ("refused", "too_long"):
                 col.diag[f"n_digest_{kind}"] += 1
+                col.reasons[i] = kind
 
     col.diag["max_halvings"] = max([level[i] for i in items], default=0)
 
+    def chunk_number_cap(kept: list[Grounded]) -> list[Grounded]:
+        return kept[: s.numbers + spare] if s.numbers > 0 else kept
+
     # ---- ground the final digests (support counted over the FULL bundle)
     for i in items:
-        if i in col.unsummarized or i in col.empty or i not in final:
+        if i in col.unsummarized or i in col.empty:
+            continue
+        if i in direct:
+            claims, lost = direct[i]
+            kept = chunk_number_cap(merge_grounded(claims))
+            col.diag["n_items_chunk_direct"] += 1
+            if lost:
+                col.partial[i] = lost
+            _set_summary(col, i, kept, s)
             continue
         r = final[i]
         if not isinstance(r, dict) or not isinstance(r.get("items"), list):
@@ -2080,6 +2708,7 @@ def _collapse_hierarchical(
             continue
         if not has_entries(r, s.max_rare):
             col.diag["n_digest_zero_nonempty"] += 1
+            col.reasons[i] = "zero"
             col.empty.add(i)
             continue
         dups, nds = [0], [0]
@@ -2090,45 +2719,54 @@ def _collapse_hierarchical(
             support_lines=lines_of[i],
             numeral_drops=nds,
             lang=s.lang,
-            **caps(s),
+            **caps(s, spare),
         )
         col.diag["n_key_duplicates"] += dups[0]
         col.diag["n_evidence_kept"] += len(kept)
         col.diag["n_evidence_dropped"] += dropped
         col.diag["n_numeral_drops"] = col.diag.get("n_numeral_drops", 0) + nds[0]
+        if i in chunk_claims:  # F1: the chunk counts, and every chunk claim seen >= 5 times
+            agg = {claim_key(g): g for g in merge_grounded(chunk_claims[i])}
+            kept = [
+                dataclasses.replace(
+                    g,
+                    count=agg[claim_key(g)].count,
+                    layers=agg[claim_key(g)].layers,
+                    support=support_text(agg[claim_key(g)].count, len(agg[claim_key(g)].layers)),
+                )
+                if claim_key(g) in agg
+                else g
+                for g in kept
+            ]
+            if s.numbers == 0:
+                have = {claim_key(g) for g in kept}
+                extra = [g for ck, g in agg.items() if ck not in have and g.count >= CHUNK_KEEP_MIN]
+                col.diag["n_chunk_claims_kept"] += len(extra)
+                kept += extra
         if not kept and not dropped and nds[0]:  # no number to report: a judged negative
             col.empty.add(i)
             continue
         if not kept:  # every span failed: invalidate the cached final so a rerun re-asks
             col.diag["n_items_all_dropped"] += 1
+            col.reasons[i] = "all_dropped"
             col.unsummarized.add(i)
             key, fp = final_key[i]
             cache.put(key, fp, {"result": None, "meta": {"raw": r}})
             continue
-        text, evid = render_summary(kept, s.render, lang=s.lang)
-        col.summaries[i] = text
-        col.evidence[i] = tuple(evid)
-        col.statements[i] = [
-            {
-                "statement": g.statement,
-                "key": g.key,
-                "support": g.support,
-                "evidence": g.evidence,
-                "tier": g.tier,
-            }
-            for g in kept
-        ]
-        col.cells[i] = dataclasses.replace(col.cells[i], samples=(text,))
+        _set_summary(col, i, kept, s)
     # provenance, from the chain that produced each item's final digest
     for i in items:
-        if i in col.unsummarized or i in col.empty or i not in final_key:
+        if i in col.unsummarized or i in col.empty:
             col.chunks.pop(i, None)
             continue
-        key = final_key[i][0]
-        chain = [key]
-        if key.endswith("|final"):
-            stem = key[: -len("final")]
-            chain += [k for k in served_keys if k.startswith(stem + "c")]
+        if i in direct:
+            chain = [k for k in served_keys if k.startswith(stems[i] + "|h")]
+        else:
+            key = final_key[i][0]
+            chain = [key]
+            if key.endswith("|final"):
+                stem = key[: -len("final")]
+                chain += [k for k in served_keys if k.startswith(stem + "c")]
         models = sorted({served_keys[k] for k in chain if k in served_keys})
         if models:
             col.served_by[i] = ",".join(models)

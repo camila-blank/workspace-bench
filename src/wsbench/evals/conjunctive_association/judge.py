@@ -427,7 +427,8 @@ def _run_summary(
     """Summary mode (plan 0020; the default): every cell of a kept item (every layer and read
     position) -> one digest -> the one MC, then the C2 gate on the digest's evidence lines. A
     sidecar-less file keeps the layer exclusion (native rule); an item with no readouts stays a
-    rowless fail; an unsummarized item is a fail counted in ``n_unjudged_cells`` (items)."""
+    rowless fail; an unsummarized item is undecided (audit F3: never a fail), counted in
+    ``n_unjudged_cells`` (items)."""
     pv = digest.prompt_version(PROMPT_VERSION, args, FAMILY)
     kept = [it["id"] for it in items if by_cells.get(it["id"])]
     by_it = {it["id"]: it for it in items}
@@ -536,6 +537,7 @@ def _run_summary(
             n_items_excluded=n_excluded,
             summary=col.extras(),
             pinned=digest.pinned(args, FAMILY),
+            undecided=set(col.unsummarized),
             chance=chance,
             gate=gate.extras(),
         ),
