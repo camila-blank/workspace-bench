@@ -77,3 +77,30 @@ def test_union_items_are_not_reranked_across_layers():
     ]
     digest._numbers_pass(col, {"i": cells}, s, {"i": []}, True, union=True)
     assert [x.key for x in col.grounded["i"]] == ["7"]
+
+
+def test_union_keeps_consensus_of_an_empty_layer(tmp_path, monkeypatch):
+    """Review of #203: a layer whose numbers digest came back empty still keys its first-number
+    consensus, as a single-layer run of that layer would; the merged keys are the union."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_audit_fixes_digest import Scripted, _collapse, _entry, _prose
+
+    def reply(system, user):
+        if "[L52 " in user:  # layer 52: the summarizer keys 300
+            line = next(x[2:] for x in user.splitlines() if x.startswith("- 300"))
+            return {"items": [_entry(line, "300")], "rare": []}
+        return {"items": [], "rare": []}  # layer 56: an empty digest
+
+    Scripted(monkeypatch, reply)
+    cells = [
+        _prose("i", 52, -7, "300 a", "q", "r", "s"),
+        _prose("i", 56, -7, "175 first", "175 again", "175", "175 4"),
+    ]
+    col = _collapse(
+        tmp_path, "arithmetic_intermediates", {"i": cells}, operands={"i": []}, consensus=True
+    )
+    keys = sorted(x["key"] for x in col.statements["i"])
+    assert keys == ["175", "300"] and "i" not in col.empty

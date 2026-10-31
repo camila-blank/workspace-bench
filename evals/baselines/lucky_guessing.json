@@ -308,7 +308,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "marks: ec-v5c over the draws (marks_verdict)",
    "instrument": "ec-v5c",
-   "written": "2026-10-31T13:33:33+00:00"
+   "written": "2026-10-31T13:55:48+00:00"
   },
   "question_marks": {
    "mean": 0.041025641025641026,
@@ -329,7 +329,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "marks: ec-v5c over the draws (marks_verdict)",
    "instrument": "ec-v5c",
-   "written": "2026-10-31T13:33:33+00:00"
+   "written": "2026-10-31T13:55:48+00:00"
   }
  },
  "multi_concept_directed_modulation": {

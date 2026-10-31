@@ -2071,12 +2071,19 @@ def _collapse_layers(
     part = _collapse_hierarchical(name, parts, preflight=preflight, salt=salt, **kw)
     part.diag.update(n_digest_reasked=0, n_digest_reask_better=0, n_digest_collapsed=0)
     if per_layer and not s.per_layer and not args.dry_run:  # numbers union: per-layer slots
-        for pid, gs in list(part.grounded.items()):
-            if layer_of.get(pid) is None:
+        for pid in parts:
+            if layer_of.get(pid) is None or pid in part.unsummarized:
                 continue
             cons = consensus_claims(parts[pid]) if consensus else []
             ops = (operands or {}).get(owner[pid], ())
-            part.grounded[pid] = rank_numbers(gs, cons, ops, s.numbers)
+            ranked = rank_numbers(part.grounded.get(pid, []), cons, ops, s.numbers)
+            if pid in part.empty and ranked:
+                # a layer whose digest came back empty still keys its consensus values, as a
+                # single-layer run of that layer would (its joint pass fills an empty digest)
+                part.empty.discard(pid)
+                part.summaries[pid] = ""
+            if pid in part.summaries:
+                part.grounded[pid] = ranked
     if s.numbers == 0 and not args.dry_run:
         _reask_collapsed(name, part, parts, salt=salt, kw=kw)
     return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
