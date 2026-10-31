@@ -297,6 +297,7 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
         "agent_ref": True,
         "patient_ref": True,
         "action_ref": True,  # final r1: the gold action is stated in the quote
+        "relation_ok": True,  # round 3: no conflicting kin phrase
     }
     assert by_key[f"{AB}__L020__p2"]["correct"] == [False, True, False]
     assert by_key[f"{BA}__L020__p1"]["pass"] is False
@@ -345,6 +346,13 @@ def test_config_stamps_roles_lexicon(tmp_path, fake_llm, mk_args):
     res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
     assert res.config["roles_lexicon"] == prompts.ROLES_LEXICON == "roles-v1.3"
     assert res.config["prompt_version"] == "oa-v2.4"
+
+
+def test_config_stamps_actions_lexicon(tmp_path, fake_llm, mk_args):
+    # round 3 of #202: the action lexicon's version is part of the instrument stamp
+    fake_llm(_responder)
+    res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
+    assert res.config["actions_lexicon"] == prompts.ACTIONS_LEXICON == "actions-v1.3"
 
 
 def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_args):

@@ -61,6 +61,7 @@ def test_quote_inside_one_bullet_passes():
         "agent_ref": True,
         "patient_ref": True,
         "action_ref": True,  # final r1 (no action given: not checked)
+        "relation_ok": True,  # round 3 (no conflicting kin phrase)
         "ok": True,
     }
 
