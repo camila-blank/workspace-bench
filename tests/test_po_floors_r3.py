@@ -321,7 +321,10 @@ def test_alt_judge_cell_matches_only_the_same_measurement():
     assert alt_judge_cell(pinned, opus) == "0.700 [0.600, 0.800] (claude-opus-5-5; n=10)"
     opus.counts["n_unjudged_cells"] = 2
     assert alt_judge_cell(pinned, opus).endswith("n=10; 2 cells unjudged or missing)")
+    opus.extras["n_pairs_undecided"] = 1
+    assert alt_judge_cell(pinned, opus).endswith("n=10; 2 cells unjudged or missing; 1 undecided)")
     opus.counts["n_unjudged_cells"] = 0
+    opus.extras["n_pairs_undecided"] = 0
     # the lite row of the same readouts matches its own lite run
     lite = _result(
         "jailbreak_recognition", pv + "+reads-lite", judge="claude-sonnet-5", reads="lite"

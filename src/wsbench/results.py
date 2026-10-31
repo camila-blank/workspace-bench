@@ -457,6 +457,8 @@ def alt_judge_cell(r: FamilyResult, alt: FamilyResult | None) -> str:
     # an override run is never `complete` (not the pin), so report its real gaps instead
     gaps = alt_judge_gaps(alt)
     tail = f"; {gaps} cells unjudged or missing" if gaps else ""
+    und = alt.extras.get("n_items_undecided") or alt.extras.get("n_pairs_undecided")
+    tail += f"; {und} undecided" if isinstance(und, int) and und > 0 else ""
     return f"{_fmt(alt.value)} {_fmt_ci(alt.ci95)} ({judge}; n={alt.n_items}{tail})"
 
 
