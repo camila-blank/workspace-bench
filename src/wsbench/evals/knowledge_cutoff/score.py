@@ -168,6 +168,40 @@ _NUM_TOKEN = re.compile(r"(?<![A-Za-z]-)(?<![\w.])[-+]?\d[\d,]*(?:\.\d+)?(?![\d]
 _LATIN_ALNUM = re.compile(r"[0-9A-Za-zÀ-ɏ]")
 
 
+# list numbering is never an answer (kcgate-v2): an enumerator at a raw line start followed by
+# text on that line ("1.  **Analyze the Request**", "8. To determine ...", "2) The user"), a
+# step / part label's number ("### Step 1:", "Part 2", "Q3"), and an inline "N)" item marker
+# ("Let's reason step by step: 1) How many"). On the final O-lens readouts every line-start
+# enumerator whose number is an option (144) is list numbering. A bare "50." line and a number
+# inside a sentence are untouched
+_ENUM_LINE = re.compile(r"(?m)^([ \t]*(?:[-*+][ \t]+)?)\d{1,3}[.)](?=[ \t]+\S)")
+_ENUM_LABEL = re.compile(
+    r"(?i)\b(step|part|phase|stage|point|option|method|approach|case|example|question|reason|"
+    r"rule|section|chapter|q)(\s*#?\s*)\d{1,3}\b"
+)
+_ENUM_INLINE = re.compile(r"(?<=[:.;] )\d{1,2}\)(?=\s+[^\W\d_])")  # after ": " / ". " / "; "
+
+
+def mask_enumerators(sample: str) -> str:
+    """``sample`` with its list numbering removed (the number only; the item text stays)."""
+    s = _ENUM_LINE.sub(r"\1", sample)
+    s = _ENUM_LABEL.sub(r"\1\2", s)
+    return _ENUM_INLINE.sub("", s)
+
+
+def small_number_word(form: str) -> bool:
+    """``form`` is one bare number word below :data:`MIN_WORD_VALUE_PROSE` ("three", "eight"):
+    a common prose word, never support on its own (kcgate-v2; the numeral rule's threshold)."""
+    toks = _numerals.tokens(form.strip())
+    return (
+        len(toks) == 1
+        and toks[0][3] == "word"
+        and toks[0][2] < MIN_WORD_VALUE_PROSE
+        and toks[0][0] == 0
+        and toks[0][1] == len(fold(form.strip()))
+    )
+
+
 def integer_value(option: str) -> int | None:
     """An option's integer value (after the ``$ , % space`` strip), or None."""
     t = _STRIP.sub("", option)

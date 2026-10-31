@@ -340,7 +340,7 @@ def test_f12_clean_chains_still_state():
 )
 def test_f12_names_and_acronyms_do_not_void(concept, sample):
     assert (
-        ij.PROMPT_VERSION == "ii-grid-2026-11-v2+twinrx-v3" and ij.CALL_VERSION in ij.PROMPT_VERSION
+        ij.PROMPT_VERSION == "ii-grid-2026-11-v3+twinrx-v3" and ij.CALL_VERSION in ij.PROMPT_VERSION
     )
     bank = ij.load()
     assert not ij.names_form(sample, ij.regex_forms(bank, concept))

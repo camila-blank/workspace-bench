@@ -401,7 +401,9 @@ def test_kc_flat_list_is_options_relative(tmp_path, bank, scripted, monkeypatch)
 
 
 def test_task_note_and_pv():
-    assert PROMPT_VERSION == "cutoff-judge-2026-10-31"
+    # round 3: the call fingerprint is unchanged; the gates add kcgate-v2 to the stamp only
+    assert PROMPT_VERSION == "cutoff-judge-2026-10-31+kcgate-v2"
+    assert prompts.CALL_VERSION == "cutoff-judge-2026-10-31"
     assert "e.g." in prompts.SYSTEM and "never played" not in prompts.DIGEST_TASK_NOTE
     assert prompts.SUMMARY_INPUT_OLD in prompts.SYSTEM and prompts.READS_OLD in prompts.USER
 
