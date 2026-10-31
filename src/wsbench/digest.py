@@ -1028,8 +1028,11 @@ def number_flood(line: Line, *, min_distinct: int = 5) -> bool:
 
 
 @functools.lru_cache(maxsize=1 << 16)
+@functools.lru_cache(maxsize=1 << 18)
 def _plain(s: str) -> str:
-    """Casefolded, accent-stripped, whitespace-normalised (the support counter's form)."""
+    """Casefolded, accent-stripped, whitespace-normalised (the support counter's form). Memoised:
+    ``support_of`` folds every bundle line once per key, and the final hierarchical render asks
+    it once per union line over the FULL bundle (tens of thousands of lines per item)."""
     s = unicodedata.normalize("NFKD", s.casefold())
     return " ".join("".join(c for c in s if not unicodedata.combining(c)).split())
 
@@ -1049,6 +1052,8 @@ def _key_hits(key: str, ln: Line) -> bool:
         return False
     if not _ASCII_WORD.search(k):
         return k in t
+    if k not in t:  # a whole-word match is a substring match: skip the regex (same result)
+        return False
     return re.search(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", t) is not None
 
 
