@@ -57,6 +57,8 @@ recognition. It is a separate HB eval with its own headline. It is not part of `
   - `final-olens-rl600-x4` (the campaign's final O-lens, `agu18dec/final_olens`
     `lens_rl_step600`, 4 samples per activation) maps to `final-olens-rl600-x4`: HB read it with
     the same producer arm (global-workspace PR #646) on all 11 layers (HB plan 0024).
+    Its sibling score is labelled against the frozen HB arms (its cross-method support counts
+    them; theirs does not count it), so compare it with s3d-rl600 with that asymmetry in mind.
   - `mlnla-rl2-2000` (`mlnla:/ckpts/rl2/iter_002000`) is not verified identical to any HB NLA
     method (`mlnla-rl600`, `mlnla64-rl2k-all11`, `mlnla-ck2000-all11`). It reports "not
     measured on HallucinationBench" and is never aliased.

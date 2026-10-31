@@ -17,12 +17,16 @@ hindex-v5 for `s3d-rl600` and `jlens`. Two things changed since:
 ## Changes
 
 - `hbindex.VERSION` = `hindex-v6`; the vendor script refuses any other version (its rule is
-  unchanged, only the constant moves). **Decision Q6 is retained**: benign_roleplay is not an
+  unchanged, only the constant moves). This supersedes the parenthetical "index stays v5" of
+  `_fable_decisions.md` Q6 / plan 0040, written before v6 existed (HB plan 0022 merged later the
+  same day, at Camila's request). **The substance of Q6 is retained**: benign_roleplay is not an
   index family; v6 changed the overrefusal unit, not the family set, and the headline is still
   `full` where the method has it, else `matched (no sibling)`; the HB block still never enters
   the WSB macro.
 - `hbindex.CAMPAIGN_ARMS` += `final-olens-rl600-x4`; `methods.json` maps it to the HB method of
-  the same name (same producer arm and checkpoint, read by HB through it). `s3d-rl600` and
+  the same name (same producer arm and checkpoint, read by HB through it). The identity evidence
+  is the shared producer and readouts (HB plan 0024, global-workspace #646), not a
+  `docs/project/checkpoints.md` entry (it has none for final_olens yet). `s3d-rl600` and
   `jlens` keep their entries; `mlnla-rl2-2000` stays `not_measured`.
 - `evals/hallucinationbench/index.json` re-vendored from HB `b1043b4` (main, #50), `hbench index`
   v6, judge `claude-opus-5-5`, 33 rows (3 methods x 11 layers). The build reproduces every
@@ -42,4 +46,6 @@ jlens L44 `matched` 2.2 [1.7, 2.7] -> 2.3 [1.8, 2.9]. New: `test_final_olens_arm
 
 final-olens-rl600-x4 `full`: L20 19.2, L24 20.4, L28 19.0, L32 17.1, L36 14.3, L40 16.0, L44 16.6,
 L48 16.9, L52 14.7, L56 12.9, L60 13.3 (unweighted 11-layer mean 16.4; s3d-rl600 14.1). Per-family
-values and caveats: HB `docs/results/0024_final_olens_arm.md`.
+values and caveats: HB plan 0024 (its results doc, `docs/results/0024_final_olens_arm.md`, lands
+in an HB follow-up PR). Caveat: the arm's sibling `cross` support counts the four frozen HB arms,
+theirs does not count it (inherent to adding an arm to frozen units, HB plan 0024 §3).
