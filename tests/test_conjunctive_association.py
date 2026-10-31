@@ -853,12 +853,6 @@ def test_dataclass_spec_bank_is_v2(real_families):
     assert dataclasses.replace(spec).bank == Path("evals/conjunctive_association/items_v2.json")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="comp-v3 (audit F9: 3-draw majority) is a new instrument: the frozen comp-v2 ATI "
-    "entry is stale until the run phase re-gates it (_fable_decisions: every family whose "
-    "instrument changes is re-gated); XPASS then, and this mark must go",
-)
 def test_ati_entry_regated_on_v2(real_families):
     from wsbench.baselines import text_inversion as ti
 

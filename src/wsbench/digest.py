@@ -1388,6 +1388,9 @@ class Collapse:
     # why an item (or per-layer part) was not served: all_dropped | refused | too_long, or why
     # it is empty although it had readouts: zero (the digest reported nothing)
     reasons: dict[str, str] = field(default_factory=dict)
+    # final r1 (third review of #201): per item, the texts of the lines :func:`pin_lines` added;
+    # MC-judge input only, never digest regex evidence (``gate_texts(pins=False)``)
+    pinned: dict[str, set[str]] = field(default_factory=dict)
 
     def extras(self) -> dict[str, Any]:
         served: dict[str, int] = {}
@@ -1469,17 +1472,27 @@ def key_values(keys: Sequence[str]) -> list[float]:
 
 
 def gate_texts(
-    cell: Cell, col: Collapse | None, *, joined: bool = False, forms: Sequence[str] = ()
+    cell: Cell,
+    col: Collapse | None,
+    *,
+    joined: bool = False,
+    forms: Sequence[str] = (),
+    pins: bool = True,
 ) -> list[str]:
     """What a quote / numeral / regex gate checks. Summary mode: the item's evidence samples,
     one sample each, a token line split into its tokens (as native mode treats each token as a
     sample); never the summarizer's statements. ``joined=True`` (regex scorers) also adds each
     token line space-joined, so multi-word targets stay reachable, plus each single-word form of
     ``forms`` that :func:`quote_ok` verifies as a word split across adjacent positions of one
-    layer (as its plain word). Otherwise the cell's own samples / tokens."""
+    layer (as its plain word). Otherwise the cell's own samples / tokens. ``pins=False`` (the
+    digest regex leg, third review of #201): the lines :func:`pin_lines` added are left out, so a
+    pinned raw sample is judge input only and is held to the raw-sample rule instead."""
     if col is not None and cell.layer == SUMMARY_LAYER and cell.id in col.cells:
         out: list[str] = []
         lines = col.evidence.get(cell.id, ())
+        if not pins:
+            dropped = col.pinned.get(cell.id, set())
+            lines = tuple(ln for ln in lines if ln.text not in dropped)
         for ln in lines:
             if ln.pieces is None:
                 out.append(ln.text)
@@ -1654,7 +1667,9 @@ def pin_lines(
     same rule for every option, never told which is gold) that the digest does not already hold,
     most-repeated first (``count`` = identical raw samples, ``layers`` = the layers holding them),
     then earliest. Each pin is an ordinary extractive entry (tier ``pinned``), so the judge reads
-    it, ``quote_ok`` verifies it and the regex gates see it. Returns the number pinned."""
+    it, ``quote_ok`` verifies it and the regex gates see it by default; its text is recorded in
+    ``col.pinned`` so the digest regex leg leaves it out (``gate_texts(pins=False)``). Returns the
+    number pinned."""
     if item_id not in col.cells or item_id in col.unsummarized:
         return 0
     kept = list(col.grounded.get(item_id, ()))
@@ -1697,6 +1712,7 @@ def pin_lines(
     if not added:
         return 0
     col.empty.discard(item_id)
+    col.pinned.setdefault(item_id, set()).update(g.line.text for g in added)
     _set_summary(col, item_id, kept + added, s)
     col.diag["n_pinned_lines"] = col.diag.get("n_pinned_lines", 0) + len(added)
     return len(added)
@@ -1793,6 +1809,8 @@ def collapse(
             notes=notes,
             pos=pos,
             spare=spare,
+            operands=operands,
+            consensus=consensus,
         )
     else:
         col = _collapse_stride(
@@ -1807,8 +1825,12 @@ def collapse(
             pos=pos,
             spare=spare,
         )
+    union = numbers_union(name, s) and s.overflow == "hierarchical"
+    # final r1: a numbers-union digest's keys are EXACTLY the union of its layers' own ranked
+    # keys (ranked per layer in _collapse_layers); no cross-layer re-rank may re-add a value its
+    # own layer left out. A single-layer item takes the joint pass as before.
     if s.numbers > 0 and (operands is not None or consensus) and not args.dry_run:
-        _numbers_pass(col, cells_by_item, s, operands or {}, consensus)
+        _numbers_pass(col, cells_by_item, s, operands or {}, consensus, union=union)
     undecide_partial(col, cells_by_item)
     return col
 
@@ -1997,6 +2019,18 @@ def _collapse_stride(
     return col
 
 
+# final r1 (2026-10-31): numbers-digest families digested LAYER BY LAYER too, the judged keys being
+# the union of the per-layer digests' keys (at most ``summ_numbers`` per layer read). The joint
+# 5-key all-layer digest crowded out the gold (arithmetic all-layer 0.44 vs L56 0.53: in 95 of
+# the 102 items passing at L56 but failing all-layer, the gold was not a key).
+NUMBERS_UNION_FAMILIES = frozenset({"arithmetic_intermediates"})
+
+
+def numbers_union(name: str, s: Settings) -> bool:
+    """A numbers digest of ``name`` merges per-layer digests (:data:`NUMBERS_UNION_FAMILIES`)."""
+    return name in NUMBERS_UNION_FAMILIES and s.numbers > 0 and s.layer_mode == "union"
+
+
 def _collapse_layers(
     name: str,
     cells_by_item: Mapping[str, Sequence[Cell]],
@@ -2009,11 +2043,17 @@ def _collapse_layers(
     notes: Mapping[str, str],
     pos: int | None,
     spare: int,
+    operands: Mapping[str, Sequence[float]] | None = None,
+    consensus: bool = False,
 ) -> Collapse:
     """The hierarchical overflow, per read layer when ``s.per_layer`` (audit F1): each item is cut
     into one part per layer, every part is digested (``_collapse_hierarchical``), a collapsed
-    part is re-asked once (F3), and the parts are merged back per item."""
+    part is re-asked once (F3), and the parts are merged back per item. A numbers-union family
+    (final r1, :func:`numbers_union`) ranks each layer's numbers to its own ``summ_numbers``
+    slots first (:func:`rank_numbers`, that layer's consensus), so the merged keys are exactly the
+    union of the per-layer keys a single-layer run would judge."""
     layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
+    per_layer = s.per_layer or numbers_union(name, s)
     parts: dict[str, list[Cell]] = {}
     owner: dict[str, str] = {}
     layer_of: dict[str, int | None] = {}
@@ -2024,7 +2064,7 @@ def _collapse_layers(
         by_layer: dict[int, list[Cell]] = {}
         for c in cells:
             by_layer.setdefault(c.layer, []).append(c)
-        if s.per_layer and len(by_layer) > 1:  # one layer: the joint bundle IS the layer's
+        if per_layer and len(by_layer) > 1:  # one layer: the joint bundle IS the layer's
             for layer in sorted(by_layer):
                 pid = f"{item_id}{_PID}{layer}"
                 parts[pid], owner[pid], layer_of[pid] = by_layer[layer], item_id, layer
@@ -2046,6 +2086,20 @@ def _collapse_layers(
     }
     part = _collapse_hierarchical(name, parts, preflight=preflight, salt=salt, **kw)
     part.diag.update(n_digest_reasked=0, n_digest_reask_better=0, n_digest_collapsed=0)
+    if per_layer and not s.per_layer and not args.dry_run:  # numbers union: per-layer slots
+        for pid in parts:
+            if layer_of.get(pid) is None or pid in part.unsummarized:
+                continue
+            cons = consensus_claims(parts[pid]) if consensus else []
+            ops = (operands or {}).get(owner[pid], ())
+            ranked = rank_numbers(part.grounded.get(pid, []), cons, ops, s.numbers)
+            if pid in part.empty and ranked:
+                # a layer whose digest came back empty still keys its consensus values, as a
+                # single-layer run of that layer would (its joint pass fills an empty digest)
+                part.empty.discard(pid)
+                part.summaries[pid] = ""
+            if pid in part.summaries:
+                part.grounded[pid] = ranked
     if s.numbers == 0 and not args.dry_run:
         _reask_collapsed(name, part, parts, salt=salt, kw=kw)
     return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
@@ -2299,18 +2353,25 @@ def _numbers_pass(
     s: Settings,
     operands: Mapping[str, Sequence[float]],
     consensus: bool,
+    *,
+    union: bool = False,
 ) -> None:
     """Re-rank every served numbers digest with :func:`rank_numbers`. An item whose digest was
-    not served stays unsummarized (undecided); an empty one gains the consensus values, if any."""
+    not served stays unsummarized (undecided); an empty one gains the consensus values, if any.
+    ``union`` (final r1): a multi-layer item is left as merged (each layer was ranked to its own
+    ``s.numbers`` slots in :func:`_collapse_layers`)."""
     n_cons = n_filled = n_ops_demoted = 0
     for item_id, cells in cells_by_item.items():
         if item_id in col.unsummarized or item_id not in col.cells:
             continue
+        if union and len({c.layer for c in cells}) > 1:
+            continue  # already the union of the per-layer ranked keys
         cons = consensus_claims(cells) if consensus else []
         gs = col.grounded.get(item_id, [])
-        kept = rank_numbers(gs, cons, operands.get(item_id, ()), s.numbers)
+        cap = s.numbers
+        kept = rank_numbers(gs, cons, operands.get(item_id, ()), cap)
         keyed = {claim_key(g) for g in gs}
-        top = {claim_key(g) for g in gs[: s.numbers]}
+        top = {claim_key(g) for g in gs[:cap]}
         n_cons += bool(cons)
         n_filled += any(claim_key(g) not in keyed for g in kept)
         n_ops_demoted += bool(top - {claim_key(g) for g in kept})

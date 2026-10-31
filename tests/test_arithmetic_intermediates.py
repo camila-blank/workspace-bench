@@ -343,7 +343,10 @@ def test_all_cells_mode_uses_every_row_and_reports_bands(tmp_path, monkeypatch):
     assert r.extras["per_layer_hit_rate"] == {"20": 0.0, "60": 1.0}
     assert r.config["cells"] == "all" and r.config["layers_judged"] == [20, 60]
     assert r.config["prompt_version"] == PROMPT_VERSION_BATCH
-    assert seen[0]["prompt_version"] == PROMPT_VERSION_BATCH and seen[0]["validate"] is not None
+    # final r1: calls keep the batched call version; the stamp adds the rule version
+    from wsbench.evals.arithmetic_intermediates.prompts import CALL_VERSION_BATCH
+
+    assert seen[0]["prompt_version"] == CALL_VERSION_BATCH and seen[0]["validate"] is not None
     # without the exact cell, only the 5% band is reached
     path.write_text("".join(json.dumps(x) + "\n" for x in rows[:2]))
     r2 = judge.run(native_args(**{**args.__dict__, "out": tmp_path / "out2"}))
@@ -738,11 +741,12 @@ def test_arith_full_default_judges_every_layer(tmp_path, monkeypatch):
     )
     assert r.config["reads_checked"] == "sidecar" and not r.extras.get("partial_ids")
     assert set(r.extras["layer_protocols"]["band"]) == {20, 24, 28, 32, 36, 40, 44, 48, 52}
-    # summary mode (the default): one digest over every layer
+    # summary mode (the default; final r1): one numbers digest PER layer, keys merged
     fake = FakeLLM.install(monkeypatch, _value_judge([]), digest=_keyed("1"))
     rs = judge.run(summary_args(path, tmp_path / "s", PROMPT_VERSION, items=[GOLD_ID]))
-    bundle = next(u for n, _s, u in fake.calls if n == "digest")
-    assert all(f"[L{L} pos -1]" in bundle for L in readplan.GRID)
+    bundles = [u for n, _s, u in fake.calls if n == "digest"]
+    assert len(bundles) == len(readplan.GRID)
+    assert all(sum(f"[L{L} pos -1]" in b for b in bundles) == 1 for L in readplan.GRID)
     assert rs.config["layers_judged"] == readplan.GRID
     assert rs.config["prompt_version"] == digest.prompt_version(
         PROMPT_VERSION, rs_args := summary_args(path, tmp_path / "x", PROMPT_VERSION), judge.NAME

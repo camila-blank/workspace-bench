@@ -543,7 +543,7 @@ def test_arithmetic_digest_gets_operands_and_consensus(tmp_path, monkeypatch):
     cells = [
         _prose("i", 52, -8, "175 first", "175 again", "175", "175 4"),
         _prose("i", 52, -7, "87 restated", "88 restated", "2 restated", "300 a"),
-        _prose("i", 56, -7, "301 b", "302 c", "q", "r"),
+        _prose("i", 52, -6, "301 b", "302 c", "q", "r"),  # final r1: one layer (union is per layer)
     ]
     col = _collapse(
         tmp_path,
