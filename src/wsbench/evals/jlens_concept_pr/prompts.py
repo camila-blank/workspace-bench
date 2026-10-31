@@ -28,7 +28,11 @@ from typing import Any
 from wsbench import mc
 from wsbench.llm import schema_block
 
-PROMPT_VERSION = "jlens-pr-v3"
+CALL_VERSION = "jlens-pr-v3"  # every judge call's fingerprint (the prompts below)
+# fw-v1 (round 3, deterministic, stamp only): a Stage-P grade grounded on a function word the
+# concept merely contains (" or" for "more or fewer neutrons") is out
+# (:func:`function_word_grounded`)
+PROMPT_VERSION = f"{CALL_VERSION}+fw-v1"
 
 STAGE_A_SYSTEM = f"""You are given text {mc.READOUT_PHRASE} (one readout at one \
 position). Break the text into its UNIQUE concepts: short noun \
@@ -329,4 +333,53 @@ def parse_stage_p(
                     f"grade {entry.get('grade')!r} for {entry.get('concept')!r} names no shown "
                     f"token as its grounding token: {tok!r}"
                 )
+    return out
+
+
+# conjunctions, prepositions, articles and copulas, in the languages the J-lens top-10 lists show
+# (pt-fineweb-0022 L56: " or", " หรือ", " или", " یا", " atau", " hoặc", " أو" side by side)
+FUNCTION_WORDS = frozenset(
+    {
+        *("or", "and", "but", "nor", "of", "the", "a", "an", "to", "in", "on", "at", "by"),
+        *("as", "for", "from", "with", "than", "then", "so", "if", "is", "are", "was", "be"),
+        *("或", "或者", "和", "与", "及", "的", "是", "在", "หรือ", "และ", "или", "и", "یا"),
+        *("و", "atau", "dan", "hoặc", "và", "أو", "ou", "et", "de", "o", "y", "oder", "und"),
+    }
+)
+
+
+def is_function_word(tok: str) -> bool:
+    """A grounding token that is only a function word (after the token-list quotes, edge
+    whitespace and a leading hyphen of a word piece: "-of")."""
+    return _tok_norm(tok).lstrip("-") in FUNCTION_WORDS
+
+
+def string_overlap_only(tok: str, concept: str) -> bool:
+    """The grounding token is a function word that the concept merely CONTAINS as a word ("or" in
+    "more or fewer neutrons", "on" in "something on your mind"): a match on spelling alone. A
+    function word whose meaning is the concept ("or" for "alternatives", "IF" / "THEN" for
+    "conditional branching") is not touched."""
+    if not is_function_word(tok):
+        return False
+    w = _tok_norm(tok).lstrip("-")
+    if mc._CJK.search(w):
+        return w in concept
+    return re.search(rf"(?<![^\W_]){re.escape(w)}(?![^\W_])", concept.casefold()) is not None
+
+
+def function_word_grounded(text: str | dict[str, Any], concepts: Sequence[str]) -> list[bool]:
+    """fw-v1 (round 3): per concept (``concepts`` order), whether its Stage-P "in" / "partial"
+    grade is grounded on a function word the concept only shares as a word
+    (:func:`string_overlap_only`). Such a token grounds nothing ("more or fewer neutrons" is out
+    for " or": the conjunction is in the concept's spelling, not its meaning), so the scorer
+    counts the grade as out."""
+    want = {_norm(c): i for i, c in enumerate(concepts)}
+    out = [False] * len(concepts)
+    for entry in _data(text).get("grades", []):
+        if not isinstance(entry, dict) or entry.get("grade") == "out":
+            continue
+        i = want.get(_norm(str(entry.get("concept", ""))))
+        tok = entry.get("token")
+        if i is not None and isinstance(tok, str) and string_overlap_only(tok, concepts[i]):
+            out[i] = True
     return out

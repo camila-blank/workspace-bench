@@ -476,14 +476,17 @@ def test_rank_numbers_demotes_operands_and_fills_free_slots_with_consensus():
     ]
     gs = [_g("87"), _g("88"), _g("175", 9), _g("16")]
     out = digest.rank_numbers(gs, cons, operands=[87.0, 88.0], cap=5)
-    assert [g.key for g in out] == ["175", "16", "18", "87", "88"]
-    assert out[2].consensus.startswith("first number of 4 of 4 samples at [L52 pos -8]")
-    assert out[2].support.startswith("4 samples; first number of 4 of 4")
+    # round 3 (+cons-r3, ROUND3_TODO: reserve slots for consensus values): marked numbers first
+    assert [g.key for g in out] == ["18", "175", "16", "87", "88"]
+    assert out[0].consensus.startswith("first number of 4 of 4 samples at [L52 pos -8]")
+    assert out[0].support.startswith("4 samples; first number of 4 of 4")
     assert out[3].consensus == ""  # an operand is not marked even with a lead consensus
     # leniency guard: the slot count stays capped, consensus or not
     many = [_g(str(v)) for v in (1, 2, 3, 4, 5, 6)]
     assert len(digest.rank_numbers(many, cons, operands=[], cap=5)) == 5
-    assert [g.key for g in digest.rank_numbers(many, cons, [], 5)] == ["1", "2", "3", "4", "5"]
+    # the consensus values (18, and 87: no operand here) are no longer cut by the cap; the last
+    # unmarked numbers are
+    assert [g.key for g in digest.rank_numbers(many, cons, [], 5)] == ["18", "87", "1", "2", "3"]
 
 
 def test_keyed_number_with_consensus_is_annotated():
@@ -553,6 +556,7 @@ def test_arithmetic_digest_gets_operands_and_consensus(tmp_path, monkeypatch):
         consensus=True,
     )
     keys = [x["key"] for x in col.statements["i"]]
-    assert keys == ["300", "301", "302", "175", "87"]  # cap 5; two operands demoted out
-    assert col.statements["i"][3]["consensus"].startswith("first number of 4 of 4")
+    # cap 5; two operands demoted out; round 3 (+cons-r3): the consensus value ranks first
+    assert keys == ["175", "300", "301", "302", "87"]
+    assert col.statements["i"][0]["consensus"].startswith("first number of 4 of 4")
     assert digest.number_keys(_args(tmp_path), "arithmetic_intermediates", col, "i") == keys

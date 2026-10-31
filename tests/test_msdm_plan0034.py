@@ -74,6 +74,9 @@ def test_dmo_readme_numbers_are_current_bank():
     rows = [ln for ln in sec.splitlines() if ln.startswith("| ") and not ln.startswith("| arm")]
     rows = [r for r in rows if not set(r) <= set("|- ")]
     arms = [
+        # round 3 (ROUND3_TODO L180): the campaign's final O-lens rows replace "pending"
+        "final O-lens `final-olens-rl600-x4`, all 11 layers",
+        "final O-lens, lite",
         "O-lens s3d-rl600",
         "J-lens top-10",
         "ML-NLA",

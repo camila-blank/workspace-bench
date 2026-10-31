@@ -75,7 +75,7 @@ def test_stage_user_bodies_and_schemas() -> None:
     assert body == "Tokens: ' x', 'y'\n\nConcepts:\n1. a\n2. b"
     assert "Walt Disney" in pp.STAGE_P_SYSTEM and pp.STAGE_P_CHUNK == 60
     assert pp.GRADE_VALUE == {"in": 1.0, "partial": 0.5, "out": 0.0}
-    assert pp.PROMPT_VERSION == "jlens-pr-v3"
+    assert pp.PROMPT_VERSION == "jlens-pr-v3+fw-v1"  # round 3: the deterministic fw-v1 stamp
     # placeholders are substituted in one pass: a value containing a placeholder survives
     assert pp.render_stage_a("{listing}") == "Text:\n{listing}"
     assert set(pp.PROMPTS) == {
@@ -851,13 +851,13 @@ def test_parse_stage_p_requires_grounding_token() -> None:
 
 
 def test_prompt_version_is_v3() -> None:
-    assert pp.PROMPT_VERSION == "jlens-pr-v3"
+    assert pp.PROMPT_VERSION == "jlens-pr-v3+fw-v1"  # round 3: the deterministic fw-v1 stamp
     assert SPEC.judge.prompt_version == pp.PROMPT_VERSION
     readme = (ROOT / "evals/jlens_concept_pr/README.md").read_text(encoding="utf-8")
     assert "jlens-pr-v3" in readme and 'jlens-pr-v2",' not in readme
-    assert "| jlens_concept_pr | claude-opus-5-5 | jlens-pr-v3 |" in (ROOT / "README.md").read_text(
-        encoding="utf-8"
-    )
+    assert "| jlens_concept_pr | claude-opus-5-5 | jlens-pr-v3+fw-v1 " in (
+        ROOT / "README.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_stage_prompts_use_readout_phrase() -> None:
@@ -911,8 +911,8 @@ def test_lite_judges_same_cells_as_full(tmp_path, fake_llm, jargs):
     lite = jj.run(jargs(src, items=LABELS, extra={"reads": "lite"}, out=tmp_path / "lite"))
     assert [r["key"] for r in full.rows] == [r["key"] for r in lite.rows]
     assert full.value == lite.value
-    assert full.config["prompt_version"] == "jlens-pr-v3"
-    assert lite.config["prompt_version"] == "jlens-pr-v3+reads-lite"
+    assert full.config["prompt_version"] == "jlens-pr-v3+fw-v1"
+    assert lite.config["prompt_version"] == "jlens-pr-v3+fw-v1+reads-lite"
 
 
 def test_file_layers_without_reference_are_dropped(tmp_path, fake_llm, jargs, capsys):
