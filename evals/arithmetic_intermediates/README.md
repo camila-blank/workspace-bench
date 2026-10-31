@@ -174,8 +174,9 @@ wsbench judge family=arithmetic_intermediates readouts=<arm>.jsonl out=outputs/<
 
 ## Judge prompts
 
-`prompt_version`: `arith-free-2026-10-30` for the per-cell call (`cells=frozen`, and the base of the
-summary stamp) and `arith-free-batched-2026-10-30` for the batched `cells=all` call — the two share
+`prompt_version`: `arith-free-2026-10-30+exact-small+keys-union` for the per-cell call (`cells=frozen`, and the base of the
+summary stamp) and `arith-free-batched-2026-10-30+exact-small+keys-union` for the batched `cells=all` call (the calls
+themselves stay keyed `arith-free-2026-10-30` / `arith-free-batched-2026-10-30`: final r1 re-asks no call) — the two share
 their instructions and differ only in packaging, so they carry their own tags; `reads=lite`
 appends `+reads-lite`. 2026-10-30 (from `arith-free-2026-09-23` / `arith-free-batched-2026-09-23`):
 no token labels in batched headers, neutral readout wording, the shared token-list note
@@ -425,3 +426,20 @@ A line whose items are separated by " | " is one ranked list of the top vocabula
 ```text
 the model was silently evaluating a short arithmetic expression (a few operations on given numbers) and answering with only the final number, with no written working
 ```
+
+## Final r1 (2026-10-31): exact small integers, per-layer number keys
+
+- **Exact match for small integer golds.** An integer gold with `|gold| < 100` (`judge.SMALL_INT`)
+  now matches `exact` whatever its variant's tolerance (`judge.item_tolerance`; the bank value is
+  kept as `rows[].tolerance_bank`). Under rel5pct such golds credited off-by-one / off-by-few numbers:
+  at L44, 34 of 69 passes were near-misses (48 for 50 in subsubx-032, 23 for 22 in subsubx-057, 73 for
+  71 in subsubx-021). The item's cross null takes the same tolerance; `extras.bands` keeps the
+  `exact` / `rel5pct` columns beside the headline.
+- **The numbers digest keys are the union of the per-layer keys** (`digest.NUMBERS_UNION_FAMILIES`).
+  A multi-layer config digests each read layer separately (the same digest a single-layer run makes,
+  cache key `digest:<id>|<layer>`), ranks each layer's numbers to its own five slots (operands
+  demoted, that layer's first-number consensus seated), and merges them, so the judged keys hold
+  every key a single-layer run would judge (at most 5 per layer). The joint five-key all-layer digest
+  crowded out the gold: in 95 of the 102 items passing at L56 but failing all-layer, the gold was not
+  a key. The cross null is computed from the same kept values, so it rises with the larger key set.
+
