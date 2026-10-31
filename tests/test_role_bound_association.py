@@ -343,7 +343,7 @@ def test_native_extras_have_layer_pick_columns(tmp_path, fake_llm, mk_args):
 def test_config_stamps_roles_lexicon(tmp_path, fake_llm, mk_args):
     fake_llm(_responder)
     res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
-    assert res.config["roles_lexicon"] == prompts.ROLES_LEXICON == "roles-v1.2"
+    assert res.config["roles_lexicon"] == prompts.ROLES_LEXICON == "roles-v1.3"
     assert res.config["prompt_version"] == "oa-v2.4"
 
 
@@ -583,7 +583,7 @@ def test_summary_stamp_is_computed(tmp_path, monkeypatch):
         digest.prompt_version(prompts.PROMPT_VERSION, args, SPEC.name), reads.mode(args)
     )
     assert r.config["prompt_version"] == want and want.startswith("oa-v2.4+digest-")
-    assert r.config["roles_lexicon"] == "roles-v1.2"
+    assert r.config["roles_lexicon"] == "roles-v1.3"
 
 
 def test_in_macro(tmp_path, fake_llm, mk_args):

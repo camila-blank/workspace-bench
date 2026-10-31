@@ -29,7 +29,7 @@ DATASET_SEED = 20260810
 # words split; ONE re-ask when the judge's own picks are not supported by its quote
 # (judge.RETRY); two-person + action raw lines pinned into the digest (judge.PIN_MAX)
 PROMPT_VERSION = "oa-v2.4"  # oa-v2.1: the flat-run rule (decision Q4); lists still oa-v2
-ROLES_LEXICON = "roles-v1.2"  # config.roles_lexicon: evals/role_bound_association/roles_v1.json
+ROLES_LEXICON = "roles-v1.3"  # config.roles_lexicon: evals/role_bound_association/roles_v1.json
 
 SYSTEM = (
     f"You judge {READOUT_PHRASE}: noisy free text, or ranked lists of top vocabulary tokens, "
