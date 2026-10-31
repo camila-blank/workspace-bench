@@ -348,4 +348,5 @@ failures. `prompt_version` in summary mode = `digest.prompt_version("comp-v3", a
   layers; token files passed through a per-cell interpretation step (deleted, plan 0032 §2.3).
 - comp-v2 (2026-10-30, plan 0049): the rules on this page, one draw.
 - comp-v3 (2026-10-31, audit F9): the comp-v2 prompts in three draws, majority pick. The ATI
-  entry (gated under comp-v2) is stale until the run phase re-gates it.
+  entry was re-gated under comp-v3 on 2026-10-31 (R1-ATI, full panel): 89/100, 2 ids in and 2
+  out.
