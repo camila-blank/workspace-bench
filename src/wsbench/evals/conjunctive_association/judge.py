@@ -144,6 +144,12 @@ def n_draws(args: JudgeArgs) -> int:
     return n
 
 
+def draws_stamp(n: int) -> str:
+    """The stamp suffix of a non-default draw count (``+draws1``): a different instrument,
+    never matched against the default's floors or ATI entries."""
+    return "" if n == N_DRAWS else f"+draws{n}"
+
+
 def draw_key(key: str, k: int) -> str:
     """Draw ``k``'s cache key (draw 0 keeps the single-draw key)."""
     return key if k == 0 else f"{key}#d{k}"
@@ -471,7 +477,7 @@ def _run_native(
             items,
             rows,
             counts=counts,
-            config=base_config(args, PROMPT_VERSION, char_cap=char_cap, draws=n),
+            config=base_config(args, PROMPT_VERSION + draws_stamp(n), char_cap=char_cap, draws=n),
             n_items_excluded=n_excluded,
             chance=chance,
             gate=gate.extras(),
@@ -599,8 +605,9 @@ def _run_summary(
         skipped_rows=sum(rep.skipped.values()),
         spend=spend,
     )
+    stamp = digest.prompt_version(PROMPT_VERSION + draws_stamp(n), args, FAMILY)
     config = base_config(
-        args, pv, char_cap=None, draws=n, **digest.config(args, source_kind, FAMILY)
+        args, stamp, char_cap=None, draws=n, **digest.config(args, source_kind, FAMILY)
     )
     return with_readout_count(
         score.score(
