@@ -48,6 +48,8 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from wsbench.multitoken.languages import RE_PREFIX, is_frozen_language_unit, naming_forms
+
 __all__ = [
     "SCORER_VERSION",
     "BankContract",
@@ -182,8 +184,13 @@ def unicode_word_matcher(form: str, *, case_sensitive: bool = False) -> Callable
     """Boundary match on folded text for a unit form (any script); CJK/Hangul and non-wordy
     forms are substrings of the folded sample; purely numeric forms use the answer-context
     rule. The script decision is made on the RAW form (NFKD decomposes Hangul syllables).
+    A form starting with ``languages.RE_PREFIX`` is a regular expression searched in the
+    accent-folded, case-kept sample (the v2 language units' naming forms, plan F6).
     ``case_sensitive`` (a bank unit's ``case_sensitive`` list, plan 0040 B1): accents are folded
     but case is kept on both sides, so the language name "Polish" never matches "polish"."""
+    if form.startswith(RE_PREFIX):  # a naming-context pattern (``languages.NAMING_OWN``)
+        rx = re.compile(fold_accents(form[len(RE_PREFIX) :]))
+        return lambda text: rx.search(fold_accents(text)) is not None
     norm = fold_accents if case_sensitive else fold
     f = norm(form)
     if re.fullmatch(r"\d+", f):
@@ -343,6 +350,15 @@ def scored_units(item: Mapping[str, Any], contract: BankContract) -> list[Scored
     for raw in item.get("units") or []:
         role = str(raw.get("role", "unit"))
         forms = _unit_forms(raw)
+        # audit fix F6: a v2 multilingual item's (``mc_roles``) frozen language unit is scored on
+        # its naming-context forms; a v1 unit (no ``mc_roles``) is scored as written
+        naming = (
+            role == "language"
+            and bool(item.get("mc_roles"))
+            and is_frozen_language_unit(str(item.get("lang") or ""), forms)
+        )
+        if naming:
+            forms = naming_forms(str(item["lang"]), [k for k in forms if k != item["lang"]])
         if contract.multi_token and bool(raw.get("multi_token", True)):
             kept: dict[str, list[str]] = {}
             for lang, fs in forms.items():
@@ -358,7 +374,7 @@ def scored_units(item: Mapping[str, Any], contract: BankContract) -> list[Scored
                 "(multi-token) form"
             )
         if forms:
-            cs = tuple(str(f) for f in raw.get("case_sensitive") or ())
+            cs = () if naming else tuple(str(f) for f in raw.get("case_sensitive") or ())
             avoid: tuple[str, ...] = ()
             if contract.fuzzy_names:
                 block = (item.get("mc") or {}).get(role) or {}
@@ -492,8 +508,9 @@ def damerau_levenshtein(a: str, b: str) -> int:
 
 
 def _fuzzy_form_words(form: str) -> list[str] | None:
-    """A form's folded words when it may match fuzzily (Latin script, no digits, no CJK)."""
-    if _CJK_HANGUL.search(form) or re.search(r"\d", form):
+    """A form's folded words when it may match fuzzily (Latin script, no digits, no CJK, not a
+    ``re:`` pattern)."""
+    if form.startswith(RE_PREFIX) or _CJK_HANGUL.search(form) or re.search(r"\d", form):
         return None
     ws = _words(form)
     if not ws or not all(_LATIN.search(w) for w in ws):
