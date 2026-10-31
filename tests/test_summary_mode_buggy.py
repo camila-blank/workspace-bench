@@ -98,7 +98,8 @@ def test_digest_reads_the_eof_cell_of_every_layer(tmp_path, monkeypatch):
     )
     fake = FakeLLM.install(monkeypatch, _judge)
     r = judge.run(_summary(path, tmp_path / "s", items=[BUGGY], allow_missing=True))
-    (bundle,) = [u for n, _s, u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     assert "EOF anchor sample" in bundle and "OTHER layer sample" in bundle
     assert "EARLY" not in bundle
     assert r.extras["n_rows_not_at_read_cell"] == 1

@@ -67,7 +67,7 @@ def test_flat_types_and_versions():
     assert BRMT.judge.prompt_version == "mc-brmt-2026-10-31"
     assert assoc_prompts.PROMPT_VERSION == "assoc-mc-2026-10-31"
     assert rb_prompts.PROMPT_VERSION == "oa-v2.1"
-    assert digest.SUMMARY_JUDGE_VERSION == "sj-v9"
+    assert digest.SUMMARY_JUDGE_VERSION == "sj-v10"
     assert kc_prompts.PROMPT_VERSION == "cutoff-judge-2026-10-31"
     assert dm_prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-31"
     assert mc.TOKEN_NOTE_VERSION == "tn-2026-10-31-q4"

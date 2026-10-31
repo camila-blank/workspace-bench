@@ -593,7 +593,8 @@ def test_tilde_ids_roundtrip(fixture_bank, run, tmp_path):
     res, _ = run(_verdicts(**{"w-a": HIT}), items=_strs("w-a~twin"))
     assert [r["id"] for r in res.rows] == ["w-a", "w-a~twin"] and res.value == 1.0
     keys = {r["key"] for r in _cells(tmp_path)}
-    assert "C:w-a~twin|L-1" in keys and "digest:w-a~twin|all" in keys
+    # audit F1: the digest is keyed per read layer (digest:<id>|<layer>)
+    assert "C:w-a~twin|L-1" in keys and any(k.startswith("digest:w-a~twin|") for k in keys)
     nat, _ = run(_verdicts(**{"w-a": HIT}), "native", items=["w-a~twin"])
     keys = {r["key"] for r in _cells(tmp_path, "native")}
     assert {"C:w-a~twin", "B:w-a~twin", "A:w-a~twin:p0"} <= keys and nat.value == 1.0

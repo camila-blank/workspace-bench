@@ -265,9 +265,9 @@ def _run_summary(
     rep: LoadReport,
 ) -> FamilyResult:
     """Summary mode (plan 0020): every selected cell of an item, across every requested layer ->
-    one digest -> one MC call. An item with no cells, an empty digest and an unsummarized item
-    are fails (whole-scope denominator, as natively); unsummarized items and failed calls count
-    as unjudged."""
+    one digest -> one MC call. An item with no cells and an empty digest are fails (whole-scope
+    denominator, as natively); an unsummarized item (a refused or collapsed digest) is undecided,
+    never a fail (audit F3); unsummarized items and failed calls count as unjudged."""
     by_item: dict[str, list[Cell]] = defaultdict(list)
     for c in cells:
         by_item[c.id].append(c)
@@ -359,6 +359,7 @@ def _run_summary(
             n_items_scope=len(scope),
             pinned=digest.pinned(args, FAMILY),
             options=options,
+            undecided=set(col.unsummarized),
         ),
         scope,
         cells,

@@ -168,10 +168,12 @@ def test_ground_and_renders():
     )
     assert dropped == 1 and len(kept) == 2
     text, evid = digest.render_summary(kept, "extractive")
-    assert text == "[one] a large orange cat sat"
+    assert text == "[1 sample] a large orange cat sat"  # digest-v5: a per-claim count
     assert "tiger" not in text and [ln.text for ln in evid] == ["a large orange cat sat"]
     text, _ = digest.render_summary(kept, "abstractive")
-    assert text.splitlines()[0] == ('- a tiger [support: one] — evidence: "a large orange cat sat"')
+    assert text.splitlines()[0] == (
+        '- a tiger [support: 1 sample] — evidence: "a large orange cat sat"'
+    )
 
 
 # ---------------------------------------------------------------- collapse
@@ -211,7 +213,7 @@ def test_collapse_item_states(tmp_path, scripted):
             "fam", by_item, args=args, cache=cache, spend=Spend(), preflight=None, task_note="t"
         )
     assert len(seen) == 4
-    assert col.cells["a"].samples == ("[one] alpha-sample",)
+    assert col.cells["a"].samples == ("[1 sample] alpha-sample",)
     assert (col.cells["a"].layer, col.cells["a"].pos, col.cells["a"].token) == (-1, 5, "'s")
     assert col.unsummarized == {"b", "d"} and col.empty == {"c", "e"}
     for i in "bcde":
@@ -258,7 +260,7 @@ def test_gate_texts_splits_token_lines(tmp_path, scripted):
         )
     assert digest.gate_texts(col.cells["a"], col) == ["fence", "post"]
     assert digest.gate_texts(col.cells["a"], col, joined=True) == ["fence", "post", "fence post"]
-    assert col.cells["a"].samples == ("[one] fence | post",)
+    assert col.cells["a"].samples == ("[1 sample] fence | post",)
 
 
 def test_options_validated(tmp_path):
@@ -279,7 +281,7 @@ def test_options_validated(tmp_path):
     with pytest.raises(SystemExit):
         digest.validate({"aggregate": "summary", "summ_varient": "task"})  # typo key
     a = _args(tmp_path)
-    assert digest.prompt_version("pv", a) == "pv+digest-v4-task-extractive+sj-v9"
+    assert digest.prompt_version("pv", a) == "pv+digest-v5-task-extractive+sj-v10"
     assert digest.pinned(a) and not digest.pinned(_args(tmp_path, summ_effort="low"))
 
 
@@ -304,9 +306,10 @@ def test_v2_key_support_and_dedupe():
     kept, dropped = digest.ground(res, lines, 10, dups)
     assert dropped == 0 and dups == [1]  # the second "apple" repeats the first item's content
     assert [(g.key, g.support) for g in kept] == [
-        ("apple", "many"),  # 11 samples contain the word, not the whole clause
-        ("aquariums", "one"),
-        ("fish tanks", "one"),  # a key not inside the evidence falls back to the evidence
+        # no "count" given: the per-claim count falls back to its cap, the key-word count
+        ("apple", "11 samples"),  # 11 samples contain the word, not the whole clause
+        ("aquariums", "1 sample"),
+        ("fish tanks", "1 sample"),  # a key not inside the evidence falls back to the evidence
     ]
     assert digest.support_of("app", lines) == "one"  # whole words only
 
@@ -429,10 +432,10 @@ def test_summ_lang_label_rendered_but_not_gated(tmp_path):
 
 def test_summ_lang_stamp(tmp_path):
     assert digest.prompt_version("pv", _args(tmp_path), "multilingual_mt") == (
-        "pv+digest-v4-task-extractive-lang+sj-v9"
+        "pv+digest-v5-task-extractive-lang+sj-v10"
     )
     assert digest.prompt_version("pv", _args(tmp_path), "poetry") == (
-        "pv+digest-v4-task-extractive+sj-v9"
+        "pv+digest-v5-task-extractive+sj-v10"
     )
     assert "language" in digest.render_system(digest.settings(_args(tmp_path), "multilingual"), "")
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.registry import REPO_ROOT
-from wsbench.results import read_results
+from wsbench.results import decided_outcomes, read_results
 
 FROZEN = REPO_ROOT / "evals" / "baselines" / "prompt_only.json"
 # summary-mode floors (plan 0024): the same prompt-only readouts judged with aggregate=summary
@@ -173,6 +173,14 @@ def freeze(
             "layers_judged": r.config.get("layers_judged") or r.config.get("layers"),
             "complete": r.complete,
             **({"aggregate": "summary", "summarizer": summarizer_key(r.config)} if summary else {}),
+            # audit F3: the ids decided (lens rows draw the floor on the ids both decided) and
+            # the ids whose digest was never served (they count toward the refusal share)
+            "decided": decided_outcomes(r.rows, r.n_items),
+            "digest_unserved": sorted(
+                str(row.get("id", row.get("item")))
+                for row in r.rows
+                if row.get("summary_state") == "unsummarized"
+            ),
             "written": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         }
     if not frozen:
@@ -262,18 +270,24 @@ def archive_qwen_summary() -> bool:
 
 def _po_opus_entries(frozen: dict[str, Any], cfg: dict[str, Any]) -> None:
     """The ``po-opus-v1`` fields of each entry: ``value`` / ``n`` / ``ci``, the refusal count
-    and share, and ``not_measurable`` when more than 20% of the ids were refused."""
+    and share, and ``not_measurable`` when more than 20% of the ids were refused. A refusal is
+    an ask the model declined OR an answer whose digest was never served (audit F3: the digest
+    refusals count too; one id counts once)."""
     fams = cfg.get("families") or {}
     for fam, e in frozen.items():
         st = fams.get(fam) or {}
         n_ids = int(st.get("n_ids") or 0)
-        n_ref = len(st.get("refused") or [])
+        refused = {str(i) for i in st.get("refused") or []}
+        digest_refused = set(e.get("digest_unserved") or []) - refused
+        n_ref = len(refused) + len(digest_refused)
         share = n_ref / n_ids if n_ids else 0.0
         e.update(
             value=e["rate"],
             n=e.get("n_items_decided") if e.get("n_items_decided") is not None else e["n_items"],
             ci=e["ci95"],
             n_refused=n_ref,
+            n_refused_ask=len(refused),
+            n_refused_digest=len(digest_refused),
             refusal_share=share,
             protocol="po-opus-v1",
         )

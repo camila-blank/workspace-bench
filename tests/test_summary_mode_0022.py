@@ -90,7 +90,7 @@ def test_render_prominent_before_rare():
     r = {"items": [_entry("prominent line")], "rare": [_entry("rare line")]}
     kept, _ = digest.ground(r, lines, 5, max_rare=5)
     text, _evid = digest.render_summary(kept, "extractive")
-    assert text.splitlines() == ["[one] prominent line", "[one] rare line"]
+    assert text.splitlines() == ["[1 sample] prominent line", "[1 sample] rare line"]
 
 
 def test_schema_and_prompt():
@@ -156,7 +156,7 @@ def test_stride_rare_only_digest_is_summarized(tmp_path, scripted):
     replies["alpha-blip"] = {"items": [], "rare": [_entry("alpha-blip harmonies", "harmonies")]}
     col = _collapse(tmp_path, "fam", {"a": [_prose("a", 20, 1, "alpha-blip harmonies")]})
     assert "a" not in col.empty and "a" not in col.unsummarized
-    assert col.summaries["a"] == "[one] alpha-blip harmonies"
+    assert col.summaries["a"] == "[1 sample] alpha-blip harmonies"
     assert col.statements["a"][0]["tier"] == "rare"
 
 
@@ -178,7 +178,14 @@ def test_hierarchical_chunk_with_only_rare_contributes(tmp_path, monkeypatch):
     monkeypatch.setitem(
         digest.FAMILY_DEFAULTS,
         fam,
-        {"summ_overflow": "hierarchical", "summ_token_cap": "1000", "summ_max": "5"},
+        # summ_layers=joint: drives the chunk machinery with a multi-layer bundle (audit F1's
+        # per-layer default never chunks these small layers)
+        {
+            "summ_overflow": "hierarchical",
+            "summ_token_cap": "1000",
+            "summ_max": "5",
+            "summ_layers": "joint",
+        },
     )
     users: list[str] = []
 
@@ -300,7 +307,11 @@ def test_arith_verdict_keys_and_native_default():
 
 
 def test_summary_prompts_only_change_the_cap():
+    from wsbench.evals.arithmetic_intermediates.prompts import CONSENSUS_RULE
+
     for native, summary in ((CHAIN_NATIVE, CHAIN_SUMMARY), (ARITH_NATIVE, ARITH_SUMMARY)):
+        if summary is ARITH_SUMMARY:  # audit F11 (Fable's ruling): plus the consensus-mark rule
+            summary = summary.replace("\n" + CONSENSUS_RULE, "", 1)
         assert summary == native.replace("at most three.", "at most ten.") and summary != native
 
 

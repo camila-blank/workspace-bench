@@ -296,7 +296,8 @@ def test_summary_layer_subset_only_feeds_those_layers(tmp_path, monkeypatch):
     assert res.config["layers_judged"] == [44] and not res.extras.get("layers_missing")
     fake.calls.clear()
     SPEC.run(summary_args(path, tmp_path / "all", prompts.PROMPT_VERSION, items=[A]))
-    (bundle,) = [u for n, _s, u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     heads = {ln for ln in bundle.splitlines() if ln.startswith("[L")}
     assert heads == {f"[L{L} pos {p}]" for L in readplan.GRID for p in range(12, 21)}
 

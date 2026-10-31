@@ -40,7 +40,15 @@ def fam(monkeypatch):
     monkeypatch.setitem(
         digest.FAMILY_DEFAULTS,
         FAM,
-        {"summ_overflow": "hierarchical", "summ_token_cap": "1000", "summ_max": "5"},
+        # summ_layers=joint: these tests drive the chunk / halving machinery with multi-layer
+        # bundles; under the per-layer default (audit F1) each layer is its own small bundle and
+        # never chunks (the per-layer path: tests/test_digest_union.py)
+        {
+            "summ_overflow": "hierarchical",
+            "summ_token_cap": "1000",
+            "summ_max": "5",
+            "summ_layers": "joint",
+        },
     )
 
 
@@ -208,10 +216,12 @@ def test_refused_final_moves_down_a_level(tmp_path, fam, monkeypatch):
     fake = Fake(monkeypatch, tokens_per_char=1.0)
     fake.script["(support:"] = llm.REFUSED_JSON  # finals are refused, chunks are not
     col = _run(tmp_path, {"a": _cells("a", 6)})
-    # unsummarized, counted once (as refused, or too long if a halved union outgrew the budget)
-    assert "a" in col.unsummarized
-    assert col.diag["n_digest_refused"] + col.diag["n_digest_too_long"] == 1
+    # audit F3: out of halvings, the item is judged on its (served) chunk digests directly
+    # instead of being given up; nothing is unserved, so it is neither refused nor partial
     assert col.diag["n_fallback_events"] >= 1
+    assert "a" not in col.unsummarized and col.summaries["a"]
+    assert col.diag["n_items_chunk_direct"] == 1 and "a" not in col.partial
+    assert col.diag["n_digest_refused"] + col.diag["n_digest_too_long"] == 0
 
 
 def test_all_dropped_final_is_reasked_on_rerun(tmp_path, fam, monkeypatch):
@@ -264,9 +274,10 @@ def test_stride_path_all_dropped_is_reasked_on_rerun(tmp_path, monkeypatch):
 
 
 def test_plan_0020_fingerprint_unchanged():
-    # the digest fingerprint fields, frozen (the v4 freeze, plan 0032: digest-v4, the task
-    # variant, hierarchical overflow and one 920k cap by default; plan 0022 added max_rare and
-    # numbers): a change here re-bills every cached digest
+    # the digest fingerprint fields, frozen (the v4 freeze, plan 0032: the task variant,
+    # hierarchical overflow and one 920k cap by default; plan 0022 added max_rare and numbers;
+    # the audit-fix digest PR bumped the version to digest-v5, per-claim counts): a change here
+    # re-bills every cached digest
     args = _args(Path("/tmp"))
     s = digest.settings(args, "basic_readout")
     assert (s.overflow, s.concurrency, s.timeout) == ("hierarchical", None, None)
@@ -274,7 +285,7 @@ def test_plan_0020_fingerprint_unchanged():
 
     expected = digest._digest_fp(s, "", "TEXT")
     assert expected == fingerprint(
-        "digest-v4",
+        "digest-v5",
         "claude-opus-5-5",
         {"anthropic_effort": "default"},
         "task",
@@ -403,7 +414,7 @@ def test_count_tokens_unavailable_falls_back_to_estimate(tmp_path, fam, monkeypa
     assert col.summaries["a"] and fake.calls  # estimated size, still digested
 
 
-def test_union_too_large_is_unsummarized(tmp_path, fam, monkeypatch):
+def test_union_too_large_is_judged_on_the_chunks(tmp_path, fam, monkeypatch):
     monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_max", "25")
     fake = Fake(monkeypatch, tokens_per_char=1.0)
 
@@ -423,7 +434,11 @@ def test_union_too_large_is_unsummarized(tmp_path, fam, monkeypatch):
 
     monkeypatch.setattr(llm, "stream_json", sj)
     col = _run(tmp_path, {"a": _cells("a", 6)})
-    assert "a" in col.unsummarized and col.diag["n_digest_too_long"] == 1
+    # audit F3 (was: unsummarized, counted too long): a union too large for the final call is
+    # judged on its chunk digests directly, every chunk claim kept
+    assert "a" not in col.unsummarized and col.diag["n_items_chunk_direct"] == 1
+    assert col.diag["n_digest_too_long"] == 0
+    assert len(col.evidence["a"]) == len(_cells("a", 6))
 
 
 def test_refusal_model_also_serves_under_stride(tmp_path, fam, monkeypatch):

@@ -467,7 +467,8 @@ def test_summary_digest_gets_every_cell(tmp_path):
     r, fake = judge_run(
         tmp_path, path, [BD], lambda s, u, sc: answer(u, "birthday", "birthday"), ["cake"]
     )
-    (bundle,) = [u for n, _s, u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     groups = set(re.findall(r"^\[L(\d+) pos (\d+)\]$", bundle, flags=re.M))
     assert groups == {(str(L), str(p)) for L in GRID for p in POS} and len(groups) == 19 * 11
     assert r.extras["n_readouts_in"] == r.extras["n_readouts_bundled"] == 209
@@ -494,7 +495,8 @@ def test_task_note_reaches_digest(tmp_path):
     assert SPEC.task_note == ap.DIGEST_TASK_NOTE and digest.DEFAULT_VARIANT == "task"
     path = write_cells(tmp_path / "r.jsonl", {}, [BD])
     _r, fake = judge_run(tmp_path, path, [BD], lambda s, u, sc: answer(u, mc.CANNOT, ""), ["x"])
-    (system,) = [s for n, s, _u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer, every one with the same system prompt
+    (system,) = {s for n, s, _u in fake.calls if n == "digest"}
     assert SPEC.task_note in system
     golds = [mc.fold(it["mc"]["gold"]) for it in items().values()]
     assert not any(f" {g} " in f" {mc.fold(SPEC.task_note)} " for g in golds)
@@ -593,7 +595,8 @@ def test_lite_reads_one_site(tmp_path):
         ["cake"],
         extra={"reads": "lite"},
     )
-    (bundle,) = [u for n, _s, u in fake.calls if n == "digest"]
+    # audit F1: one digest per read layer; together they carry every cell
+    bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     groups = set(re.findall(r"^\[L(\d+) pos (\d+)\]$", bundle, flags=re.M))
     assert groups == {(str(L), str(LAST)) for L in GRID}
     assert r.config["prompt_version"].endswith("+reads-lite")
