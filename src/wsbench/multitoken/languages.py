@@ -581,8 +581,9 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
     "sw": ("Kiswahili", *_rx(r"(?i)(?<![^\W_])(?:kutoka|kwa|katika)\s+swahili(?![^\W_])")),
     # ln-2026-10-31e: a suffixed form (Türkçede, Türkçe'de, Türkçesi) names the language; bare
     # "Türkçe" only before punctuation / the end or a closed list of text nouns, optionally after
-    # one or two closed-list modifiers ("Türkçe eş anlamlısı", "Türkçe yaygın adı"), never as the  # noqa: RUF003
-    # adjective of a topic ("Türkçe futbol", "Türkçe spor", "Türkçe edebiyat")
+    # one or two closed-list modifiers ("Türkçe eş anlamlısı",  # noqa: RUF003
+    # "Türkçe yaygın adı"), never as the adjective of a topic  # noqa: RUF003
+    # ("Türkçe futbol", "Türkçe spor", "Türkçe edebiyat")
     "tr": ("Türk dili", *_rx(r"(?i)(?<![^\W_])turkce'?[^\W\d_]+", _TR_BARE)),
     # ln-2026-10-31e: "tiếng Việt" / "Việt ngữ" only as the language of a text: after a closed list
     # of words (bằng / trong / sang / từ / qua / theo / dùng / gọi, "in / into / from / by / using /

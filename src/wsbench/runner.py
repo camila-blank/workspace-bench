@@ -132,6 +132,9 @@ def judge_family(
         result.extras["ati_n_bank"] = ati["n_bank"]
         result.extras["ati_judge_model"] = ati.get("judge_model")
         result.extras["ati_gate"] = ati.get("gate", "plan-0014")
+        if ati.get("provisional"):  # a reduced-panel gate (decision R1-ATI): say which readers
+            result.extras["ati_provisional"] = True
+            result.extras["ati_panel"] = ati.get("panel")
     path = write_results(out, result)
     spend = result.counts.get("spend_usd", 0.0) or 0.0
     print(
