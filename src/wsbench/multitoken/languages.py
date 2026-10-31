@@ -483,19 +483,49 @@ _FREE_WORD = rf"(?!(?:{_FREE_STOP})(?![a-z'\-]))[a-z][a-z'\-]*"
 _INPUT_AFTER = rf"\s+(?:{_FREE_WORD}\s+){{0,3}}(?i:{_INPUT_NOUNS})(?![^\W_])"
 
 
-def input_naming(text: str, names: Sequence[str], case_sensitive: Collection[str] = ()) -> bool:
-    """``text`` names the INPUT as being in one of the English language ``names`` by the
-    ln-2026-10-31f form ("a Spanish fill-in prompt", "the French antonym of premier"):
-    the naming of the passage itself, which needs no other anchor."""
+def _input_named(
+    text: str, names: Sequence[str], case_sensitive: Collection[str], after: str
+) -> bool:
     for n in names:
         x = re.escape(n).replace("\\ ", r"\s+")
         x = x if n in case_sensitive else f"(?i:{x})"
         folded = "".join(
             c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
         )
-        if re.search(rf"(?<![^\W_]){x}{_INPUT_AFTER}", folded):
+        if re.search(rf"(?<![^\W_]){x}{after}", folded):
             return True
     return False
+
+
+def input_naming(text: str, names: Sequence[str], case_sensitive: Collection[str] = ()) -> bool:
+    """``text`` names the INPUT as being in one of the English language ``names`` by the
+    ln-2026-10-31f form ("a Spanish fill-in prompt", "the French antonym of premier"):
+    the naming of the passage itself, which needs no other anchor."""
+    return _input_named(text, names, case_sensitive, _INPUT_AFTER)
+
+
+# round 3 review (PR #208): for multilingual_mt's ANCHORING (``family.anchored``), only a noun
+# that can be the passage itself, never one followed by a gloss: "<Lang> word / phrase / text"
+# names any word ("Kylmäinen is a Finnish word that translates to 'refrigerator'", "the Turkish
+# text of the famous Azerbaijani folk song"), so it is not about the item's object. The naming
+# FORM above (a language unit hit) is unchanged; "this text / sentence is in X" is
+# ``family._states_text_language``.
+_PASSAGE_NOUNS = r"prompts?|questions?|riddles?|puzzles?|clues?|passages?"
+_GLOSS_AFTER = (
+    r"\s+(?:for|meaning|means|meant|translat\w*|(?:that|which)\s+(?:means|meant|translat\w*))"
+    r"(?![^\W_])"
+)
+_PASSAGE_AFTER = (
+    rf"\s+(?:{_FREE_WORD}\s+){{0,3}}(?i:{_PASSAGE_NOUNS})(?![^\W_])(?!(?i:{_GLOSS_AFTER}))"
+)
+
+
+def input_passage_naming(
+    text: str, names: Sequence[str], case_sensitive: Collection[str] = ()
+) -> bool:
+    """:func:`input_naming` restricted to a passage noun with no gloss after it ("a Polish
+    riddle", "a Spanish arithmetic question"; never "a Finnish word that means ...")."""
+    return _input_named(text, names, case_sensitive, _PASSAGE_AFTER)
 
 
 def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
