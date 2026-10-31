@@ -315,15 +315,27 @@ def _person_of(label: str) -> tuple[str, str] | None:
     return name, role
 
 
+def option_named(quote: str, label: str, lex: gate.Lexicon) -> bool:
+    """A shown person option is named in ``quote``: by its name or a lexicon term of its role
+    (``gate.person_ref``), or by its role or one of the terms shown beside it
+    (:func:`role_terms_shown`, the same rule for every option, gold or distractor)."""
+    p = _person_of(label)
+    if p is None:
+        return False
+    name, role = p
+    if gate.person_ref(quote, name, role, lex):
+        return True
+    return mc.form_in(gate.split_scripts(quote), [role, *role_terms_shown(role, lex)])
+
+
 def pick_problems(
     r: dict, block: Block, lines: Sequence[digest.Line], cells: Sequence[Cell], lex: gate.Lexicon
 ) -> list[str]:
     """final r1: why the judge's OWN picks are not supported by its own quote (never which
     option is gold): the quote is not a verbatim span of one statement, a picked person option
-    is not named in it (``gate.person_ref``, the other picked person's role as counterpart), or
-    the picked action is not stated in it (``gate.action_ref``). Empty when every question
-    has a substantive pick and the quote supports all three, or when any question answered
-    cannot tell (nothing to re-ask)."""
+    is not named in it (:func:`option_named`), or the picked action is not stated in it
+    (``gate.action_ref``). Empty when every question has a substantive pick and the quote
+    supports all three, or when any question answered cannot tell (nothing to re-ask)."""
     if len(block.shown) != 3:
         return []
     choices = [r.get(f"q{i + 1}_choice") for i in range(3)]
@@ -340,11 +352,8 @@ def pick_problems(
         out.append("the quote is not a verbatim span of the readouts")
     elif not digest.quote_ok(quote, digest.statement_lines(lines, cells)):
         out.append(f"the quote runs across two statements (a {prompts.BULLET_MARK} mark)")
-    p1, p3 = _person_of(picked[0]), _person_of(picked[2])
-    for q, lab, p, other in (("Q1", picked[0], p1, p3), ("Q3", picked[2], p3, p1)):
-        if p is not None and not gate.person_ref(
-            quote, p[0], p[1], lex, counterpart=other[1] if other else None
-        ):
+    for q, lab in (("Q1", picked[0]), ("Q3", picked[2])):
+        if not option_named(quote, lab, lex):
             out.append(f'the quote does not name your {q} pick "{bare_label(lab)}"')
     if not gate.action_ref(quote, picked[1]):
         out.append(f'the quote does not state your Q2 pick "{picked[1]}"')
@@ -654,11 +663,11 @@ def _pin_two_person_lines(
     s = digest.settings(args, FAMILY)
     for i in ids:
         b = blocks[i]
-        people = [p for p in (_person_of(x) for x in b.people) if p is not None]
+        people = list(b.people)
 
         def pred(ln: digest.Line, people: list = people, acts: tuple = b.actions) -> bool:
             for part in ln.text.split(prompts.BULLET_MARK):
-                n = sum(gate.person_ref(part, nm, rl, lex) for nm, rl in people)
+                n = sum(option_named(part, lab, lex) for lab in people)
                 if n >= 2 and any(gate.action_ref(part, a) for a in acts):
                     return True
             return False
