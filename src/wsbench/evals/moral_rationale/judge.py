@@ -284,8 +284,12 @@ def verify_quote(quote: str, lines: list[digest.Line], cells: list[Cell]) -> str
 
 N_DRAWS = 3  # summary mode: three draws per (item, side), an option is marked by a majority
 SUPPORT_RANK = {"one": 1, "few": 2, "several": 3, "many": 4}
-_EXTRACTIVE = re.compile(r"^\[(one|few|several|many)\] (?:\[in [^\]]*\] )?(.*)$")
-_ABSTRACTIVE = re.compile(r'\[support: (one|few|several|many)\] — evidence: "(.*)"$')
+# the support marker: digest-v5's per-claim count ("12 samples", "3 samples, 2 layers", plus a
+# consensus note) or a digest-v4 bucket word (``digest.SUPPORT_PATTERN`` + the legacy words)
+_MARK = rf"(one|few|several|many|{digest.SUPPORT_PATTERN})"
+_EXTRACTIVE = re.compile(rf"^\[{_MARK}\] (?:\[in [^\]]*\] )?(.*)$")
+_ABSTRACTIVE = re.compile(rf'\[support: {_MARK}\] — evidence: "(.*)"$')
+_COUNT = re.compile(r"^(\d+) samples?")
 Support = Callable[[str], int]
 
 
@@ -313,14 +317,28 @@ def draw_key(key: str, k: int) -> str:
     return key if k == 0 else f"{key}#d{k}"
 
 
+def support_rank(mark: str) -> int:
+    """A support marker's rank, one < few < several < many (1..4). digest-v5's per-claim count
+    ``N samples`` is bucketed on digest.support_of's cut points (1 / 2-3 / 4-9 / 10+), so two
+    claims stated about equally often tie, as the v4 tags did; an unreadable marker is 0."""
+    if mark in SUPPORT_RANK:
+        return SUPPORT_RANK[mark]
+    m = _COUNT.match(mark)
+    if m is None:
+        return 0
+    n = int(m.group(1))
+    return 1 if n <= 1 else 2 if n <= 3 else 3 if n <= 9 else 4
+
+
 def digest_support(summary: str) -> Support:
-    """Summary mode: a quote's support = the highest support tag (one < few < several < many) of
-    the digest lines holding it (``digest.line_holds``); 0 when none does."""
+    """Summary mode: a quote's support = the highest support rank (:func:`support_rank`: one <
+    few < several < many) of the digest lines holding it (``digest.line_holds``); 0 when none
+    does."""
     tagged: list[tuple[int, digest.Line]] = []
     for s in summary.splitlines():
         m = _EXTRACTIVE.match(s) or _ABSTRACTIVE.search(s)
         if m is not None:
-            tagged.append((SUPPORT_RANK[m.group(1)], digest.Line(m.group(2))))
+            tagged.append((support_rank(m.group(1)), digest.Line(m.group(2))))
 
     def support(quote: str) -> int:
         return max((r for r, ln in tagged if digest.line_holds(quote, ln)), default=0)

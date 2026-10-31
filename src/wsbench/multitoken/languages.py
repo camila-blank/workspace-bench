@@ -310,7 +310,12 @@ def case_sensitive_forms() -> frozenset[str]:
 # ---------------------------------------------------------------------------------------------
 # naming-context forms (plan F6): what the v2 language unit is scored with
 # ---------------------------------------------------------------------------------------------
-NAMING_VERSION = "ln-2026-10-31"  # bump on any edit of NAMING / naming_forms
+# ln-2026-10-31b (fresh-eye review of the audit fixes): "<register> X" must be followed by
+# what "in X" may be followed by ("modern Greek literature" names no language); no people /
+# genre / medium nouns after X ("Greek News Agency", "Russian Prose Poetry", "Russian School
+# textbooks"); "στα ελληνικά" before a noun ("στα Ελληνικά δρόμους") and "Deutsch-" compounds
+# name no language
+NAMING_VERSION = "ln-2026-10-31b"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
 # what may follow "in X" for it to name the language: punctuation, the end, or a verb /
@@ -328,20 +333,25 @@ _EN_NEXT = (
 # state noun ("Polish government", "Russian writer")
 _TEXT_NOUNS = (
     r"words?|terms?|language|version|texts?|sentences?|translations?|names?|phrases?|"
-    r"equivalents?|spellings?|forms?|expressions?|original|counterparts?|speakers?|letters?|"
-    r"alphabet|script|grammar|vocabulary|pronunciation|transliteration|romanization|reading|"
+    r"equivalents?|spellings?|forms?|expressions?|original|counterparts?|letters?|"
+    r"alphabet|script|grammar|vocabulary|pronunciation|transliteration|romanization|"
     r"prompts?|passages?|riddles?|clauses?|questions?|definitions?|compounds?|nouns?|verbs?|"
     r"adjectives?|suffix(?:es)?|prefix(?:es)?|endings?|spelled|wording|lines?|stems?|roots?|"
     r"syllables?|tokens?|characters?|idioms?|sayings?|proverbs?|puzzles?|statements?|"
-    r"descriptions?|captions?|title|headlines?|input|source|orthography|dialect|prose|register|"
+    r"descriptions?|captions?|input|orthography|dialect|register|"
     r"plurals?|singular|articles?|copula|cases?|vowels?|consonants?|harmony|morphology|syntax|"
     r"declensions?|conjugations?|inflections?|particles?|quiz(?:zes)?|fill-in-the-blank|"
-    r"textbooks?|usage|style|writing|speech|news|grammatical|morphological|translit\w*"
+    r"usage|grammatical|morphological|translit\w*"
 )
 _EN_AFTER = (
     rf"(?i:-language|\s+(?:[\w\-]+\s+){{0,2}}(?:{_TEXT_NOUNS})\b"
     r"|\s+(?:for|says|means|meant|reads|translates|translated|renders|calls)\b)"
 )
+
+
+# after "<register> X" a text-style noun names the language too ("formal Greek historical
+# prose"); after a bare "X" it does not ("Russian Prose Poetry", a title)
+_EN_AFTER_REG = rf"(?i:\s+(?:[\w\-]+\s+){{0,2}}(?:{_TEXT_NOUNS}|prose|writing|style|speech)\b)"
 
 
 _REGISTERS = (
@@ -372,7 +382,7 @@ def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
         rf"{RE_PREFIX}{b}{x}\s+[*_\"'\u00ab\u201c\u201e\u2018]",
         rf"{RE_PREFIX}{b}(?i:speaks?|speaking|spoken)\s+{x}{e}",
         # a register / variety of the language: "formal Indonesian", "Modern Standard Arabic"
-        rf"{RE_PREFIX}{b}(?i:{_REGISTERS})\s+(?:(?i:{_REGISTERS})\s+)*{x}{e}",
+        rf"{RE_PREFIX}{b}(?i:{_REGISTERS})\s+(?:(?i:{_REGISTERS})\s+)*{x}{e}(?:{_EN_NEXT}|{_EN_AFTER_REG})",
         # the language as the subject of a grammar statement: "Turkish often closes ...",
         # "Hungarian usually omits ...", "Russian allows ..." (never a person: "the Russian said")
         rf"{RE_PREFIX}{b}{x}\s+(?i:{_LANG_VERBS}){e}",
@@ -391,6 +401,11 @@ _PL_NEXT = (
 _RU_NEXT = (
     rf"(?=\s*(?:{_P}|$)|\s+(?:это|будет|звучит|означает|называется|пишется|говорят|слово|"
     r"так|как)(?![^\W_]))"
+)
+_EL_NEXT = (
+    rf"(?=\s*(?:{_P}|[\u00ab\u201e\u2039]|$)|\s+(?:ειναι|λεγεται|λεγονται|λεμε|σημαινει|"
+    r"σημαινουν|γραφεται|γραφουμε|ονομαζεται|λεξη|λεξεις|υπαρχει|υπαρχουν|αυτο|αυτη|"
+    r"η|ο|οι|το|τα|θα|μπορει|δεν|δηλαδη|ως)(?![^\W_]))"  # noqa: RUF001
 )
 _SR_NEXT = rf"(?=\s*(?:{_P}|$)|\s+(?:je|је|znaci|значи|se|се|kaze|каже|rec|реч)(?![^\W_]))"  # noqa: RUF001
 
@@ -412,7 +427,7 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
         *_rx(r"(?<![^\W_])(?:ال)?(?:ترجمة|كلمة|مصطلح|اسم|نص|لفظ)\s+(?:ال)?عربي(?:ة)?(?![^\W_])"),
     ),
     "el": (
-        "στα ελληνικά",
+        *_rx(r"(?i)(?<![^\W_])στα\s+ελληνικα" + _EL_NEXT),
         "νέα ελληνικά",
         "η ελληνική γλώσσα",
         *_rx(r"(?i)(?<![^\W_])ελληνικ\w*\s+γλωσσ\w*"),
@@ -454,7 +469,8 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
         "deutsche Sprache",
         "deutschen Sprache",
         *_rx(
-            r"(?<![^\W_])Deutsch(?![^\W_])", r"(?<![^\W_])[Ii]m\s+Deutschen(?![^\W_])(?!\s+[A-Z])"
+            r"(?<![^\W_])Deutsch(?![^\W_])(?!-)",
+            r"(?<![^\W_])[Ii]m\s+Deutschen(?![^\W_])(?!\s+[A-Z])",
         ),
     ),
     "es": ("en español", "en castellano", "lengua española", "idioma español"),

@@ -139,12 +139,22 @@ def _in_name(text: str, start: int, end: int) -> bool:
     if not text[start:end][:1].isupper():
         return False
     line = text[text.rfind("\n", 0, start) + 1 : start]
+    # a Title-Case heading or label is no name (fresh-eye review of #194): the occurrence opens
+    # its line or sentence ("Ocean Waves crash", "- Lightning Bolt", "### Lightning Storms",
+    # "2. **Mirror Reflection**:")
+    lead = line.lstrip(" \t>#*_`-+\"'([")
+    if not re.sub(r"^\d+[.)]\s*", "", lead).strip(" *_") or _BREAK_END.search(line):
+        return False
+    if line.lstrip().startswith("#"):  # a markdown heading is Title Case throughout
+        return False
     words = [m for m in _WORD.finditer(line) if m.group(0).casefold() not in _NAME_LINKS]
     prev = ""
     if words and not _BREAK_END.search(line):
         w = words[-1]
         if not _BREAK_END.search(line[: w.start()]) and line[: w.start()].strip(" *\"'`#-([>"):
             prev = w.group(0)  # a sentence's first word is capitalised anyway: never a signal
+        if re.search(r"[,;/]", line[w.end() :]):
+            prev = ""  # a list item before it ("*Apple*, *Ocean*"), not a name's other word
     nl = text.find("\n", end)
     m = re.match(
         r"[\s-]+(?:(?:of|the|de|and)\s+)?([^\W\d_][\w'-]*)", text[end : None if nl < 0 else nl]
@@ -589,6 +599,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     result.rows = head + rest
     if scope_name != "all":
         result.complete = False
+        result.extras["incomplete_reason"] = f"scope={scope_name}"  # runner.refusals_only
     result.extras["n_items_without_readouts"] = sum(
         1 for it in scope if it.get("readout_of", it["id"]) not in present
     )
@@ -764,6 +775,7 @@ def _run_summary(
     result.rows = head + rest
     if scope_name != "all":
         result.complete = False
+        result.extras["incomplete_reason"] = f"scope={scope_name}"  # runner.refusals_only
     result.extras["n_items_without_readouts"] = sum(
         1 for it in scope if it.get("readout_of", it["id"]) not in col.cells
     )

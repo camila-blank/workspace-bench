@@ -1302,7 +1302,10 @@ def ground(
             k = k.strip()
         elif not k or not _span_in(k, ev1):
             k = ev1
-        dkey = f"#{number_value(k)}" if tier == "numbers" else _norm(k)  # 5 / 5.0 / 1,000
+        # 5 / 5.0 / 1,000; otherwise claim_key's fold (case, whitespace AND markdown), so two
+        # entries merge_grounded would sum ("Paris", "**Paris**") are never both kept: their
+        # counts are capped over overlapping samples and the sum could exceed them
+        dkey = f"#{number_value(k)}" if tier == "numbers" else (_norm(_MD.sub("", k)) or _norm(k))
         if dkey in seen_keys:
             dup[0] += 1
             continue

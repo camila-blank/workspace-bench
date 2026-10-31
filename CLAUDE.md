@@ -303,7 +303,8 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   a test's digest-call count is items x read layers; `joint` is the ablation, and every numbers
   digest stays joint), every entry carries a per-claim `count` rendered `[N samples]`, a
   collapsed digest (< 5 entries from >= 100 readouts) is re-asked once, an unsummarized item is
-  undecided (never a fail), and `results` marks a row with > 20% undecided not measurable.
+  undecided (never a fail), a row whose only shortfall is such refusals stays complete
+  (`runner.refusals_only`), and `results` marks a row with > 20% undecided not measurable.
   Tests that drive the chunk machinery with multi-layer cells pin `summ_layers=joint`.
 
 ## Driver (`runner.py`, `cli.py`)

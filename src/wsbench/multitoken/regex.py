@@ -44,7 +44,7 @@ digest, and a word split across adjacent positions reaches the contract through
 import dataclasses
 import re
 import unicodedata
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -563,4 +563,68 @@ def fuzzy_form_in(text: str, forms: list[str] | tuple[str, ...], *, avoid: Any =
                     break
             if not clash:
                 return True
+    return False
+
+
+# ---------------------------------------------------------------------------------------------
+# flat runs (fresh-eye review of the audit fixes, 2026-10-31): the F4 any-line rescues
+# (``mcrx.singling_lines``, ``family.singles_out``) credit a line that SINGLES OUT the gold; a
+# piece that is a flat run of candidates singles out none of them (decision Q4, Camila: "flat
+# lists single out nothing"), whatever its other items are
+# ---------------------------------------------------------------------------------------------
+FLAT_ITEMS_MIN = 4  # list items for a run
+_LIST_SEP = re.compile(
+    r"\s*(?:[,;/|·•、，；]|\s(?:or|and|ou|et|oder|und|o|y|или|и)\s)\s*",  # noqa: RUF001
+    re.IGNORECASE,
+)
+_NUMBER_WORDS = (
+    "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+    "fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
+    "eighty|ninety|hundred|thousand"
+)
+_NUMBER = re.compile(
+    rf"(?<![\w.,])\d+(?:[.,]\d+)?(?![\w])|(?<![^\W_])(?:{_NUMBER_WORDS})(?![^\W_])"
+)
+
+
+_WORD_VALUE = {w: i for i, w in enumerate(_NUMBER_WORDS.split("|")[:21])} | {
+    "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
+    "ninety": 90, "hundred": 100, "thousand": 1000,
+}  # fmt: skip
+
+
+def _value(tok: str) -> float | None:
+    t = tok.strip()
+    if t in _WORD_VALUE:
+        return float(_WORD_VALUE[t])
+    try:
+        return float(t.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def is_number_form(form: str) -> bool:
+    """A unit form that is a number (digits, or an English number word)."""
+    return _NUMBER.fullmatch(fold(form).strip()) is not None
+
+
+def flat_run(text: str, gold: Sequence[str] = (), *, number: bool = False) -> bool:
+    """``text`` (one bullet or one token list) is a flat run of candidates: at least
+    :data:`FLAT_ITEMS_MIN` list items (split at commas, slashes, semicolons, "or" / "and") that
+    are not the gold's own forms (``gold``: "Paris / Parigi / París" is one entity), none longer
+    than three words and at least three quarters of them one or two words; or, for a ``number``
+    gold, it holds a number of ANOTHER value ("five six seven", "six or maybe seven"; the gold
+    written twice, "three (3)", and the word "one" do not count): a number among competing
+    numbers is not singled out."""
+    golds = {fold(g).strip() for g in gold if g.strip()}
+    items = [x for x in _LIST_SEP.split(text) if x and x.strip(" .:*-")]
+    items = [x for x in items if fold(x).strip(" .:*-\"'()") not in golds]
+    if len(items) >= FLAT_ITEMS_MIN:
+        words = [len(x.split()) for x in items]
+        if max(words) <= 3 and 4 * sum(1 for w in words if w <= 2) >= 3 * len(words):
+            return True
+    if number:
+        mine = {v for g in golds if (v := _value(g)) is not None}
+        vals = {_value(m.group(0)) for m in _NUMBER.finditer(fold(text)) if m.group(0) != "one"}
+        return bool({v for v in vals if v is not None} - mine)
     return False

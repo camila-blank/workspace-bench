@@ -84,7 +84,11 @@ def rivals(word: str, text: str, end: str) -> set[str]:
 
 _RIVAL_CUE = re.compile(
     r"\b(?:also|another|other|possib\w*|alternativ\w*|perhaps|maybe|instead|could|might|or|"
-    r"plausible|option\w*|candidate\w*|likely|probabl\w*)\b"
+    r"plausible|option\w*|candidate\w*|likely|probabl\w*|"
+    # a rhyme proposed as the plan (fresh-eye review of #195): "the best rhyme is ray", "rhymes
+    # with ray", "ray fits the meter better", "I would use ray"
+    r"best|better|fits?|prefer\w*|use|using|choose|chosen|pick\w*|rather|suggest\w*|"
+    r"consider\w*|draft|go\s+with)\b"
 )
 _CUE_WINDOW = 4  # words on either side of a rhyme in which a hedge / option cue makes it a rival
 
@@ -103,6 +107,9 @@ def _proposed(x: str, t: str) -> bool:
         or re.search(xr + run_after, t) is not None
         or re.search(run_before + xr, t) is not None
         or re.search(rf"{_Q}{xr}{_Q}", t) is not None
+        # "rhymes with ray", "the rhyme is ray" (never "'warm' and 'storm' form a rhyming pair")
+        or re.search(rf"\brhym\w*\s+(?:is\s+|with\s+|would\s+be\s+|could\s+be\s+){xr}", t)
+        is not None
     ):
         return True
     for m in re.finditer(xr, t):
