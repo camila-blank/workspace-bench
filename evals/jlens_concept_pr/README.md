@@ -37,7 +37,7 @@ out (`prompts.function_word_grounded`): pt-fineweb-0022 L56 credited "more or fe
 hand view ~0.42). A function word whose MEANING is the concept is untouched (" or" partial for
 "recommendation of alternatives", " IF" / " THEN" for "conditional page branching"). On the
 cached final O-lens grades this changes 0-12 cells per single layer (none at L44, the headline
-layer, whose 0.325 is unchanged) and lowers single-layer precision by at most 0.003. Not fixed
+layer, whose 0.325 is unchanged) and lowers single-layer precision by 0.003 at most (L60 0.284 -> 0.280). Not fixed
 here: " often" partial for "common names" (pt-fineweb-0021) and " reader" partial for "not a
 quick read" (pt-pile-0050) are sense judgements of the Stage-P judge, not string matches a rule
 can see; both cells are near 0 either way, and a Stage-P prompt change would need the plan-0042
