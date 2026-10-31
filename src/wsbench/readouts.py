@@ -76,6 +76,9 @@ class LoadReport:
     n_samples_trimmed: int = 0
     n_packed_ambiguous: int = 0
     n_cells_short: int = 0
+    # reads.load: item -> pos -> the read-site token of EVERY loaded row, recorded before the
+    # reads=lite selection (a judge's read-context window spans unselected positions too)
+    site_tokens: dict[str, dict[int, str]] = field(default_factory=dict)
 
 
 def _is_int(x: Any) -> bool:

@@ -24,9 +24,8 @@ _SUMMARIZER_IGNORED = ("concurrency", "timeout")
 # Families where the prompt states the answer outright, so the stock model's summary names it
 # every time (multi-concept DM scored 1.0): not a floor, never frozen or shown (Agam, 2026-09-16).
 # Plan 0032 §2.11.9 ("all categories"): only jlens_concept_pr is excluded; DM and MCDM are
-# measured and frozen as saturated. hallucination leaves WorkspaceBench (hb.md W1).
+# measured and frozen as saturated.
 EXCLUDED: dict[str, str] = {
-    "hallucination": "an invention rate, not a bar a lens clears",
     "jlens_concept_pr": "precision against the J-lens top-10, not a bar a lens clears",
 }
 SOURCE_KEYS = (

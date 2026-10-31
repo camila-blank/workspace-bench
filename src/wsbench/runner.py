@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from wsbench import digest, llm, mcjudge, reads, registry
+from wsbench import digest, llm, mc, mcjudge, reads, registry
 from wsbench.baselines import text_inversion
 from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
@@ -153,6 +153,7 @@ def finalize_reads(args: JudgeArgs, result: FamilyResult) -> None:
     pv = result.config.get("prompt_version")
     if isinstance(pv, str):
         result.config["prompt_version"] = reads.stamp(pv, reads.mode(args))
+    result.config.setdefault("token_note_version", mc.TOKEN_NOTE_VERSION)
     for k, v in reads.extras_of(args).items():
         if v:  # only what the load found (a clean load adds nothing, as a direct call)
             result.extras.setdefault(k, v)
@@ -366,7 +367,7 @@ def run_manifest(
             if "n_calls" in r.extras:
                 d["n_calls"] = r.extras["n_calls"]
         families[o.family] = d
-    return {
+    manifest: dict = {
         "started": _iso(started),
         "finished": _iso(finished),
         "families": families,
@@ -375,3 +376,6 @@ def run_manifest(
         "aggregate": parse_opts(list(getattr(args, "opt", None) or []))["aggregate"],
         "readouts_root": str(readouts_root),
     }
+    if getattr(args, "hb_method", ""):  # plan 0040: `wsbench report` prints its HB index
+        manifest["hb_method"] = args.hb_method
+    return manifest

@@ -30,8 +30,6 @@ FRAMING = "open_model"  # OPEN_MODEL_NOTE + TEMPLATE (text_inversion.FRAMINGS)
 # not a bar a lens clears: precision against the J-lens top-10 (decision Q2)
 EXCLUDED: dict[str, str] = {
     "jlens_concept_pr": "precision against the J-lens top-10, not a bar a lens clears",
-    # leaves WorkspaceBench in the HallucinationBench PR (hb.md W1)
-    "hallucination": "leaves WorkspaceBench (HallucinationBench)",
 }
 
 

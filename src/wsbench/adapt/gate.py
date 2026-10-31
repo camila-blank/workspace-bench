@@ -386,7 +386,7 @@ class Runner:
         stop_token_ids: list[int] | None = None,
     ) -> list[dict]:
         """One completion per prompt (text, or token ids): ``{"text", "ids"}``. The same contract
-        as ``RemoteRunner.generate``, so hal/floors run on either backend."""
+        as ``RemoteRunner.generate``, so floors run on either backend."""
         from vllm import SamplingParams
         from vllm.inputs import TokensPrompt
 

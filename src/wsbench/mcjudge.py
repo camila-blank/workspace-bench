@@ -38,6 +38,7 @@ def run_calls(
     validate: Callable[[Call, dict], bool] | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    keep_invalid: bool = False,
 ) -> dict[str, dict | None]:
     """key -> parsed result (``None`` = failed). Cached non-failed results are reused; the rest
     go through :func:`llm.stream_json` in one batch. Every landed result (incl. ``None``) is
@@ -48,7 +49,9 @@ def run_calls(
     ``temperature`` / ``max_tokens`` pass through to the client and the fingerprint is
     ``(prompt_version, model, reasoning, temperature, system, user)``. A landed result that fails
     ``validate(call, result)`` is stored as ``{"result": None, "meta": {**call.meta, "raw": r}}``
-    (so the next run re-queues the key) and returned as ``None``."""
+    (so the next run re-queues the key) and returned as ``None``; with ``keep_invalid`` (a
+    family's last re-ask) it is stored and returned as a kept result instead, so a resumed run
+    replays it rather than re-issuing the call."""
     if dry_run:
         if calls:
             c = calls[0]
@@ -77,11 +80,14 @@ def run_calls(
 
     def on_result(i: int, r: dict | None) -> None:
         c, fp = pending[i]
+        meta = c.meta
         if r is not None and validate is not None and not validate(c, r):
-            cache.put(c.key, fp, {"result": None, "meta": {**c.meta, "raw": r}})
-            out[c.key] = None
-            return
-        cache.put(c.key, fp, {"result": r, "meta": c.meta})
+            if not keep_invalid:
+                cache.put(c.key, fp, {"result": None, "meta": {**c.meta, "raw": r}})
+                out[c.key] = None
+                return
+            meta = {**c.meta, "kept_invalid": True}
+        cache.put(c.key, fp, {"result": r, "meta": meta})
         out[c.key] = r
 
     if preflight is not None:

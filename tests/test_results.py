@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from wsbench import registry
 from wsbench.judge_config import DEFAULT_JUDGE
 from wsbench.results import (
     SCHEMA_VERSION,
@@ -161,11 +162,16 @@ def test_macro_excludes_superseded_families():
 
 
 def test_macro_defaults_to_the_registry_supersession(real_families):
-    # plan 0015: multihop_mt_v2 replaces multihop_mt; v1 never counts toward the macro
+    # plan 0015 superseded multihop_mt by multihop_mt_v2; since 2026-10-30 v1 is removed, so a
+    # stale v1 results.json in an old run dir is excluded as removed
     m = macro([_res("multihop_mt", value=0.9), _res("multihop_mt_v2", value=0.2)])
     assert m["families"] == ["multihop_mt_v2"]
     assert m["excluded"] == [
-        {"family": "multihop_mt", "reason": "superseded", "by": "multihop_mt_v2"}
+        {
+            "family": "multihop_mt",
+            "reason": "removed",
+            "why": registry.REMOVED_FAMILIES["multihop_mt"],
+        }
     ]
 
 
@@ -233,3 +239,23 @@ def test_macro_still_excludes_design_score():
 
     m = macro([_macro_row("am", "design_score")], superseded={}, held_out={}, removed={})
     assert m["excluded"] == [{"family": "am", "reason": "metric"}]
+
+
+def test_markdown_table_omits_removed_family_rows():
+    # plan 0047: a stale results.json of a removed family (brew_intermediates, ttt_move) in an
+    # old run dir printed a full score row with no floor; it now appears only as "Not in macro"
+    rs = [
+        _res("brew_intermediates", value=0.905),
+        _res("ttt_move", value=0.8),
+        _res("core", value=0.3),
+    ]
+    md = markdown_table(rs, macro_row=macro(rs))
+    rows = [ln for ln in md.splitlines() if ln.startswith("|")]
+    assert not any(ln.startswith("| brew_intermediates |") for ln in rows)
+    assert not any(ln.startswith("| ttt_move |") for ln in rows)
+    assert any(ln.startswith("| core |") for ln in rows)
+    assert "- brew_intermediates: removed (removed 2026-10-29 (plan 0029)" in md
+    assert "- ttt_move: removed (" in md
+    # an explicit map overrides the registry (and an empty one shows every row)
+    assert "| brew_intermediates |" in markdown_table(rs, None, removed={})
+    assert "| core |" not in markdown_table(rs, None, removed={"core": "gone"})

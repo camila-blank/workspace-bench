@@ -107,7 +107,7 @@ def cmd_mix(family: str, bank: Path, cap: float) -> int:
         )
         show("step sequence", seq)
     texts = [prompt_text(family, it) for it in items]
-    fixed = family in ("chain_intermediates", "arithmetic_intermediates", "brew_intermediates")
+    fixed = family in ("chain_intermediates", "arithmetic_intermediates")
     show(  # the computational families share one prompt frame by design
         "prompt template (first words, names/numbers masked)",
         Counter(map(skeleton, texts)),
