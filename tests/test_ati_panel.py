@@ -713,6 +713,8 @@ def test_reduced_panel_keeps_a_named_frontier_reader(tmp_path, fams):
     _write(out, "astra", "fam", {i: [T, F, F] if i == "b" else [F, F, F] for i in "abcde"})
     e = ti.gate(out, dst=None, families=["fam"], frontier=["astra"], panel_label="qwen+opus+astra")
     assert e["fam"]["ids"] == ["a", "e"] and e["fam"]["status_order"] == ["qwen", "opus", "astra"]
+    # how the hosted reader was reached (fixture rows carry no route / model)
+    assert e["fam"]["reader_routes"] == {"astra": {"unknown": 15}}
 
 
 def test_full_panel_entry_has_no_reduced_fields(tmp_path, fams):
