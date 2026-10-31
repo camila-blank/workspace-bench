@@ -319,6 +319,11 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     "user_modeling": {"summ_fallback": "default+claude-sonnet-5"},
     "model_specific_directed_modulation": {"summ_fallback": "default+claude-sonnet-5"},
 }
+# re-audit r2 (buggy_code): an extractive line's "[N samples]" counts the samples holding the
+# entry's KEY, not the whole line shown, so the judge read "[27 samples, 7 layers]" as the support
+# of a 1-sample jwt_core compile error (clean-rust-trim-parse). For these families the marker
+# names the counted key by default (summ_showkey=1; render only, the digest calls keep their keys)
+SHOW_KEY_FAMILIES = frozenset({"buggy_code"})
 assert all(set(d) <= FAMILY_DEFAULT_KEYS for d in FAMILY_DEFAULTS.values())
 
 
@@ -344,6 +349,7 @@ class Settings:
     fallback: str = "none"
     lang: bool = False  # summ_lang=1: each entry records the language of its evidence
     layer_mode: str = DEFAULT_LAYER_MODE  # summ_layers (audit F1): union | joint
+    show_key: bool = False  # summ_showkey=1: the support marker names the key it counted
 
     @property
     def per_layer(self) -> bool:
@@ -368,6 +374,7 @@ class Settings:
             "fallback": self.fallback,
             "lang": self.lang,
             "layer_mode": self.layer_mode,
+            **({"show_key": True} if self.show_key else {}),
         }
 
     @property
@@ -481,6 +488,10 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
         timeout=float(_int_opt(args, "summ_timeout", 1)) if "summ_timeout" in args.extra else None,
         lang=_choice(args, "summ_lang", ("0", "1"), "0") == "1",
         layer_mode=_choice(args, "summ_layers", LAYER_MODES, DEFAULT_LAYER_MODE),
+        show_key=_choice(
+            args, "summ_showkey", ("0", "1"), "1" if family in SHOW_KEY_FAMILIES else "0"
+        )
+        == "1",
     )
 
 
@@ -517,6 +528,7 @@ KNOWN_KEYS = frozenset(
         "summ_numbers",
         "summ_lang",
         "summ_layers",
+        "summ_showkey",
     }
 )
 
@@ -1318,14 +1330,24 @@ def ground(
     return kept, dropped
 
 
+def counted_on(g: Grounded) -> str:
+    """``summ_showkey``: the marker suffix naming the key a multi-sample count was taken on
+    (``""`` when the count is 1 or the key is the whole line)."""
+    if g.count <= 1 or not g.key or _norm(g.key) == _norm(g.line.text):
+        return ""
+    key = _one_line(g.key).replace('"', "'").replace("]", ")").replace("[", "(")
+    return '; counted on "' + key[:80] + '"'
+
+
 def render_summary(
-    items: Sequence[Grounded], render: str, *, lang: bool = False
+    items: Sequence[Grounded], render: str, *, lang: bool = False, show_key: bool = False
 ) -> tuple[str, list[Line]]:
     """The judged text and its distinct evidence lines (first occurrence kept). Extractive: one
     ``[support] <whole evidence sample>`` line per distinct sample, no summarizer words (under
     ``lang``: ``[support] [in <language>] <sample>``; the label is shown, never gated on: the
     evidence Line's ``text`` stays the sample). Abstractive: statement, support and the
-    evidence sample."""
+    evidence sample. ``show_key``: each marker names the key its count was taken on
+    (:func:`counted_on`)."""
     out: list[str] = []
     seen: set[str] = set()
     evid: list[Line] = []
@@ -1334,15 +1356,16 @@ def render_summary(
             if g.line.text in seen:
                 continue
             tmpl = EXTRACTIVE_LINE_LANG if lang else EXTRACTIVE_LINE
+            sup = g.support + (counted_on(g) if show_key else "")
             out.append(
-                tmpl.replace("{support}", g.support)
+                tmpl.replace("{support}", sup)
                 .replace("{language}", g.language or "unknown")
                 .replace("{evidence}", g.line.text)
             )
         else:
             out.append(
                 ABSTRACTIVE_LINE.replace("{statement}", g.statement)
-                .replace("{support}", g.support)
+                .replace("{support}", g.support + (counted_on(g) if show_key else ""))
                 .replace("{evidence}", g.line.text)
             )
         if g.line.text not in seen:
@@ -1633,7 +1656,7 @@ def _statement(g: Grounded) -> dict[str, Any]:
 def _set_summary(col: Collapse, item_id: str, kept: Sequence[Grounded], s: Settings) -> None:
     """Record ``kept`` as the item's judged digest: text, evidence, statements, layer histogram
     and the synthetic cell's one sample."""
-    text, evid = render_summary(kept, s.render, lang=s.lang)
+    text, evid = render_summary(kept, s.render, lang=s.lang, show_key=s.show_key)
     col.summaries[item_id] = text
     col.evidence[item_id] = tuple(evid)
     col.statements[item_id] = [_statement(g) for g in kept]
