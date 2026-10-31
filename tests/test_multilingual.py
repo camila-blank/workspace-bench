@@ -354,17 +354,8 @@ def test_v2_listing_every_month_is_cannot_tell(tmp_path, monkeypatch):
 
 
 def test_v2_quote_gate(tmp_path, monkeypatch):
-    # final r1 (mcrx-2026-10-31d): a gold pick whose quote fails is still credited when a
-    # readout line singles out the gold (the line's text counts, never the quote's)
     FakeLLM.install(monkeypatch, _gold_judge("three apples", "German"))
     r = _native_run(tmp_path, "multilingual", [_cell(HALF, 36, "three, in German")], [HALF])
-    v = r.rows[0]["layers"]["36"]["mc"]["concept_native"]
-    assert v["kind"] == "correct" and not v["quote_ok"] and v["correct"]
-    assert v["form_via"] == "line"
-    # no line names the gold: the failed quote voids the pick, as before
-    FakeLLM.install(monkeypatch, _gold_judge("three apples", "German"))
-    (tmp_path / "b").mkdir()
-    r = _native_run(tmp_path / "b", "multilingual", [_cell(HALF, 36, "apples, in German")], [HALF])
     v = r.rows[0]["layers"]["36"]["mc"]["concept_native"]
     assert v["kind"] == "correct" and not v["quote_ok"] and not v["correct"]
     assert r.rows[0]["pass"] is False

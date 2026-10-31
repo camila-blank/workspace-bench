@@ -315,9 +315,10 @@ def case_sensitive_forms() -> frozenset[str]:
 # genre / medium nouns after X ("Greek News Agency", "Russian Prose Poetry", "Russian School
 # textbooks"); "στα ελληνικά" before a noun ("στα Ελληνικά δρόμους") and "Deutsch-" compounds
 # name no language
-# ln-2026-10-31c (final r1): "in X in ..." (_EN_NEXT 'in'), up to 3 words before a text noun or
-# prose / register / writing / style (never across is/are/was/were/has/have), and the ru forms
-# "в/на русском варианте/тексте/переводе", "русский текст/вариант/перевод"
+# ln-2026-10-31c (final r1): a closed list of at most three determiners / adjectives before a text
+# noun or lower-case prose / writing / style (_MOD_WORDS), "X in a/an/the ... style / register",
+# and the ru forms "в/на русском варианте/тексте/переводе", "русский текст/вариант/перевод"
+# (closed case endings)
 NAMING_VERSION = "ln-2026-10-31c"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
@@ -329,7 +330,7 @@ _EN_NEXT = (
     r"as|would|will|we|you|they|one|its|for|and|or|but|to|of|can|could|has|have|there|here|"
     r"which|when|like|translates?|translated|called|spelled|spelt|written|becomes?|reads?|"
     r"gives?|says?|said|uses?|word|words|term|terms|text|literally|simply|also|both|would|"
-    r"with|by|at|on|from|so|because|if|since|while|where|first|instead|rather|only|in)\b)"
+    r"with|by|at|on|from|so|because|if|since|while|where|first|instead|rather|only)\b)"
 )
 # "X word / text / sentence ..." (at most one modifier between: "Greek definitional riddle",
 # "Hebrew news-style sentence"), "X says / means / reads" (the text in X), never a people /
@@ -346,9 +347,24 @@ _TEXT_NOUNS = (
     r"declensions?|conjugations?|inflections?|particles?|quiz(?:zes)?|fill-in-the-blank|"
     r"usage|grammatical|morphological|translit\w*"
 )
-# up to three modifier words ("Finnish political or news prose"), never a copula / have
-# ("Arabic is the official language" names a state's language, not the text's)
-_MODS = r"(?:(?!(?:is|are|was|were|has|have|had)\b)[\w\-]+\s+){0,3}"
+# final r1 (campaign-lead decision): the words that may stand between X and a text noun form a
+# CLOSED list of determiners and text-describing adjectives, at most three ("the Finnish
+# political or news prose", "a Korean textbook or Wikipedia-style register", "Greek definitional
+# riddle"); never an arbitrary word ("the Spanish king signed letters", "Russian literature and
+# prose", "Arabic became the official language" do not name the language)
+_MOD_WORDS = (
+    r"a|an|the|this|that|its|own|original|formal|informal|written|spoken|colloquial|modern|"
+    r"classical|literary|everyday|academic|plain|simple|natural|standard|technical|scientific|"
+    r"news|news-style|political|journalistic|narrative|conversational|textbook|wikipedia-style|"
+    r"wikipedia-like|encyclopedic|poetic|short|long|single|one-word|two-word|compound|common|"
+    r"correct|proper|corresponding|equivalent|literal|direct|full|exact|polite|archaic|"
+    r"contemporary|definitional|historical|or|and|"
+    # grammar descriptors ("the Hungarian inessive case suffix")
+    r"case|vowel|verbal|possessive|plural|diminutive|genitive|dative|accusative|nominative|"
+    r"locative|instrumental|partitive|vocative|ablative|inessive|illative|elative|adessive|"
+    r"allative"
+)
+_MODS = rf"(?:(?i:{_MOD_WORDS})\s+){{0,3}}"
 _EN_AFTER = (
     rf"(?:(?i:-language|\s+{_MODS}(?:{_TEXT_NOUNS})\b"
     r"|\s+(?:for|says|means|meant|reads|translates|translated|renders|calls)\b)"
@@ -356,6 +372,9 @@ _EN_AFTER = (
     # Prose Poetry")
     rf"|\s+{_MODS}(?:prose|writing|style)\b)"
 )
+# "X in a / an / the <adjectives> style / register / tone": "formal Indonesian in an academic
+# style" (never "X in" anything else: "taught in Portuguese in schools")
+_EN_IN_STYLE = rf"\s+in\s+(?i:a|an|the)\s+{_MODS}(?i:style|register|tone|voice|manner)\b"
 
 
 # after "<register> X" a text-style noun names the language too ("formal Greek historical
@@ -385,6 +404,7 @@ def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
     return (
         rf"{RE_PREFIX}{b}(?:[Ii]n|[Ii]nto|[Ff]rom|[Tt]o)\s+{x}{e}{_EN_NEXT}",
         rf"{RE_PREFIX}{b}{x}\**\s*:",
+        rf"{RE_PREFIX}{b}{x}{e}{_EN_IN_STYLE}",
         rf"{RE_PREFIX}\(\s*{x}\s*\)",
         rf"{RE_PREFIX}{b}{x}{_EN_AFTER}",
         # X introducing a quoted / emphasised word: "the Finnish *hammaslääkäri*", "Greek 'λόγος'"
@@ -468,8 +488,10 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
         *_rx(
             r"(?i)(?<![^\W_])русск\w*\s+язык\w*",
             r"(?i)(?<![^\W_])(?:на|в)\s+русском" + _RU_NEXT,
-            r"(?i)(?<![^\W_])(?:в|на)\s+русск\w+\s+(?:вариант|текст|перевод)\w*",
-            r"(?i)(?<![^\W_])русск\w+\s+(?:текст|вариант|перевод)\w*",
+            r"(?i)(?<![^\W_])(?:в|на)\s+русск(?:ом|ой)\s+(?:вариант|текст|перевод)"
+            r"(?:е|у|ом)?(?![^\W_])",  # noqa: RUF001
+            r"(?i)(?<![^\W_])русск(?:ий|ого|ому|ом|им)\s+(?:текст|вариант|перевод)"  # noqa: RUF001
+            r"(?:а|у|ом|е|ы|ов)?(?![^\W_])",  # noqa: RUF001
         ),
     ),
     "sw": ("Kiswahili", *_rx(r"(?i)(?<![^\W_])(?:kutoka|kwa|katika)\s+swahili(?![^\W_])")),

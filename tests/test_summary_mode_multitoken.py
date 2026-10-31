@@ -201,7 +201,9 @@ def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypa
     assert fake.n("digest") == 2 * 2 and len(fake.calls) == 2 * 2
     rows = {x["id"]: x for x in r.rows}
     assert {x["id"]: x["pass"] for x in native.rows} == {HOUR: True, OCTO: False}
-    assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is True
+    # final r1 (campaign-lead decision): the v2 summary regex runs on the raw samples and keeps
+    # the conjunctive contract within ONE layer, so OCTO (units at different layers) fails too
+    assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is False
     assert rows[HOUR]["content_hit"] is True
     assert r.config["prompt_version"] == SCORER_VERSION + V2_SUFFIX
     assert native.config["prompt_version"] == SCORER_VERSION + "+" + V2_NAMING_TAG
