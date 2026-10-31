@@ -60,6 +60,7 @@ def test_quote_inside_one_bullet_passes():
         "one_statement": True,
         "agent_ref": True,
         "patient_ref": True,
+        "action_ref": True,  # final r1 (no action given: not checked)
         "ok": True,
     }
 
