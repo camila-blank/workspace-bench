@@ -804,3 +804,98 @@ def test_r3_description_outnamed_by_a_distractor_word():
     tie = [0] * 8
     tie[gp - 1] = tie[gp % 8] = 2
     assert not aj.outnamed(tie, gp)
+
+
+def _gate_c(iid: str, quote: str, texts: list[str]) -> str:
+    """:func:`_gate` with the real bank concepts (the distractors' translations / aliases)."""
+    it = items()[iid]
+    shown, gp = aj.build_options(it)
+    others = [o for i, o in enumerate(shown[:-1], start=1) if i != gp]
+    lines = [digest.Line(t, None, "[L32 pos 40]", 32, 40) for t in texts]
+    concepts = aj.bank_concepts(list(items().values()))
+    return aj.gate_gold(
+        quote, lines, forms=aj.gold_forms(it), others=others, sampling="bullet4", rivals=concepts
+    )
+
+
+def test_r3_quote_naming_a_distractor_is_not_rescued():
+    """Review of #205 (too lenient): 3c passed on ANY gold-only sentence elsewhere, whatever the
+    judge quoted. A quote that itself names another shown option goes to the re-judge; the same
+    readout with a quote naming no option still verifies by 3c, and by 3b when the gold-only
+    sentence is next to the quote."""
+    texts = [
+        "She walked into the museum; the museum hall was silent.",
+        "He went to a museum.",
+        "Another museum visit.",
+        "She once used a library card.",
+    ]
+    assert _gate_c("bf-library", "the museum hall was silent", texts) == "needs_rejudge"
+    assert _gate("bf-library", "the museum hall was silent", texts) == "needs_rejudge"
+    # a distractor's plural in the quote blocks the same way
+    texts2 = ["the museums were all closed that day", "She once used a library card."]
+    assert _gate_c("bf-library", "the museums were all closed", texts2) == "needs_rejudge"
+    # too strict guard: a quote naming no option still verifies
+    texts3 = [*texts, "She whispered to the clerk behind the desk."]
+    assert _gate_c("bf-library", "She whispered to the clerk", texts3) == "gold_listed_evidence"
+    near = ["She whispered to the clerk behind the desk. It was the town library."]
+    assert _gate_c("bf-library", "She whispered to the clerk", near) == "gold_listed_line"
+
+
+def test_r3_other_options_count_by_all_their_forms():
+    """Review of #205 (option asymmetry): the gold counted by every listed form but a
+    distractor only by its bare string, so plurals / translations / aliases of a distractor
+    never blocked 3b/3c. Now they do; the gold's own forms (plural, Chinese) and unrelated
+    words still pass."""
+    q = "She whispered to the clerk"
+    blocked = [
+        "She returned books to the library and then visited the museums downtown.",
+        "她去了图书馆\uff0c又去了博物馆。",
+        "The library or the casinos?",
+        "She went to the library and then the schools.",
+        "She went to the library and then the bookstores.",
+        "The library was next to the old jail.",
+        "The library was beside a gambling hall.",
+    ]
+    for t in blocked:
+        assert _gate_c("bf-library", q, [q + ".", t]) == "needs_rejudge", t
+        # the same sentence next to the quote (3b) is blocked too
+        assert _gate_c("bf-library", q, [f"{q}. {t}"]) == "needs_rejudge", t
+    passing = [
+        "She returned books to the library and then went home.",
+        "她去了图书馆。",
+        "Two public libraries share one roof.",
+        "The library smelled of old paper and coffee.",
+    ]
+    for t in passing:
+        assert _gate_c("bf-library", q, [q + ".", t]) == "gold_listed_evidence", t
+    concepts = aj.bank_concepts(list(items().values()))
+    gold = aj.gold_forms(items()["bf-library"])
+    of = aj.other_option_forms(["museum", "library"], gold, concepts)
+    assert "博物馆" in of and "museums" in of and "library" not in of and "图书馆" not in of
+
+
+def test_r3_evidence_credit_outnamed_by_a_distractor(tmp_path):
+    """Review of #205: 3c (a gold sentence away from the quote) gets the step-5 out-naming
+    guard. A lone 'library' sample against 3 'museum' samples fails; against 1 it passes."""
+    lib = "bf-library"
+    quote = "She whispered her request to the clerk and quietly descended."
+
+    def run(n_museum: int, sub: str):
+        hits = {(lib, 44, LAST): f"- {quote}", (lib, 44, LAST - 1): "- the empty library"}
+        for k in range(n_museum):
+            hits[(lib, 40, LAST - k)] = "- the grand museum hall"
+        path = write_cells(tmp_path / f"{sub}.jsonl", hits, [lib])
+        r, fake = judge_run(
+            tmp_path / sub,
+            path,
+            [lib],
+            lambda s, u, sc: answer(u, "library", quote),
+            ["clerk", "empty library", "museum"],
+        )
+        return r.rows[0], fake
+
+    row, fake = run(3, "many")
+    assert row["outcome"] == "gold_evidence_outnamed" and row["pass"] is False
+    assert fake.n("quote_mc") == 0
+    row, _f = run(1, "one")
+    assert row["outcome"] == "gold_listed_evidence" and row["pass"] is True
