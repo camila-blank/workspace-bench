@@ -8,7 +8,10 @@ from dataclasses import dataclass
 
 from wsbench import digest
 from wsbench import numerals as _numerals
-from wsbench.multitoken.regex import fold  # identical to the source's bank.matching.fold
+from wsbench.multitoken.regex import (
+    fold,  # identical to the source's bank.matching.fold
+    fold_accents,
+)
 
 _CJK_NUMERAL = re.compile(r"^[零〇一二两兩三四五六七八九十百千万亿点]+$")
 _CJK_HANGUL = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
@@ -200,6 +203,84 @@ def small_number_word(form: str) -> bool:
         and toks[0][0] == 0
         and toks[0][1] == len(fold(form.strip()))
     )
+
+
+# G3's topic filter (kcgate-v3, round-3 review): a rival only contests the pick in a statement
+# ABOUT the item's question. The question's topic terms are its words of >= 4 letters and its
+# acronyms / model names ("ODI", "GPU", "B300", "HBM3e"), minus question scaffolding, months and
+# generic verbs; a statement is on topic when it names one. Off-topic presentations ("**3**
+# Oxygens in Styrene oxide", "Chile has **3** World Cup victories", "8 gigabytes" is ON topic,
+# "July 8, 2024" is not) present nothing to G3. A number directly followed by "?" is the tail
+# of a restated question ("3? The answer is Virat Kohli"), never an answer.
+_TOPIC_STOP = frozenset(
+    """what which when where whom whose that this these those there their they them then than
+    with without from into onto over under about after before during since until upon against
+    between among through across within have has had having does did done doing been being
+    were will would could should shall might must make made many much more most less least
+    some such each every also only just like very your yours give given gave provide provided
+    provides detail detailed details announce announced announcement announces release
+    released releases launch launched launches unveil unveiled report reported reports state
+    stated say said says according count number numbers total value amount answer answers
+    guess sure best question exact exactly approximately around roughly about version first
+    second third last latest january february march april june july august september october
+    november december year years month months week weeks time times date dates""".split()  # noqa: SIM905
+)
+_TOPIC_WORD = re.compile(r"[^\W\d_][\w'\u2019-]*", re.UNICODE)
+_QUESTION_NUM = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?\s*[?\uff1f]")
+
+
+_LEAD_NUM = re.compile(r"(?:\s|[*_`#>\"'(\[$]|</?think>)*([-+]?\d[\d,]*(?:\.\d+)?)(?![\d?\uff1f])")
+_CAP_RUN = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+")
+
+
+def lead_number(text: str) -> str | None:
+    """The number ``text`` OPENS with (after markup and think tags; not one followed by "?"):
+    the answer head of a reply-start sample ("10 The ECB's ...", "**50**"). G3 counts it
+    whatever the rest of the sample is about (kcgate-v3)."""
+    m = _LEAD_NUM.match(text)
+    return m.group(1) if m else None
+
+
+def topic_terms(question: str) -> frozenset[str]:
+    """The topic terms of an item's question (see :data:`_TOPIC_STOP`): a folded lowercase
+    prefix stem per word (all but its last 3 letters, at least 5: "centur" for "centuries"),
+    and a short all-caps acronym ("US", "ODI") kept as written, matched case-sensitively, plus
+    the initials of a run of capitalised words ("European Central Bank" -> "ECB")."""
+    out: set[str] = set()
+    for run in _CAP_RUN.findall(question):  # "European Central Bank" -> "ECB"
+        out.add("=" + "".join(w[0] for w in run.split()))
+    for m in _TOPIC_WORD.finditer(question):
+        w = re.sub(r"['\u2019]s$", "", m.group(0).strip("'\u2019-"))
+        f = fold(w).lower()
+        if f in _TOPIC_STOP:
+            continue
+        if "-" in w:  # "Mercedes-Benz", "fast-charging": each part is a term too
+            out |= topic_terms(w.replace("-", " "))
+        if w.isupper() and len(w) <= 3 and w.isalpha():
+            out.add("=" + w)
+        elif any(ch.isdigit() for ch in w) or w.isupper() or len(f) >= 4:
+            out.add(f[: max(5, len(f) - 3)] if f.isalpha() else f)
+    return frozenset(out)
+
+
+def on_topic(text: str, terms: frozenset[str]) -> bool:
+    """``text`` names one of ``terms``: a word starting with a stem ("Kohli's", "century"), or
+    the exact acronym. No terms -> every text is on topic."""
+    if not terms:
+        return True
+    t = fold(text).lower()
+    for w in terms:
+        if w.startswith("="):
+            if re.search(rf"(?<![^\W_]){re.escape(w[1:])}s?(?![^\W_])", fold_accents(text)):
+                return True
+        elif re.search(rf"(?<![^\W_]){re.escape(w)}", t):
+            return True
+    return False
+
+
+def mask_question_numbers(text: str) -> str:
+    """``text`` with every number directly followed by ``?`` removed (G3, kcgate-v3)."""
+    return _QUESTION_NUM.sub(" ", text)
 
 
 def integer_value(option: str) -> int | None:

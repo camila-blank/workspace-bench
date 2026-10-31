@@ -111,8 +111,8 @@ def test_introspection_one_call_per_unit_on_a_shared_digest(tmp_path, monkeypatc
     assert r.extras["floors"]["protocol|b4"]["beta0"] is not None
     assert "headline_per_layer_any_position" not in r.extras
     assert r.config["aggregate"] == "summary" and r.config["source_kind"] == "prose"
-    # II_PV carries the regex-leg version (F12, +twinrx-v3); the calls keep CALL_VERSION
-    assert II_PV.endswith("+" + II_RX)
+    # II_PV carries the regex-leg version (F12, +twinrx-v3) and cite-v1; the calls keep CALL_VERSION
+    assert II_PV.endswith("+" + II_RX + "+cite-v1")  # review: + the cite-v1 veto stamp
     want = digest.prompt_version(II_PV, _ii_args(tmp_path))
     assert r.config["prompt_version"] == want
     assert r.config["prompt_version"].startswith(f"{II_PV}+digest-v5-task-extractive")
