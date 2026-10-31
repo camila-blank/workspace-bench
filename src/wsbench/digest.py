@@ -1388,6 +1388,9 @@ class Collapse:
     # why an item (or per-layer part) was not served: all_dropped | refused | too_long, or why
     # it is empty although it had readouts: zero (the digest reported nothing)
     reasons: dict[str, str] = field(default_factory=dict)
+    # final r1 (third review of #201): per item, the texts of the lines :func:`pin_lines` added;
+    # MC-judge input only, never digest regex evidence (``gate_texts(pins=False)``)
+    pinned: dict[str, set[str]] = field(default_factory=dict)
 
     def extras(self) -> dict[str, Any]:
         served: dict[str, int] = {}
@@ -1469,17 +1472,27 @@ def key_values(keys: Sequence[str]) -> list[float]:
 
 
 def gate_texts(
-    cell: Cell, col: Collapse | None, *, joined: bool = False, forms: Sequence[str] = ()
+    cell: Cell,
+    col: Collapse | None,
+    *,
+    joined: bool = False,
+    forms: Sequence[str] = (),
+    pins: bool = True,
 ) -> list[str]:
     """What a quote / numeral / regex gate checks. Summary mode: the item's evidence samples,
     one sample each, a token line split into its tokens (as native mode treats each token as a
     sample); never the summarizer's statements. ``joined=True`` (regex scorers) also adds each
     token line space-joined, so multi-word targets stay reachable, plus each single-word form of
     ``forms`` that :func:`quote_ok` verifies as a word split across adjacent positions of one
-    layer (as its plain word). Otherwise the cell's own samples / tokens."""
+    layer (as its plain word). Otherwise the cell's own samples / tokens. ``pins=False`` (the
+    digest regex leg, third review of #201): the lines :func:`pin_lines` added are left out, so a
+    pinned raw sample is judge input only and is held to the raw-sample rule instead."""
     if col is not None and cell.layer == SUMMARY_LAYER and cell.id in col.cells:
         out: list[str] = []
         lines = col.evidence.get(cell.id, ())
+        if not pins:
+            dropped = col.pinned.get(cell.id, set())
+            lines = tuple(ln for ln in lines if ln.text not in dropped)
         for ln in lines:
             if ln.pieces is None:
                 out.append(ln.text)
@@ -1654,7 +1667,9 @@ def pin_lines(
     same rule for every option, never told which is gold) that the digest does not already hold,
     most-repeated first (``count`` = identical raw samples, ``layers`` = the layers holding them),
     then earliest. Each pin is an ordinary extractive entry (tier ``pinned``), so the judge reads
-    it, ``quote_ok`` verifies it and the regex gates see it. Returns the number pinned."""
+    it, ``quote_ok`` verifies it and the regex gates see it by default; its text is recorded in
+    ``col.pinned`` so the digest regex leg leaves it out (``gate_texts(pins=False)``). Returns the
+    number pinned."""
     if item_id not in col.cells or item_id in col.unsummarized:
         return 0
     kept = list(col.grounded.get(item_id, ()))
@@ -1697,6 +1712,7 @@ def pin_lines(
     if not added:
         return 0
     col.empty.discard(item_id)
+    col.pinned.setdefault(item_id, set()).update(g.line.text for g in added)
     _set_summary(col, item_id, kept + added, s)
     col.diag["n_pinned_lines"] = col.diag.get("n_pinned_lines", 0) + len(added)
     return len(added)
