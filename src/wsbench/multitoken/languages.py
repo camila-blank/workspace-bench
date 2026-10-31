@@ -315,11 +315,11 @@ def case_sensitive_forms() -> frozenset[str]:
 # genre / medium nouns after X ("Greek News Agency", "Russian Prose Poetry", "Russian School
 # textbooks"); "στα ελληνικά" before a noun ("στα Ελληνικά δρόμους") and "Deutsch-" compounds
 # name no language
-# ln-2026-10-31c (final r1): a closed list of at most three determiners / adjectives before a text
+# ln-2026-10-31d (final r1): a closed list of at most three determiners / adjectives before a text
 # noun or lower-case prose / writing / style (_MOD_WORDS), "X in a/an/the ... style / register",
 # and the ru forms "в/на русском варианте/тексте/переводе", "русский текст/вариант/перевод"
 # (closed case endings)
-NAMING_VERSION = "ln-2026-10-31c"  # bump on any edit of NAMING / naming_forms
+NAMING_VERSION = "ln-2026-10-31d"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
 # what may follow "in X" for it to name the language: punctuation, the end, or a verb /

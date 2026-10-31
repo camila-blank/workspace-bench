@@ -379,17 +379,16 @@ PIN_PER_OPTION = 3  # raw samples pinned per option (most repeated first), never
 
 
 def _option_naming_forms(option: str, native: tuple[str, ...]) -> dict[str, list[str]]:
-    """The naming forms of a language OPTION (``languages.naming_forms`` when it is in the
-    table; else the English naming contexts of its name), the same rule for every option."""
-    from wsbench.multitoken.languages import _en_naming, naming_forms
+    """The naming forms of a language OPTION for the pins: its ENGLISH naming contexts only
+    (``languages._en_naming``), the forms every option has whether or not the language table
+    lists it (reviews of #201: options must be pinned symmetrically)."""
+    from wsbench.multitoken.languages import _en_naming
 
+    del native
     lg = next((x for x in LANGUAGES.values() if option in x.names["en"]), None)
-    if lg is not None:
-        try:
-            return naming_forms(lg.code, native)
-        except ValueError:
-            pass
-    return {"en": list(_en_naming(option, False))}
+    names = lg.names["en"] if lg is not None else (option,)
+    cs = set(lg.case_sensitive) if lg is not None else set()
+    return {"en": [f for n in names for f in _en_naming(n, n in cs)]}
 
 
 def _pin_options(ctx: _Ctx, col: digest.Collapse) -> None:
@@ -486,18 +485,27 @@ def _summary(ctx: _Ctx) -> FamilyResult:
             digest_hits = hits
         by_layer: dict[int, dict[str, list[str]]] | None = None
         if raw and not args.dry_run:
-            # final r1: the regex units on the raw samples, every unit within ONE layer
+            # final r1: the digest's pooled units (plan 0020), supplemented by the raw samples of
+            # each read layer (every unit within that ONE layer)
             raw_cells = [c for layer in ctx.layers for c in ctx.positions.get((item_id, layer), [])]
             by_layer = raw_layer_hits(raw_cells, units)
             hits = {
-                u.role: list(dict.fromkeys(lg for h in by_layer.values() for lg in h[u.role]))
+                u.role: list(
+                    dict.fromkeys(
+                        [
+                            *hits.get(u.role, []),
+                            *(lg for h in by_layer.values() for lg in h[u.role]),
+                        ]
+                    )
+                )
                 for u in units
             }
         vs = verdicts.get(item_id, {})
         mc_ok = bool(vs) and all(vs.get(r, {}).get("correct") for r in roles)
+        rx_ok = bool(digest_hits) and regex.layer_passes(digest_hits, units)
         if by_layer is not None:
-            rx_ok = any(regex.layer_passes(h, units) for h in by_layer.values())
-        else:
+            rx_ok = rx_ok or any(regex.layer_passes(h, units) for h in by_layer.values())
+        elif digest_hits is None:
             rx_ok = bool(hits) and regex.layer_passes(hits, units)
         empty = item_id in col.empty
         unjudged = any(not v.get("judged") for v in vs.values())

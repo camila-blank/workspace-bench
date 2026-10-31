@@ -402,9 +402,10 @@ def _split_words(cs: list[Cell], units: list[regex.ScoredUnit]) -> list[str]:
     return sorted(f for f in forms if digest.split_word(f, lines) is not None)
 
 
-# final r1 (2026-10-31): in summary mode the regex contract of these families runs on the RAW
-# samples, with the hard tier's conjunctive contract kept: every required unit must hit within ONE
-# read layer (positions pooled within a layer, never across layers), each unit supported by at
+# final r1 (2026-10-31): in summary mode the regex contract of these families keeps the digest's
+# pooled conjunction (plan 0020) and is SUPPLEMENTED by the RAW samples, with the hard tier's
+# conjunctive contract kept for that supplement: every required unit must hit within ONE read
+# layer (positions pooled within a layer, never across layers), each unit supported by at
 # least RAW_MIN_SUPPORT samples of that layer, or by one sample that states it as the answer (a
 # content form as the answer; the text's language stated, "written in X"). The digest is display and
 # the MC judge's input only. The digest dropped rare samples that named the language or the
@@ -430,11 +431,16 @@ _ANSWER_CUE = re.compile(
 )
 
 
+_NEG = re.compile(r"(?i)(?<![^\W_])(?:not|never|originally|translated|n't)(?![^\W_])")
+
+
 def _states_text_language(sample: str, unit: regex.ScoredUnit) -> bool:
-    """A language unit's answer statement: the sample says what language the TEXT is in ("the
-    passage is written in Arabic", "written in Arabic", "Language: Arabic"), by an English name
-    of a language of the unit. Any other naming ("in Arabic, the word is") is an incidental
-    mention and needs :data:`RAW_MIN_SUPPORT` samples (review of #201)."""
+    """A language unit's answer statement: the sample says what language the TEXT is in, with a
+    text noun as the subject ("this passage is written in Arabic", "the question is in Arabic")
+    or as a label ("Language: Arabic"), by an English name of a language of the unit, with no
+    negation, "originally" or "translated" in the statement. Any other naming ("in Arabic, the
+    word is", "a novel written in Russian") is an incidental mention and needs
+    :data:`RAW_MIN_SUPPORT` samples (reviews of #201)."""
     names = [
         n
         for code in unit.forms
@@ -445,10 +451,15 @@ def _states_text_language(sample: str, unit: regex.ScoredUnit) -> bool:
         return False
     alt = "|".join(re.escape(n) for n in sorted(set(names), key=len, reverse=True))
     pat = (
-        rf"(?i)(?:\b(?:passage|text|prompt|question|sentence|input|readout)\s+(?:is\s+)?"
-        rf"(?:written\s+)?in|\bwritten\s+in|\blanguage\s*(?:is|:))\s+(?:{alt})(?![^\W_])"
+        r"(?i)(?:\b(?:this|that|the|its|their)\s+(?:text|passage|letter|question|sentence|prompt|"
+        r"input|message|riddle|clause)\s+(?:is|was|are|were)\s+(?:written\s+)?in"
+        rf"|\blanguage\s*:)\s+(?:{alt})(?![^\W_])"
     )
-    return re.search(pat, sample) is not None
+    for m in re.finditer(pat, sample):
+        clause = re.split(r"[.;!?\n]", sample[: m.end()])[-1]
+        if not _NEG.search(clause):
+            return True
+    return False
 
 
 def _answer_like(sample: str, unit: regex.ScoredUnit) -> bool:
@@ -751,14 +762,16 @@ def _run_regex_summary(
         plain: dict[int, dict[str, list[str]]] = {}
         raw_cells = [c for (i, _layer), cs in positions.items() if i == item_id for c in cs]
         if raw and raw_cells and not args.dry_run:
-            # final r1: the contract on the raw samples, every unit within one layer
-            hits = raw_layer_hits(raw_cells, units, contract)
-            plain = hits
+            # final r1: the digest's pooled conjunction (plan 0020) as before, supplemented by the
+            # raw samples of each read layer (every unit within that one layer): any passes
+            hits = dict(raw_layer_hits(raw_cells, units, contract))
             if cell is not None and item_id not in col.unsummarized:
                 forms = [f for u in units for f in u.all_forms()]
                 texts = digest.gate_texts(cell, col, joined=True, forms=forms)
                 dsamples = [s for s in (regex.extract_phrase(t) for t in texts) if s]
                 digest_hits[item_id] = regex.layer_unit_hits(dsamples, units, contract)
+                hits[digest.SUMMARY_LAYER] = digest_hits[item_id]
+            plain = hits
         elif cell is not None and item_id not in col.unsummarized and not args.dry_run:
             forms = [f for u in units for f in u.all_forms()]
             texts = digest.gate_texts(cell, col, joined=True, forms=forms)
