@@ -468,9 +468,12 @@ def _with_object(text: str, form: str, objects: Sequence[str], preps: Sequence[s
     # neighbor serving as a witness"); never a bare comma ("questioning the case, the witness")
     word = rf"(?!(?:{_alt(sorted(_NOT_MOD))}){w})[^\W\d_]+"
     appos = rf"(?:{det}(?:{word}\s+){{0,2}}{word},?\s+(?:{_alt(_APPOS)}){w}\s+)?"
+    # round 4: in a multi-word form a "her" followed by a noun is a possessor, not the object
+    # ("turned in her paper to the dean"); "turned in her and ..." keeps it
+    her_poss = rf"(?!(?<=\bher)\s+(?!(?:{_alt(sorted(_NOT_MOD))}){w})[^\W\d_]+)"
     pat = (
         rf"(?<![^\W_]){re.escape(form)}{w}\s+{adv}{prep}{appos}{det}{mod}(?:{alt}){w}"
-        rf"{_NOT_POSS if ' ' in form else ''}"
+        rf"{_NOT_POSS + her_poss if ' ' in form else ''}"
     )
     return re.search(pat, text, flags=re.I) is not None
 
@@ -593,6 +596,15 @@ def _kin_ok(word: str, possessor: str, other: str, lex: Lexicon) -> bool:
     )
 
 
+def _third_child(kin: str, roles: tuple[str, str], kin_role: Sequence[bool], lex: Lexicon) -> bool:
+    """Round 4: the kin word is one gold role's own term, its converse is a child word ("his
+    mother": the possessor is a son or daughter) and the OTHER gold role is no kin role, so the
+    possessor is a third person, the child of the story (a student, a patient's kid)."""
+    if not set(KIN_CONVERSE[kin]) <= set(_C_WORDS):
+        return False
+    return any(form_in(kin, lex.terms(roles[j])) and not kin_role[1 - j] for j in (0, 1))
+
+
 def relation_conflict(
     quote: str, agent: tuple[str, str], patient: tuple[str, str], lex: Lexicon
 ) -> bool:
@@ -620,7 +632,8 @@ def relation_conflict(
     conflict = False
     for m in re.finditer(pat, text, flags=re.I):
         pos, kin = m.group("pos"), m.group("kin").casefold()
-        if pos.casefold() in _POSS_PRON:
+        pronoun = pos.casefold() in _POSS_PRON
+        if pronoun:
             who = [0, 1]
         else:
             nm = pos[:-2]
@@ -630,6 +643,13 @@ def relation_conflict(
         if any(_kin_ok(kin, roles[i], roles[1 - i], lex) for i in who):
             return False
         if form_in(kin, gold_terms):
+            # round 4: "his mother" for a gold parent beside a non-kin role (a teacher) is the
+            # parent of a third person, the child (a student): a pronoun names no gold
+            # possessor when the kin word is the counterpart's own role term, its converse is
+            # a child word and the other gold role is no kin role ("The teacher blamed his
+            # mother"); "his bride" (converse groom) still conflicts
+            if pronoun and _third_child(kin, roles, kin_role, lex):
+                continue
             conflict = True
             continue
         if not all(kin_role):

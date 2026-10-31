@@ -24,7 +24,7 @@ WITNESS = _obj("Elena", "witness")
 
 
 def test_actions_version_stamped():
-    assert gate.load_actions().version == prompts.ACTIONS_LEXICON == "actions-v1.3"
+    assert gate.load_actions().version == prompts.ACTIONS_LEXICON == "actions-v1.4"
 
 
 @pytest.mark.parametrize(

@@ -352,7 +352,7 @@ def test_config_stamps_actions_lexicon(tmp_path, fake_llm, mk_args):
     # round 3 of #202: the action lexicon's version is part of the instrument stamp
     fake_llm(_responder)
     res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
-    assert res.config["actions_lexicon"] == prompts.ACTIONS_LEXICON == "actions-v1.3"
+    assert res.config["actions_lexicon"] == prompts.ACTIONS_LEXICON == "actions-v1.4"
 
 
 def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_args):
