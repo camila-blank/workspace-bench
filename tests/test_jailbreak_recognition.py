@@ -1345,3 +1345,57 @@ def test_lens_reader_never_drops_missing_ids(tmp_path, monkeypatch):
     st = {r["id"]: r for r in res.extras["item_rows"]}
     assert st["ctl-1"]["state"] == "no_readouts" and st["ctl-1"]["flagged"]
     assert res.extras["reader_refused_ids"] == [] and res.extras["n_items_decided"] == 4
+
+
+def test_readout_judge_budget_covers_all_layer_digests() -> None:
+    """Both readout-judge batches (native and summary) pass READOUT_MAX_TOKENS: under digest-v5
+    the all-layer digest's line list overflowed the 16k client default on 150/172 items."""
+    import ast
+    import inspect
+
+    from wsbench import llm
+    from wsbench.evals.jailbreak_recognition import judge as jbj
+
+    tree = ast.parse(inspect.getsource(jbj))
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "run_calls"
+    ]
+    assert len(calls) == 2
+    for c in calls:
+        kw = {k.arg: k.value for k in c.keywords}
+        assert isinstance(kw.get("max_tokens"), ast.Name)
+        assert kw["max_tokens"].id == "READOUT_MAX_TOKENS"
+        assert isinstance(kw.get("timeout"), ast.Name) and kw["timeout"].id == "READOUT_TIMEOUT"
+    assert llm._DEFAULT_MAX_TOKENS["anthropic"] < jbj.READOUT_MAX_TOKENS
+    assert jbj.READOUT_MAX_TOKENS <= llm._TEXT_BUDGET_CEILING
+    # ~110-160 output tok/s non-streaming: the timeout must leave room for the full budget
+    assert jbj.READOUT_TIMEOUT >= jbj.READOUT_MAX_TOKENS / 100
+
+
+def test_run_calls_forwards_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """mcjudge.run_calls hands ``timeout`` to llm.stream_json (and leaves the client default
+    when it is None)."""
+    from wsbench import llm, mcjudge
+    from wsbench.cache import Cache
+    from wsbench.judge_config import ResolvedJudge
+
+    seen: list[dict] = []
+    monkeypatch.setattr(llm, "stream_json", lambda prompts, **kw: seen.append(kw))
+    judge = ResolvedJudge(model="claude-sonnet-5", reasoning=None, pinned=True, source="family")
+    call = mcjudge.Call("k", "s", "u", {})
+    for t in (900.0, None):
+        mcjudge.run_calls(
+            [call],
+            schema={},
+            judge=judge,
+            prompt_version="pv",
+            cache=Cache(tmp_path / f"c{t}.jsonl"),
+            spend=llm.Spend(),
+            concurrency=1,
+            rpm=60.0,
+            dry_run=False,
+            timeout=t,
+        )
+    assert seen[0].get("timeout") == 900.0 and "timeout" not in seen[1]
