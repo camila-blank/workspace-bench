@@ -1379,7 +1379,10 @@ class Collapse:
     model: str = ""  # the digest model of record (items no fallback served)
     grounded: dict[str, list[Grounded]] = field(default_factory=dict)  # the judged entries
     # audit F3: summarized items some of whose layers (or chunks) stayed unserved -> those layers
+    # (refused layers beyond PARTIAL_UNDECIDED_SHARE of the read layers: moved to unsummarized)
     partial: dict[str, list[int]] = field(default_factory=dict)
+    # the subset of ``partial`` whose digest was refused (or too long), the undecided rule's input
+    refused_layers: dict[str, list[int]] = field(default_factory=dict)
     # audit F1: per item, read layer -> judged evidence lines from it (logged, never gated)
     layer_hist: dict[str, dict[int, int]] = field(default_factory=dict)
     # why an item (or per-layer part) was not served: all_dropped | refused | too_long, or why
@@ -1402,6 +1405,7 @@ class Collapse:
             "n_items_unsummarized": len(self.unsummarized),
             "n_items_empty": len(self.empty),
             "n_items_partial": len(self.partial),
+            "n_items_partial_refused": len(self.refused_layers),
             "summary_partial_ids": sorted(self.partial),
             "n_truncated_items": len(self.truncated),
             "digest_served_by": served,
@@ -1424,6 +1428,10 @@ class Collapse:
             "summary_chunks": self.chunks.get(item_id, 1),
             "summary_served_by": self.served_by.get(item_id),
             "summary_partial_layers": self.partial.get(item_id),
+            "summary_refused_layers": self.refused_layers.get(item_id),
+            "summary_partial_undecided": (
+                item_id in self.partial and self.reasons.get(item_id) == "partial_refused"
+            ),
             "summary_layers": {
                 str(k): v for k, v in sorted(self.layer_hist.get(item_id, {}).items())
             },
@@ -1740,7 +1748,36 @@ def collapse(
         )
     if s.numbers > 0 and (operands is not None or consensus) and not args.dry_run:
         _numbers_pass(col, cells_by_item, s, operands or {}, consensus)
+    undecide_partial(col, cells_by_item)
     return col
+
+
+# an item whose unserved (refused / too-long / dropped) layers exceed this share of its read
+# layers is undecided, not judged on the rest: the missing layers may hold the decisive content
+PARTIAL_UNDECIDED_SHARE = 0.2
+
+
+def undecide_partial(col: Collapse, cells_by_item: Mapping[str, Sequence[Cell]]) -> None:
+    """Items some of whose layers were refused (or too long; ``col.refused_layers``) stay judged
+    on the served layers when at most :data:`PARTIAL_UNDECIDED_SHARE` of their read layers were
+    refused (a 1-of-11 refusal still judges); beyond it the item becomes unsummarized (reason
+    ``partial_refused``), which every summary family counts as undecided. Layers lost to a
+    failed call or a failed evidence check (``partial`` only) never undecide. ``partial`` keeps
+    every such item either way; ``diag['n_items_partial_undecided']`` counts the moved ones."""
+    col.diag.setdefault("n_items_partial_undecided", 0)
+    for i, miss in col.refused_layers.items():
+        if i not in col.summaries:
+            continue
+        layers = {c.layer for c in cells_by_item.get(i, ())}
+        share = len(set(miss) & layers) / len(layers) if layers else 1.0
+        if share <= PARTIAL_UNDECIDED_SHARE:
+            continue
+        for d in (col.summaries, col.evidence, col.statements, col.grounded, col.layer_hist):
+            d.pop(i, None)
+        col.cells[i] = dataclasses.replace(col.cells[i], samples=("",))
+        col.unsummarized.add(i)
+        col.reasons[i] = "partial_refused"
+        col.diag["n_items_partial_undecided"] += 1
 
 
 def _collapse_stride(
@@ -2037,11 +2074,19 @@ def _merge_parts(
         miss: set[int] = set()
         for p in done:
             miss.update(part.partial.get(p, ()))
+        refused: set[int] = set()
         for p in lost:
             layer = layer_of[p]
-            miss.update([layer] if layer is not None else {c.layer for c in parts[p]})
+            ls = [layer] if layer is not None else {c.layer for c in parts[p]}
+            miss.update(ls)
+            if part.reasons.get(p) in ("refused", "too_long"):
+                refused.update(ls)
+        for p in done:
+            refused.update(part.refused_layers.get(p, ()))
         if miss:
             col.partial[item_id] = sorted(miss)
+        if refused:
+            col.refused_layers[item_id] = sorted(refused)
         if len(pids) == 1:
             kept = part.grounded[done[0]]
         else:
@@ -2450,15 +2495,17 @@ def _collapse_hierarchical(
     # best chunk claims seen at any level for an item that may run out of halvings
     chunk_claims: dict[str, list[Grounded]] = {}
     fallback: dict[str, tuple[list[Grounded], list[int]]] = {}
+    lost_refused: dict[str, bool] = {}
     direct: dict[str, tuple[list[Grounded], list[int]]] = {}
     done: set[str] = set()
     if preflight is not None:
         preflight()
 
-    def remember(i: str, claims: list[Grounded], lost: list[int]) -> None:
+    def remember(i: str, claims: list[Grounded], lost: list[int], refused: bool = False) -> None:
         old = fallback.get(i)
         if claims and (old is None or (len(lost), -len(claims)) < (len(old[1]), -len(old[0]))):
             fallback[i] = (claims, lost)
+            lost_refused[i] = refused  # the lost layers were refused / too long (not a failure)
 
     def run_batch(calls: list[tuple[str, str, str, str]]) -> dict[str, object]:
         """``calls``: (item, cache key, fp, user). Cached results are reused; the rest go out at
@@ -2631,7 +2678,7 @@ def _collapse_hierarchical(
                         seen.add(id(g.line))
                         union.append(g.line)
             if failed in ("refused", "too_long"):
-                remember(i, claims, sorted(lost))
+                remember(i, claims, sorted(lost), refused=True)
                 bump(i, failed)
                 continue
             if failed == "failed":
@@ -2703,6 +2750,8 @@ def _collapse_hierarchical(
             col.diag["n_items_chunk_direct"] += 1
             if lost:
                 col.partial[i] = lost
+                if lost_refused.get(i):
+                    col.refused_layers[i] = lost
             _set_summary(col, i, kept, s)
             continue
         r = final[i]

@@ -63,10 +63,10 @@ def test_no_lone_option_credit_for_a_same_kind_run(text):
 def test_flat_types_and_versions():
     assert MH2.flat_types == ("names of people", "place names", "titles of works")
     assert "place names" in BRMT.flat_types and "names of people" in BRMT.flat_types
-    assert MH2.judge.prompt_version == "mh2-mc-2026-10-31"
-    assert BRMT.judge.prompt_version == "mc-brmt-2026-10-31c"
+    assert MH2.judge.prompt_version == "mh2-mc-2026-10-31b"
+    assert BRMT.judge.prompt_version == "mc-brmt-2026-10-31d"
     assert assoc_prompts.PROMPT_VERSION == "assoc-mc-2026-10-31"
-    assert rb_prompts.PROMPT_VERSION == "oa-v2.2"
+    assert rb_prompts.PROMPT_VERSION == "oa-v2.3"
     assert digest.SUMMARY_JUDGE_VERSION == "sj-v10"
     assert kc_prompts.PROMPT_VERSION == "cutoff-judge-2026-10-31"
     assert dm_prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-31"

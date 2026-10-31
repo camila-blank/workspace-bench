@@ -283,7 +283,9 @@ def verify_quote(quote: str, lines: list[digest.Line], cells: list[Cell]) -> str
 # ---------------------------------------------------------------- ec-v5: multi-label (F9)
 
 N_DRAWS = 3  # summary mode: three draws per (item, side), an option is marked by a majority
-SUPPORT_RANK = {"one": 1, "few": 2, "several": 3, "many": 4}
+SUPPORT_FLOOR = {"one": 1, "few": 2, "several": 4, "many": 10}  # digest-v4 bucket floors
+# ec-v5c (pre-rejudge fix): the opposite side wins only with >= 1.5x the gold's sample count
+OPP_WIN_RATIO = 1.5
 # the support marker: digest-v5's per-claim count ("12 samples", "3 samples, 2 layers", plus a
 # consensus note) or a digest-v4 bucket word (``digest.SUPPORT_PATTERN`` + the legacy words)
 _MARK = rf"(one|few|several|many|{digest.SUPPORT_PATTERN})"
@@ -317,28 +319,33 @@ def draw_key(key: str, k: int) -> str:
     return key if k == 0 else f"{key}#d{k}"
 
 
-def support_rank(mark: str) -> int:
-    """A support marker's rank, one < few < several < many (1..4). digest-v5's per-claim count
-    ``N samples`` is bucketed on digest.support_of's cut points (1 / 2-3 / 4-9 / 10+), so two
-    claims stated about equally often tie, as the v4 tags did; an unreadable marker is 0."""
-    if mark in SUPPORT_RANK:
-        return SUPPORT_RANK[mark]
+def support_count(mark: str) -> int:
+    """A support marker's per-claim sample count. digest-v5's ``N samples`` (``N samples, M
+    layers``) is read exactly, never bucketed, so a claim seen in 10 samples no longer ties one
+    seen in 300 (ec-v5c); a digest-v4 bucket word reads as its bucket's floor (one 1, few 2,
+    several 4, many 10, digest.support_of's cut points); an unreadable marker is 0."""
+    if mark in SUPPORT_FLOOR:
+        return SUPPORT_FLOOR[mark]
     m = _COUNT.match(mark)
-    if m is None:
-        return 0
-    n = int(m.group(1))
-    return 1 if n <= 1 else 2 if n <= 3 else 3 if n <= 9 else 4
+    return 0 if m is None else int(m.group(1))
+
+
+def beats(opp: int, gold: int) -> bool:
+    """An opposite-side option outweighs the gold when its support is at least
+    :data:`OPP_WIN_RATIO` times the gold's (and non-zero): 300 samples beat 10, 7 do not beat 5
+    (about equally often: both sides stated, the item passes as before)."""
+    return opp > 0 and opp >= OPP_WIN_RATIO * gold
 
 
 def digest_support(summary: str) -> Support:
-    """Summary mode: a quote's support = the highest support rank (:func:`support_rank`: one <
-    few < several < many) of the digest lines holding it (``digest.line_holds``); 0 when none
+    """Summary mode: a quote's support = the highest per-claim sample count
+    (:func:`support_count`) of the digest lines holding it (``digest.line_holds``); 0 when none
     does."""
     tagged: list[tuple[int, digest.Line]] = []
     for s in summary.splitlines():
         m = _EXTRACTIVE.match(s) or _ABSTRACTIVE.search(s)
         if m is not None:
-            tagged.append((support_rank(m.group(1)), digest.Line(m.group(2))))
+            tagged.append((support_count(m.group(1)), digest.Line(m.group(2))))
 
     def support(quote: str) -> int:
         return max((r for r, ln in tagged if digest.line_holds(quote, ln)), default=0)
@@ -385,11 +392,11 @@ def ml_verdict(
     """The ec-v5 verdict of one (item, side) from its draws. An option is MARKED when more than
     half of the draws mark it with a verified quote (each draw on its own: nothing is pieced
     across draws). Its support is the highest support of those quotes. ``correct`` (the pass):
-    the gold is marked and no marked opposite-side option has stronger support than the gold (a
-    tie passes: both sides stated equally). ``gold_marked`` ignores the opposite side;
-    ``gold_only`` needs no opposite-side mark at all. ``pick`` summarises for the shared
-    columns: gold (a pass) / opposite / same_side / distractor / unverified (every mark failed
-    the quote gate) / cannot_tell.
+    the gold is marked and no marked opposite-side option :func:`beats` it (support >= 1.5x the
+    gold's; a near-tie passes: both sides stated about equally). ``gold_marked`` ignores the
+    opposite side; ``gold_only`` needs no opposite-side mark at all. ``pick`` summarises for the
+    shared columns: gold (a pass) / opposite / same_side / distractor / unverified (every mark
+    failed the quote gate) / cannot_tell.
 
     Shared statements (rule (f) in code, like relational_multihop's ``two_chains``): a quote
     counts for an option only when some statement holding it (one bullet, ``statement_lines``)
@@ -426,7 +433,7 @@ def ml_verdict(
     gold_marked = mc.gold_pos in marked
     gold_sup = sup.get(mc.gold_pos, 0)
     opp_sup = max((sup[p] for p in opp), default=0)
-    correct = gold_marked and opp_sup <= gold_sup
+    correct = gold_marked and not beats(opp_sup, gold_sup)
     n_unverified = sum(n for _m, n in per)
     if correct:
         pick = "gold"
