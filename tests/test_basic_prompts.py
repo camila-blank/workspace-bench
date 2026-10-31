@@ -14,7 +14,10 @@ PINNED = {
     # re-pinned by the audit-fix digest PR (F1/F2: digest.SUMMARY_NOTE* rewritten for per-claim
     # counts and the per-layer merge; those strings are versioned by digest.SUMMARY_JUDGE_VERSION
     # sj-v10, in every summary-mode stamp; no native bank prompt changed; the sha constant only)
-    "bank-2026-10-30b": "13dc65e2609121da2d0e8f6295274ef381ebab80d9b23734b4a8f67d8b652fea",
+    # re-pinned by plan 0058 (the medical_diagnosis{,_alt} task-note lines deleted with the
+    # families; DIGEST_TASK_NOTES_TEXT is a record, each family is sent only its own line, so no
+    # surviving family's prompt changed; the sha constant only)
+    "bank-2026-10-30b": "291e9caf08700c39343292e111992deef5a0924a26a18b1655706f73c47dd0fd",
 }
 
 
@@ -25,7 +28,7 @@ def _sha() -> str:
 
 def test_bank_pv_bumped_when_prompts_change():
     assert bp.PROMPT_VERSION == "bank-2026-10-30b"
-    assert bp.FAMILY_PROMPT_VERSIONS["medical_diagnosis"] == "bank-2026-10-30b-md"
+    assert "medical_diagnosis" not in bp.FAMILY_PROMPT_VERSIONS  # plan 0058: removed
     assert PINNED.get(bp.PROMPT_VERSION) == _sha(), (
         "basic prompts changed: bump basic/prompts.PROMPT_VERSION and re-pin here"
     )
