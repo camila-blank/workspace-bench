@@ -117,6 +117,30 @@ def test_wif_token_failure_aborts_without_echoing_the_body():
     assert "invalid_grant" in str(exc.value) and "jwt-identity" not in str(exc.value)
 
 
+def test_wif_token_exchange_5xx_is_retryable_and_a_late_401_keeps_a_new_token():
+    post = _Post((503, {}), (200, {"access_token": "tok-1"}), (200, {"access_token": "tok-2"}))
+    t = ar.WifToken(ENV, post=post)
+    with pytest.raises(ar.TransientExchangeError):
+        asyncio.run(t.get())
+    assert asyncio.run(t.get()) == "tok-1"
+    t.invalidate("tok-0")  # a 401 on a token already replaced: no re-exchange
+    assert asyncio.run(t.get()) == "tok-1" and t.exchanges == 1
+    t.invalidate("tok-1")
+    assert asyncio.run(t.get()) == "tok-2"
+
+
+def test_wif_answer_retries_a_transient_exchange_failure():
+    calls: list[dict] = []
+    post = _Post((502, {}), (200, {"access_token": "t1"}))
+    clients = ar.Clients(
+        "openai-wif",
+        env=ENV,
+        factory=lambda k, b, h: _Client(calls, [_completion("ok")]),
+        token=ar.WifToken(ENV, post=post),
+    )
+    assert _answer(clients)["answer"] == "ok"
+
+
 def test_wif_token_needs_the_secret_and_the_identity_token():
     with pytest.raises(ar.AbortError, match="MODAL_IDENTITY_TOKEN"):
         ar.WifToken({k: v for k, v in ENV.items() if k != "MODAL_IDENTITY_TOKEN"})

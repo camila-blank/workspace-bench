@@ -45,6 +45,10 @@ class AbortError(Exception):
     """A key / credit / spend-limit error: stop the shard, never record it as a refusal."""
 
 
+class TransientExchangeError(Exception):
+    """A 429 / 5xx from the token endpoint: retried like a network error."""
+
+
 def classify_error(status: int | None, body: Any, route: str = "openrouter") -> str:
     """``refusal`` (final), ``abort`` (stop the run), ``auth`` (WIF: re-exchange the token),
     ``rate`` (wait, no attempt spent) or ``retry``. A 403 is a refusal only when OpenRouter says
@@ -111,8 +115,11 @@ class WifToken:
     def project(self) -> str:
         return self._env["OPENAI_PROJECT_ID"]
 
-    def invalidate(self) -> None:
-        self._token = None
+    def invalidate(self, token: str | None = None) -> None:
+        """Drop the cached token (only if it is still ``token``, when given: a late 401 on an
+        older token must not discard one another request just obtained)."""
+        if token is None or token == self._token:
+            self._token = None
 
     async def get(self) -> str:
         async with self._lock:
@@ -130,7 +137,10 @@ class WifToken:
                 if status != 200 or not isinstance(body, dict) or not body.get("access_token"):
                     # the body of a failed exchange carries no token; keep only its error field
                     err = body.get("error") if isinstance(body, dict) else None
-                    raise AbortError(f"openai-wif token exchange failed: {status} {err!r}"[:300])
+                    msg = f"openai-wif token exchange failed: {status} {err!r}"[:300]
+                    if status == 429 or status >= 500:
+                        raise TransientExchangeError(msg)  # retried by ``answer_one``
+                    raise AbortError(msg)
                 self._token = str(body["access_token"])
                 life = float(body.get("expires_in") or 3600)
                 self._expires = self._clock() + max(60.0, life - TOKEN_MARGIN_S)
@@ -186,6 +196,7 @@ class Clients:
         )
         self._client: Any = None
         self._key: str | None = None
+        self._keys: dict[int, str] = {}  # id(client) -> the access token it was built with
 
     async def get(self) -> Any:
         if self.token is None:
@@ -199,11 +210,13 @@ class Clients:
         if tok != self._key:
             self._client = self._factory(tok, None, {"OpenAI-Project": self.token.project})
             self._key = tok
+            self._keys[id(self._client)] = tok
         return self._client
 
-    def auth_failed(self) -> None:
+    def auth_failed(self, client: Any = None) -> None:
+        """A 401 on ``client``: re-exchange, unless its token was already replaced."""
         if self.token is not None:
-            self.token.invalidate()
+            self.token.invalidate(self._keys.get(id(client)) if client is not None else None)
 
 
 def _openai_client(key: str, base_url: str | None, headers: dict[str, str]) -> Any:
@@ -248,7 +261,7 @@ async def answer_one(
                     return base | {"answer": "", "refused": True, "error": "refusal"}
                 if kind == "auth" and auths < AUTH_REFRESHES:
                     auths += 1
-                    clients.auth_failed()
+                    clients.auth_failed(client)
                     continue
                 if kind in ("abort", "auth"):
                     raise AbortError(err) from exc

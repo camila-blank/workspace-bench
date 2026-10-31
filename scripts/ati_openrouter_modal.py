@@ -17,7 +17,7 @@ the container's MODAL_IDENTITY_TOKEN is exchanged for a short-lived access token
 
     PYTHONPATH=src modal run scripts/ati_openrouter_modal.py --answerer astra \\
         [--route openai-wif] [--out outputs/baselines/text_inversion] [--families a,b] \\
-        [--shards 8] [--limit 3]
+        [--shards 8] [--limit-items 3]
 """
 
 import json
