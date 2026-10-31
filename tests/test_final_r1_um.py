@@ -156,3 +156,9 @@ def test_round3_lexicon_other_direction():
     for quote in ("at age 66", "at age 600", "people aged 55-60", "age 6"):
         assert not mc.form_in(quote, VALUE_ALIASES["56-65"]), quote
     assert not mc.form_in("a hunky-dory day", VALUE_ALIASES["male"])
+
+
+def test_basis_rests_on_any_inferred_line():
+    # round 3 (continent-12/-15/-09 vs -13/-14/-11): one deterministic selection rule in the rubric
+    assert "ANY one of them characterizes it beyond the prompt's own words" in prompts.SUMMARY_BASIS
+    assert prompts.SUMMARY_BASIS.endswith("Quote from the line your basis rests on.")
