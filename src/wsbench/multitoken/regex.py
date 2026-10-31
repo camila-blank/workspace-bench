@@ -564,3 +564,45 @@ def fuzzy_form_in(text: str, forms: list[str] | tuple[str, ...], *, avoid: Any =
             if not clash:
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------------------------
+# flat runs (fresh-eye review of the audit fixes, 2026-10-31): the F4 any-line rescues
+# (``mcrx.singling_lines``, ``family.singles_out``) credit a line that SINGLES OUT the gold; a
+# piece that is a flat run of candidates singles out none of them (decision Q4, Camila: "flat
+# lists single out nothing"), whatever its other items are
+# ---------------------------------------------------------------------------------------------
+FLAT_ITEMS_MIN = 4  # list items for a run
+_LIST_SEP = re.compile(
+    r"\s*(?:[,;/|·•、，；]|\s(?:or|and|ou|et|oder|und|o|y|или|и)\s)\s*",  # noqa: RUF001
+    re.IGNORECASE,
+)
+_NUMBER_WORDS = (
+    "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+    "fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
+    "eighty|ninety|hundred|thousand"
+)
+_NUMBER = re.compile(
+    rf"(?<![\w.,])\d+(?:[.,]\d+)?(?![\w])|(?<![^\W_])(?:{_NUMBER_WORDS})(?![^\W_])"
+)
+
+
+def is_number_form(form: str) -> bool:
+    """A unit form that is a number (digits, or an English number word)."""
+    return _NUMBER.fullmatch(fold(form).strip()) is not None
+
+
+def flat_run(text: str, *, number: bool = False) -> bool:
+    """``text`` (one bullet or one token list) is a flat run of candidates: at least
+    :data:`FLAT_ITEMS_MIN` list items (split at commas, slashes, semicolons, "or" / "and"), none
+    longer than three words and at least three quarters of them one or two words; or, for a
+    ``number`` gold, it holds two or more distinct numbers ("five six seven", "six or maybe
+    seven", "dopo il 3 viene il 4"): a number among numbers is not singled out."""
+    items = [x for x in _LIST_SEP.split(text) if x and x.strip(" .:*-")]
+    if len(items) >= FLAT_ITEMS_MIN:
+        words = [len(x.split()) for x in items]
+        if max(words) <= 3 and 4 * sum(1 for w in words if w <= 2) >= 3 * len(words):
+            return True
+    if number:
+        return len({m.group(0) for m in _NUMBER.finditer(fold(text))}) >= 2
+    return False
