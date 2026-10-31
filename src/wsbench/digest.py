@@ -1809,8 +1809,11 @@ def collapse(
             pos=pos,
             spare=spare,
         )
+    union = numbers_union(name, s) and s.overflow == "hierarchical"
+    # final r1: a numbers-union digest's keys are EXACTLY the union of its layers' own ranked
+    # keys (ranked per layer in _collapse_layers); no cross-layer re-rank may re-add a value its
+    # own layer left out. A single-layer item takes the joint pass as before.
     if s.numbers > 0 and (operands is not None or consensus) and not args.dry_run:
-        union = numbers_union(name, s) and s.overflow == "hierarchical"
         _numbers_pass(col, cells_by_item, s, operands or {}, consensus, union=union)
     undecide_partial(col, cells_by_item)
     return col
@@ -2332,15 +2335,17 @@ def _numbers_pass(
 ) -> None:
     """Re-rank every served numbers digest with :func:`rank_numbers`. An item whose digest was
     not served stays unsummarized (undecided); an empty one gains the consensus values, if any.
-    ``union`` (final r1): the item's slots are ``s.numbers`` per layer read (the per-layer
-    digests' keys, merged)."""
+    ``union`` (final r1): a multi-layer item is left as merged (each layer was ranked to its own
+    ``s.numbers`` slots in :func:`_collapse_layers`)."""
     n_cons = n_filled = n_ops_demoted = 0
     for item_id, cells in cells_by_item.items():
         if item_id in col.unsummarized or item_id not in col.cells:
             continue
+        if union and len({c.layer for c in cells}) > 1:
+            continue  # already the union of the per-layer ranked keys
         cons = consensus_claims(cells) if consensus else []
         gs = col.grounded.get(item_id, [])
-        cap = s.numbers * (len({c.layer for c in cells}) if union else 1)
+        cap = s.numbers
         kept = rank_numbers(gs, cons, operands.get(item_id, ()), cap)
         keyed = {claim_key(g) for g in gs}
         top = {claim_key(g) for g in gs[:cap]}
