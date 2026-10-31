@@ -50,7 +50,9 @@ BASE_PAIRS: dict[str, dict[str, str]] = {
     # plan 0021 C: the digest replaces Stages A/B, so the summary base drops am-narrative-v2;
     # plans 0031 / 0038: both stamps carry the pair rule (+pairs-v2; not in the call versions)
     "agentic_misalignment": {
-        "am-narrative-v2+am-design-v3+pairs-v2": "am-design-v3+summ-c3+pairs-v2"
+        "am-narrative-v2+am-design-v3+pairs-v2": "am-design-v3+summ-c3+pairs-v2",
+        # audit F8: the twin Stage C rule (twin-c1) is stamped on both
+        "am-narrative-v2+am-design-v3+twin-c1+pairs-v2": "am-design-v3+summ-c3+twin-c1+pairs-v2",
     },
     # plan 0034 G8: the summary gate joins token lines (stamped +joined); native is unchanged
     "model_specific_directed_modulation": {

@@ -38,6 +38,7 @@ from wsbench.results import FamilyResult
 from . import gate, prompts, score
 from .prompts import (
     BLANK_TOKEN,
+    CALL_VERSION,
     DIGEST_TASK_NOTE,
     JUDGE_SYSTEM,
     KINSHIP,
@@ -341,7 +342,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     spend = Spend()
     pre = Preflighter(args.dry_run)
     with Cache(args.out / "cells.jsonl") as cache:
-        answers = _judge_units(units, opts, args, PROMPT_VERSION, cache, spend, pre)
+        answers = _judge_units(units, opts, args, CALL_VERSION, cache, spend, pre)
     rows: list[dict] = []
     n_api_failed = 0
     for u in units:
@@ -400,7 +401,7 @@ def _run_summary(
     stays a rowless fail; an unsummarized item is undecided (audit F3: never a fail); one whose
     call failed is a fail; both counted in ``n_unjudged_cells`` (items); an empty one is a fail
     counted in ``n_empty_cells`` (items)."""
-    pv = digest.prompt_version(PROMPT_VERSION, args, FAMILY)
+    pv = digest.prompt_version(CALL_VERSION, args, FAMILY)  # the calls; the stamp adds the gate
     by_item: dict[str, list[Cell]] = defaultdict(list)
     for c in cells:
         by_item[c.id].append(c)
@@ -478,7 +479,11 @@ def _run_summary(
             scope,
             rows,
             counts=counts,
-            config=base_config(args, pv, **digest.config(args, source_kind, FAMILY)),
+            config=base_config(
+                args,
+                digest.prompt_version(PROMPT_VERSION, args, FAMILY),
+                **digest.config(args, source_kind, FAMILY),
+            ),
             n_layers=len(rep.layers),
             n_api_failed=n_api_failed,
             raw_units=raw_units(cells, opts),

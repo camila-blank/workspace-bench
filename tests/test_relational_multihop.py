@@ -227,12 +227,13 @@ def test_full_mode_loads_span_via_reads(tmp_path, monkeypatch):
     users.clear()
     res = SPEC.run(_native(path, tmp_path / "lite", [A, B], reads="lite"))
     assert len(users) == 22 and all(u.count("[L") == 1 and "pos 20]" in u for u in users)
-    assert res.config["prompt_version"] == "rel-v2+reads-lite"
+    assert res.config["prompt_version"] == "rel-v2+relgate-v2+reads-lite"
     # the same file without a sidecar: judged report-only
     bare = write_jsonl(tmp_path / "bare.jsonl", rows)
     res = SPEC.run(_native(bare, tmp_path / "bare", [A, B]))
     assert res.extras["partial_ids_unenforced"] == [B]
-    assert res.config["reads_checked"] == "no_sidecar" and res.config["prompt_version"] == "rel-v2"
+    assert res.config["reads_checked"] == "no_sidecar"
+    assert res.config["prompt_version"] == "rel-v2+relgate-v2"
 
 
 class _Allow:
@@ -572,7 +573,7 @@ def test_run_verdicts_and_numbers(tmp_path, monkeypatch):
         "L36": {"pass": 1, "judged": 2},
     }
     assert res.extras["pair_consistency"] == {"n": 0, "of": 50}
-    assert res.config["prompt_version"] == "rel-v2"
+    assert res.config["prompt_version"] == "rel-v2+relgate-v2"
     FakeLLM.install(monkeypatch, lambda s, u, sc: pytest.fail("cached"))
     SPEC.run(a)  # resume: every unit cached
 
