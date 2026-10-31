@@ -29,9 +29,9 @@ def _key(it: dict) -> str:
     return str(it.get("id", it.get("name")))
 
 
-@pytest.fixture(scope="module")
-def frozen() -> dict:
-    registry.load_all()
+@pytest.fixture
+def frozen(real_families) -> dict:
+    # real_families: every family registered even after an earlier test emptied the registry
     return json.loads(ti.FROZEN.read_text(encoding="utf-8"))
 
 
