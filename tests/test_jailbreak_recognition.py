@@ -1367,5 +1367,35 @@ def test_readout_judge_budget_covers_all_layer_digests() -> None:
         kw = {k.arg: k.value for k in c.keywords}
         assert isinstance(kw.get("max_tokens"), ast.Name)
         assert kw["max_tokens"].id == "READOUT_MAX_TOKENS"
+        assert isinstance(kw.get("timeout"), ast.Name) and kw["timeout"].id == "READOUT_TIMEOUT"
     assert llm._DEFAULT_MAX_TOKENS["anthropic"] < jbj.READOUT_MAX_TOKENS
     assert jbj.READOUT_MAX_TOKENS <= llm._TEXT_BUDGET_CEILING
+    # ~110-160 output tok/s non-streaming: the timeout must leave room for the full budget
+    assert jbj.READOUT_TIMEOUT >= jbj.READOUT_MAX_TOKENS / 100
+
+
+def test_run_calls_forwards_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """mcjudge.run_calls hands ``timeout`` to llm.stream_json (and leaves the client default
+    when it is None)."""
+    from wsbench import llm, mcjudge
+    from wsbench.cache import Cache
+    from wsbench.judge_config import ResolvedJudge
+
+    seen: list[dict] = []
+    monkeypatch.setattr(llm, "stream_json", lambda prompts, **kw: seen.append(kw))
+    judge = ResolvedJudge(model="claude-sonnet-5", reasoning=None, pinned=True, source="family")
+    call = mcjudge.Call("k", "s", "u", {})
+    for t in (900.0, None):
+        mcjudge.run_calls(
+            [call],
+            schema={},
+            judge=judge,
+            prompt_version="pv",
+            cache=Cache(tmp_path / f"c{t}.jsonl"),
+            spend=llm.Spend(),
+            concurrency=1,
+            rpm=60.0,
+            dry_run=False,
+            timeout=t,
+        )
+    assert seen[0].get("timeout") == 900.0 and "timeout" not in seen[1]

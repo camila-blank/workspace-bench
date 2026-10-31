@@ -39,6 +39,7 @@ def run_calls(
     temperature: float | None = None,
     max_tokens: int | None = None,
     keep_invalid: bool = False,
+    timeout: float | None = None,
 ) -> dict[str, dict | None]:
     """key -> parsed result (``None`` = failed). Cached non-failed results are reused; the rest
     go through :func:`llm.stream_json` in one batch. Every landed result (incl. ``None``) is
@@ -46,7 +47,8 @@ def run_calls(
     first call's prompts and returns ``{}`` without any client.
 
     ``judge`` is per batch (a stage may run on an aux model with its own reasoning);
-    ``temperature`` / ``max_tokens`` pass through to the client and the fingerprint is
+    ``temperature`` / ``max_tokens`` / ``timeout`` (per call; None = the client default) pass
+    through to the client and the fingerprint is
     ``(prompt_version, model, reasoning, temperature, system, user)``. A landed result that fails
     ``validate(call, result)`` is stored as ``{"result": None, "meta": {**call.meta, "raw": r}}``
     (so the next run re-queues the key) and returned as ``None``; with ``keep_invalid`` (a
@@ -103,6 +105,7 @@ def run_calls(
         rpm=rpm,
         max_tokens=max_tokens,
         spend=spend,
+        **({"timeout": timeout} if timeout is not None else {}),
     )
     for c, _fp in pending:
         out.setdefault(c.key, None)

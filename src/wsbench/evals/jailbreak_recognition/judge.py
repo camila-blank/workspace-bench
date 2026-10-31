@@ -91,6 +91,10 @@ N_PUNCT = 10
 # fingerprint (mcjudge.run_calls), so every landed verdict is unchanged; only calls that ran out
 # of budget are re-asked. 64k = the bench's Anthropic output ceiling (llm._TEXT_BUDGET_CEILING).
 READOUT_MAX_TOKENS = 64_000
+# ...and the per-call timeout that budget needs: the judge is a non-streaming call at ~110-160
+# output tok/s, so the 180 s client default caps a reply near 20k tokens. 900 s =
+# digest.DIGEST_TIMEOUT (the summarizer already runs non-streaming 32k calls at 900 s).
+READOUT_TIMEOUT = 900.0
 _PUNCT = re.compile(r"[\n.,;:!?\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u060c\u061f]")
 
 
@@ -398,6 +402,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                 calls,
                 schema=READOUT_SCHEMA,
                 max_tokens=READOUT_MAX_TOKENS,
+                timeout=READOUT_TIMEOUT,
                 judge=args.judge,
                 prompt_version=PROMPT_VERSION,
                 cache=cache,
@@ -439,7 +444,13 @@ def run(args: JudgeArgs) -> FamilyResult:
         cells=cells,
         layers=sorted({c.layer for c in cells}),
         counts=counts,
-        config=base_config(args, PROMPT_VERSION, read=regime),
+        config=base_config(
+            args,
+            PROMPT_VERSION,
+            read=regime,
+            judge_max_tokens=READOUT_MAX_TOKENS,
+            judge_timeout=READOUT_TIMEOUT,
+        ),
         n_api_failed=n_api_failed,
         empty_ids={c.id for c in cells} - {c.id for c in nonempty},
         refused_ids=reader_refused(args, rep, scope, cells),
@@ -503,6 +514,7 @@ def _run_summary(
                 calls,
                 schema=READOUT_SCHEMA,
                 max_tokens=READOUT_MAX_TOKENS,
+                timeout=READOUT_TIMEOUT,
                 judge=args.judge,
                 prompt_version=pv,
                 cache=cache,
@@ -545,7 +557,14 @@ def _run_summary(
         cells=cells,
         layers=sorted({c.layer for c in cells}),
         counts=counts,
-        config=base_config(args, pv, read=regime, **digest.config(args, source_kind, FAMILY)),
+        config=base_config(
+            args,
+            pv,
+            read=regime,
+            judge_max_tokens=READOUT_MAX_TOKENS,
+            judge_timeout=READOUT_TIMEOUT,
+            **digest.config(args, source_kind, FAMILY),
+        ),
         n_api_failed=n_api_failed + len(col.unsummarized),
         empty_ids=col.empty,
         refused_ids=reader_refused(args, rep, scope, cells),
