@@ -319,7 +319,14 @@ def case_sensitive_forms() -> frozenset[str]:
 # noun or lower-case prose / writing / style (_MOD_WORDS), "X in a/an/the ... style / register",
 # and the ru forms "в/на русском варианте/тексте/переводе", "русский текст/вариант/перевод"
 # (closed case endings)
-NAMING_VERSION = "ln-2026-10-31d"  # bump on any edit of NAMING / naming_forms
+# ln-2026-10-31e (second review of #201): a closed list of semantic-field words before terms /
+# vocabulary / nouns / words ("In German kinship terms", _DOMAIN_WORDS); the new prose / writing
+# / style heads must be followed by what "in X" may be followed by, never "of" (_HEAD_END; "style"
+# also needs a modifier: never bare "Russian style"); a language as a topic never names it ("the
+# official language is X", "X language exam / course / market", _TOPIC_AFTER_LANGUAGE; tr bare
+# "Türkçe" only before punctuation or a closed list of text nouns, never "Türkçe futbol"; vi
+# "tiếng Việt" only after / before a closed list of words, never "môn tiếng Việt")
+NAMING_VERSION = "ln-2026-10-31e"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
 # what may follow "in X" for it to name the language: punctuation, the end, or a verb /
@@ -365,21 +372,76 @@ _MOD_WORDS = (
     r"allative"
 )
 _MODS = rf"(?:(?i:{_MOD_WORDS})\s+){{0,3}}"
+# the text nouns without "language", which is checked against _TOPIC_AFTER_LANGUAGE instead
+_TEXT_NOUNS_NL = _TEXT_NOUNS.replace("|language|", "|")
+_MODS1 = rf"(?:(?i:{_MOD_WORDS})\s+){{1,3}}"
+# ln-2026-10-31e: a CLOSED list of semantic-field words, allowed only right before terms /
+# vocabulary / nouns / words ("In German kinship terms", "German family nouns have genders");
+# never before names ("German family names" is about surnames)
+_DOMAIN_WORDS = (
+    r"family|kinship|spatial|directional|colou?r|number|numeral|time|temporal|weather|body|"
+    r"food|animal|household"
+)
+# "X language" / "X-language" as a topic names no language: "Arabic language exam / course /
+# market / research" (a closed list of topic nouns right after "language")
+_TOPIC_AFTER_LANGUAGE = (
+    r"(?!\s+(?i:exams?|tests?|markets?|courses?|class(?:es)?|lessons?|schools?|teachers?|"
+    r"teaching|education|learning|learners?|students?|proficiency|skills?|polic(?:y|ies)|"
+    r"institutes?|academ(?:y|ies)|cent(?:er|re)s?|programs?|programmes?|research|curriculum|"
+    r"departments?|faculty|stud(?:y|ies)|degrees?|certificates?|requirements?|acquisition|"
+    r"instruction|training|media|press|newspapers?|television|radio|films?|movies?|books?|"
+    r"literature|initiatives?|nursing|football|clubs?|communit(?:y|ies)|speakers?|famil(?:y|ies)|"
+    r"groups?|movements?|rights|laws?|competitions?|olympiads?|contests?|awards?|prizes?|day|"
+    r"week|month|year)\b)"
+)
+# after the new prose / writing / style heads: what "in X" may be followed by (punctuation, the
+# end, a verb / determiner), never "of" ("German in the style of Goethe") and never a noun
+# ("Russian modern style dresses", "Russian classical prose writers"); _EN_NEXT is defined above
+_HEAD_END = rf"(?!\s+(?i:of)\b){_EN_NEXT}"
 _EN_AFTER = (
-    rf"(?:(?i:-language|\s+{_MODS}(?:{_TEXT_NOUNS})\b"
-    r"|\s+(?:for|says|means|meant|reads|translates|translated|renders|calls)\b)"
+    rf"(?:(?i:-language{_TOPIC_AFTER_LANGUAGE}"
+    rf"|\s+{_MODS}(?:language{_TOPIC_AFTER_LANGUAGE}|{_TEXT_NOUNS_NL})\b"
+    r"|\s+(?:for|says|means|meant|reads|translates|translated|renders|calls)\b"
+    rf"|\s+{_MODS}(?:{_DOMAIN_WORDS})\s+(?:terms?|vocabulary|nouns?|words?)\b)"
     # lower-case prose / writing / style only: "Finnish news prose", never a title ("Russian
-    # Prose Poetry")
-    rf"|\s+{_MODS}(?:prose|writing|style)\b)"
+    # Prose Poetry"); "style" needs a modifier ("Slovak poetic style", never "Russian style")
+    rf"|\s+{_MODS}(?:prose|writing)\b{_HEAD_END}|\s+{_MODS1}style\b{_HEAD_END})"
 )
 # "X in a / an / the <adjectives> style / register / tone": "formal Indonesian in an academic
-# style" (never "X in" anything else: "taught in Portuguese in schools")
-_EN_IN_STYLE = rf"\s+in\s+(?i:a|an|the)\s+{_MODS}(?i:style|register|tone|voice|manner)\b"
+# style" (never "X in" anything else: "taught in Portuguese in schools"; never "in the style of")
+_EN_IN_STYLE = rf"\s+in\s+(?i:a|an|the)\s+{_MODS}(?i:style|register|tone|voice|manner)\b{_HEAD_END}"
+# "the official / national ... language is X" is a topic (ln-2026-10-31e): fixed-width lookbehinds
+_TOPIC_LANG_BEFORE = "".join(
+    rf"(?<!{w}\s)"
+    for w in (
+        "official",
+        "Official",
+        "national",
+        "National",
+        "state",
+        "native",
+        "first",
+        "second",
+        "foreign",
+        "mother",
+        "main",
+        "primary",
+        "dominant",
+        "regional",
+        "minority",
+        "working",
+        "common",
+        "liturgical",
+    )
+)
 
 
 # after "<register> X" a text-style noun names the language too ("formal Greek historical
 # prose"); after a bare "X" it does not ("Russian Prose Poetry", a title)
-_EN_AFTER_REG = rf"(?i:\s+{_MODS}(?:{_TEXT_NOUNS}|prose|writing|style|speech)\b)"
+_EN_AFTER_REG = (
+    rf"(?i:\s+{_MODS}(?:language{_TOPIC_AFTER_LANGUAGE}|{_TEXT_NOUNS_NL}|prose|writing|style|"
+    r"speech)\b)"
+)
 
 
 _REGISTERS = (
@@ -416,8 +478,8 @@ def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
         # "Hungarian usually omits ...", "Russian allows ..." (never a person: "the Russian said")
         rf"{RE_PREFIX}{b}{x}\s+(?i:{_LANG_VERBS}){e}",
         # the text named as being in the language: "This sentence is German", "the text is Finnish"
-        rf"{RE_PREFIX}{b}(?i:sentences?|texts?|words?|passages?|phrases?|prompts?|questions?|"
-        rf"languages?|terms?|names?)\s+(?i:is|are|was|were)\s+(?:(?i:in|written\s+in)\s+)?{x}{e}",
+        rf"{RE_PREFIX}{b}(?:(?i:sentences?|texts?|words?|passages?|phrases?|prompts?|questions?|"
+        rf"terms?|names?)|{_TOPIC_LANG_BEFORE}(?i:languages?))\s+(?i:is|are|was|were)\s+(?:(?i:in|written\s+in)\s+)?{x}{e}",
         # a trailing language label after the word it tags: "الأدرينالين (adrenalin), Arabic"
         rf"{RE_PREFIX}[,;\u2014\u2013-]\s*{x}\s*[.)]?\s*$",
     )
@@ -437,6 +499,28 @@ _EL_NEXT = (
     r"η|ο|οι|το|τα|θα|μπορει|δεν|δηλαδη|ως)(?![^\W_]))"  # noqa: RUF001
 )
 _SR_NEXT = rf"(?=\s*(?:{_P}|$)|\s+(?:je|је|znaci|значи|se|се|kaze|каже|rec|реч)(?![^\W_]))"  # noqa: RUF001
+
+
+# ln-2026-10-31e: bare "Türkçe" (accent-folded "turkce") names the language only before
+# punctuation / the end or a text noun (see NAMING_OWN["tr"])
+_TR_MODS = r"(?:(?:yaygın|halk|bilimsel|resmi|dogru|genel|ozgun|tam|populer|gercek)\s+){0,2}"  # noqa: RUF001
+_TR_NOUNS = (
+    r"karsılıg\w*|karsılık\w*|karsılas\w*|esdeger\w*|es\s+anlam\w*|anlamdas\w*|zıt\s+anlam\w*|"  # noqa: RUF001
+    r"alfabe\w*|harf\w*|sozlu\w*|literatur\w*|karakter\w*|prompt\w*|isim\w*|ism[ıi]\w*|"  # noqa: RUF001
+    r"adı\w*|ad|adlar\w*|kaynak\w*|anagram\w*|turev\w*|baglam\w*|acıklama\w*|yazım\w*|"  # noqa: RUF001
+    r"yazılıs\w*|kelime\w*|sozcu\w*|soz|sozu|sozler\w*|terim\w*|metin\w*|metn\w*|ceviri\w*|"  # noqa: RUF001
+    r"ifade\w*|deyim\w*|dil\w*|olarak|ile|telaffuz\w*|cumle\w*|soylenis\w*|anlam\w*|"
+    r"betimleme\w*|tanım\w*|denir|denilir"  # noqa: RUF001
+)
+_TR_BARE = (
+    r"(?i)(?<![^\W_])turkce(?![^\W_])(?=\s*(?:"
+    + _P
+    + r"|$)|\s+"
+    + _TR_MODS
+    + r"(?:"
+    + _TR_NOUNS
+    + r")(?![^\W_]))"
+)
 
 
 def _rx(*patterns: str) -> tuple[str, ...]:
@@ -495,8 +579,24 @@ NAMING_OWN: dict[str, tuple[str, ...]] = {
         ),
     ),
     "sw": ("Kiswahili", *_rx(r"(?i)(?<![^\W_])(?:kutoka|kwa|katika)\s+swahili(?![^\W_])")),
-    "tr": ("Türk dili", *_rx(r"(?i)(?<![^\W_])turkce\w*")),
-    "vi": ("tiếng Việt", "Việt ngữ"),
+    # ln-2026-10-31e: a suffixed form (Türkçede, Türkçe'de, Türkçesi) names the language; bare
+    # "Türkçe" only before punctuation / the end or a closed list of text nouns, optionally after
+    # one or two closed-list modifiers ("Türkçe eş anlamlısı", "Türkçe yaygın adı"), never as the  # noqa: RUF003
+    # adjective of a topic ("Türkçe futbol", "Türkçe spor", "Türkçe edebiyat")
+    "tr": ("Türk dili", *_rx(r"(?i)(?<![^\W_])turkce'?[^\W\d_]+", _TR_BARE)),
+    # ln-2026-10-31e: "tiếng Việt" / "Việt ngữ" only as the language of a text: after a closed list
+    # of words (bằng / trong / sang / từ / qua / theo / dùng / gọi, "in / into / from / by / using /
+    # call Vietnamese"; tên / văn bản / đoạn văn / câu / chữ / nghĩa / từ vựng / từ điển / thuật
+    # ngữ / tên khác / phiên âm, "the Vietnamese name / text / word / vocabulary") or "(", or
+    # before ":" / (còn, quen, thường) gọi / nghĩa / dịch / của; never as a topic ("môn tiếng
+    # Việt", "học tiếng Việt", "Ngày Tiếng Việt", "tiếng Việt là một trong những ngôn ngữ")
+    "vi": _rx(
+        r"(?i)(?:(?<![^\W_])(?:bang|trong|sang|tu|qua|theo|dung|goi|ten|van\s+ban|đoan\s+van|cau|"
+        r"chu|nghia|ban\s+dich|cach\s+viet|chinh\s+ta|phat\s+am|tu\s+vung|tu\s+đien|"
+        r"thuat\s+ngu|ten\s+khac|phien\s+am)\s+|\(\s*)(?:tieng\s+viet|viet\s+ngu)(?![^\W_])",
+        r"(?i)(?<![^\W_])(?:tieng\s+viet|viet\s+ngu)\s*(?::|\s(?:(?:con|quen|thuong|hay)\s+)?"
+        r"(?:goi|nghia|co\s+nghia|dich|đoc|viet\s+la|cua|la\s+[\"'“«*]))",
+    ),
     "cs": ("česky", *_rx(r"(?i)(?<![^\W_])cestin\w*", r"(?i)(?<![^\W_])cesk\w*\s+jazy[kc]\w*")),
     "da": ("på dansk", *_rx(r"(?i)(?<![^\W_])danske?\s+sprog\w*")),
     "de": (
