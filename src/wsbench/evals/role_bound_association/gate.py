@@ -437,6 +437,16 @@ _PRONOUNS = ("him", "her", "them", "他", "她", "他们", "她们")
 # round 3: for a split form and a multi-word needs_object form, an object word that is itself a
 # possessor is not the object ("took a picture of the visitor's car", "kicked the patron's bag
 # out"); a one-word form keeps it ("pads the client's invoice")
+# round 5: adverbs right after an object "her" ("questioned her repeatedly", "followed her
+# everywhere"); never "home" / "back" ("saved her home")
+_OBJ_ADV = frozenset(
+    {"again", "throughout", "there", "here", "everywhere", "too", "now", "today", "tonight"}
+    | {"anyway", "once", "twice", "daily", "immediately", "repeatedly", "constantly", "closely"}
+    | {"gently", "harshly", "sharply", "relentlessly", "mercilessly", "publicly", "privately"}
+    | {"intensely", "calmly", "kindly", "warmly", "angrily", "softly", "firmly", "politely"}
+    | {"rudely", "cruelly", "loudly", "furiously", "aggressively", "thoroughly", "carefully"}
+    | {"patiently", "tenderly", "lovingly", "endlessly", "fiercely", "bitterly", "openly"}
+)
 _APPOS = ("serving as", "acting as", "who is", "who was", "working as")
 _NOT_POSS = r"(?!['\u2019]s(?![^\W_]))"
 
@@ -468,12 +478,16 @@ def _with_object(text: str, form: str, objects: Sequence[str], preps: Sequence[s
     # neighbor serving as a witness"); never a bare comma ("questioning the case, the witness")
     word = rf"(?!(?:{_alt(sorted(_NOT_MOD))}){w})[^\W\d_]+"
     appos = rf"(?:{det}(?:{word}\s+){{0,2}}{word},?\s+(?:{_alt(_APPOS)}){w}\s+)?"
-    # round 4: in a multi-word form a "her" followed by a noun is a possessor, not the object
-    # ("turned in her paper to the dean"); "turned in her and ..." keeps it
-    her_poss = rf"(?!(?<=\bher)\s+(?!(?:{_alt(sorted(_NOT_MOD))}){w})[^\W\d_]+)"
+    # round 4: a "her" followed by a noun or adjective is a possessor, not the object ("turned in
+    # her paper to the dean"); round 5: in a one-word form too ("questioned her own strategy",
+    # "reported her findings to the dean", as "his" never is). "her" before a word ending the
+    # noun phrase or an adverb keeps it ("turned in her and ...", "questioned her about",
+    # "followed her again")
+    end = _alt(sorted(_NOT_MOD | _OBJ_ADV))
+    her_poss = rf"(?!(?<=\bher)\s+(?!(?:{end}){w})[^\W\d_]+)"
     pat = (
         rf"(?<![^\W_]){re.escape(form)}{w}\s+{adv}{prep}{appos}{det}{mod}(?:{alt}){w}"
-        rf"{_NOT_POSS + her_poss if ' ' in form else ''}"
+        rf"{_NOT_POSS if ' ' in form else ''}{her_poss}"
     )
     return re.search(pat, text, flags=re.I) is not None
 
