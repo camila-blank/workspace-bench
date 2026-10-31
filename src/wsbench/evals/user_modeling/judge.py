@@ -89,7 +89,11 @@ def value_gate(quote: str, pick_value: str, lines: list[digest.Line], cells: lis
 _NO_STEM_ECHO = frozenset({"Country", "Nationality", "Continent", "Ethnicity", "Region"})
 # inflectional / agentive suffixes stripped to compare two listed forms of ONE value, plus an
 # explicit lemma table for the pairs suffix stripping cannot join (review of #200)
-_SUFFIXES = ("hood", "ism", "ist", "ers", "er", "ed", "es", "s", "d")
+# (the plural -ists before -ist, so "anthropologists" and "anthropologist" share a lemma)
+_SUFFIXES = ("hood", "ism", "ists", "ist", "ers", "er", "ed", "es", "s", "d")
+# plural -es / -s strip with no 4-letter floor ("cats" -> "cat", "guys" -> "guy"), only keeping a
+# 3-letter stem
+_PLURALS = frozenset({"es", "s"})
 _LEMMAS = {
     "divorce": "divorc",
     "divorced": "divorc",
@@ -107,6 +111,12 @@ _LEMMAS = {
     "buddhism": "buddh",
     "nurses": "nurse",
     "nurse": "nurse",
+    "freelance": "freelanc",
+    "freelancer": "freelanc",
+    "freelancers": "freelanc",
+    "freelancing": "freelanc",
+    "freelanced": "freelanc",
+    "fulltime": "time",  # the unhyphenated "full-time" (a multi-word form joins by its last word)
 }
 
 
@@ -116,7 +126,7 @@ def _lemma(w: str) -> str:
     if w in _LEMMAS:
         return _LEMMAS[w]
     for suf in _SUFFIXES:
-        if w.endswith(suf) and len(w) - len(suf) >= 4:
+        if w.endswith(suf) and len(w) - len(suf) >= (3 if suf in _PLURALS else 4):
             return w[: -len(suf)]
     return w
 
