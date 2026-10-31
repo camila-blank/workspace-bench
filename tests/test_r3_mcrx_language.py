@@ -150,3 +150,62 @@ def test_arabic_namings_of_words_still_count():
     assert _ar("الاسم بالعربية حسب الجمعيات الرسمية: عشقهر")
     # a teaching word BEFORE the naming, in its own sentence, does not veto the next one
     assert _ar('كلمة "تعلم" مشهورة. هذه الكلمة باللغة العربية تعني learning.')
+
+
+def test_language_pins_skip_topic_lines():
+    # mlmh-ar-thimphu all-layer: a pinned Arabic grammar-topic line was credited by the judge
+    from wsbench import digest
+
+    iid = "mlmh-ar-thimphu-buddhism"
+    topic = (
+        "(Dinamic) في اللغة العربية الديناميكية هي واحدة من أهم مواضيع الأسئلة الشائعة حول النحو"
+    )
+    naming = 'تيمفو (Thimphu) يُعرف باللغة العربية باسم "تيمفو".'
+    cells = _cells(iid, [topic, naming])
+    ctx = _ctx(iid, cells)
+    col = digest.Collapse()
+    col.cells[iid] = cells[0]
+    col.grounded[iid] = []
+    pinned: list[str] = []
+
+    def fake_pin(col, item_id, cs, preds, s, per):
+        pinned.extend(ln.text for ln in digest.native_lines(cs) if any(p(ln) for p in preds))
+        return 0
+
+    import wsbench.multitoken.mcrx as m
+
+    orig, settings = m.digest.pin_lines, m.digest.settings
+    m.digest.pin_lines, m.digest.settings = fake_pin, lambda *a, **k: None
+    try:
+        mcrx._pin_options(ctx, col)
+    finally:
+        m.digest.pin_lines, m.digest.settings = orig, settings
+    assert naming in pinned and topic not in pinned
+
+
+def test_multihop_raw_leg_takes_one_anchored_naming():
+    # ru-monarch-michoacan L40: one sample names Russian beside the bridge; the other units
+    # have their usual support
+    from wsbench.multitoken import family as fam
+
+    iid = "mlmh-ru-monarch-michoacan"
+    header, items = load_bank(f"evals/{FAM}/items_v2.json")
+    it = next(i for i in items if i["id"] == iid)
+    units = regex.scored_units(it, regex.contract_for(header, str(header["family"])))
+    bridge = {u.role: u.all_forms()[0] for u in units if u.role != LANGUAGE_ROLE}
+    named = (
+        f"Это {bridge['bridge_native']}. На русском языке этот вид называется "
+        f"{bridge['bridge_l2']}."
+    )
+    filler = [f"{bridge['bridge_native']} и {bridge['bridge_l2']}."] * 2
+    cells = _cells(iid, [named, *filler], layer=40)
+    anchors = fam.anchor_forms(it)
+    old = fam.raw_layer_hits(cells, units)
+    new = fam.raw_layer_hits(cells, units, None, anchors, require_anchor=False)
+    assert not regex.layer_passes(old[40], units)
+    assert regex.layer_passes(new[40], units)
+    # an unanchored lone naming still needs the old two samples
+    lone = _cells(iid, ["На русском языке слово дом значит house.", *filler], layer=40)
+    assert not regex.layer_passes(
+        fam.raw_layer_hits(lone, units, None, anchors, require_anchor=False)[40], units
+    )

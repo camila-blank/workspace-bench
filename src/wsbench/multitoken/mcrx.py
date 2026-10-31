@@ -397,7 +397,7 @@ PIN_PER_OPTION = 3  # raw samples pinned per option (most repeated first), never
 # option outside the table gets its English contexts plus
 # the frozen autonym stems of PIN_AUTONYMS (looser than the table's forms, so a distractor is
 # never pinned less readily than the gold).
-PIN_VERSION = "pins-v2"
+PIN_VERSION = "pins-v2"  # every naming form; never a topic line (_RESCUE_TOPIC)
 PIN_AUTONYMS: dict[str, tuple[str, ...]] = {
     "Albanian": ("shqip",),
     "Aramaic": ("ארמית", "ܐܪܡܝ"),
@@ -460,9 +460,14 @@ def _pin_options(ctx: _Ctx, col: digest.Collapse) -> None:
                 # option by its shown head word only (aliases exist for some options only)
                 forms = _option_naming_forms(o, ctx.native) if role == LANGUAGE_ROLE else {"o": [o]}
                 hit = regex.forms_matcher(forms)
+                lang = role == LANGUAGE_ROLE
 
-                def pred(ln: Line, hit: Callable[[list[str]], bool] = hit) -> bool:
-                    return hit(_pieces(ln))
+                def pred(
+                    ln: Line, hit: Callable[[list[str]], bool] = hit, lang: bool = lang
+                ) -> bool:
+                    # round 3: a language pin is never a topic line (the pins-v2 autonym forms
+                    # are loose: "في اللغة العربية الديناميكية ... النحو" reached the judge)
+                    return hit(_pieces(ln)) and not (lang and _rescue_topic(ln.text))
 
                 preds.append(pred)
         digest.pin_lines(col, item_id, cells, preds, s, PIN_PER_OPTION)
@@ -497,6 +502,7 @@ _RESCUE_TOPIC = re.compile(
             "تعلم", "المتعلم", "مدرس", "apprend", "enseign", "aprend", "ensin", "insegn", "lern",
             "unterricht", "schul", "nauk", "szkol", "ucen", "ucit", "opetu", "oppi", "koulu",
             "giao duc", "hoc tieng", "교육", "학습", "学习", "教育", "μαθ", "σχολ",
+            "grammar", "gramat", "grammat", "النحو", "الصرف", "قواعد", "موضوع", "مواضيع", "topic",
         )
     )
 )  # fmt: skip
@@ -578,9 +584,11 @@ def language_rescue(
 
 def _summary(ctx: _Ctx) -> FamilyResult:
     from wsbench.multitoken.family import (
+        ANCHOR_SUPPORT_FAMILIES,
         RAW_REGEX_FAMILIES,
         _collapse,
         _spec_pv,
+        anchor_forms,
         raw_layer_hits,
     )
 
@@ -653,7 +661,12 @@ def _summary(ctx: _Ctx) -> FamilyResult:
             # final r1: the digest's pooled units (plan 0020), supplemented by the raw samples of
             # each read layer (every unit within that ONE layer)
             raw_cells = [c for layer in ctx.layers for c in ctx.positions.get((item_id, layer), [])]
-            by_layer = raw_layer_hits(raw_cells, units)
+            anchors = (
+                anchor_forms(ctx.by_id[item_id])
+                if name in ANCHOR_SUPPORT_FAMILIES and getattr(ctx.rep, "kind", None) != "tokens"
+                else None
+            )
+            by_layer = raw_layer_hits(raw_cells, units, None, anchors, require_anchor=False)
             hits = {
                 u.role: list(
                     dict.fromkeys(
