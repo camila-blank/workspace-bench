@@ -997,7 +997,7 @@
    ],
    "model": "claude-opus-5-5",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "mh2-mc-2026-10-31",
+   "instrument": "mh2-mc-2026-10-31b",
    "written": "2026-10-30T14:09:03+00:00"
   },
   "described": {
@@ -1017,7 +1017,7 @@
    ],
    "model": "claude-opus-5-5",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "mh2-mc-2026-10-31",
+   "instrument": "mh2-mc-2026-10-31b",
    "written": "2026-10-30T14:10:36+00:00"
   },
   "uniform": {
@@ -1037,7 +1037,7 @@
    ],
    "model": "seeded-uniform",
    "prompt_version": "lucky-2026-09-16",
-   "instrument": "mh2-mc-2026-10-31",
+   "instrument": "mh2-mc-2026-10-31b",
    "written": "2026-10-30T14:10:36+00:00"
   }
  }

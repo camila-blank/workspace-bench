@@ -208,6 +208,34 @@ def test_partial_layers_are_recorded(tmp_path, monkeypatch):
     assert col.unsummarized == {"a"} and not col.empty
 
 
+def test_partial_layers_beyond_a_fifth_are_undecided(tmp_path, monkeypatch):
+    """1 of 3 layers REFUSED (33% > 20%): the item is unsummarized (undecided), never judged on
+    the two served layers; the refused layer is still recorded on the row and in extras. 1 of 6
+    refused (<= 20%) still judges, and a failed (not refused) layer never undecides."""
+    from wsbench import llm
+
+    def refuse(system, user):
+        return llm.REFUSED_JSON if "L24" in user else _per_layer_reply(system, user)
+
+    Scripted(monkeypatch, refuse)
+    col = _collapse(tmp_path, "test_af_union", {"a": _layers_item(3)})
+    assert col.unsummarized == {"a"} and "a" not in col.summaries
+    assert col.cells["a"].samples == ("",) and col.reasons["a"] == "partial_refused"
+    row, ex = col.row("a"), col.extras()
+    assert row["summary_state"] == "unsummarized" and row["summary_partial_layers"] == [24]
+    assert row["summary_refused_layers"] == [24] and row["summary_partial_undecided"] is True
+    assert ex["n_items_partial"] == 1 and ex["n_items_partial_undecided"] == 1
+    assert ex["n_items_partial_refused"] == 1 and digest.PARTIAL_UNDECIDED_SHARE == 0.2
+
+    col = _collapse(tmp_path / "six", "test_af_union", {"a": _layers_item(6)})
+    assert col.summaries["a"] and col.refused_layers == {"a": [24]}
+    assert col.row("a")["summary_partial_undecided"] is False
+
+    Scripted(monkeypatch, lambda s, u: None if "L24" in u else _per_layer_reply(s, u))
+    col = _collapse(tmp_path / "failed", "test_af_union", {"a": _layers_item(3)})
+    assert col.summaries["a"] and col.partial == {"a": [24]} and not col.refused_layers
+
+
 # ---------------------------------------------------------------- F1: hierarchical merge
 
 

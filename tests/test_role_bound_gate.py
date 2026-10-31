@@ -221,3 +221,54 @@ def test_block_forms_leave_own_terms_alone(quote, role):
 def test_block_words_are_not_name_variants():
     assert gate.name_ref("Grand mother hugged her", "Grant", LEX) is False
     assert gate.name_ref("Grant hugged her", "Grant", LEX) is True
+
+
+# ---------------------------------------------------------------- a name with a conflicting role
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Mia hugs Aunt Ruth",
+        "Mia hugs Mother Ruth",
+        "Mia hugs Ruth, the aunt",
+        "Mia hugs Ruth, who is an aunt",
+        "Mia hugs Ruth, the parent",
+    ],
+)
+def test_name_with_a_conflicting_role_is_not_the_gold_role(quote):
+    """Camila: 'parent' must not pass for 'grandparent'. A name stands for the gold role only
+    when the same quote attaches no different role to it."""
+    assert gate.conflicting_role(quote, "Ruth", "grandparent", LEX)
+    assert not gate.person_ref(quote, "Ruth", "grandparent", LEX)
+    g = _check(quote, [_prose(quote)])
+    assert g["quote_ok"] and g["agent_ref"] and g["patient_ref"] is False and g["ok"] is False
+
+
+def test_named_client_called_an_accountant_is_not_the_client():
+    q = "Dale, who works as an accountant, calls the receptionist"
+    assert not gate.person_ref(q, "Dale", "client", LEX)
+    assert gate.person_ref("Dale calls the receptionist", "Dale", "client", LEX)
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Mia hugs Ruth",
+        "Mia hugs Grandma Ruth",
+        "Mia hugs Ruth, the grandmother",
+        "Mia's aunt watches as she hugs Ruth",
+        "Ruth hugs Mia and her mother",
+    ],
+)
+def test_plain_or_own_role_name_still_resolves(quote):
+    """A plain name, or one with its own role term, resolves as before; a role term the name
+    does not attach to (possessive, another person) is no conflict."""
+    g = _check(quote, [_prose(quote)])
+    assert g["agent_ref"] and g["patient_ref"] and g["ok"], g
+
+
+def test_agent_name_beside_the_patient_role_term_is_no_conflict():
+    q = "Mia runs to hug her grandmother"
+    g = _check(q, [_prose(q)])
+    assert g["agent_ref"] and g["patient_ref"] and g["ok"]
