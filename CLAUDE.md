@@ -257,7 +257,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   removed 2026-10-30 by plan 0041 as superseded by multihop_mt_v2) are gone from the code, banks and ATI file;
   `results.macro` excludes a stale `results.json` of theirs in an old run dir (reason `removed`).
 - HallucinationBench index (plan 0040): `wsbench.hbindex` reads the frozen vendored
-  `evals/hallucinationbench/index.json` (hindex-v5 at one HB sha; written ONLY by
+  `evals/hallucinationbench/index.json` (hindex-v6 at one HB sha, plans 0040 + 0057; written ONLY by
   `scripts/vendor_hb_index.py`, which refuses a sha or version mismatch) and `methods.json`
   (WSB arm -> HB method; an unverified checkpoint goes under `not_measured`, never aliased).
   `wsbench report` appends the block after the macro table (`full`, else `matched (no
