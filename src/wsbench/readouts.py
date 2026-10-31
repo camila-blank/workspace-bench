@@ -339,13 +339,15 @@ def write_sidecar(path: Path, **meta: Any) -> Path:
 
 
 def _bullets(s: str) -> list[str]:
-    """The top-level ``- `` bullets of one packed sample (continuation lines join their bullet)."""
+    """The top-level ``- `` bullets of one packed sample (continuation lines join their bullet,
+    KEEPING their line breaks: a packed x4 generation is often several lines of verse, and
+    poetry's line-ending gate reads them; plan 0038)."""
     out: list[str] = []
     for line in s.split("\n"):
         if line.startswith("- "):
             out.append(line[2:].strip())
         elif out and line.strip():
-            out[-1] = (out[-1] + " " + line.strip()).strip()
+            out[-1] = (out[-1] + "\n" + line.strip()).strip()
     return out
 
 

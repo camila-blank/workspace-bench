@@ -2,8 +2,10 @@
 sampling for item gating, each request row carrying its own settings.
 
 Request row: ``{key, family, messages | text, n, temperature, top_p, top_k, max_tokens,
-enable_thinking, greedy, prefill?}``. A row may ask for a greedy draw AND ``n`` sampled draws;
-thinking on/off is per row. Output row: ``{key, draw, greedy, text, thinking, finish_reason}``.
+enable_thinking, greedy, prefill?, raw?}``; ``raw: true`` feeds ``text`` verbatim (no chat
+template, no special tokens: the poetry plain-continuation gate leg). A row may ask for a greedy
+draw AND ``n`` sampled draws; thinking on/off is per row. Output row: ``{key, draw, greedy,
+text, thinking, finish_reason}``.
 Grading happens locally, per family, by the family spec's own rule."""
 
 import hashlib
@@ -35,7 +37,11 @@ def request_ids(tok: Any, row: Mapping[str, Any]) -> list[int]:
     as one user turn (``text_inversion.qwen_prompt_ids`` with thinking off: no special token can
     match inside the user span); ``prefill`` appended verbatim to the assistant turn."""
     think = bool(row.get("enable_thinking"))
-    if "messages" in row:
+    if row.get("raw"):  # a plain continuation: the text verbatim, no template (poetry plain leg)
+        if "messages" in row or think:
+            raise ValueError(f"{row['key']}: raw=true takes `text` and enable_thinking=false")
+        ids = list(tok(str(row["text"]), add_special_tokens=False)["input_ids"])
+    elif "messages" in row:
         out = tok.apply_chat_template(
             list(row["messages"]), tokenize=True, add_generation_prompt=True, enable_thinking=think
         )

@@ -186,8 +186,9 @@ def test_spec_prompt_version_rule_and_forbidden_line():
     # (bank-2026-10-30b); the medical families keep their own stamp beside it
     assert bp.PROMPT_VERSION == "bank-2026-10-30b"
     # plan 0048 (sanctioned): multihop has its own MC stamp now (test_multihop.py); wrong_bridge
-    # too (plan 0050); association left the bank judge (plan 0039)
-    for fam in ("typo", "poetry"):
+    # too (plan 0050); association left the bank judge (plan 0039);
+    # poetry: its own MC judge (plan 0038)
+    for fam in ("typo",):
         assert spec_of(fam).judge.prompt_version == "bank-2026-10-30b"
         assert fam not in bp.FAMILY_PROMPT_VERSIONS
     it = _items(MAIN)[0]

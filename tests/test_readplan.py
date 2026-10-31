@@ -74,7 +74,8 @@ def test_plans_match_the_bank_specs():
     assert {s.positions["kind"] for s in multihop} == {"all_from_end"}
     assert {s.lite_positions["kind"] for s in multihop} == {"offset_from_end"}
     poetry = readplan.plan("poetry")[0]
-    assert poetry.positions == {"kind": "line_one_newline"} and poetry.layers == readplan.GRID
+    assert poetry.positions == {"kind": "line_one_tail"} and poetry.layers == readplan.GRID
+    assert poetry.lite_positions == {"kind": "final_token"}
     jb = readplan.plan("jailbreak_recognition")[0]
     span = jb.positions["positions"]
     assert jb.render == "chat_context" and jb.messages[-1]["role"] == "user"
@@ -162,7 +163,7 @@ def test_cli_writes_one_file_per_family(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "poetry: 3 items" in out and "buggy_code: 3 items" in out
     rows = [json.loads(x) for x in (tmp_path / "poetry.jsonl").read_text().splitlines()]
-    assert len(rows) == 3 and rows[0]["positions"] == {"kind": "line_one_newline"}
+    assert len(rows) == 3 and rows[0]["positions"] == {"kind": "line_one_tail"}
     assert rows[0]["layers"] == readplan.GRID and rows[0]["render"] == "plain" and rows[0]["text"]
     assert main(["plan", "families=nope", f"out={tmp_path}"]) == 2
 
@@ -187,6 +188,29 @@ def test_offsets_from_end_reports_each_negative_offset():
     assert readplan.resolve({"kind": "offsets_from_end", "ks": [60, 1]}, toks) == [
         -1
     ]  # out of range dropped
+
+
+# the Qwen3.6-27B tokens of couplet-ahead-head's render (plain, no special tokens)
+COUPLET = ["A", "Ġrh", "ym", "ing", "Ġcouple", "t", ":", "Ċ", "The", "Ġcaptain", "Ġpointed", "Ġat",
+           "Ġthe", "Ġroute", "Ġahead", ",", "Ċ", "And", "Ġtold", "Ġhis", "Ġcrew", "Ġto", "Ġfollow",
+           "Ġwhere", "Ġhe", "'d", "Ġ"]  # fmt: skip
+
+
+def test_poetry_full_and_lite():
+    """plan 0038 P7: full = line one's last word through its newline; lite = that newline (the
+    v1 site); never a position of the line-two stub."""
+    full = readplan.resolve({"kind": "line_one_tail"}, COUPLET)
+    assert full == [14, 15, 16]
+    assert readplan.lite_select(full, readplan.FINAL) == [16]
+    assert readplan.resolve({"kind": "line_one_newline"}, COUPLET) == [16]
+    lite_row = readplan.plan("poetry", reads="lite")[0]
+    assert readplan.resolve(lite_row.positions, COUPLET) == [16]
+    # a multi-token word and trailing punctuation; the prefill anchor
+    assert readplan.resolve({"kind": "line_one_tail"}, ["Ċ", "The", "Ġmac", "beth", '."', "Ċ"]) == [
+        2, 3, 4, 5
+    ]  # fmt: skip
+    chat = ["<|im_start|>", "assistant", "Ċ", "The", "Ġsky", ",Ċ", "And", "Ġthe"]
+    assert readplan.resolve({"kind": "line_one_tail", "anchor": "last_newline"}, chat) == [4, 5]
 
 
 # ---------------------------------------------------------------- plan 0038 C7: chain read site

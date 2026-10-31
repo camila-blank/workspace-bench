@@ -311,7 +311,10 @@ def test_extractor_matches_numbers_value_in_both_modes(runs):
         assert n_true + n_false > 0, key  # every family decides something in both modes
     # the fake LLM yields passes in most families, so the check is not vacuous
     passing = {f for (f, m), (n_true, _n) in tally.items() if n_true}
-    assert len(passing) >= len(fams) * 2 // 3
+    # poetry's deterministic line-ending gates (plan 0038) reject every random quote, so it never
+    # passes under the fake LLM and is left out of the denominator (its passes: test_poetry.py)
+    assert "poetry" not in passing
+    assert len(passing) >= (len(fams) - 1) * 2 // 3
     for f in ("user_modeling", "moral_rationale", "relational_multihop", "role_bound_association"):
         assert tally[(f, "native")][0] > 0, f  # per-cell binary families: native passes seen
 

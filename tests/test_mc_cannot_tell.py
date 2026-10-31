@@ -62,6 +62,12 @@ def _last_option(family: str) -> str:
         _h, items = j.load_bank(registry.bank_path(family))
         opts = j.option_sets(items)[items[0]["id"]][0]
         return p.option_lines(opts).splitlines()[-1]
+    if family == "poetry":
+        from wsbench.banks import load_bank as load_bank_file
+        from wsbench.evals.poetry.options import option_set
+
+        _h, items = load_bank_file(registry.bank_path(family))
+        return option_set(items[0])[0][-1]
     if family == "multi_concept_directed_modulation":
         from wsbench.evals.multi_concept_directed_modulation import options as o
         from wsbench.evals.multi_concept_directed_modulation import prompts as p

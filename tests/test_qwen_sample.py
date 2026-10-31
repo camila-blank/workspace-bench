@@ -55,3 +55,13 @@ def test_per_row_settings_honoured():
         gs.validate(_row(n=0, greedy=False, text="x"))
     with pytest.raises(ValueError):
         gs.validate(_row(text="x", messages=[]))
+
+
+def test_raw_row_is_the_text_verbatim():
+    """plan 0038: the poetry plain-continuation leg feeds the couplet with no chat template."""
+    text = "A rhyming couplet:\nThe sky,\nAnd "
+    assert gs.request_ids(Tok(), _row(text=text, raw=True)) == [ord(c) for c in text]
+    with pytest.raises(ValueError):
+        gs.request_ids(Tok(), _row(messages=[{"role": "user", "content": "x"}], raw=True))
+    with pytest.raises(ValueError):
+        gs.request_ids(Tok(), _row(text=text, raw=True, enable_thinking=True))
