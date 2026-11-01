@@ -25,7 +25,12 @@ RULE_VERSION = "+exact-int+keys-union"
 # (judge.NATIVE_PROMPT_VERSION)
 SUMMARY_RULE_VERSION = "+cons-r3"
 CALL_VERSION_SUMMARY = CALL_VERSION + SUMMARY_RULE_VERSION
-PROMPT_VERSION = CALL_VERSION + RULE_VERSION + SUMMARY_RULE_VERSION
+# round 4 +cons-r4 (summary mode, deterministic; Camila r2 / ANSWERS_R2 §9: "the judge must use
+# the consensus marks"): every consensus-marked digest key is counted among the values the judge
+# names (judge.verdict ``consensus``), so a judge that leaves a marked value out (8 all-layer
+# items at cons-r3: absval-093, fracadd-058, ...) cannot drop it. Stamp only: no call re-asked
+CONSENSUS_USE_VERSION = "+cons-r4"
+PROMPT_VERSION = CALL_VERSION + RULE_VERSION + SUMMARY_RULE_VERSION + CONSENSUS_USE_VERSION
 # cells=all: one call per (item, layer) over every position of that layer (Camila, 2026-09-23 06:14:
 # "for user modeling and arithmetic let's just batch it - feed it everything at once!"). Same
 # instructions as PROMPT_VERSION, different packaging, so its own version tag. 2026-10-30: the

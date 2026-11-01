@@ -56,6 +56,17 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   layer, goes to ONE numbers digest (`digest.collapse`, `summ_numbers=5`, `summ_rare=0`, the
   `task` variant with `DIGEST_TASK_NOTE`, hierarchical overflow, no readout dropped; asserted
   through `expect_all`). `extras.summary.n_truncated_items` is 0 on every complete run.
+- **Ties extend the five (round 4; Camila r2: "ties should be an exception, so we can include
+  more than 5 numbers if there's a tie").** The digest asks for `summ_ties = 5` spare numbers
+  (10 in all) and `digest.tie_cut` keeps the first five in the summarizer's order plus every
+  later number whose support (samples stating it) ties or beats the weakest of those five and
+  is at least 2 samples; everything below is cut as before, so a flat run of one-off numbers is
+  still held to five. `col.diag["n_items_tie_extended"]` counts the items kept above five. The
+  stamp's digest suffix carries `-ties5` (`...+digest-v5-task-extractive-ties5+sj-v10`); the
+  digest calls are new (the prompt asks for 10 numbers), so the family needs a re-run. Live
+  check on the first 30 bank items at all-layer (final O-lens readouts, fresh digests): 23 keep
+  6-9 numbers, and no item's verdict changes against the heads-v3 run (3 pass, 27 fail, as
+  before).
 - **The MC judge (Camila: "either an mc judge OR use the same method as arithmetic
   intermediates": both).** One call per (item, intermediate slot) on the item's digest
   (`SYSTEM_MC` / `USER_MC` below; 156 calls per arm): the 8 frozen candidates plus "cannot tell
@@ -71,7 +82,7 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   languages such as sieben / veintiséis; Camila: "any language should be read"), or the quote is
   a number word split across adjacent positions of one layer; a multi-digit number is never
   assembled from digit tokens at separate positions, nor from two tokens of one list (see
-  "Token lenses" below); (c) the gold is one of the digest's five number keys; (d) the quoted
+  "Token lenses" below); (c) the gold is one of the digest's number keys (five, or more on a tie); (d) the quoted
   line naming the gold is not a number flood
   (`digest.number_flood`: a token list holding >= 5 distinct numerals, or a list-shaped prose run
   of >= 5, including a bulleted list of bare numbers). A pick supported only by flood lines is
@@ -142,7 +153,7 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   (`n_empty_cells`). Rows add `answer_in_digest` / `start_in_digest` (whether the answer / start
   took one of the five key slots).
 - **Provenance.** `prompt_version` = `digest.prompt_version("chain-mc-2026-10-30+heads-v3", args, family)`,
-  i.e. `chain-mc-2026-10-30+heads-v3+digest-v5-task-extractive+sj-v10` at the defaults (judge calls keyed by
+  i.e. `chain-mc-2026-10-30+heads-v3+digest-v5-task-extractive-ties5+sj-v10` at the defaults (judge calls keyed by
   `MC_CALL_VERSION` = `chain-mc-2026-10-30`, so the heads gate re-asks nothing) (`+reads-lite` under lite, `+rule-any`
   under `opts=rule=any`); `config.reads`, `sampling`, `sampling_source`, `reader`,
   `reads_checked`, `layers_judged` come from the shared loader.
