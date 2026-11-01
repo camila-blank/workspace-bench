@@ -471,3 +471,123 @@ def test_stride_declined_twice_stays_unsummarized(tmp_path, fam, monkeypatch):
     seen.clear()
     col = _run(tmp_path, {"a": _cells("a", 2)})  # a refusal is never cached: re-asked
     assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
+
+
+# ------------------------------------------------- Sonnet 5.5 fallback switch (Camila 2026-11-01)
+
+LEGACY_VIA = "\x00pre_switch_rows_carry_no_served_via"
+
+
+def test_default_refusal_model_is_sonnet_5_5_and_sonnet_5_is_retired():
+    assert digest.REFUSAL_MODEL == "claude-sonnet-5-5"
+    assert set(digest.RETIRED_REFUSAL_MODELS) == {"claude-sonnet-5"}
+    assert digest.REFUSAL_MODEL not in digest.RETIRED_REFUSAL_MODELS
+
+
+def test_stale_fallback_rule_both_ways():
+    sb, via = llm.SERVED_BY, digest.SERVED_VIA
+    stale = digest._stale_fallback
+    # stale: a pre-switch Sonnet 5 row; a client row of another model; a client row, no fallback
+    assert stale({"items": [], sb: "claude-sonnet-5"}, "claude-sonnet-5-5")
+    assert stale({"items": [], sb: "claude-sonnet-5", via: "client"}, "claude-sonnet-5-5")
+    assert stale({"items": [], sb: "claude-sonnet-5-5", via: "client"}, None)
+    # kept: the run's own client model; server-side rows (tagged or pre-switch); unserved rows
+    assert not stale({"items": [], sb: "claude-sonnet-5-5", via: "client"}, "claude-sonnet-5-5")
+    assert not stale({"items": [], sb: "claude-sonnet-5", via: "client"}, "claude-sonnet-5")
+    assert not stale({"items": [], sb: "claude-opus-4-8", via: "server"}, "claude-sonnet-5-5")
+    assert not stale({"items": [], sb: "claude-opus-4-8"}, "claude-sonnet-5-5")
+    assert not stale({"items": []}, "claude-sonnet-5-5") and not stale(None, None)
+
+
+@pytest.mark.parametrize("overflow", ["hierarchical", "stride"])
+def test_retired_sonnet5_digest_is_a_cache_miss_rerun_on_sonnet55(
+    tmp_path, fam, monkeypatch, overflow
+):
+    """A digest Sonnet 5 served before the switch (no SERVED_VIA) is re-asked under the Sonnet
+    5.5 default, served by Sonnet 5.5 and cached; a rerun then hits the cache."""
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_overflow", overflow)
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(llm, "stream_json", _refusing_on({"claude-opus-5-5"}, seen))
+    # the pre-switch run: Sonnet 5 serves, the row carries no SERVED_VIA
+    real_via = digest.SERVED_VIA
+    monkeypatch.setattr(digest, "SERVED_VIA", LEGACY_VIA)
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
+    assert col.row("a")["summary_served_by"] == "claude-sonnet-5"
+    # after the switch: the family default names Sonnet 5.5
+    monkeypatch.setattr(digest, "SERVED_VIA", real_via)
+    monkeypatch.setitem(
+        digest.FAMILY_DEFAULTS[FAM], "summ_fallback", f"default+{digest.REFUSAL_MODEL}"
+    )
+    seen.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    assert col.row("a")["summary_served_by"] == "claude-sonnet-5-5"
+    assert col.extras()["digest_served_by"] == {"claude-sonnet-5-5": 1}
+    seen.clear()
+    col = _run(tmp_path, {"a": _cells("a", 2)})  # the Sonnet 5.5 row is a hit
+    assert seen == [] and col.row("a")["summary_served_by"] == "claude-sonnet-5-5"
+    # ... and a run that asks for Sonnet 5 explicitly does not reuse the Sonnet 5.5 row
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    col = _run(tmp_path, {"a": _cells("a", 2)})
+    assert seen == ["claude-opus-5-5", "claude-sonnet-5"]
+
+
+@pytest.mark.parametrize("overflow", ["hierarchical", "stride"])
+def test_pre_switch_server_served_and_unserved_digests_stay_cached(
+    tmp_path, fam, monkeypatch, overflow
+):
+    """The other direction: a pre-switch row the SERVER-side fallback served (no SERVED_VIA,
+    SERVED_BY not retired) and a row no fallback served are reused after the switch."""
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_overflow", overflow)
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+
+    def served(prompts, *, on_result, **kw):
+        for i, (_s, user) in enumerate(prompts):
+            line = next(ln[2:] for ln in user.splitlines() if ln.startswith("- "))
+            item = {"statement": "s", "key": "", "where": "", "evidence": line}
+            res: dict = {"items": [item]}
+            if "item a" in user or " a L" in user:
+                res[llm.SERVED_BY] = "claude-opus-4-8"
+            on_result(i, res)
+        return Spend()
+
+    monkeypatch.setattr(digest, "SERVED_VIA", LEGACY_VIA)
+    monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_fallback", "default+claude-sonnet-5")
+    monkeypatch.setattr(llm, "stream_json", served)
+    cells = {"a": _cells("a", 2), "b": _cells("b", 2)}
+    col = _run(tmp_path, cells)
+    assert col.row("a")["summary_served_by"] == "claude-opus-4-8"
+    monkeypatch.undo()  # back to the real SERVED_VIA and the default fallback ...
+    monkeypatch.setattr(digest, "COUNT_TOKENS_ABOVE", 0.0)
+    monkeypatch.setitem(
+        digest.FAMILY_DEFAULTS,
+        FAM,
+        {
+            "summ_overflow": overflow,
+            "summ_token_cap": "1000",
+            "summ_max": "5",
+            "summ_layers": "joint",
+            "summ_fallback": f"default+{digest.REFUSAL_MODEL}",
+        },
+    )
+    monkeypatch.setattr(
+        llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
+    )
+    calls: list[str] = []
+
+    def never(prompts, *, on_result, **kw):
+        calls.extend(u for _s, u in prompts)
+        return Spend()
+
+    monkeypatch.setattr(llm, "stream_json", never)
+    col = _run(tmp_path, cells)
+    assert calls == []  # ... and neither digest is re-asked
+    assert col.row("a")["summary_served_by"] == "claude-opus-4-8"
+    assert col.summaries["b"] and not col.row("b").get("summary_served_by")

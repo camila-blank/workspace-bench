@@ -20,7 +20,8 @@ ARCHIVE_QWEN_SUMMARY = (
 )
 NOT_MEASURABLE_REFUSAL_SHARE = 0.20  # more refused ids than this: frozen as not_measurable
 PO_OPUS = "po-opus-v1"
-# Fable 2026-10-31: the ids Opus refused re-asked on a Sonnet fallback (prompt_only_opus.FALLBACK_*):
+# Fable 2026-10-31: the ids Opus refused re-asked on a Sonnet fallback
+# (prompt_only_opus.FALLBACK_*):
 # Sonnet 5.5 for every run since 2026-11-01 (Camila); the Sonnet 5 protocol is the frozen history,
 # still read and labelled, never written by a new fallback run
 PO_FALLBACK = "po-opus-v1+sonnet55-fallback"

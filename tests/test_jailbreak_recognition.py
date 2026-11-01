@@ -1131,10 +1131,10 @@ def test_full_settings():
     assert digest.FAMILY_DEFAULTS["jailbreak_recognition"] == {
         "summ_concurrency": "8",
         "summ_timeout": "1800",
-        "summ_fallback": "default+claude-sonnet-5",
+        "summ_fallback": "default+claude-sonnet-5-5",  # Sonnet 5.5 since 2026-11-01
     }
     s = digest.settings(summary_args(Path("r"), Path("o"), "t"), "jailbreak_recognition")
-    assert (s.server_fallback, s.refusal_model) == ("default", "claude-sonnet-5")
+    assert (s.server_fallback, s.refusal_model) == ("default", "claude-sonnet-5-5")
 
 
 def test_layers_any_subset(tmp_path, monkeypatch):

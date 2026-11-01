@@ -33,9 +33,11 @@ SUMMARY_LAYER = -1  # the sentinel layer of a synthetic summary cell
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "default"
 # the client-side refusal model of every ``summ_fallback=default+<model>`` family (plan 0037 J10).
-# Camila 2026-11-01: Sonnet 5.5 replaced Sonnet 5. A cached digest a RETIRED refusal model served
-# (a pre-switch row: SERVED_BY in this set and no SERVED_VIA mark) is a cache miss, so it is
-# re-asked, and re-judged, under the current fallback instead of silently reused.
+# Camila 2026-11-01: Sonnet 5.5 replaced Sonnet 5. The digest fingerprint does not key the
+# fallback, so a cached digest another client-side refusal model served is a cache miss
+# (``_stale_fallback``: a SERVED_VIA="client" row of another model, or a pre-switch row with no
+# SERVED_VIA whose SERVED_BY is RETIRED) and is re-asked, and re-judged, under the run's own
+# fallback instead of silently reused.
 REFUSAL_MODEL = "claude-sonnet-5-5"
 RETIRED_REFUSAL_MODELS = frozenset({"claude-sonnet-5"})
 # how a fallback-served digest was served: "client" (re-run on the refusal model) or "server"
@@ -1384,23 +1386,29 @@ def render_summary(
 # ---------------------------------------------------------------- collapse
 
 
-def _cached(cache: Cache, key: str, fp: str) -> dict | None:
+def _cached(cache: Cache, key: str, fp: str, refusal_model: str | None = None) -> dict | None:
     """The newest cached row for (key, fp) if it is a success, else ``None`` (a miss). A failed
     row written AFTER a success (e.g. every evidence span of that digest failed the check)
-    invalidates it, so a rerun re-asks; ``Cache.get`` alone would return the older success."""
+    invalidates it, so a rerun re-asks; ``Cache.get`` alone would return the older success.
+    A digest the client-side refusal fallback served is a hit only for the run's own
+    ``refusal_model`` (:func:`_stale_fallback`; the fingerprint does not key the fallback)."""
     row = cache.get(key, fp, include_failed=True)
-    if row is None or row.get("result") is None or _retired_fallback(row["result"]):
+    if row is None or row.get("result") is None or _stale_fallback(row["result"], refusal_model):
         return None
     return row
 
 
-def _retired_fallback(result: object) -> bool:
-    """A cached digest served by a retired client-side refusal model (pre-switch: no SERVED_VIA)."""
-    return (
-        isinstance(result, dict)
-        and result.get(llm.SERVED_BY) in RETIRED_REFUSAL_MODELS
-        and SERVED_VIA not in result
-    )
+def _stale_fallback(result: object, refusal_model: str | None) -> bool:
+    """A cached digest a client-side refusal model other than ``refusal_model`` served: one
+    tagged ``SERVED_VIA="client"`` by another model, or a pre-switch row (no SERVED_VIA) served
+    by a RETIRED refusal model (e.g. Sonnet 5 before 2026-11-01). Server-side-served rows and
+    rows no fallback served are never stale."""
+    if not isinstance(result, dict) or not result.get(llm.SERVED_BY):
+        return False
+    via = result.get(SERVED_VIA)
+    if via is None:
+        return result[llm.SERVED_BY] in RETIRED_REFUSAL_MODELS
+    return via == "client" and result[llm.SERVED_BY] != refusal_model
 
 
 def _mark_served(r: object) -> object:
@@ -1973,7 +1981,7 @@ def _collapse_stride(
     results: dict[str, object] = {}
     todo: list[tuple[str, str, str]] = []
     for item_id, fp, user in pending:
-        row = _cached(cache, f"digest:{item_id}|{layers_tag}", fp)
+        row = _cached(cache, f"digest:{item_id}|{layers_tag}", fp, s.refusal_model)
         if row is not None:
             results[item_id] = row.get("result")
         else:
@@ -2684,7 +2692,7 @@ def _collapse_hierarchical(
         out: dict[str, object] = {}
         todo: list[tuple[str, str, str, str]] = []
         for i, key, fp, user in calls:
-            row = _cached(cache, key, fp)
+            row = _cached(cache, key, fp, s.refusal_model)
             res0 = row.get("result") if row is not None else None
             if isinstance(res0, dict) and res0.get(llm.SERVED_BY):
                 served_keys[key] = str(res0[llm.SERVED_BY])
