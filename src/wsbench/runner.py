@@ -134,7 +134,10 @@ def judge_family(
         result.extras["ati_gate"] = ati.get("gate", "plan-0014")
         if ati.get("provisional"):  # a reduced-panel gate (decision R1-ATI): say which readers
             result.extras["ati_provisional"] = True
+        if ati.get("provisional") or ati.get("status_order"):  # reduced panel, even if cleared
             result.extras["ati_panel"] = ati.get("panel")
+        if "argon_decisive_items" in ati:  # cleared: argon could move no item (R1-ATI argon)
+            result.extras["ati_argon_decisive_items"] = ati["argon_decisive_items"]
     path = write_results(out, result)
     spend = result.counts.get("spend_usd", 0.0) or 0.0
     print(
