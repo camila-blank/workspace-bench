@@ -86,7 +86,9 @@ def rival_rule(competing: str) -> str:
     return RIVAL_RULE.replace("{competing}", competing.strip())
 
 
-def _holders(quote: str, grounded: Sequence[digest.Grounded]) -> list[digest.Grounded]:
+def holders(quote: str, grounded: Sequence[digest.Grounded]) -> list[digest.Grounded]:
+    """The digest entries whose line holds ``quote`` (verbatim, else near-verbatim through
+    ``nearquote.close_lines``)."""
     if not digest.fold_quote(quote):
         return []
     held = [g for g in grounded if digest.line_holds(quote, g.line)]
@@ -124,7 +126,7 @@ def contest(
     if names_gold(rq):
         out.update(rival_names_gold=True, contested=False)
         return out
-    held = _holders(rq, grounded)
+    held = holders(rq, grounded)
     out["rival_verified"] = bool(held)
     out["rival_support"] = max((g.count for g in held), default=0)
     if held and single_option is not None:
