@@ -172,7 +172,8 @@ def preflight_job(job_json: dict, name: str, layers: list[int] | None, run_args:
         vol.commit()
     out_rec = {"group": job.group_id, "arm": job.arm, "ok": js.pass_ok(rec), **rec}
     if not out_rec["ok"]:  # the reason, so preflight.json says why (not just "exit 3")
-        lines = (out / "preflight.log").read_text(encoding="utf-8", errors="replace").splitlines()
+        text = (out / "preflight.log").read_text(encoding="utf-8", errors="replace")
+        lines = text.rsplit("=== pass ", 1)[-1].splitlines()  # this attempt's section only
         out_rec["log_tail"] = [x[:400] for x in lines if "error" in x.lower()][-5:] or lines[-5:]
     return out_rec
 
@@ -187,6 +188,7 @@ def overcontext(model: str, context: int, max_out: int) -> dict:
     from wsbench import llm
 
     js = _js()
+    os.environ.pop(llm.OPENAI_ROUTE_ENV, None)  # a warm container may hold an earlier model's
     os.environ.update(js.route_env({}, js.load_roster().get(model)))
     wif = llm.route(model) == "openai"
     filler = " the" * int(1.1 * context)
@@ -198,12 +200,15 @@ def overcontext(model: str, context: int, max_out: int) -> dict:
         from wsbench.baselines import ati_remote
 
         clients = ati_remote.Clients(js.WIF_ROUTE) if wif else None
-        c = (
-            await clients.get()
-            if clients is not None
-            else AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=llm.api_key(model))
-        )
+        c: Any = None
         try:
+            c = (  # inside the try: a flaky token exchange is recorded, never a dropped model
+                await clients.get()
+                if clients is not None
+                else AsyncOpenAI(
+                    base_url="https://openrouter.ai/api/v1", api_key=llm.api_key(model)
+                )
+            )
             r = await c.chat.completions.create(
                 model=ati_remote.route_model(model, js.WIF_ROUTE) if wif else model,
                 messages=[{"role": "user", "content": filler}],
@@ -215,7 +220,8 @@ def overcontext(model: str, context: int, max_out: int) -> dict:
             raw["status"] = getattr(e, "status_code", None)
             raw["message"] = str(e)[:1000]
         finally:
-            await c.close()
+            if c is not None:
+                await c.close()
 
     asyncio.run(go())
     raw["route"] = js.WIF_ROUTE if wif else "openrouter"
@@ -366,7 +372,8 @@ def preflight(
     """Per OpenRouter model and arm: one preflight per JOB GROUP (same partition as
     ``run_job``) with ``items=`` = that group's first-item-with-readouts union, plus one
     over-context probe per model. Writes ``outputs/judge_sweep/<sweep>/preflight.json``
-    (models that fail are dropped, reason kept; a 404 / unmapped overflow drops Arm B)."""
+    (models that fail are dropped, reason kept; a 404 drops Arm B, an unmapped overflow only
+    warns)."""
     js, jobs, notes, ros = _plan(
         sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH), families
     )

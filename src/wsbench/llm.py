@@ -657,11 +657,9 @@ async def _one(
                 spend.refusals += 1  # a moderation flag: this input, not the key (plan 0059)
                 print(f"  llm refusal: {model} (moderation 403)")
                 return REFUSED_JSON if mark_refusals else None
-            if (
-                name in _FATAL
-                or status in (401, 402, 403)  # bad key, no credits, no access
-                or (isinstance(e, _BodyError) and status == 404)  # as the HTTP NotFoundError
-            ):
+            # bad key, no credits, no access: HTTP errors only — a 200-body error with such a code
+            # is an upstream provider's and keeps the old retry (review of #217)
+            if not isinstance(e, _BodyError) and (name in _FATAL or status in (401, 402, 403)):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
             kind = _status_kind(e, status)
             transient = (

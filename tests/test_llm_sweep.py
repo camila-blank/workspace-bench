@@ -561,3 +561,12 @@ def test_openai_route_judge_effort_and_digest_reasoning(monkeypatch):
     assert resolve(cfg, flag=WIF_MODEL, env={}, effort="default").reasoning is None
     assert digest.digest_reasoning(WIF_MODEL, "low") == {"effort": "low"}
     assert digest.digest_reasoning(WIF_MODEL, "default") is None
+
+
+@pytest.mark.parametrize("code", [401, 402, 403, 404, "403"])
+def test_200_body_error_with_a_fatal_http_code_keeps_the_old_retry(env, monkeypatch, code):
+    # an upstream provider's 4xx delivered in a 200 body is not our key / access: retried as on
+    # main, tallied under its code (review of #217); only real HTTP 401-403/404 are fatal
+    fake = FakeOpenRouter([_body_error(code, "upstream provider error"), _or()])
+    got, spend = _run(monkeypatch, fake)
+    assert got == [{"a": 1}] and spend.retries == 1 and spend.transient == {str(code): 1}

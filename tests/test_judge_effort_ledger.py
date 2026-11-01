@@ -207,6 +207,11 @@ def test_ledger_writes_periodically(offline, tmp_path, monkeypatch):
     rows = (out / "p1" / ledger.FILENAME).read_text().splitlines()
     assert len(rows) >= 2  # >= 1 periodic snapshot while running, then the final one
     assert json.loads(rows[-1])["usd"] == 0.5
+    # settle the shared writer back into a long wait, so its pending short wake cannot write an
+    # extra snapshot into the next test's family
+    monkeypatch.setattr(ledger, "INTERVAL", 3600.0)
+    ledger._WAKE.set()
+    time.sleep(0.1)
 
 
 def test_ledger_exit_flush_and_unregistered_spends(tmp_path):
@@ -216,7 +221,8 @@ def test_ledger_exit_flush_and_unregistered_spends(tmp_path):
         ledger._flush_all()  # what the atexit hook does for families still running
         assert id(s) in fam.spends and id(outside) not in fam.spends
     rows = [json.loads(x) for x in (tmp_path / "fam" / ledger.FILENAME).read_text().splitlines()]
-    assert [r["usd"] for r in rows] == [0.1, 0.1]  # the exit flush, then the final snapshot
+    # the exit flush, then the final snapshot (>= 2: a periodic writer wake may add one)
+    assert len(rows) >= 2 and all(r["usd"] == 0.1 for r in rows)
 
 
 def test_ledger_read_total_sums_last_snapshot_per_run_id(tmp_path):
