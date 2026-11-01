@@ -309,12 +309,10 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     # plan 0045 C1: 8-11% of introspection digests are refused by Opus 5.5 and were undecided;
     # a declined digest re-runs server-side on a fallback model (extras.digest_served_by).
     # Audit F3 (2026-10-31): the jailbreak route for every family whose digests Opus 5.5 declines
-    # (all-layer: medical_diagnosis 39/92, medical_diagnosis_alt 43/89, introspection 9/125
-    # undecided, moral_rationale 5, user_modeling 3, model_specific_DM 1): a still-declined digest
+    # (all-layer: introspection 9/125 undecided, moral_rationale 5, user_modeling 3,
+    # model_specific_DM 1): a still-declined digest
     # re-runs on Sonnet 5 (client-side), counted in extras.digest_served_by
     "introspection": {"summ_fallback": "default+claude-sonnet-5"},
-    "medical_diagnosis": {"summ_fallback": "default+claude-sonnet-5"},
-    "medical_diagnosis_alt": {"summ_fallback": "default+claude-sonnet-5"},
     "moral_rationale": {"summ_fallback": "default+claude-sonnet-5"},
     "user_modeling": {"summ_fallback": "default+claude-sonnet-5"},
     "model_specific_directed_modulation": {"summ_fallback": "default+claude-sonnet-5"},

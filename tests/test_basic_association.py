@@ -122,8 +122,9 @@ def test_registered_spec(real_families):
 
 
 def test_readme_carries_the_verbatim_prompt():
-    # the bank judge's README of record moves to medical_diagnosis (plan 0039 §6)
-    readme = (REPO / "evals/medical_diagnosis/README.md").read_text(encoding="utf-8")
+    # the bank judge's README of record moved to medical_diagnosis (plan 0039 §6), then to typo
+    # when plan 0058 removed medical_diagnosis (typo is the remaining family on this judge)
+    readme = (REPO / "evals/typo/README.md").read_text(encoding="utf-8")
     assert SYSTEM in readme and PROMPT_VERSION in readme
 
 

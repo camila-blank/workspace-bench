@@ -183,7 +183,11 @@ class ListFamilies(Command):
         rows = [
             (
                 s.name,
-                f"{s.group} (superseded by {s.superseded_by})" if s.superseded_by else s.group,
+                f"{s.group} (superseded by {s.superseded_by})"
+                if s.superseded_by
+                else f"{s.group} (retired)"
+                if s.name in registry.RETIRED_FAMILIES
+                else s.group,
                 _n_items(s),
                 s.metric,
                 s.scorer or s.judge.model,

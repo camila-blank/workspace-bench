@@ -88,15 +88,6 @@ identified by label prefix.
   either express or implied. See the License for the specific language governing permissions
   and limitations under the License.
 
-## Medical diagnosis — Lindsey et al. 2025
-
-- Source: Lindsey et al. 2025, On the Biology of a Large Language Model. Anthropic /
-  Transformer Circuits, https://transformer-circuits.pub/2025/attribution-graphs/biology.html
-  (§Medical Diagnoses).
-- Included: the task design only (a clinical vignette whose downstream answer depends on a
-  silent diagnosis). The `medical_diagnosis` / `medical_diagnosis_alt` vignettes were authored
-  by Claude Opus 5.5 for this bench; no text is taken from the paper.
-
 ## LMSYS-Chat-1M — Zheng et al. 2023
 
 - Source: https://huggingface.co/datasets/lmsys/lmsys-chat-1m
