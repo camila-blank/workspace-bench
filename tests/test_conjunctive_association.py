@@ -879,9 +879,10 @@ def test_dataclass_spec_bank_is_v4(real_families):
 
 
 def test_ati_entry_regated_on_v2(real_families):
-    """Round 4: bank v3 / comp-v4 (now bank v4 / comp-v5) make the frozen comp-v3 entry stale, so subset_entry must refuse
-    it until the run phase re-gates (decisions: every family whose instrument changes is
-    re-gated in the run phase); a re-gated entry must match the current bank and instrument."""
+    """Round 4: bank v3 / comp-v4 (now bank v4 / comp-v5) make the frozen comp-v3 entry stale,
+    so subset_entry must refuse it until the run phase re-gates (decisions: every family whose
+    instrument changes is re-gated in the run phase); a re-gated entry must match the current
+    bank and instrument."""
     from wsbench.baselines import text_inversion as ti
 
     frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))["conjunctive_association"]

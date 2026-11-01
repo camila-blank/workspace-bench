@@ -37,7 +37,7 @@
   ]
  },
  "g_target": 22,
- "max_readout_share": 0.01,
+ "max_readout_share": 0.02,
  "readouts": "/workspace/root/wsb-bp/readouts/final-olens-rl600-x4/conjunctive_association.jsonl",
  "clusters": {
   "q01": {
@@ -242,7 +242,7 @@
     "his business partner": 118,
     "his roommate": 14
    },
-   "proposed": [
+   "round2a_proposed": [
     "his fiancée",
     "his girlfriend",
     "his business partner",
@@ -254,8 +254,7 @@
     "his stepson",
     "his ex-wife"
    ],
-   "n_samples": 8360,
-   "hits": {
+   "round2a_hits": {
     "his fiancée": 69,
     "his girlfriend": 83,
     "his business partner": 118,
@@ -266,6 +265,31 @@
     "his mentor": 12,
     "his stepson": 0,
     "his ex-wife": 19
+   },
+   "proposed": [
+    "his sister",
+    "his business partner",
+    "his roommate",
+    "his coworker",
+    "his mentor",
+    "his nephew",
+    "his cousin",
+    "his neighbor",
+    "his grandson",
+    "his boss"
+   ],
+   "n_samples": 8360,
+   "hits": {
+    "his sister": 79,
+    "his business partner": 118,
+    "his roommate": 14,
+    "his coworker": 10,
+    "his mentor": 12,
+    "his nephew": 1,
+    "his cousin": 15,
+    "his neighbor": 84,
+    "his grandson": 8,
+    "his boss": 45
    }
   },
   "q04": {
@@ -318,7 +342,7 @@
     "her childhood friend": 272,
     "her aunt": 31
    },
-   "proposed": [
+   "round2a_proposed": [
     "her coworker",
     "her teammate",
     "her collaborator",
@@ -330,8 +354,7 @@
     "her former teacher",
     "her research advisor"
    ],
-   "n_samples": 8360,
-   "hits": {
+   "round2a_hits": {
     "her coworker": 19,
     "her teammate": 4,
     "her collaborator": 19,
@@ -342,6 +365,31 @@
     "her business associate": 4,
     "her former teacher": 32,
     "her research advisor": 5
+   },
+   "proposed": [
+    "her rival",
+    "her protégé",
+    "her mother",
+    "her father",
+    "her daughter",
+    "her fiancé",
+    "her best friend's brother",
+    "her apprentice",
+    "her business rival",
+    "her investor"
+   ],
+   "n_samples": 8360,
+   "hits": {
+    "her rival": 41,
+    "her protégé": 2,
+    "her mother": 96,
+    "her father": 165,
+    "her daughter": 83,
+    "her fiancé": 19,
+    "her best friend's brother": 74,
+    "her apprentice": 2,
+    "her business rival": 41,
+    "her investor": 15
    }
   },
   "q05": {
@@ -470,7 +518,7 @@
     "her uncle": 26,
     "her mother-in-law": 3
    },
-   "proposed": [
+   "round2a_proposed": [
     "her husband",
     "her girlfriend",
     "her fiancé",
@@ -482,8 +530,7 @@
     "her sister",
     "her father"
    ],
-   "n_samples": 8360,
-   "hits": {
+   "round2a_hits": {
     "her husband": 445,
     "her girlfriend": 17,
     "her fiancé": 33,
@@ -494,6 +541,31 @@
     "her son": 125,
     "her sister": 146,
     "her father": 198
+   },
+   "proposed": [
+    "her ex-husband",
+    "her stepdaughter",
+    "her mother-in-law",
+    "her grandchild",
+    "her coworker",
+    "her roommate",
+    "her niece",
+    "her aunt",
+    "her cousin",
+    "her neighbor"
+   ],
+   "n_samples": 8360,
+   "hits": {
+    "her ex-husband": 45,
+    "her stepdaughter": 0,
+    "her mother-in-law": 3,
+    "her grandchild": 0,
+    "her coworker": 3,
+    "her roommate": 13,
+    "her niece": 5,
+    "her aunt": 16,
+    "her cousin": 16,
+    "her neighbor": 44
    }
   },
   "q08": {
