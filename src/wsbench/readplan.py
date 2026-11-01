@@ -778,22 +778,6 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ] + _nocot_rows()
-    if family in ("medical_diagnosis", "medical_diagnosis_alt"):
-        _h, items = _bank(family)
-        return [
-            ReadSpec(
-                family,
-                it["id"],
-                "chat",
-                {"kind": "all_from_end"},
-                GRID,
-                text=it["prompt"],
-                note="every prompt position of the chat render as a negative offset (reply "
-                "start, the last prompt token, is -1); never a response token",
-                lite_positions=FINAL,
-            )
-            for it in items
-        ]
     if family == "model_specific_directed_modulation":
         _h, items = _bank(family)
         return [

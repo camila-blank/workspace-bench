@@ -331,8 +331,9 @@ def test_summary_prompt_and_parse():
 
 
 def test_version_stamp_is_summ_c3():
-    assert prompts.SUMMARY_C_VERSION == "am-design-v3+summ-c3"
-    assert PV.startswith("am-design-v3+summ-c3+digest-v5-")
+    # final r1: summ-c4 adds the candidate-only rule (second person, code) for every item
+    assert prompts.SUMMARY_C_VERSION == "am-design-v3+summ-c4"
+    assert PV.startswith("am-design-v3+summ-c4+digest-v5-")
 
 
 def test_summ_c2_rules_in_prompt():
