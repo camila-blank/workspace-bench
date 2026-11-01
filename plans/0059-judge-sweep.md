@@ -468,7 +468,15 @@ one client per process). A 429 is shared capacity: transient, backoff.
 - **`judge_config.resolve` / `digest_reasoning`**: the gemini route follows the non-Anthropic rules
   (`{"effort": l}`; `judge_effort` allowed). Effort `low` → thinking_level "low"; `default` → none.
 - **Roster:** `google/gemini-*` rows get `route: "gemini-vertex"` (prices stay the catalog's, which
-  OpenRouter passes through at Google list price).
+  OpenRouter passes through at Google list price). Camila, 2026-11-01: two FRONTIER-tier Gemini
+  rows NOT in the OpenRouter catalog, `google/gemini-4-argon` and `google/gemini-3.1-pro-preview`,
+  also on `gemini-vertex`, come from a hand-entered constant `judge_sweep.VERTEX_EXTRA` (Vertex
+  list prices, USD per Mtok; `catalog_id: null`, a `source` field; merged by `build_roster` after
+  the catalog rows, never from the catalog copy, so the rebuild stays deterministic):
+  gemini-4-argon $4 in / $20 out / $0.20 cache read (Vertex standard price from 2026-12-01;
+  introductory $2 / $10 / $0.10 through 2026-11-30, so costs are an upper bound before then);
+  gemini-3.1-pro-preview $2 / $12 / $0.20 (prompts > 200K tokens bill $4 / $18: a lower bound for
+  such calls); both context 1 048 576, max_out 65 536, reasoning + structured outputs.
 - **Modal:** image adds `google-genai>=2.3`, `google-auth>=2.40`; a job whose roster route is
   `gemini-vertex` runs with `WSBENCH_GEMINI_ROUTE=vertex` (and never carries the other route's env);
   the over-context probe uses the Vertex client and records the overflow message.

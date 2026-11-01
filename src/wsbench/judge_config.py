@@ -43,7 +43,8 @@ def resolve(
     and the judge is no longer the pinned instrument. A ``claude-*`` judge with ``effort``, or an
     unknown level, exits 2. The ``openai`` route (``WSBENCH_OPENAI_ROUTE=wif``, plan 0059
     addendum A) is non-Anthropic: it resolves exactly like OpenRouter (its ``effort`` becomes the
-    request's ``reasoning_effort``)."""
+    request's ``reasoning_effort``), and so is the ``gemini`` route
+    (``WSBENCH_GEMINI_ROUTE=vertex``, addendum B; its ``effort`` becomes ``thinking_level``)."""
     env = env or {}
     env_model = env.get(ENV_OVERRIDE, "")
     if flag:

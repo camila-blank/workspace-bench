@@ -60,6 +60,20 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `temperature` / `extra_body`; the response rules are OpenRouter's (`llm._chat_result`), `usd`
   stays 0. Unset (the default, and `tests/conftest.py` unsets it), routing is unchanged.
   `resolve` / `digest_reasoning` treat it as non-Anthropic (OpenRouter rules).
+- Plan 0059 addendum B: with `WSBENCH_GEMINI_ROUTE=vertex` a `google/gemini-*` id (not
+  `google/gemma-*`) takes route `gemini`: Vertex AI (project `camila-blank`, location `global`)
+  via `google-genai`, credentials = `google.auth.identity_pool` WIF on `MODAL_IDENTITY_TOKEN`
+  (Modal env camila-blank only; both packages optional, imported lazily; one credential per
+  process, one `genai.Client` per batch). Request: prefix-stripped model, `system_instruction`,
+  `response_json_schema` = the schema object, `max_output_tokens` (the same output budget),
+  `thinking_level` = the reasoning's `effort`, `temperature` only when set. A SAFETY-class
+  `finish_reason` (`llm.GEMINI_REFUSALS`) or `prompt_feedback.block_reason` is a refusal; an
+  unparseable `MAX_TOKENS` finish is one failed call (`failed["length"]`); the status is
+  `APIError.code` (401/403/404 fatal; a 400 naming the input token limit, `llm.GEMINI_TOO_LONG`,
+  is too-long under the budget). Tokens: `input_tokens` = `prompt_token_count` minus
+  `cached_content_token_count` (= `cache_read_tokens`), output = candidates + thoughts; `usd`
+  stays 0. Unset (and `tests/conftest.py` unsets it), routing is unchanged; tests fake the
+  google modules (`llm._genai_types` seam, `sys.modules`), never import them.
 
 ## Family conventions
 - `wsbench/family.py` holds the helpers the newer families share: `require_cells` (missing
@@ -425,7 +439,11 @@ in a git worktree (prefix commands with `PYTHONPATH=src` when it shares the main
   models + Opus draws `claude-opus-5-5@A1..A4` / `@B1..B3` behind the ant-token flock; `analyze`)
   and `scripts/judge_sweep_modal.py` (`upload` / `preflight` / `sweep` / `pull`; OpenRouter is
   only ever called from there, as are the roster's `route: "openai-wif"` models: both secrets on
-  every function, `judge_sweep.route_env` sets `WSBENCH_OPENAI_ROUTE=wif` per job; `analyze`
-  prices them, like Claude, as tokens x roster price, marked `≈`). Layout `outputs/judge_sweep/<sweep>/<arm>/<slug>/<family>/`, job
+  every function, `judge_sweep.route_env` sets `WSBENCH_OPENAI_ROUTE=wif` per job; roster
+  `google/gemini-*` rows are `gemini-vertex`: no secret, the job gets `WSBENCH_GEMINI_ROUTE=vertex`;
+  `route_env` sets exactly one route env and removes the other; the frontier
+  `google/gemini-4-argon` / `gemini-3.1-pro-preview` rows are hand-entered in
+  `judge_sweep.VERTEX_EXTRA`, not catalog rows; `analyze` prices both WIF routes, like Claude, as
+  tokens x roster price, marked `≈`). Layout `outputs/judge_sweep/<sweep>/<arm>/<slug>/<family>/`, job
   state in `<sweep>/jobs/`. Every "matches Opus" threshold lives in `judge_sweep.MATCH` (pinned
   by `tests/test_judge_sweep.py`); knowledge_cutoff runs its full bank unless `--exclude-nocot`.

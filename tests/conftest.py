@@ -25,6 +25,7 @@ def _openai_route_unset(monkeypatch):
     """Plan 0059 addendum A: ``WSBENCH_OPENAI_ROUTE`` from the shell must not reroute the
     OpenRouter fakes' ``openai/*`` ids (tests that want the route set it themselves)."""
     monkeypatch.delenv(llm.OPENAI_ROUTE_ENV, raising=False)
+    monkeypatch.delenv(llm.GEMINI_ROUTE_ENV, raising=False)  # nor google/gemini-* (addendum B)
     monkeypatch.delenv(llm.MAX_OUT_ENV, raising=False)  # nor the sweep's output budget
 
 

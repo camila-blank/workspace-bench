@@ -2,7 +2,10 @@
 
 OpenRouter is only ever called from here (secret ``openrouter``), never from a dev box; so are
 the roster's ``openai-wif`` models (OpenAI directly, secret ``openai-wif`` + the container's Modal
-identity token; plan 0059 addendum A: the job runs with ``WSBENCH_OPENAI_ROUTE=wif``). App
+identity token; plan 0059 addendum A: the job runs with ``WSBENCH_OPENAI_ROUTE=wif``) and its
+``gemini-vertex`` models (Vertex AI by workload identity federation on the container's Modal
+identity token, no secret; addendum B: ``WSBENCH_GEMINI_ROUTE=vertex``; the identity pool trusts
+only Modal environment ``camila-blank``). App
 ``wsb-judge-sweep``, volume ``wsb-judge-sweep`` (``/vol``):
 
     /vol/readouts/<name>/   readouts (+ .meta.json sidecars) of the swept method
@@ -45,7 +48,15 @@ WSB = "/root/wsb"  # in the container: registry.REPO_ROOT = parents[2] of src/ws
 VOL = "/vol"
 APP = "wsb-judge-sweep"
 SCRIPTS = ("judge_sweep.py", "summary_mode_compare.py", "judge_swap.py")
-DEPS = ("openai>=1.40", "anthropic>=1.0", "numpy>=1.26", "pydra-config>=0.0.17", "pronouncing>=0.2")
+DEPS = (
+    "openai>=1.40",
+    "anthropic>=1.0",
+    "numpy>=1.26",
+    "pydra-config>=0.0.17",
+    "pronouncing>=0.2",
+    "google-genai>=2.3",  # the gemini-vertex route (plan 0059 addendum B)
+    "google-auth>=2.40",
+)
 COMMIT_EVERY = 60.0  # seconds between volume commits while a job runs
 
 app = modal.App(APP)
@@ -61,6 +72,7 @@ image = (
 for _s in SCRIPTS:
     image = image.add_local_file(HERE / _s, f"{WSB}/scripts/{_s}")
 # both on every function: a job's route (its model's roster ``route``) picks which one it uses
+# (gemini-vertex needs none: Modal's identity token is exchanged at Google STS)
 SECRETS = [modal.Secret.from_name("openrouter"), modal.Secret.from_name("openai-wif")]
 
 
@@ -98,8 +110,9 @@ def _committer(stop: threading.Event) -> threading.Thread:
 
 def _container_env(name: str, model: str) -> dict[str, str]:
     """The container env plus the uploaded ``WSB_*`` path overrides (rewritten to volume paths
-    at upload; ``WSB_NO_NOCOT`` is never set), with ``WSBENCH_OPENAI_ROUTE=wif`` iff ``model``'s
-    roster route is ``openai-wif`` (the roster baked into the image)."""
+    at upload; ``WSB_NO_NOCOT`` is never set), with exactly ``model``'s route env
+    (``WSBENCH_OPENAI_ROUTE=wif`` for ``openai-wif``, ``WSBENCH_GEMINI_ROUTE=vertex`` for
+    ``gemini-vertex``; the roster baked into the image) and no other."""
     js = _js()
     env = dict(os.environ)
     f = Path(VOL) / "seeds" / name / "env.json"
@@ -181,18 +194,41 @@ def preflight_job(job_json: dict, name: str, layers: list[int] | None, run_args:
 @app.function(image=image, secrets=SECRETS, timeout=1800)
 def overcontext(model: str, context: int, max_out: int) -> dict:
     """One deliberate over-context call (a filler prompt of ~1.1 x context): what OpenRouter (or,
-    for an ``openai-wif`` model, OpenAI through the WIF client) returns, and whether the change-4
-    classifier maps it to ``TOO_LONG_JSON``."""
+    for an ``openai-wif`` model, OpenAI through the WIF client; for a ``gemini-vertex`` model,
+    Vertex AI) returns, and whether the change-4 classifier maps it to ``TOO_LONG_JSON``."""
     import asyncio
 
     from wsbench import llm
 
     js = _js()
-    os.environ.pop(llm.OPENAI_ROUTE_ENV, None)  # a warm container may hold an earlier model's
+    for var in (llm.OPENAI_ROUTE_ENV, llm.GEMINI_ROUTE_ENV):  # a warm container may hold an
+        os.environ.pop(var, None)  # earlier model's
     os.environ.update(js.route_env({}, js.load_roster().get(model)))
     wif = llm.route(model) == "openai"
+    vertex = llm.route(model) == "gemini"
     filler = " the" * int(1.1 * context)
     raw: dict[str, Any] = {}
+
+    async def go_vertex() -> None:
+        c: Any = None
+        try:
+            from google.genai import types
+
+            c = llm._vertex_client()
+            r = await c.aio.models.generate_content(
+                model=llm.gemini_model(model),
+                contents=filler,
+                config=types.GenerateContentConfig(max_output_tokens=16),
+            )
+            raw["status"] = 200
+            raw["body"] = str(r)[:500]
+        except Exception as e:  # recorded verbatim: this is what the probe is for
+            raw["status"] = getattr(e, "code", None)
+            raw["message"] = str(e)[:1000]
+        finally:
+            aclose = getattr(getattr(c, "aio", None), "aclose", None)
+            if aclose is not None:
+                await aclose()
 
     async def go() -> None:
         from openai import AsyncOpenAI
@@ -223,8 +259,8 @@ def overcontext(model: str, context: int, max_out: int) -> dict:
             if c is not None:
                 await c.close()
 
-    asyncio.run(go())
-    raw["route"] = js.WIF_ROUTE if wif else "openrouter"
+    asyncio.run(go_vertex() if vertex else go())
+    raw["route"] = js.WIF_ROUTE if wif else js.GEMINI_ROUTE if vertex else "openrouter"
     os.environ[llm.MAX_OUT_ENV] = str(max_out)
     got: dict[str, Any] = {}
     spend = llm.Spend()

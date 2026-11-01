@@ -484,7 +484,8 @@ def digest_reasoning(model: str, effort: str) -> dict | None:
     """The digest call's reasoning, by route (plan 0059): ``claude-*`` ->
     ``{"anthropic_effort": effort}`` (unchanged, fingerprinted); any other model -> ``None`` at
     ``default`` effort, else OpenRouter's ``{"effort": effort}`` (also on the ``openai`` route,
-    plan 0059 addendum A, where it becomes ``reasoning_effort``)."""
+    plan 0059 addendum A, where it becomes ``reasoning_effort``, and on the ``gemini`` route,
+    addendum B, where it becomes ``thinking_level``)."""
     if llm.route(model) == "anthropic":
         return {"anthropic_effort": effort}
     return None if effort == "default" else {"effort": effort}

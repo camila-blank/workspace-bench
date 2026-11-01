@@ -168,8 +168,47 @@ ROSTER_TIERS: dict[str, tuple[str, ...]] = {
         "dots-studio/dots-3-note-preview:free",
         "xingchen-agi/xing4.0-29b-a4b:free",
     ),
-    "frontier": ("claude-fable-5-1", "openai/gpt-6-astra"),
+    "frontier": (
+        "claude-fable-5-1",
+        "openai/gpt-6-astra",
+        "google/gemini-4-argon",
+        "google/gemini-3.1-pro-preview",
+    ),
     "anchor": ("claude-sonnet-5-5", OPUS),
+}
+# plan 0059 addendum B (Camila, 2026-11-01): frontier Gemini rows NOT in the OpenRouter catalog,
+# hand-entered from the Vertex AI list prices (USD per Mtok) she gave; build_roster takes them
+# from here, never from the catalog copy (so the rebuild stays deterministic)
+VERTEX_SOURCE = "hand-entered Vertex AI list prices (Camila, 2026-11-01; plan 0059 addendum B)"
+VERTEX_EXTRA: dict[str, dict[str, Any]] = {
+    "google/gemini-4-argon": {
+        "price_in": 4.0,
+        "price_out": 20.0,
+        "price_cache_read": 0.2,
+        "price_cache_write": None,
+        "context": 1_048_576,
+        "max_out": 65_536,
+        "supports_reasoning": True,
+        "structured_outputs": True,
+        "price_note": (
+            "Vertex standard list price from 2026-12-01; introductory $2/$10 (cache $0.10) "
+            "through 2026-11-30 — costs are an upper bound for runs before then"
+        ),
+    },
+    "google/gemini-3.1-pro-preview": {
+        "price_in": 2.0,
+        "price_out": 12.0,
+        "price_cache_read": 0.2,
+        "price_cache_write": None,
+        "context": 1_048_576,
+        "max_out": 65_536,
+        "supports_reasoning": True,
+        "structured_outputs": True,
+        "price_note": (
+            "Vertex long-prompt price override: prompts > 200K tokens bill $4 in / $18 out; cost "
+            "uses the base prices (a lower bound for such calls)"
+        ),
+    },
 }
 CLAUDE_CATALOG = {
     "claude-haiku-5-5": "anthropic/claude-haiku-5.5",
@@ -237,32 +276,47 @@ def is_claude(model: str) -> bool:
 # openai-wif; the container gets WSBENCH_OPENAI_ROUTE=wif)
 WIF_ROUTE = "openai-wif"
 OPENAI_ROUTE_ENV = "WSBENCH_OPENAI_ROUTE"
+# plan 0059 addendum B: the account is blocked by Google too, so every roster google/gemini-*
+# model (not the open-weights google/gemma-*) runs on Vertex AI through Modal's OIDC identity
+# token (no secret; the container gets WSBENCH_GEMINI_ROUTE=vertex)
+GEMINI_ROUTE = "gemini-vertex"
+GEMINI_ROUTE_ENV = "WSBENCH_GEMINI_ROUTE"
+# roster route -> the (env var, value) its job runs with; every other route's var is removed
+ROUTE_ENVS: dict[str, tuple[str, str]] = {
+    WIF_ROUTE: (OPENAI_ROUTE_ENV, "wif"),
+    GEMINI_ROUTE: (GEMINI_ROUTE_ENV, "vertex"),
+}
 
 
 def roster_route(model_id: str) -> str:
     """A roster model's route: ``anthropic`` (Claude), ``openai-wif`` (``openai/*`` except
-    ``openai/gpt-oss-*``) or ``openrouter``."""
+    ``openai/gpt-oss-*``), ``gemini-vertex`` (``google/gemini-*``) or ``openrouter``."""
     if is_claude(model_id):
         return "anthropic"
     if model_id.startswith("openai/") and not model_id.startswith("openai/gpt-oss"):
         return WIF_ROUTE
+    if model_id.startswith("google/gemini-"):
+        return GEMINI_ROUTE
     return "openrouter"
 
 
 def route_env(env: Mapping[str, str], row: Mapping[str, Any] | None) -> dict[str, str]:
-    """``env`` with ``WSBENCH_OPENAI_ROUTE=wif`` iff the model's roster route is ``openai-wif``
-    (and without it otherwise, so an OpenRouter model never inherits it)."""
+    """``env`` with exactly the route env of the model's roster route (``WSBENCH_OPENAI_ROUTE=wif``
+    for ``openai-wif``, ``WSBENCH_GEMINI_ROUTE=vertex`` for ``gemini-vertex``) and every other
+    route env removed, so a model never inherits another route."""
     out = dict(env)
-    out.pop(OPENAI_ROUTE_ENV, None)
-    if (row or {}).get("route") == WIF_ROUTE:
-        out[OPENAI_ROUTE_ENV] = "wif"
+    for var, _value in ROUTE_ENVS.values():
+        out.pop(var, None)
+    hit = ROUTE_ENVS.get(str((row or {}).get("route")))
+    if hit is not None:
+        out[hit[0]] = hit[1]
     return out
 
 
 def token_priced(row: Mapping[str, Any] | None, model: str) -> bool:
     """Whether a model's cost is estimated as tokens x roster price: the routes whose ledger
-    ``usd`` is 0 (Claude; ``openai-wif``, since OpenAI returns no cost)."""
-    return is_claude(model) or (row or {}).get("route") == WIF_ROUTE
+    ``usd`` is 0 (Claude; ``openai-wif`` and ``gemini-vertex``, which return no cost)."""
+    return is_claude(model) or (row or {}).get("route") in ROUTE_ENVS
 
 
 # ---------------------------------------------------------------- roster
@@ -312,6 +366,22 @@ def roster_row(cat: Mapping[str, Any], *, model_id: str, tier: str) -> dict[str,
     return row
 
 
+def vertex_row(model_id: str, *, tier: str) -> dict[str, Any]:
+    """One roster entry from :data:`VERTEX_EXTRA` (no catalog row: ``catalog_id`` is None)."""
+    extra = VERTEX_EXTRA[model_id]
+    row: dict[str, Any] = {
+        "id": model_id,
+        "catalog_id": None,
+        "tier": tier,
+        "route": roster_route(model_id),
+        **{k: v for k, v in extra.items() if k != "price_note"},
+        "rpm": DEFAULT_RPM,
+        "source": VERTEX_SOURCE,
+    }
+    row["price_note"] = extra["price_note"]
+    return row
+
+
 def admission(row: Mapping[str, Any]) -> str | None:
     """Why a roster entry is NOT admitted (None = admitted)."""
     if not row.get("structured_outputs"):
@@ -331,8 +401,12 @@ def build_roster(
     models: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     used: dict[str, Any] = {}
+    vertex: list[dict[str, Any]] = []
     for tier, ids in tiers.items():
         for mid in ids:
+            if mid in VERTEX_EXTRA:  # hand-entered, merged after the catalog rows
+                vertex.append(vertex_row(mid, tier=tier))
+                continue
             cid = CLAUDE_CATALOG.get(mid, mid)
             cat = rows.get(cid)
             if cat is None:
@@ -345,9 +419,17 @@ def build_roster(
                 excluded.append({**row, "reason": why})
             else:
                 models.append(row)
+    for row in vertex:
+        why = admission(row)
+        if why:
+            excluded.append({**row, "reason": why})
+        else:
+            models.append(row)
     roster = {
         "source": f"OpenRouter /api/v1/models snapshot fetched on Modal {CATALOG_DATE} "
         f"({CATALOG_COPY.name}: the rows used)",
+        "vertex_extra": f"{', '.join(VERTEX_EXTRA)}: {VERTEX_SOURCE} (judge_sweep.VERTEX_EXTRA; "
+        "no catalog row)",
         "price_unit": "USD per million tokens",
         "max_out": "top_provider.max_completion_tokens, else the context",
         "rpm": "per-account budget; split across a model's concurrently running containers",
@@ -1915,10 +1997,10 @@ def ledger_total(paths: Iterable[Path]) -> dict[str, Any]:
 def cost_usd(
     row: Mapping[str, Any] | None, model: str, led: Mapping[str, Any], *, resume: bool = False
 ) -> float | None:
-    """OpenRouter: the ledger's ``usd``; Claude and ``openai-wif`` (:func:`token_priced`): tokens
-    x roster prices incl. cache read / write (Anthropic ``input_tokens`` exclude cached tokens;
-    OpenRouter's and OpenAI's include them, so an OpenAI estimate prices cached input at the full
-    input price: an upper bound)."""
+    """OpenRouter: the ledger's ``usd``; Claude, ``openai-wif`` and ``gemini-vertex``
+    (:func:`token_priced`): tokens x roster prices incl. cache read / write (Anthropic and
+    ``gemini-vertex`` ``input_tokens`` exclude cached tokens; OpenRouter's and OpenAI's include
+    them, so an OpenAI estimate prices cached input at the full input price: an upper bound)."""
     if not token_priced(row, model):
         return float(led["resume_usd" if resume else "usd"])
     if row is None:
@@ -2217,7 +2299,9 @@ def analyze_arm(
                 "tokens_label": "excl. cached (Anthropic)"
                 if is_claude(model)
                 else (
-                    "incl. cached (OpenAI)"
+                    "excl. cached (Vertex)"
+                    if (row or {}).get("route") == GEMINI_ROUTE
+                    else "incl. cached (OpenAI)"
                     if token_priced(row, model)
                     else "incl. cached (OpenRouter)"
                 ),
@@ -2371,7 +2455,8 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
         if any(r.get("cost_estimated") for r in arm["models"]):
             out.append(
                 "≈ = estimated: tokens x roster list price (routes that return no cost: Claude, "
-                "openai-wif; OpenAI input tokens include cached ones, priced in full)."
+                "openai-wif, gemini-vertex; OpenAI input tokens include cached ones, priced in "
+                "full)."
             )
             out.append("")
         if a == "A":

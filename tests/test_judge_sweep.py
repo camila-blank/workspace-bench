@@ -1058,3 +1058,78 @@ def test_job_opts_drop_the_reference_summ_store():
     for kind in ("A", "A'", "B", "B'"):
         got = js.job_opts(ref, kind, "deepseek/deepseek-v4-flash", row)
         assert "summ_store" not in got and "summ_max=10" in got
+
+
+# ---------------------------------------------------------------- gemini-vertex (addendum B)
+
+
+def test_roster_routes_gemini_models_to_vertex_except_gemma():
+    committed = json.loads(js.ROSTER_PATH.read_text(encoding="utf-8"))
+    by = {m["id"]: m for m in committed["models"]}
+    vertex = {m for m, r in by.items() if r["route"] == js.GEMINI_ROUTE}
+    assert vertex == {
+        "google/gemini-2.5-flash-lite",
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-3.5-flash-lite",
+        "google/gemini-3-flash-preview",
+        "google/gemini-3.8-flash",
+        "google/gemini-4-argon",
+        "google/gemini-3.1-pro-preview",
+    }
+    gemma = [e for e in committed["excluded"] if e["id"].startswith("google/gemma-")]
+    assert gemma and all(e["route"] == "openrouter" for e in gemma)  # open weights: OpenRouter
+    assert by["google/gemini-3.8-flash"]["catalog_id"] == "google/gemini-3.8-flash"  # catalog's
+
+
+def test_vertex_extra_frontier_rows_are_hand_entered():
+    committed = json.loads(js.ROSTER_PATH.read_text(encoding="utf-8"))
+    by = {m["id"]: m for m in committed["models"]}
+    cat_ids = {r["id"] for r in json.loads(js.CATALOG_COPY.read_text(encoding="utf-8"))["data"]}
+    want = {
+        "google/gemini-4-argon": (4.0, 20.0, "introductory $2/$10"),
+        "google/gemini-3.1-pro-preview": (2.0, 12.0, "> 200K tokens bill $4 in / $18 out"),
+    }
+    assert set(js.VERTEX_EXTRA) == set(want)
+    for mid, (p_in, p_out, note) in want.items():
+        r = by[mid]
+        assert (r["route"], r["tier"], r["catalog_id"]) == (js.GEMINI_ROUTE, "frontier", None)
+        assert (r["price_in"], r["price_out"], r["price_cache_read"]) == (p_in, p_out, 0.2)
+        assert r["price_cache_write"] is None
+        assert (r["context"], r["max_out"]) == (1_048_576, 65_536)
+        assert r["supports_reasoning"] and r["structured_outputs"]
+        assert note in r["price_note"] and r["source"] == js.VERTEX_SOURCE
+        assert mid not in cat_ids  # never from the catalog copy
+        assert js.output_cap(r) == js.OUT_CAP_CEILING and js.arm_b_allowed(r)
+    # merged after every catalog row
+    ids = [m["id"] for m in committed["models"]]
+    assert ids[-2:] == list(want)
+
+
+def test_route_env_sets_exactly_one_route_env():
+    o, g = js.OPENAI_ROUTE_ENV, js.GEMINI_ROUTE_ENV
+    base = {"A": "1", o: "wif", g: "vertex"}  # inherited values never leak
+    assert js.route_env(base, {"route": js.GEMINI_ROUTE}) == {"A": "1", g: "vertex"}
+    assert js.route_env(base, {"route": js.WIF_ROUTE}) == {"A": "1", o: "wif"}
+    for row in ({"route": "openrouter"}, {"route": "anthropic"}, None):
+        assert js.route_env(base, row) == {"A": "1"}
+
+
+def test_pricing_usd0_gemini_vertex_run_from_tokens(tmp_path):
+    p = _jsonl(
+        tmp_path / "spend.jsonl",
+        [
+            {
+                "run_id": "r1",
+                "usd": 0.0,
+                "input_tokens": 1_000_000,
+                "output_tokens": 100_000,
+                "cache_read_tokens": 500_000,
+            }
+        ],
+    )
+    led = js.ledger_total([p])
+    row = {"route": js.GEMINI_ROUTE, "price_in": 0.5, "price_out": 3.0, "price_cache_read": 0.05}
+    assert js.token_priced(row, "google/gemini-3.8-flash")
+    assert js.cost_usd(row, "google/gemini-3.8-flash", led) == pytest.approx(
+        (1_000_000 * 0.5 + 100_000 * 3.0 + 500_000 * 0.05) / 1e6
+    )

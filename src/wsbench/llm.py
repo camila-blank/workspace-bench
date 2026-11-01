@@ -22,6 +22,14 @@
   ``reasoning_effort`` from the reasoning's ``effort``, no ``temperature``, no OpenRouter
   ``extra_body``; the response rules are the OpenRouter ones (a 403 is always fatal). OpenAI
   returns no cost, so ``Spend.usd`` stays 0 on this route.
+* Plan 0059 addendum B: with ``WSBENCH_GEMINI_ROUTE=vertex`` a ``google/gemini-*`` id (not
+  ``google/gemma-*``) takes a fourth route, ``gemini``: Vertex AI through ``google-genai`` with
+  workload identity federation on Modal's OIDC identity token (``MODAL_IDENTITY_TOKEN``; both
+  packages imported lazily). Unset, routing is unchanged. The request carries the schema as
+  ``response_json_schema``, ``max_output_tokens`` (the same output budget), ``thinking_level`` from
+  the reasoning's ``effort`` and ``temperature`` only when set; a SAFETY-class finish or a blocked
+  prompt is a refusal, an unparseable ``MAX_TOKENS`` finish one failed call, the error status is
+  ``APIError.code`` (401/403/404 fatal). Vertex returns no cost: ``Spend.usd`` stays 0.
 """
 
 import asyncio
@@ -40,7 +48,7 @@ OPENROUTER = "https://openrouter.ai/api/v1"
 _TRANSIENT = (408, 409, 429, 500, 502, 503, 504, 529)
 _FATAL = ("AuthenticationError", "PermissionDeniedError", "NotFoundError")
 _ATTEMPTS = 12
-_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000, "openai": 8000}
+_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000, "openai": 8000, "gemini": 8000}
 # plan 0059: the OpenRouter output budget — every call's max_tokens, raised or lowered to it
 # (outside every fingerprint; the sweep driver sets it to min(max_out, 32 000, context // 4), so
 # the output request can never be what overflows)
@@ -58,8 +66,31 @@ THROTTLE_STATUSES = frozenset({"429", "quota"})
 # plan 0059 addendum A: "wif" sends openai/* ids (not gpt-oss) to OpenAI directly (route openai)
 OPENAI_ROUTE_ENV = "WSBENCH_OPENAI_ROUTE"
 _OPEN_WEIGHTS = "openai/gpt-oss"  # served by other providers, never by OpenAI: stays on OpenRouter
+# plan 0059 addendum B: "vertex" sends google/gemini-* ids (not google/gemma-*, open weights served
+# by other OpenRouter providers) to Vertex AI (route gemini)
+GEMINI_ROUTE_ENV = "WSBENCH_GEMINI_ROUTE"
+_GEMINI = "google/gemini-"
+# the Vertex WIF recipe (access note, 2026-11-01): Modal workspace safety-sahan-2, environment
+# camila-blank only (the pool trusts that environment's identity tokens)
+VERTEX_PROJECT = "camila-blank"
+VERTEX_LOCATION = "global"
+VERTEX_AUDIENCE = (
+    "//iam.googleapis.com/projects/514946254119/locations/global/workloadIdentityPools/modal/"
+    "providers/modal-oidc"
+)
+VERTEX_TOKEN_URL = "https://sts.googleapis.com/v1/token"
+VERTEX_SUBJECT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt"
+VERTEX_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+MODAL_IDENTITY_ENV = "MODAL_IDENTITY_TOKEN"
+# a Vertex 400 naming the input token limit is a too-long input (sound only under the output
+# budget, as on OpenRouter)
+GEMINI_TOO_LONG = ("input token count", "exceeds the maximum number of tokens")
+# finish reasons that mean the model / filter declined (never retried)
+GEMINI_REFUSALS = frozenset({"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"})
+# raw httpx connection failures (google-genai does not wrap them, unlike the openai SDK)
+_HTTPX_CONNECTION = frozenset({"ConnectError", "RemoteProtocolError", "ReadError", "WriteError"})
 
-Route = Literal["anthropic", "openrouter", "openai"]
+Route = Literal["anthropic", "openrouter", "openai", "gemini"]
 
 
 class JudgeConfigError(RuntimeError):
@@ -114,6 +145,8 @@ def route(model: str) -> Route:
         return "anthropic"
     if model.startswith("openai/") and not model.startswith(_OPEN_WEIGHTS) and _openai_wif():
         return "openai"
+    if model.startswith(_GEMINI) and _gemini_vertex():
+        return "gemini"
     return "openrouter"
 
 
@@ -126,9 +159,23 @@ def _openai_wif() -> bool:
     return raw == "wif"
 
 
+def _gemini_vertex() -> bool:
+    """``WSBENCH_GEMINI_ROUTE`` is ``vertex`` (unset / empty: ``False``; anything else is a
+    :class:`JudgeConfigError`)."""
+    raw = os.environ.get(GEMINI_ROUTE_ENV, "").strip()
+    if raw and raw != "vertex":
+        raise JudgeConfigError(f"{GEMINI_ROUTE_ENV}={raw!r}: expected 'vertex' or unset")
+    return raw == "vertex"
+
+
+def gemini_model(model: str) -> str:
+    """The Vertex model id of a ``google/gemini-*`` roster id (the ``google/`` prefix stripped)."""
+    return model.removeprefix("google/")
+
+
 def api_key(model: str) -> str:
     route_ = route(model)
-    if route_ == "openai":
+    if route_ in ("openai", "gemini"):
         return ""  # workload identity federation: the token is exchanged by the client
     if route_ == "anthropic":
         key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -230,9 +277,79 @@ def _make_client(route: str, key: str) -> Any:
             return _WifClient(ati_remote.Clients("openai-wif"))
         except ati_remote.AbortError as e:  # the openai-wif secret / Modal identity is missing
             raise JudgeConfigError(str(e)) from e
+    if route == "gemini":
+        return _GeminiClient(_vertex_client())
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key=key, base_url=OPENROUTER, max_retries=0)
+
+
+_VERTEX_CREDS: Any = None  # one federated credential per process (google-auth refreshes it)
+_VERTEX_LOCK = threading.Lock()
+
+
+def _vertex_credentials() -> Any:
+    """The process's WIF credential: Modal's OIDC identity token exchanged at Google STS
+    (``google.auth.identity_pool``, imported lazily). No identity token or no package is a
+    :class:`JudgeConfigError`."""
+    global _VERTEX_CREDS
+    with _VERTEX_LOCK:
+        if _VERTEX_CREDS is not None:
+            return _VERTEX_CREDS
+        try:
+            from google.auth import identity_pool
+        except ImportError as e:
+            raise JudgeConfigError(
+                "the gemini route needs google-auth>=2.40 (the Modal image installs it)"
+            ) from e
+        if not os.environ.get(MODAL_IDENTITY_ENV):
+            raise JudgeConfigError(
+                f"{MODAL_IDENTITY_ENV} is missing: the gemini route runs only in a Modal container "
+                "of environment camila-blank"
+            )
+
+        class _ModalToken(identity_pool.SubjectTokenSupplier):
+            def get_subject_token(self, context: Any, request: Any) -> str:
+                return os.environ[MODAL_IDENTITY_ENV]
+
+        _VERTEX_CREDS = identity_pool.Credentials(
+            audience=VERTEX_AUDIENCE,
+            subject_token_type=VERTEX_SUBJECT_TOKEN_TYPE,
+            token_url=VERTEX_TOKEN_URL,
+            subject_token_supplier=_ModalToken(),
+            scopes=list(VERTEX_SCOPES),
+        )
+        return _VERTEX_CREDS
+
+
+def _vertex_client() -> Any:
+    """A ``genai.Client`` on Vertex AI with the process's WIF credential (a fresh client per
+    batch: its async HTTP session is bound to the batch's event loop; the credential is shared)."""
+    try:
+        from google import genai
+    except ImportError as e:
+        raise JudgeConfigError(
+            "the gemini route needs google-genai>=2.3 (the Modal image installs it)"
+        ) from e
+    return genai.Client(
+        vertexai=True,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
+        credentials=_vertex_credentials(),
+    )
+
+
+class _GeminiClient:
+    """The ``gemini`` route's client: a ``genai.Client`` behind the ``close()`` the batch calls."""
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.aio = client.aio
+
+    async def close(self) -> None:
+        aclose = getattr(self.aio, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 # ---------------------------------------------------------------- one call
@@ -390,6 +507,99 @@ def _chat_result(
         _tally(spend.failed, "length")
         print(f"  llm error: {model} finish_reason=length (max_tokens={max_tokens})")
         return None
+
+
+def _genai_types() -> Any:
+    """``google.genai.types`` (lazily: the route is opt-in; tests patch this seam)."""
+    from google.genai import types
+
+    return types
+
+
+def _enum_name(v: Any) -> str | None:
+    """A google-genai enum (or its string) -> its upper-case name; ``None`` when unset."""
+    if v is None:
+        return None
+    return str(getattr(v, "value", v)).upper()
+
+
+async def _gemini_once(
+    client: Any,
+    system: str,
+    user: str,
+    *,
+    schema: dict[str, Any],
+    model: str,
+    reasoning: dict[str, Any] | None,
+    temperature: float | None,
+    max_tokens: int,
+    timeout: float,
+    spend: Spend,
+    mark_refusals: bool = False,
+) -> dict[str, Any] | None:
+    """One Vertex AI ``generate_content`` call (plan 0059 addendum B)."""
+    types = _genai_types()
+    cfg: dict[str, Any] = {
+        "system_instruction": system,
+        "response_mime_type": "application/json",
+        "response_json_schema": schema["schema"],
+        "max_output_tokens": max_tokens,
+        "http_options": types.HttpOptions(timeout=int(timeout * 1000)),  # milliseconds
+    }
+    effort = (reasoning or {}).get("effort")
+    if effort:
+        cfg["thinking_config"] = types.ThinkingConfig(thinking_level=str(effort))
+    if temperature is not None:
+        cfg["temperature"] = temperature
+    resp = await client.aio.models.generate_content(
+        model=gemini_model(model), contents=user, config=types.GenerateContentConfig(**cfg)
+    )
+    return _gemini_result(
+        resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+    )
+
+
+def _gemini_result(
+    resp: Any, *, model: str, max_tokens: int, spend: Spend, mark_refusals: bool
+) -> dict[str, Any] | None:
+    """A ``GenerateContentResponse`` -> the parsed object, a refusal or ``None``; tallies tokens.
+    ``prompt_token_count`` includes cached tokens, so ``input_tokens`` gets the uncached part and
+    ``cache_read_tokens`` the cached one (as on the Anthropic route); output = candidates +
+    thoughts."""
+    spend.calls += 1
+    um = getattr(resp, "usage_metadata", None)
+    if um is not None:
+        cached = int(getattr(um, "cached_content_token_count", 0) or 0)
+        prompt = int(getattr(um, "prompt_token_count", 0) or 0)
+        spend.input_tokens += max(0, prompt - cached)
+        spend.cache_read_tokens += cached
+        spend.output_tokens += int(getattr(um, "candidates_token_count", 0) or 0)
+        spend.output_tokens += int(getattr(um, "thoughts_token_count", 0) or 0)
+    feedback = getattr(resp, "prompt_feedback", None)
+    block = _enum_name(getattr(feedback, "block_reason", None))
+    candidates = getattr(resp, "candidates", None) or []
+    finish = _enum_name(getattr(candidates[0], "finish_reason", None)) if candidates else None
+    if (block and block != "BLOCKED_REASON_UNSPECIFIED") or finish in GEMINI_REFUSALS:
+        spend.refusals += 1  # non-transient: a refusal is never retried
+        print(f"  llm refusal: {model} finish_reason={finish} block_reason={block}")
+        return REFUSED_JSON if mark_refusals else None
+    if not candidates:
+        raise ValueError("response has no candidates")
+    try:
+        return _parse_object(getattr(resp, "text", None) or "")
+    except (ValueError, json.JSONDecodeError):
+        if finish != "MAX_TOKENS":
+            raise  # a garbled body: retried
+        spend.errors += 1  # cut off at the output cap: a retry would be cut off again
+        _tally(spend.failed, "length")
+        print(f"  llm error: {model} finish_reason=MAX_TOKENS (max_output_tokens={max_tokens})")
+        return None
+
+
+def _gemini_status(e: Exception) -> int | None:
+    """``google.genai.errors.APIError.code`` (the HTTP status) of a gemini-route failure."""
+    code = getattr(e, "code", None)
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
 class _BodyError(Exception):
@@ -635,6 +845,20 @@ async def _one(
                     spend=spend,
                     mark_refusals=mark_refusals,
                 )
+            if route_ == "gemini":
+                return await _gemini_once(
+                    client,
+                    system,
+                    user,
+                    schema=schema,
+                    model=model,
+                    reasoning=reasoning,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    spend=spend,
+                    mark_refusals=mark_refusals,
+                )
             return await _openrouter_once(
                 client,
                 system,
@@ -653,6 +877,8 @@ async def _one(
                 raise
             name = type(e).__name__
             status = getattr(e, "status_code", None)
+            if route_ == "gemini" and status is None:
+                status = _gemini_status(e)  # google-genai's APIError carries ``code``
             if route_ == "openrouter" and status == 403 and _moderated(e):
                 spend.refusals += 1  # a moderation flag: this input, not the key (plan 0059)
                 print(f"  llm refusal: {model} (moderation 403)")
@@ -661,9 +887,15 @@ async def _one(
             # is an upstream provider's and keeps the old retry (review of #217)
             if not isinstance(e, _BodyError) and (name in _FATAL or status in (401, 402, 403)):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
+            if route_ == "gemini" and status == 404:  # no such model / no access on Vertex
+                raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
             kind = _status_kind(e, status)
+            gemini_conn = route_ == "gemini" and status is None and name in _HTTPX_CONNECTION
+            if gemini_conn:
+                kind = "connection"
             transient = (
-                status in _TRANSIENT
+                gemini_conn
+                or status in _TRANSIENT
                 or "Timeout" in name
                 or "Connection" in name
                 or "Deadline" in name
@@ -692,10 +924,13 @@ def _too_long(route_: Route, message: str) -> bool:
     """A 400 that is a too-long input: "prompt is too long"; on OpenRouter (and the ``openai``
     route) with ``WSBENCH_OPENROUTER_MAX_OUT`` set, any :data:`OPENROUTER_TOO_LONG` phrase (sound
     only under that output cap, plan 0059: without it a "maximum context length" 400 can be the
-    output request)."""
+    output request); on the ``gemini`` route, under the same cap, any :data:`GEMINI_TOO_LONG`
+    phrase."""
     msg = message.lower()
     if route_ == "anthropic" or openrouter_max_out() is None:  # the broad list needs the cap
         return "prompt is too long" in msg
+    if route_ == "gemini":
+        return any(p in msg for p in GEMINI_TOO_LONG)
     return any(p in msg for p in OPENROUTER_TOO_LONG)
 
 
@@ -738,7 +973,8 @@ async def stream_json_async(
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
     a config problem. Builds no client when there is nothing to call. ``temperature`` is sent on
     the OpenRouter route only: newer Claude models reject the field (400), so the Anthropic route
-    drops it with one printed warning per batch (as does the ``openai`` route)."""
+    drops it with one printed warning per batch (as does the ``openai`` route; the ``gemini`` route
+    sends it)."""
     spend = spend or Spend()
     if not prompts:
         return spend

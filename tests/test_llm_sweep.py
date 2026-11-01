@@ -1,7 +1,8 @@
 """Plan 0059 `llm` changes: token / cache-token tallies, the OpenRouter output cap and overflow
-classifier, OpenRouter refusals, 200-body errors, the ``transient`` / ``failed`` tallies, and the
-addendum A ``openai`` (WIF) route."""
+classifier, OpenRouter refusals, 200-body errors, the ``transient`` / ``failed`` tallies, the
+addendum A ``openai`` (WIF) route and the addendum B ``gemini`` (Vertex WIF) route."""
 
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -570,3 +571,281 @@ def test_200_body_error_with_a_fatal_http_code_keeps_the_old_retry(env, monkeypa
     fake = FakeOpenRouter([_body_error(code, "upstream provider error"), _or()])
     got, spend = _run(monkeypatch, fake)
     assert got == [{"a": 1}] and spend.retries == 1 and spend.transient == {str(code): 1}
+
+
+# ---------------------------------------------------------------- gemini route (addendum B)
+
+GEM_MODEL = "google/gemini-3.8-flash"
+
+
+class ClientError(Exception):
+    """Shaped as ``google.genai.errors.APIError``: the HTTP status is ``code``."""
+
+    def __init__(self, code: int, message: str = "error") -> None:
+        super().__init__(f"{code} {message}")
+        self.code = code
+
+
+class ConnectError(Exception):
+    """Named as the raw httpx class google-genai lets through."""
+
+
+def _genai_types_fake() -> Any:
+    def record(kind: str) -> Any:
+        return lambda **kw: {"_type": kind, **kw}
+
+    return SimpleNamespace(
+        GenerateContentConfig=record("GenerateContentConfig"),
+        ThinkingConfig=record("ThinkingConfig"),
+        HttpOptions=record("HttpOptions"),
+    )
+
+
+def _gem(
+    text: str | None = '{"a": 1}',
+    finish: str | None = "STOP",
+    usage: Any = None,
+    block: str | None = None,
+    candidates: bool = True,
+) -> Any:
+    cands = [SimpleNamespace(finish_reason=SimpleNamespace(value=finish))] if candidates else []
+    return SimpleNamespace(
+        text=text,
+        candidates=cands,
+        usage_metadata=usage,
+        prompt_feedback=SimpleNamespace(block_reason=block) if block else None,
+    )
+
+
+class FakeGenai:
+    """A ``genai.Client``: ``aio.models.generate_content`` plays the outcome script."""
+
+    def __init__(self, outcomes: list[Any]):
+        self.outcomes = list(outcomes)
+        self.calls: list[dict[str, Any]] = []
+        self.closed = 0
+        self.aio = SimpleNamespace(
+            models=SimpleNamespace(generate_content=self._gen), aclose=self._aclose
+        )
+
+    async def _gen(self, **kw: Any) -> Any:
+        self.calls.append(kw)
+        out = self.outcomes.pop(0)
+        if isinstance(out, BaseException):
+            raise out
+        return out
+
+    async def _aclose(self) -> None:
+        self.closed += 1
+
+
+@pytest.fixture
+def gem(env, monkeypatch):
+    monkeypatch.setenv(llm.GEMINI_ROUTE_ENV, "vertex")
+    monkeypatch.setattr(llm, "_genai_types", _genai_types_fake)
+
+
+def _run_gem(monkeypatch, fake: FakeGenai, **kw: Any) -> tuple[list, Spend]:
+    routes: list[str] = []
+
+    def make(route: str, key: str) -> Any:
+        routes.append(route)
+        return llm._GeminiClient(fake)
+
+    monkeypatch.setattr(llm, "_make_client", make)
+    got: list[Any] = []
+    spend = stream_json(
+        [("s", "u")], schema=SCHEMA, model=GEM_MODEL, on_result=lambda i, r: got.append(r), **kw
+    )
+    assert routes == ["gemini"]
+    return got, spend
+
+
+def test_gemini_route_only_with_the_env(monkeypatch):
+    gems = (GEM_MODEL, "google/gemini-2.5-flash-lite", "google/gemini-4-argon")
+    for m in (*gems, "google/gemma-4-31b-it:free", OR_MODEL):
+        assert llm.route(m) == "openrouter"  # env unset: unchanged
+    monkeypatch.setenv(llm.GEMINI_ROUTE_ENV, "vertex")
+    assert {llm.route(m) for m in gems} == {"gemini"}
+    assert llm.route("google/gemma-4-31b-it:free") == "openrouter"  # open weights: other providers
+    assert llm.route(OR_MODEL) == "openrouter" and llm.route(CLAUDE) == "anthropic"
+    assert llm.route("openai/gpt-6-luna") == "openrouter"  # the openai route has its own env
+    assert llm.api_key(GEM_MODEL) == ""  # no key: WIF on the Modal identity token
+    assert llm.gemini_model(GEM_MODEL) == "gemini-3.8-flash"
+    monkeypatch.setenv(llm.GEMINI_ROUTE_ENV, "wif")
+    with pytest.raises(JudgeConfigError, match="expected 'vertex'"):
+        llm.route(GEM_MODEL)
+
+
+def test_gemini_route_request_shape(gem, monkeypatch):
+    fake = FakeGenai([_gem(), _gem(), _gem()])
+    got, spend = _run_gem(monkeypatch, fake, reasoning={"effort": "low"})
+    monkeypatch.setenv(llm.MAX_OUT_ENV, "900")
+    _run_gem(monkeypatch, fake, reasoning=None)
+    _run_gem(monkeypatch, fake, temperature=0.0)
+    assert got == [{"a": 1}] and fake.closed == 3
+    first, second, third = fake.calls
+    for c in fake.calls:
+        assert c["model"] == "gemini-3.8-flash"  # the google/ prefix stripped
+        assert c["contents"] == "u"
+        cfg = c["config"]
+        assert cfg["_type"] == "GenerateContentConfig"
+        assert cfg["system_instruction"] == "s"
+        assert cfg["response_mime_type"] == "application/json"
+        assert cfg["response_json_schema"] == SCHEMA["schema"]
+        assert cfg["http_options"] == {"_type": "HttpOptions", "timeout": 180_000}
+    assert first["config"]["max_output_tokens"] == llm._DEFAULT_MAX_TOKENS["gemini"] == 8000
+    assert second["config"]["max_output_tokens"] == 900  # the sweep output budget applies
+    assert first["config"]["thinking_config"] == {
+        "_type": "ThinkingConfig",
+        "thinking_level": "low",
+    }
+    assert "thinking_config" not in second["config"]
+    assert "temperature" not in first["config"] and "temperature" not in second["config"]
+    assert third["config"]["temperature"] == 0.0  # sent only when the caller sets one
+    assert spend.usd == 0.0
+
+
+@pytest.mark.parametrize("finish", sorted(llm.GEMINI_REFUSALS))
+def test_gemini_route_safety_finish_is_a_refusal(gem, monkeypatch, finish):
+    fake = FakeGenai([_gem(text=None, finish=finish)])
+    got, spend = _run_gem(monkeypatch, fake, mark_refusals=True)
+    assert got == [llm.REFUSED_JSON] and spend.refusals == 1 and len(fake.calls) == 1
+    assert spend.retries == 0 and spend.failed == {}
+
+
+def test_gemini_route_blocked_prompt_is_a_refusal(gem, monkeypatch):
+    fake = FakeGenai([_gem(text=None, finish=None, block="SAFETY", candidates=False)])
+    got, spend = _run_gem(monkeypatch, fake)
+    assert got == [None] and spend.refusals == 1 and len(fake.calls) == 1
+
+
+def test_gemini_route_max_tokens_unparseable_is_one_failed_call(gem, monkeypatch):
+    fake = FakeGenai([_gem('{"a":', finish="MAX_TOKENS"), _gem("garbled", finish="STOP"), _gem()])
+    got, spend = _run_gem(monkeypatch, fake)
+    assert got == [None] and spend.failed == {"length": 1} and len(fake.calls) == 1
+    got, spend = _run_gem(monkeypatch, fake)  # a garbled STOP body is still a parse retry
+    assert got == [{"a": 1}] and spend.retries == 1 and spend.transient == {}
+
+
+def test_gemini_route_status_rules(gem, monkeypatch):
+    fake = FakeGenai([ClientError(429, "RESOURCE_EXHAUSTED"), ClientError(503), _gem()])
+    got, spend = _run_gem(monkeypatch, fake)
+    assert got == [{"a": 1}] and spend.transient == {"429": 1, "503": 1} and spend.failed == {}
+    fake = FakeGenai([ConnectError("reset"), _gem()])
+    got, spend = _run_gem(monkeypatch, fake)
+    assert got == [{"a": 1}] and spend.transient == {"connection": 1}
+    for code in (401, 403, 404):
+        with pytest.raises(JudgeConfigError, match="ClientError"):
+            _run_gem(monkeypatch, FakeGenai([ClientError(code, "PERMISSION_DENIED")]))
+
+
+def test_gemini_route_token_limit_400_is_too_long_under_the_budget(gem, monkeypatch):
+    msg = "INVALID_ARGUMENT. The input token count (1200000) exceeds the maximum number of tokens"
+    got, spend = _run_gem(monkeypatch, FakeGenai([ClientError(400, msg)]), mark_refusals=True)
+    assert got == [None] and spend.failed == {"400": 1}  # no budget: a plain error
+    monkeypatch.setenv(llm.MAX_OUT_ENV, "900")
+    got, spend = _run_gem(monkeypatch, FakeGenai([ClientError(400, msg)]), mark_refusals=True)
+    assert got == [llm.TOO_LONG_JSON] and spend.failed == {"400": 1} and spend.retries == 0
+    other = ClientError(400, "INVALID_ARGUMENT. response_json_schema is invalid")
+    got, _spend = _run_gem(monkeypatch, FakeGenai([other]), mark_refusals=True)
+    assert got == [None]
+
+
+def test_gemini_route_usage_tallies_incl_thoughts_and_cache(gem, monkeypatch):
+    usage = SimpleNamespace(
+        prompt_token_count=1000,
+        cached_content_token_count=600,
+        candidates_token_count=40,
+        thoughts_token_count=200,
+    )
+    got, spend = _run_gem(monkeypatch, FakeGenai([_gem(usage=usage)]))
+    assert got == [{"a": 1}]
+    # prompt_token_count includes the cached tokens: input = the uncached part
+    assert (spend.input_tokens, spend.cache_read_tokens, spend.output_tokens) == (400, 600, 240)
+    assert spend.usd == 0.0 and spend.calls == 1
+    got, spend = _run_gem(monkeypatch, FakeGenai([_gem(usage=SimpleNamespace())]))
+    assert (spend.input_tokens, spend.output_tokens, spend.cache_read_tokens) == (0, 0, 0)
+
+
+def test_gemini_route_judge_effort_and_digest_reasoning(monkeypatch):
+    from wsbench import digest
+    from wsbench.judge_config import DEFAULT_REASONING, JudgeConfig, resolve
+
+    monkeypatch.setenv(llm.GEMINI_ROUTE_ENV, "vertex")
+    cfg = JudgeConfig(prompt_version="v", reasoning={"effort": "low", "anthropic_effort": "x"})
+    r = resolve(cfg, flag=GEM_MODEL, env={}, effort="high")
+    assert (r.reasoning, r.pinned) == ({"effort": "high"}, False)
+    assert resolve(cfg, flag=GEM_MODEL, env={}).reasoning == {"effort": "low"}  # non-Anthropic
+    assert resolve(JudgeConfig(), flag=GEM_MODEL, env={}).reasoning == DEFAULT_REASONING
+    assert resolve(cfg, flag=GEM_MODEL, env={}, effort="default").reasoning is None
+    assert digest.digest_reasoning(GEM_MODEL, "low") == {"effort": "low"}
+    assert digest.digest_reasoning(GEM_MODEL, "default") is None
+
+
+def _fake_google(monkeypatch) -> dict[str, Any]:
+    """Fake ``google.auth.identity_pool`` / ``google.genai`` modules recording their args."""
+    import types as pytypes
+
+    seen: dict[str, Any] = {}
+
+    class SubjectTokenSupplier:
+        pass
+
+    def credentials(**kw: Any) -> Any:
+        seen["creds"] = kw
+        return SimpleNamespace(kind="creds")
+
+    def client(**kw: Any) -> Any:
+        seen.setdefault("clients", []).append(kw)
+        return SimpleNamespace(aio=SimpleNamespace())
+
+    pool = pytypes.ModuleType("google.auth.identity_pool")
+    pool.SubjectTokenSupplier = SubjectTokenSupplier  # type: ignore[attr-defined]
+    pool.Credentials = credentials  # type: ignore[attr-defined]
+    auth = pytypes.ModuleType("google.auth")
+    auth.identity_pool = pool  # type: ignore[attr-defined]
+    genai = pytypes.ModuleType("google.genai")
+    genai.Client = client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "google.auth", auth)
+    monkeypatch.setitem(sys.modules, "google.auth.identity_pool", pool)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setattr(llm, "_VERTEX_CREDS", None)
+    return seen
+
+
+def test_gemini_client_recipe_and_one_credential_per_process(monkeypatch):
+    seen = _fake_google(monkeypatch)
+    monkeypatch.delenv(llm.MODAL_IDENTITY_ENV, raising=False)
+    with pytest.raises(JudgeConfigError, match="MODAL_IDENTITY_TOKEN"):
+        llm._make_client("gemini", "")
+    monkeypatch.setenv(llm.MODAL_IDENTITY_ENV, "jwt-identity")
+    c1 = llm._make_client("gemini", "")
+    c2 = llm._make_client("gemini", "")
+    assert isinstance(c1, llm._GeminiClient) and c1 is not c2
+    creds = seen["creds"]
+    assert creds["audience"] == llm.VERTEX_AUDIENCE
+    assert creds["audience"].endswith("workloadIdentityPools/modal/providers/modal-oidc")
+    assert creds["subject_token_type"] == "urn:ietf:params:oauth:token-type:jwt"
+    assert creds["token_url"] == "https://sts.googleapis.com/v1/token"
+    assert creds["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
+    assert creds["subject_token_supplier"].get_subject_token(None, None) == "jwt-identity"
+    want = {
+        "vertexai": True,
+        "project": "camila-blank",
+        "location": "global",
+        "credentials": llm._VERTEX_CREDS,
+    }
+    assert seen["clients"] == [want, want]  # two clients (one per batch loop), one credential
+
+
+def test_gemini_client_missing_packages_is_a_config_error(monkeypatch):
+    _fake_google(monkeypatch)
+    monkeypatch.setenv(llm.MODAL_IDENTITY_ENV, "jwt-identity")
+    monkeypatch.setitem(sys.modules, "google.genai", None)  # import raises ImportError
+    with pytest.raises(JudgeConfigError, match="google-genai"):
+        llm._make_client("gemini", "")
+    monkeypatch.setitem(sys.modules, "google.auth.identity_pool", None)
+    monkeypatch.setitem(sys.modules, "google.auth", None)
+    with pytest.raises(JudgeConfigError, match="google-auth"):
+        llm._vertex_credentials()
