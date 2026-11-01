@@ -236,6 +236,24 @@ def hit_forms(
     return out
 
 
+def forms_matcher(
+    forms: Mapping[str, list[str]],
+    *,
+    numeric_match: NumericMatch = "context",
+    case_sensitive: Collection[str] = (),
+) -> Callable[[list[str]], bool]:
+    """``bool(hit_forms(samples, forms, ...))`` with the matchers built ONCE (a caller testing
+    thousands of lines against one form set; ``hit_forms`` rebuilds them per call)."""
+    ms = [
+        _standalone_number_matcher(f)
+        if numeric_match == "standalone" and re.fullmatch(r"-?\d+", f.strip())
+        else unicode_word_matcher(f, case_sensitive=f in case_sensitive)
+        for fs in forms.values()
+        for f in fs
+    ]
+    return lambda samples: any(m(x) for m in ms for x in samples)
+
+
 # ---------------------------------------------------------------------------------------------
 # olens_suite/bank/contract.py — the bank contract and the per-unit form builder
 # ---------------------------------------------------------------------------------------------
