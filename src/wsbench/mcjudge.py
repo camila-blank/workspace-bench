@@ -226,6 +226,8 @@ def base_counts(
         "n_empty_cells": n_empty,
         "skipped_rows": skipped_rows,
         "spend_usd": spend.usd,
+        "input_tokens": spend.input_tokens,
+        "output_tokens": spend.output_tokens,
     }
 
 

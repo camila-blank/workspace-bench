@@ -207,6 +207,8 @@ def test_run_regex_prose(tmp_path, real_families):
         "n_empty_cells": 2,
         "skipped_rows": 0,
         "spend_usd": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
     }
     assert r.pinned_instrument and not r.complete  # a subset run is never complete
     assert r.config["judge_model"] == "regex"

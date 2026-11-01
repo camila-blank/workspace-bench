@@ -8,6 +8,11 @@
   retried with jittered backoff; any other per-call failure yields ``None`` (an unjudged cell,
   never a clean one). Problems that would fail every call raise :class:`JudgeConfigError`.
 * ``on_result(i, result)`` fires as each call lands so callers can cache as they go.
+* OpenRouter route only (plan 0059): ``WSBENCH_OPENROUTER_MAX_OUT`` caps every call's
+  ``max_tokens``; a 400 naming the context length is too-long (``TOO_LONG_JSON`` under
+  ``mark_refusals``); ``message.refusal``, ``finish_reason == "content_filter"`` and a moderation
+  403 are refusals; ``finish_reason == "length"`` with unparseable JSON is one failed call; an
+  error delivered in a 200 body is classified by its ``error.code`` like an HTTP status.
 """
 
 import asyncio
@@ -17,14 +22,29 @@ import random
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from wsbench import ledger
 
 OPENROUTER = "https://openrouter.ai/api/v1"
 _TRANSIENT = (408, 409, 429, 500, 502, 503, 504, 529)
 _FATAL = ("AuthenticationError", "PermissionDeniedError", "NotFoundError")
 _ATTEMPTS = 12
 _DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000}
+# plan 0059: the OpenRouter output cap (outside every fingerprint; the sweep driver sets it to
+# min(max_out, 32 000, context // 4), so the output request can never be what overflows)
+MAX_OUT_ENV = "WSBENCH_OPENROUTER_MAX_OUT"
+# an OpenRouter 400 whose message names the context length is a too-long input (pinned by a test;
+# "too many tokens" is deliberately absent: it also names an output request over the cap)
+OPENROUTER_TOO_LONG = (
+    "maximum context length",
+    "context length",
+    "context window",
+    "prompt is too long",
+)
+# the final statuses that mean a call was throttled (rate limit / exhausted quota), not broken
+THROTTLE_STATUSES = frozenset({"429", "quota"})
 
 Route = Literal["anthropic", "openrouter"]
 
@@ -36,7 +56,15 @@ class JudgeConfigError(RuntimeError):
 @dataclass
 class Spend:
     """Per-run tally. ``calls`` counts HTTP 200 responses (including garbled bodies that were
-    then retried); ``errors``/``refusals`` count cells left unjudged."""
+    then retried); ``errors``/``refusals`` count cells left unjudged. ``input_tokens`` excludes
+    cached prompt tokens on the Anthropic route (those are ``cache_read_tokens`` /
+    ``cache_write_tokens``) and includes them on OpenRouter (``prompt_tokens``); output tokens
+    include thinking / reasoning on both. ``transient``: status -> count of retried transient
+    failures (``"408"`` ... ``"529"``, ``"timeout"``, ``"connection"``; parse retries are not
+    counted), recovered or not; ``failed``: final status -> count of calls that ENDED failed with
+    one (an HTTP status, ``"timeout"`` / ``"connection"``, or a 200-body ``error.code``), so a
+    call that ended throttled (:meth:`throttled`) is told from a recovered retry. A Spend built
+    inside a runner family registers in the spend ledger (``wsbench.ledger``)."""
 
     usd: float = 0.0
     calls: int = 0
@@ -45,6 +73,18 @@ class Spend:
     refusals: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    transient: dict[str, int] = field(default_factory=dict)
+    failed: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        ledger.register(self)
+
+    def throttled(self) -> int:
+        """Calls that ENDED failed on a rate limit or an exhausted quota (recovered 429s are
+        not counted)."""
+        return sum(n for k, n in self.failed.items() if k in THROTTLE_STATUSES)
 
     def report(self) -> str:
         s = (
@@ -184,6 +224,7 @@ async def _openrouter_once(
     max_tokens: int,
     timeout: float,
     spend: Spend,
+    mark_refusals: bool = False,
 ) -> dict[str, Any] | None:
     extra_body: dict[str, Any] = {
         "usage": {"include": True},
@@ -205,13 +246,92 @@ async def _openrouter_once(
     )
     spend.calls += 1
     if not getattr(resp, "choices", None):  # an error delivered in a 200 body
-        raise ValueError("response has no choices")
+        raise _body_error(resp)
     usage = getattr(resp, "usage", None)
     cost = getattr(usage, "cost", None) if usage is not None else None
     if cost is None and usage is not None:
         cost = (getattr(usage, "model_extra", None) or {}).get("cost")
     spend.usd += float(cost or 0.0)
-    return _parse_object(resp.choices[0].message.content or "")
+    if usage is not None:  # getattr defaults: the test fakes carry only ``cost``
+        spend.input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+        spend.output_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+    choice = resp.choices[0]
+    message = getattr(choice, "message", None)
+    finish = getattr(choice, "finish_reason", None)
+    content = getattr(message, "content", None) or ""
+    if getattr(message, "refusal", None) or finish == "content_filter":
+        spend.refusals += 1  # non-transient: a refusal is never retried
+        print(f"  llm refusal: {model} finish_reason={finish}")
+        return REFUSED_JSON if mark_refusals else None
+    try:
+        return _parse_object(content)
+    except (ValueError, json.JSONDecodeError):
+        if finish != "length":
+            raise  # a garbled body: retried
+        # cut off at the output cap: a retry would be cut off again (and paid again)
+        spend.errors += 1
+        _tally(spend.failed, "length")
+        print(f"  llm error: {model} finish_reason=length (max_tokens={max_tokens})")
+        return None
+
+
+class _BodyError(Exception):
+    """An error OpenRouter delivered in a 200 body, classified by ``status_code`` = its
+    ``error.code`` (an int when numeric, else the code string, e.g. ``"quota"``)."""
+
+    def __init__(self, message: str, status_code: int | str | None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _body_error(resp: Any) -> Exception:
+    """The exception for a 200 body with no choices: a :class:`_BodyError` carrying
+    ``error.code`` (a code-less rate-limit / quota message counts as 429), else the old
+    ``ValueError`` parse retry."""
+    err = getattr(resp, "error", None)
+    if err is None:
+        err = (getattr(resp, "model_extra", None) or {}).get("error")
+    if not isinstance(err, dict):
+        err = {"code": getattr(err, "code", None), "message": getattr(err, "message", "")}
+    code: Any = err.get("code")
+    msg = str(err.get("message") or "")
+    if isinstance(code, str) and code.strip().isdigit():
+        code = int(code.strip())
+    if code is None and any(w in msg.lower() for w in ("rate limit", "rate-limit", "quota")):
+        code = 429
+    if code is None or isinstance(code, bool) or not isinstance(code, int | str):
+        return ValueError("response has no choices")
+    return _BodyError(f"200-body error {code}: {msg[:300]}", code)
+
+
+def _moderated(e: Exception) -> bool:
+    """An OpenRouter 403 that is a moderation flag (``error.metadata.reasons``, or a message
+    saying the input was flagged), not an auth / access problem."""
+    body = getattr(e, "body", None)
+    err = body.get("error", body) if isinstance(body, dict) else None
+    meta = err.get("metadata") if isinstance(err, dict) else None
+    if isinstance(meta, dict) and "reasons" in meta:
+        return True
+    msg = str(err.get("message") or "") if isinstance(err, dict) else ""
+    return "flagged" in (msg + " " + str(e)).lower()
+
+
+def _status_kind(e: Exception, status: Any) -> str | None:
+    """The ``Spend.transient`` / ``Spend.failed`` key of a failure: its status, or ``timeout`` /
+    ``connection`` by exception name; ``None`` for a parse failure."""
+    if status is not None:
+        return str(status)
+    name = type(e).__name__
+    if "Timeout" in name or "Deadline" in name:
+        return "timeout"
+    if "Connection" in name:
+        return "connection"
+    return None
+
+
+def _tally(d: dict[str, int], kind: str | None) -> None:
+    if kind is not None:
+        d[kind] = d.get(kind, 0) + 1
 
 
 # What a free-text call returns for a model refusal when the caller passes mark_refusals=True
@@ -306,12 +426,16 @@ async def _anthropic_once(
         spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
         spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
     stop = getattr(resp, "stop_reason", None)
+    if usage is not None:  # getattr defaults: older fakes carry no cache fields
+        spend.cache_read_tokens += int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+        spend.cache_write_tokens += int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
     if stop == "refusal":
         spend.refusals += 1
         print(f"  llm refusal: {model}")
         return REFUSED_JSON if mark_refusals else None
     if stop in ("max_tokens", "model_context_window_exceeded"):
         spend.errors += 1
+        _tally(spend.failed, "max_tokens" if stop == "max_tokens" else "context_window")
         print(f"  llm error: {model} stop_reason={stop}")
         if mark_refusals and stop == "model_context_window_exceeded":
             return TOO_LONG_JSON
@@ -390,12 +514,22 @@ async def _one(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 spend=spend,
+                mark_refusals=mark_refusals,
             )
         except Exception as e:
             name = type(e).__name__
             status = getattr(e, "status_code", None)
-            if name in _FATAL or status in (401, 402, 403):  # bad key, no credits, no access
+            if route_ == "openrouter" and status == 403 and _moderated(e):
+                spend.refusals += 1  # a moderation flag: this input, not the key (plan 0059)
+                print(f"  llm refusal: {model} (moderation 403)")
+                return REFUSED_JSON if mark_refusals else None
+            if (
+                name in _FATAL
+                or status in (401, 402, 403)  # bad key, no credits, no access
+                or (isinstance(e, _BodyError) and status == 404)  # as the HTTP NotFoundError
+            ):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
+            kind = _status_kind(e, status)
             transient = (
                 status in _TRANSIENT
                 or "Timeout" in name
@@ -405,14 +539,41 @@ async def _one(
             )
             if transient and attempt < n_attempts - 1:
                 spend.retries += 1
-                await _sleep(_backoff(attempt, status))
+                if not isinstance(e, json.JSONDecodeError | ValueError):  # parse retries: no
+                    _tally(spend.transient, kind)
+                await _sleep(_backoff(attempt, status if isinstance(status, int) else None))
                 continue
             spend.errors += 1
+            _tally(spend.failed, kind)
             print(f"  llm error: {name}: {str(e)[:200]}")
-            if mark_refusals and status == 400 and "prompt is too long" in str(e).lower():
+            if mark_refusals and status == 400 and _too_long(route_, str(e)):
                 return TOO_LONG_JSON
             return None
     return None
+
+
+def _too_long(route_: Route, message: str) -> bool:
+    """A 400 that is a too-long input: Anthropic's "prompt is too long"; on OpenRouter any
+    :data:`OPENROUTER_TOO_LONG` phrase (sound only under the output cap, plan 0059)."""
+    msg = message.lower()
+    if route_ == "anthropic":
+        return "prompt is too long" in msg
+    return any(p in msg for p in OPENROUTER_TOO_LONG)
+
+
+def openrouter_max_out() -> int | None:
+    """``WSBENCH_OPENROUTER_MAX_OUT`` as a positive int (``None`` when unset); a bad value is a
+    :class:`JudgeConfigError`."""
+    raw = os.environ.get(MAX_OUT_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        cap = int(raw)
+    except ValueError:
+        cap = 0
+    if cap <= 0:
+        raise JudgeConfigError(f"{MAX_OUT_ENV}={raw!r}: expected a positive integer")
+    return cap
 
 
 # ---------------------------------------------------------------- the primitive
@@ -452,6 +613,8 @@ async def stream_json_async(
         temperature = None
     if max_tokens is None:
         max_tokens = _DEFAULT_MAX_TOKENS[route_]
+    if route_ == "openrouter" and (cap := openrouter_max_out()) is not None:
+        max_tokens = min(max_tokens, cap)
     client = _make_client(route_, key)
     sem = asyncio.Semaphore(concurrency)
 
@@ -647,6 +810,8 @@ async def _anthropic_text_once(
         if usage is not None:
             spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
             spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
+            spend.cache_read_tokens += int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+            spend.cache_write_tokens += int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
         stop = getattr(resp, "stop_reason", None)
         if stop == "refusal":
             spend.refusals += 1
@@ -700,9 +865,12 @@ async def _one_text(
             )
             if transient and attempt < _ATTEMPTS - 1:
                 spend.retries += 1
+                if not isinstance(e, json.JSONDecodeError | ValueError):
+                    _tally(spend.transient, _status_kind(e, status))
                 await _sleep(_backoff(attempt, status))
                 continue
             spend.errors += 1
+            _tally(spend.failed, _status_kind(e, status))
             print(f"  llm error: {name}: {str(e)[:200]}")
             return None
     return None

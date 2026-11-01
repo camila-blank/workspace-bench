@@ -57,6 +57,13 @@ BULLET_MARK = " \u205e "  # " ⁞ ": joins the top-level bullets of one free-tex
 DEFAULT_RENDER = "extractive"
 EFFORTS = ("low", "medium", "high", "default")
 AUX_ROLE = "digest"
+CONTEXT_WINDOW = 1_000_000  # Opus 5.5 input + output; summ_context=N replaces it (plan 0059)
+# below this the hierarchical budget (context - MAX_TOKENS - CONTEXT_MARGIN) goes to ~0 and
+# every readout group becomes its own chunk
+MIN_CONTEXT = 128_000
+# plan 0059: the cache keys of the digest path (stride, chunk, final, re-ask, ``|level`` and
+# ``ntok:`` rows); a judge row never starts with one, so a seed copy keeps exactly these
+DIGEST_KEY_PREFIXES = ("digest:", "ntok:")
 
 DIGEST_SYSTEM = """You are a note-taker for an interpretability benchmark. You are given raw \
 readouts of a language model's internal activations, taken while it read a passage you cannot \
@@ -348,6 +355,10 @@ class Settings:
     lang: bool = False  # summ_lang=1: each entry records the language of its evidence
     layer_mode: str = DEFAULT_LAYER_MODE  # summ_layers (audit F1): union | joint
     show_key: bool = False  # summ_showkey=1: the support marker names the key it counted
+    context: int = CONTEXT_WINDOW  # summ_context (plan 0059): the window the budget fits
+    # summ_cache_only=1 (plan 0059): digests come from the cache only, never a call; outside
+    # to_json and every fingerprint, stamped as config.summarizer_cache_only
+    cache_only: bool = False
 
     @property
     def per_layer(self) -> bool:
@@ -373,6 +384,7 @@ class Settings:
             "lang": self.lang,
             "layer_mode": self.layer_mode,
             **({"show_key": True} if self.show_key else {}),
+            **({"context": self.context} if self.context != CONTEXT_WINDOW else {}),
         }
 
     @property
@@ -462,15 +474,53 @@ def _with_family(args: JudgeArgs, family: str | None) -> JudgeArgs:
     return dataclasses.replace(args, extra={**defaults, **args.extra})
 
 
+def digest_reasoning(model: str, effort: str) -> dict | None:
+    """The digest call's reasoning, by route (plan 0059): ``claude-*`` ->
+    ``{"anthropic_effort": effort}`` (unchanged, fingerprinted); any other model -> ``None`` at
+    ``default`` effort, else OpenRouter's ``{"effort": effort}``."""
+    if llm.route(model) == "anthropic":
+        return {"anthropic_effort": effort}
+    return None if effort == "default" else {"effort": effort}
+
+
+def cache_only_opt(extra: Mapping[str, str]) -> bool:
+    """``summ_cache_only=1`` in ``opts=`` (plan 0059)."""
+    return extra.get("summ_cache_only", "0") == "1"
+
+
 def settings(args: JudgeArgs, family: str | None = None) -> Settings:
     """The digest settings from ``opts=`` over the family's defaults (``FAMILY_DEFAULTS``); an
-    unknown value exits 2."""
+    unknown value exits 2. A refusal fallback is an Anthropic server feature: an explicit
+    ``summ_fallback`` other than ``none`` with a non-Claude digest model exits 2, a family
+    default one becomes ``none`` (plan 0059). ``summ_context`` below :data:`MIN_CONTEXT` exits 2,
+    and so does ``summ_cache_only=1`` with the ``stride`` overflow and a refusal model (a
+    twice-declined stride call is never cached, so it would always miss)."""
+    explicit_fallback = args.extra.get("summ_fallback", "none") != "none"
     args = _with_family(args, family)
     effort = _choice(args, "summ_effort", EFFORTS, DEFAULT_EFFORT)
     model = args.extra.get("summ_model") or args.aux_models.get(AUX_ROLE) or DEFAULT_MODEL
+    fallback = _fallback_opt(args)
+    if fallback != "none" and llm.route(model) != "anthropic":
+        if explicit_fallback:
+            fail(
+                f"summ_fallback={fallback!r} needs a claude-* digest model (got {model}): the "
+                "refusal fallback is an Anthropic server feature"
+            )
+        fallback = "none"  # a family default: silently off for a non-Claude digest model
+    context = _int_opt(args, "summ_context", CONTEXT_WINDOW)
+    if context < MIN_CONTEXT:
+        fail(f"summ_context={context}: expected at least {MIN_CONTEXT} tokens")
+    overflow = _choice(args, "summ_overflow", OVERFLOWS, DEFAULT_OVERFLOW)
+    cache_only = _choice(args, "summ_cache_only", ("0", "1"), "0") == "1"
+    if cache_only and overflow == "stride" and "+" in fallback:
+        fail(
+            f"summ_cache_only=1 with summ_overflow=stride and summ_fallback={fallback!r}"
+            f"{f' (the {family} default)' if family else ''}: a twice-declined stride call is "
+            "never cached, so a cache-only run would always miss"
+        )
     return Settings(
         model=model,
-        reasoning={"anthropic_effort": effort},
+        reasoning=digest_reasoning(model, effort),
         variant=_choice(args, "summ_variant", VARIANTS, DEFAULT_VARIANT),
         render=_choice(args, "summ_render", RENDERS, DEFAULT_RENDER),
         max_items=_int_opt(args, "summ_max", DEFAULT_MAX_ITEMS),
@@ -478,8 +528,8 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
         max_rare=_nonneg_opt(args, "summ_rare", DEFAULT_MAX_RARE),
         numbers=_nonneg_opt(args, "summ_numbers", 0),
         decode=_decode_opt(args),
-        overflow=_choice(args, "summ_overflow", OVERFLOWS, DEFAULT_OVERFLOW),
-        fallback=_fallback_opt(args),
+        overflow=overflow,
+        fallback=fallback,
         concurrency=_int_opt(args, "summ_concurrency", 0) or None
         if "summ_concurrency" in args.extra
         else None,
@@ -490,6 +540,8 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
             args, "summ_showkey", ("0", "1"), "1" if family in SHOW_KEY_FAMILIES else "0"
         )
         == "1",
+        context=context,
+        cache_only=cache_only,
     )
 
 
@@ -527,6 +579,8 @@ KNOWN_KEYS = frozenset(
         "summ_lang",
         "summ_layers",
         "summ_showkey",
+        "summ_context",  # plan 0059
+        "summ_cache_only",  # plan 0059
     }
 )
 
@@ -624,14 +678,18 @@ def summary_note(
 
 def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None) -> dict[str, Any]:
     """The ``config`` keys every summary-mode result carries (effective concurrency / timeout)."""
-    summ = settings(args, family).to_json()
+    s = settings(args, family)
+    summ = s.to_json()
     summ["concurrency"] = summ["concurrency"] or args.concurrency
     summ["timeout"] = summ["timeout"] or DIGEST_TIMEOUT
-    return {
+    out: dict[str, Any] = {
         "aggregate": "summary",
         "summarizer": summ,
         "source_kind": source_kind,
     }
+    if s.cache_only:  # plan 0059: written only when set (existing config dicts unchanged)
+        out["summarizer_cache_only"] = True
+    return out
 
 
 def as_prose(rep: LoadReport) -> Kind | None:
@@ -1412,6 +1470,8 @@ class Collapse:
     # final r1 (third review of #201): per item, the texts of the lines :func:`pin_lines` added;
     # MC-judge input only, never digest regex evidence (``gate_texts(pins=False)``)
     pinned: dict[str, set[str]] = field(default_factory=dict)
+    # plan 0059 (summ_cache_only): items whose re-ask had no cached row (first pass kept)
+    reask_missed: set[str] = field(default_factory=set)
 
     def extras(self) -> dict[str, Any]:
         served: dict[str, int] = {}
@@ -1431,6 +1491,14 @@ class Collapse:
             "n_items_partial": len(self.partial),
             "n_items_partial_refused": len(self.refused_layers),
             "summary_partial_ids": sorted(self.partial),
+            # plan 0059: which items were not served / came back empty (the sweep's verdicts)
+            "summary_unsummarized_ids": sorted(self.unsummarized),
+            "summary_empty_ids": sorted(self.empty),
+            **(
+                {"summary_reask_cache_miss_ids": sorted(self.reask_missed)}
+                if self.reask_missed
+                else {}
+            ),
             "n_truncated_items": len(self.truncated),
             "digest_served_by": served,
             # F1: where the judged lines come from (one layer dominating = an unbalanced merge)
@@ -1623,6 +1691,7 @@ def _synthetic(item_id: str, last: Cell, pos: int | None) -> Cell:
 # audit F3 (2026-10-31): a digest that kept fewer than COLLAPSE_MIN entries from at least
 # COLLAPSE_READOUTS readouts collapsed; it is re-asked once and the fuller answer kept
 COLLAPSE_MIN = 5
+REASK_SALT = "|reask1"  # the re-ask's fingerprint salt (its keys are the first pass's)
 COLLAPSE_READOUTS = 100
 # audit F1: a hierarchical merge keeps every chunk claim stated by at least this many samples,
 # whether or not the final (re-summarizing) call kept it
@@ -1775,6 +1844,38 @@ def merge_grounded(gs: Sequence[Grounded]) -> list[Grounded]:
     return [g for _r, g in out]
 
 
+def _call_diag() -> dict[str, int]:
+    """The digest-call counters every collapse path records (plan 0059): API calls made
+    (digest and ``count_tokens``; 0 under ``summ_cache_only``), cache-only lookups served a
+    newest-failed row, ``ntok`` counts estimated without a call, re-asks with no cached row."""
+    return {
+        "n_digest_calls": 0,
+        "n_digest_cached_failed": 0,
+        "n_ntok_estimated": 0,
+        "n_reask_cache_miss": 0,
+    }
+
+
+def is_digest_key(key: str) -> bool:
+    """A cache key of the digest path (:data:`DIGEST_KEY_PREFIXES`): what a cache-only seed
+    keeps (plan 0059)."""
+    return key.startswith(DIGEST_KEY_PREFIXES)
+
+
+def _cache_only_miss(
+    name: str, cache: Cache, key: str, fp: str, col: Collapse, *, reask: bool = False
+) -> bool:
+    """``summ_cache_only`` and no usable row for ``(key, fp)``: a newest-failed row is a failed
+    call (counted; ``True``); no row on a re-ask is a re-ask miss (``False``; the caller keeps
+    the first pass); no row on a primary key exits 2, before any further call of the family."""
+    if cache.get(key, fp, include_failed=True) is not None:
+        col.diag["n_digest_cached_failed"] += 1
+        return True
+    if reask:
+        return False
+    fail(f"{name}: summ_cache_only=1 but no cached digest row for {key} (fp {fp})")
+
+
 def collapse(
     name: str,
     cells_by_item: Mapping[str, Sequence[Cell]],
@@ -1815,6 +1916,8 @@ def collapse(
     first number of at least 3 of the 4 samples of one activation (:func:`consensus_claims`)
     with that count, and such a number fills a slot the summarizer left free."""
     s = settings(args, name)
+    if s.cache_only:  # plan 0059: no digest call, so no digest preflight
+        preflight = None
     notes = _notes(name, cells_by_item, task_note)
     _check_expect_all(name, cells_by_item, expect_all)
     spare = NUMBERS_SPARE if s.numbers > 0 and operands is not None else 0
@@ -1912,6 +2015,7 @@ def _collapse_stride(
         "n_key_duplicates": 0,
         "n_readouts_in": 0,
         "n_readouts_bundled": 0,
+        **_call_diag(),
     }
     col.model = s.model
     lines_of: dict[str, list[Line]] = {}
@@ -1946,9 +2050,13 @@ def _collapse_stride(
     results: dict[str, object] = {}
     todo: list[tuple[str, str, str]] = []
     for item_id, fp, user in pending:
-        row = _cached(cache, f"digest:{item_id}|{layers_tag}", fp)
+        key = f"digest:{item_id}|{layers_tag}"
+        row = _cached(cache, key, fp)
         if row is not None:
             results[item_id] = row.get("result")
+        elif s.cache_only:  # plan 0059: a newest-failed row is a failed call, no row a miss
+            _cache_only_miss(name, cache, key, fp, col)
+            results[item_id] = None
         else:
             todo.append((item_id, fp, user))
     print(f"{name} digest: {len(todo)} calls ({len(results)} cached, model={s.model})")
@@ -1969,6 +2077,7 @@ def _collapse_stride(
 
         if preflight is not None:
             preflight()
+        col.diag["n_digest_calls"] += len(todo)
         llm.stream_json(
             [(system_of[i], user) for i, _fp, user in todo],
             schema=schema,
@@ -1986,6 +2095,7 @@ def _collapse_stride(
         if declined:
             model = str(s.refusal_model)
             col.diag["n_refusal_model_calls"] = len(declined)
+            col.diag["n_digest_calls"] += len(declined)
             print(f"{name} digest: {len(declined)} declined call(s) re-run on {model}")
 
             def on_retry(j: int, r: dict | None) -> None:
@@ -2144,8 +2254,11 @@ def _reask_collapsed(
         return
     print(f"{name} digest: re-asking {len(low)} collapsed digest(s)")
     again = _collapse_hierarchical(
-        name, {p: parts[p] for p in low}, preflight=None, salt=salt + "|reask1", **kw
+        name, {p: parts[p] for p in low}, preflight=None, salt=salt + REASK_SALT, **kw
     )
+    for k in _call_diag():  # the re-ask's calls count with the family's
+        part.diag[k] = part.diag.get(k, 0) + again.diag.get(k, 0)
+    part.reask_missed |= again.reask_missed
     better = still = 0
     for p in low:
         g2 = again.grounded.get(p, [])
@@ -2188,6 +2301,7 @@ def _merge_parts(
     for why in ("all_dropped", "refused", "too_long"):
         col.diag[f"n_parts_{why}"] = sum(1 for r in part.reasons.values() if r == why)
     col.truncated = set(part.truncated)
+    col.reask_missed = {owner[p] for p in part.reask_missed if p in owner}
     pids_of: dict[str, list[str]] = {}
     for pid, item_id in owner.items():
         pids_of.setdefault(item_id, []).append(pid)
@@ -2407,8 +2521,7 @@ def _numbers_pass(
 
 # ---------------------------------------------------------------- hierarchical overflow (plan 0021)
 
-CONTEXT_WINDOW = 1_000_000  # Opus 5.5 input + output
-CONTEXT_MARGIN = 64_000
+CONTEXT_MARGIN = 64_000  # CONTEXT_WINDOW (the summ_context default) is defined with the options
 MAX_HALVINGS = 2
 DIGEST_ATTEMPTS = 3  # a 1800 s call must not be retried 12 times
 _UNCOUNTED_RATIO = 1.7  # worst measured real/est ratio, used when a count fails
@@ -2510,7 +2623,9 @@ def _collapse_hierarchical(
         stems = {i: f"digest:{i}|{layers_tag}" for i in cells_by_item}
     system_of = {i: render_system(s, notes[i], spare) for i in cells_by_item}
     schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
-    budget0 = min(s.token_cap, CONTEXT_WINDOW - MAX_TOKENS - CONTEXT_MARGIN)
+    budget0 = min(s.token_cap, s.context - MAX_TOKENS - CONTEXT_MARGIN)
+    reask = REASK_SALT in salt
+    missed: set[str] = set()  # cache-only re-asks with no cached row (plan 0059)
     conc = s.concurrency or args.concurrency
     timeout = s.timeout or DIGEST_TIMEOUT
     col = Collapse()
@@ -2531,6 +2646,7 @@ def _collapse_hierarchical(
         "n_readouts_bundled": 0,
         "n_chunk_claims_kept": 0,
         "n_items_chunk_direct": 0,
+        **_call_diag(),
     }
     col.model = s.model
     groups_of: dict[str, list[_Group]] = {}
@@ -2589,12 +2705,17 @@ def _collapse_hierarchical(
             counts[i] = est_tokens(text_of[i])
             need.remove(i)
     if need:
-        try:
-            got: list[int | None] = llm.count_tokens(
-                s.model, [(system_of[i], render_user(text_of[i])) for i in need]
-            )
-        except llm.JudgeConfigError:  # a model without count_tokens: the worst-ratio estimate
-            got = [None] * len(need)
+        got: list[int | None] = [None] * len(need)
+        if s.cache_only:  # plan 0059: no count call; the estimate a failed count gets
+            col.diag["n_ntok_estimated"] += len(need)
+        else:
+            try:
+                got = llm.count_tokens(
+                    s.model, [(system_of[i], render_user(text_of[i])) for i in need]
+                )
+                col.diag["n_digest_calls"] += len(need)
+            except llm.JudgeConfigError:  # a model without count_tokens: the worst-ratio estimate
+                pass
         for i, n in zip(need, got, strict=True):
             if n is None:
                 counts[i] = int(est_tokens(text_of[i]) * _UNCOUNTED_RATIO)
@@ -2662,10 +2783,15 @@ def _collapse_hierarchical(
                 served_keys[key] = str(res0[llm.SERVED_BY])
             if row is not None:
                 out[key] = row.get("result")
+            elif s.cache_only:  # plan 0059: no call; a re-ask miss keeps the first pass
+                if not _cache_only_miss(name, cache, key, fp, col, reask=reask):
+                    missed.add(i)
+                out[key] = None
             else:
                 todo.append((i, key, fp, user))
         if todo:
             col.diag["n_chunk_calls"] += sum(1 for _i, k, _f, _u in todo if _CHUNK_KEY.search(k))
+            col.diag["n_digest_calls"] += len(todo)
 
             def on_result(j: int, r: dict | None) -> None:
                 _i, key, fp, _u = todo[j]
@@ -2700,6 +2826,7 @@ def _collapse_hierarchical(
         that model as SERVED_BY (cached with it, so provenance survives a rerun)."""
         model = str(s.refusal_model)
         col.diag["n_refusal_model_calls"] = col.diag.get("n_refusal_model_calls", 0) + len(again)
+        col.diag["n_digest_calls"] += len(again)
         print(f"{name} digest: {len(again)} declined call(s) re-run on {model}")
 
         def on_retry(j: int, r: dict | None) -> None:
@@ -2965,6 +3092,16 @@ def _collapse_hierarchical(
         models = sorted({served_keys[k] for k in chain if k in served_keys})
         if models:
             col.served_by[i] = ",".join(models)
+    for i in missed:  # a cache-only re-ask R4 never made: as if it did not improve the first pass
+        for d in (col.summaries, col.evidence, col.statements, col.grounded, col.layer_hist):
+            d.pop(i, None)
+        for d2 in (col.partial, col.refused_layers, col.chunks, col.served_by, col.reasons):
+            d2.pop(i, None)
+        col.empty.discard(i)
+        col.unsummarized.add(i)
+        col.cells[i] = dataclasses.replace(col.cells[i], samples=("",))
+    col.reask_missed = missed
+    col.diag["n_reask_cache_miss"] = len(missed)
     col.diag["n_hierarchical_items"] = len(col.chunks)
     col.diag["n_fallback_served_items"] = len(col.served_by)
     return col

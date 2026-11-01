@@ -10,6 +10,8 @@ DEFAULT_JUDGE = "claude-opus-5-5"  # plan 0023 (Camila 2026-10-29)
 DEFAULT_REASONING = {"effort": "minimal"}  # OpenRouter judges: Gemini cannot turn reasoning off
 ANTHROPIC_REASONING_KEYS = frozenset({"anthropic_effort"})  # every other key is OpenRouter's
 ENV_OVERRIDE = "WSBENCH_JUDGE_MODEL"
+# plan 0059: ``judge_effort=`` (OpenRouter judges only): replaces the reasoning resolve would give
+JUDGE_EFFORTS = ("default", "minimal", "low", "medium", "high")
 
 
 @dataclass(frozen=True)
@@ -29,8 +31,17 @@ class ResolvedJudge:
 
 
 def resolve(
-    config: JudgeConfig, *, flag: str | None = None, env: Mapping[str, str] | None = None
+    config: JudgeConfig,
+    *,
+    flag: str | None = None,
+    env: Mapping[str, str] | None = None,
+    effort: str | None = None,
 ) -> ResolvedJudge:
+    """The judge of a family: model flag > env > family pin. ``effort`` (``judge_effort=``, plan
+    0059), when given, REPLACES the OpenRouter reasoning this would produce (the family's keys
+    and :data:`DEFAULT_REASONING` alike): ``default`` -> ``None``, else ``{"effort": effort}``,
+    and the judge is no longer the pinned instrument. A ``claude-*`` judge with ``effort``, or an
+    unknown level, exits 2."""
     env = env or {}
     env_model = env.get(ENV_OVERRIDE, "")
     if flag:
@@ -49,6 +60,14 @@ def resolve(
         if (k in ANTHROPIC_REASONING_KEYS) == is_anthropic
     }
     reasoning: dict | None = kept or (None if is_anthropic else dict(DEFAULT_REASONING))
-    return ResolvedJudge(
-        model=model, reasoning=reasoning, pinned=model == config.model, source=source
-    )
+    pinned = model == config.model
+    if effort is not None:
+        from wsbench.family import fail  # wsbench.family imports this module
+
+        if effort not in JUDGE_EFFORTS:
+            fail(f"judge_effort={effort!r}: expected one of {', '.join(JUDGE_EFFORTS)}")
+        if is_anthropic:
+            fail(f"judge_effort={effort!r} is for OpenRouter judges; {model} is a claude-* judge")
+        reasoning = None if effort == "default" else {"effort": effort}
+        pinned = False
+    return ResolvedJudge(model=model, reasoning=reasoning, pinned=pinned, source=source)

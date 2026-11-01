@@ -64,6 +64,8 @@ def test_to_json_exact_keys_and_round_trip(tmp_path):
         "n_empty_cells",
         "skipped_rows",
         "spend_usd",
+        "input_tokens",
+        "output_tokens",
     }
     assert set(d["numbers"]) == {
         "metric",
