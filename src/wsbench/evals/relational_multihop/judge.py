@@ -1,5 +1,5 @@
-"""relational_multihop (rel-v2, plan 0043; option list rel-v3): ONE composed-relation MC per judged unit, whose quote
-must be one phrase inside one bullet that states the chain in order.
+"""relational_multihop (rel-v2, plan 0043; option list rel-v3): ONE composed-relation MC per
+judged unit, whose quote must be one phrase inside one bullet that states the chain in order.
 
 Units: native = one call per (item, layer) on the bundle of every read position at that layer;
 summary (the default) = one call per item on its digest of every read position x every layer.

@@ -1,5 +1,6 @@
-"""Write the relational_multihop option-list pins: ``tests/golden/relational_multihop_options_v3.json``
-(the current rel-v3 list) and ``..._options_v2.json`` (the retired rel-v2 list, ``version="v2"``),
+"""Write the relational_multihop option-list pins:
+``tests/golden/relational_multihop_options_v3.json`` (the current rel-v3 list) and
+``..._options_v2.json`` (the retired rel-v2 list, ``version="v2"``),
 for every frozen-bank item from ``relational_multihop.judge.build_options`` (no API, deterministic).
 
     .venv/bin/python scripts/make_relational_options.py [--check]

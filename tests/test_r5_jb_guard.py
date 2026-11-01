@@ -183,9 +183,7 @@ def test_relational_floor_is_live_at_the_current_instrument(real_families, tmp_p
     assert not 0.138 <= 1 / 13 + 0.05
     # the stale shape stays dropped: the same entries under the old stamp are not a floor
     stale = {
-        "relational_multihop": {
-            v: dict(e, instrument="rel-v2+relgate-v4") for v, e in live.items()
-        }
+        "relational_multihop": {v: dict(e, instrument="rel-v2+relgate-v4") for v, e in live.items()}
     }
     dst = tmp_path / "lucky.json"
     dst.write_text(json.dumps(stale), encoding="utf-8")
