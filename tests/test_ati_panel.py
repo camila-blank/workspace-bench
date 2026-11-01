@@ -812,7 +812,9 @@ def test_decisive_items_two_missing_readers_and_full_panel():
 
 def test_frozen_argon_decisive_counts_match_the_statuses():
     """Every entry recording ``argon_decisive_items`` agrees with its own frozen statuses, and is
-    provisional exactly when that count is non-zero (decision R1-ATI argon)."""
+    provisional exactly when that count is non-zero; a reduced-panel entry without the count
+    (fresh from a reduced gate, before ``scripts/ati_argon_decisive.py``) stays provisional
+    (decision R1-ATI argon)."""
     frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
     recorded = {
         f: e
@@ -821,7 +823,9 @@ def test_frozen_argon_decisive_counts_match_the_statuses():
     }
     assert recorded, "no reduced-panel entry in the ATI file"
     for fam, e in recorded.items():
-        assert "argon_decisive_items" in e, fam
+        if "argon_decisive_items" not in e:
+            assert e.get("provisional") is True, fam
+            continue
         assert ti.missing_readers(e) == ["argon"], fam
         assert len(ti.decisive_items(e)) == e["argon_decisive_items"], fam
         assert bool(e.get("provisional")) == (e["argon_decisive_items"] > 0), fam
