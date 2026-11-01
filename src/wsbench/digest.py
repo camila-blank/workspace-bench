@@ -10,11 +10,12 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from wsbench import llm
 from wsbench import mc as _mc
-from wsbench.cache import Cache, fingerprint
+from wsbench.cache import Cache, SharedLog, fingerprint
 from wsbench.family import _fold, fail
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend, schema_block
@@ -22,7 +23,8 @@ from wsbench.readouts import Cell, Kind, LoadReport
 from wsbench.registry import JudgeArgs
 
 # v4 (plan 0032): tool-free wording, the Q4 token rule, task context on, named restatements,
-# bullet marks, number words; the language label (summ_lang) adds "-lang"
+# bullet marks, number words (the summ_lang language label and its "-lang" tag were removed on
+# 2026-11-01, Camila: the multilingual families get a neutral task note instead)
 # v5 (audit fixes F1/F2/F3/F11, 2026-10-31): every entry carries the note-taker's per-claim
 # sample "count" (capped mechanically at the samples holding its key); a multi-layer item is
 # digested layer by layer and the per-layer digests are merged (summ_layers=union); a
@@ -52,6 +54,11 @@ OVERFLOWS = ("stride", "hierarchical")
 # joint: its five-number budget is deliberately fixed (plan 0022 Part B).
 LAYER_MODES = ("union", "joint")
 DEFAULT_LAYER_MODE = "union"
+# ``summ_store=<dir>``: the per-layer digest store shared by every layer config of one readouts
+# file (a ``layers=[L]`` run and any multi-layer union run of the same family). Each (item, layer)
+# digest is asked ONCE across those configs (``SharedDigests``); it changes no request, so it is
+# not in the instrument string. Hierarchical overflow only (the stride ablation ignores it).
+STORE_OPT = "summ_store"
 DEFAULT_OVERFLOW = "hierarchical"  # plan 0032 §2.2.1: never drops a readout; stride = ablation
 BULLET_MARK = " \u205e "  # " ⁞ ": joins the top-level bullets of one free-text sample
 DEFAULT_RENDER = "extractive"
@@ -108,10 +115,6 @@ list, that shows the statement and contains the key; from a token list, copy who
 "count" (how many samples state this entry's content: count the samples that make the same \
 claim, not the samples that merely contain the key word; a sample that only lists the key among \
 other words of its kind, or only restates the input's wording, does not count; at least 1)."""
-# the language label (summ_lang=1; multilingual families, plan 0032 §2.2.2): shown, never gated
-DIGEST_LANG_LINE = """For every entry also give "language": the language the evidence span is \
-written in (e.g. English, Russian; "mixed: Russian + English" when it mixes). Record it; never \
-translate the evidence."""
 # the numbers digest (plan 0022 Part B; chain / arithmetic): the same recorder, asked for the
 # n most prominent numbers only. Its "rare" list is always empty (summ_rare=0 for these families).
 _DIGEST_HEAD = DIGEST_SYSTEM.split("- Rank by prominence:", 1)[0]
@@ -193,14 +196,12 @@ SUMMARY_NOTE_ABSTRACTIVE_NO_RARE = SUMMARY_NOTE_ABSTRACTIVE.replace(_RARE_CLAUSE
 assert "layer by layer" not in SUMMARY_NOTE_ABSTRACTIVE_NO_RARE
 assert "for each read layer" not in SUMMARY_NOTE_NO_RARE
 EXTRACTIVE_LINE = "[{support}] {evidence}"
-EXTRACTIVE_LINE_LANG = "[{support}] [in {language}] {evidence}"
 ABSTRACTIVE_LINE = '- {statement} [support: {support}] — evidence: "{evidence}"'
 
 PROMPTS: dict[str, str] = {
     "DIGEST_SYSTEM": DIGEST_SYSTEM,
     "DIGEST_SYSTEM_NUMBERS": DIGEST_SYSTEM_NUMBERS,
     "DIGEST_TASK_LINE": DIGEST_TASK_LINE,
-    "DIGEST_LANG_LINE": DIGEST_LANG_LINE,
     "DIGEST_USER": DIGEST_USER,
     "SUMMARY_NOTE": SUMMARY_NOTE,
     "SUMMARY_NOTE_ABSTRACTIVE": SUMMARY_NOTE_ABSTRACTIVE,
@@ -209,7 +210,6 @@ PROMPTS: dict[str, str] = {
     "SUMMARY_NOTE_ABSTRACTIVE_NO_RARE": SUMMARY_NOTE_ABSTRACTIVE_NO_RARE,
     "EXTRACTIVE_LINE": EXTRACTIVE_LINE,
     "COUNT_NOTE": _COUNT_NOTE,
-    "EXTRACTIVE_LINE_LANG": EXTRACTIVE_LINE_LANG,
     "ABSTRACTIVE_LINE": ABSTRACTIVE_LINE,
 }
 
@@ -228,19 +228,6 @@ _ENTRY = {
 DIGEST_SCHEMA = schema_block(
     "digest",
     {"items": {"type": "array", "items": _ENTRY}, "rare": {"type": "array", "items": _ENTRY}},
-    ["items", "rare"],
-)
-_ENTRY_LANG = {
-    **_ENTRY,
-    "required": [*_ENTRY["required"], "language"],
-    "properties": {**_ENTRY["properties"], "language": {"type": "string"}},
-}
-DIGEST_SCHEMA_LANG = schema_block(
-    "digest",
-    {
-        "items": {"type": "array", "items": _ENTRY_LANG},
-        "rare": {"type": "array", "items": _ENTRY_LANG},
-    },
     ["items", "rare"],
 )
 
@@ -264,7 +251,6 @@ FAMILY_DEFAULT_KEYS = frozenset(
         "summ_rare",
         "summ_numbers",
         "summ_ties",
-        "summ_lang",
     }
 )
 FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
@@ -305,11 +291,8 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     # plan 0044 §C3: the judge must see the competing answers to weigh them (coverage 0.42 at
     # 10 items vs 0.65 at 25), and rare single answers must survive so minimum support counts them
     "knowledge_cutoff": {"summ_max": "25", "summ_rare": "25"},
-    # plan 0032 §2.2.2: the language each evidence span is written in, shown to the judge
-    "multilingual": {"summ_lang": "1"},
-    "multilingual_mt": {"summ_lang": "1"},
-    "multilingual_multihop": {"summ_lang": "1"},
-    "multilingual_typo": {"summ_lang": "1"},
+    # (Camila 2026-11-01: the four multilingual families no longer run summ_lang; the option is
+    # gone and their digest is told a neutral task note, multitoken.prompts.DIGEST_TASK_NOTES)
     # plan 0045 C1: 8-11% of introspection digests are refused by Opus 5.5 and were undecided;
     # a declined digest re-runs server-side on a fallback model (extras.digest_served_by).
     # Audit F3 (2026-10-31): the jailbreak route for every family whose digests Opus 5.5 declines
@@ -352,7 +335,6 @@ class Settings:
     # "default": server-side refusal fallback for digest calls; "default+<model>": a call still
     # declined after it re-runs once on <model> (client-side; plan 0037 J10)
     fallback: str = "none"
-    lang: bool = False  # summ_lang=1: each entry records the language of its evidence
     layer_mode: str = DEFAULT_LAYER_MODE  # summ_layers (audit F1): union | joint
     show_key: bool = False  # summ_showkey=1: the support marker names the key it counted
 
@@ -378,7 +360,6 @@ class Settings:
             "concurrency": self.concurrency,
             "timeout": self.timeout,
             "fallback": self.fallback,
-            "lang": self.lang,
             "layer_mode": self.layer_mode,
             **({"show_key": True} if self.show_key else {}),
         }
@@ -493,7 +474,6 @@ def settings(args: JudgeArgs, family: str | None = None) -> Settings:
         if "summ_concurrency" in args.extra
         else None,
         timeout=float(_int_opt(args, "summ_timeout", 1)) if "summ_timeout" in args.extra else None,
-        lang=_choice(args, "summ_lang", ("0", "1"), "0") == "1",
         layer_mode=_choice(args, "summ_layers", LAYER_MODES, DEFAULT_LAYER_MODE),
         show_key=_choice(
             args, "summ_showkey", ("0", "1"), "1" if family in SHOW_KEY_FAMILIES else "0"
@@ -534,9 +514,9 @@ KNOWN_KEYS = frozenset(
         "summ_rare",
         "summ_numbers",
         "summ_ties",
-        "summ_lang",
         "summ_layers",
         "summ_showkey",
+        STORE_OPT,
     }
 )
 
@@ -586,11 +566,11 @@ def pinned(args: JudgeArgs, family: str | None = None) -> bool:
 
 
 def prompt_version(pv: str, args: JudgeArgs, family: str | None = None) -> str:
-    """The summary-mode instrument string: ``<pv>+digest-v5-<variant>-<render>[-lang][-stride]
+    """The summary-mode instrument string: ``<pv>+digest-v5-<variant>-<render>[-stride]
     [-joint]+sj-v10`` (defaults: ``<pv>+digest-v5-task-extractive+sj-v10``). Cite this, never a
     literal."""
     s = settings(args, family)
-    tail = ("-lang" if s.lang else "") + ("-stride" if s.overflow == "stride" else "")
+    tail = "-stride" if s.overflow == "stride" else ""
     tail += "-joint" if s.layer_mode == "joint" and s.numbers == 0 else ""
     # "-rankties": round 4 r2, support-ranked tie_cut (the first-five-in-order "-ties" rule is void)
     tail += f"-rankties{s.ties}" if s.numbers > 0 and s.ties > 0 else ""
@@ -639,10 +619,14 @@ def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None)
     summ = settings(args, family).to_json()
     summ["concurrency"] = summ["concurrency"] or args.concurrency
     summ["timeout"] = summ["timeout"] or DIGEST_TIMEOUT
+    store = args.extra.get(STORE_OPT) if summ["overflow"] == "hierarchical" else None
     return {
         "aggregate": "summary",
         "summarizer": summ,
         "source_kind": source_kind,
+        # provenance only, kept out of ``summarizer`` (the instrument identity floors and
+        # alt-judge rows match on): a shared store changes no request
+        **({"digest_store": str(Path(store).resolve())} if store else {}),
     }
 
 
@@ -669,7 +653,7 @@ class Line:
     where: str = ""  # the group header, "[L44 pos 33]"
     layer: int | None = None
     pos: int | None = None
-    language: str = ""  # summ_lang: the summarizer's label, shown to the judge, never gated
+    language: str = ""  # always "" (summ_lang removed 2026-11-01; kept for positional arity)
     bullet: int | None = None
     scores: tuple[float, ...] | None = None  # token lines: the cell's scores, aligned to pieces
 
@@ -1183,7 +1167,7 @@ class Grounded:
     line: Line  # the whole bundle sample the span came from
     key: str = ""  # the item's key content (verified inside the evidence), or the evidence
     tier: str = "items"  # "items" (prominent), "rare" or "numbers" (plan 0022)
-    language: str = ""  # summ_lang: the summarizer's label for the evidence's language
+    language: str = ""  # always "" (summ_lang removed 2026-11-01; kept for positional arity)
     count: int = 1  # samples stating the claim (claim_count; summed over layers when merged)
     layers: tuple[int, ...] = ()  # the read layers whose digests carried the claim
     consensus: str = ""  # F11: the first-number consensus note of a number, else ""
@@ -1280,7 +1264,6 @@ def ground(
     max_rare: int = 0,
     numbers: bool = False,
     numeral_drops: list[int] | None = None,
-    lang: bool = False,
 ) -> tuple[list[Grounded], int]:
     """The digest entries whose evidence verifies, and how many failed the evidence check:
     ``items`` (capped at ``max_items``) first, then ``rare`` (capped at ``max_rare``; a missing or
@@ -1332,11 +1315,9 @@ def ground(
             dup[0] += 1
             continue
         seen_keys.add(dkey)
-        lab = d.get("language") if lang else ""
-        lab = _one_line(lab) if isinstance(lab, str) else ""
         n = claim_count(d.get("count"), k, support_lines or lines)
         lay = () if ln.layer is None else (ln.layer,)
-        kept.append(Grounded(_one_line(st), support_text(n), ev1, ln, k, tier, lab, n, lay))
+        kept.append(Grounded(_one_line(st), support_text(n), ev1, ln, k, tier, "", n, lay))
     return kept, dropped
 
 
@@ -1350,12 +1331,11 @@ def counted_on(g: Grounded) -> str:
 
 
 def render_summary(
-    items: Sequence[Grounded], render: str, *, lang: bool = False, show_key: bool = False
+    items: Sequence[Grounded], render: str, *, show_key: bool = False
 ) -> tuple[str, list[Line]]:
     """The judged text and its distinct evidence lines (first occurrence kept). Extractive: one
-    ``[support] <whole evidence sample>`` line per distinct sample, no summarizer words (under
-    ``lang``: ``[support] [in <language>] <sample>``; the label is shown, never gated on: the
-    evidence Line's ``text`` stays the sample). Abstractive: statement, support and the
+    ``[support] <whole evidence sample>`` line per distinct sample, no summarizer words.
+    Abstractive: statement, support and the
     evidence sample. ``show_key``: each marker names the key its count was taken on
     (:func:`counted_on`)."""
     out: list[str] = []
@@ -1365,13 +1345,8 @@ def render_summary(
         if render == "extractive":
             if g.line.text in seen:
                 continue
-            tmpl = EXTRACTIVE_LINE_LANG if lang else EXTRACTIVE_LINE
             sup = g.support + (counted_on(g) if show_key else "")
-            out.append(
-                tmpl.replace("{support}", sup)
-                .replace("{language}", g.language or "unknown")
-                .replace("{evidence}", g.line.text)
-            )
+            out.append(EXTRACTIVE_LINE.replace("{support}", sup).replace("{evidence}", g.line.text))
         else:
             out.append(
                 ABSTRACTIVE_LINE.replace("{statement}", g.statement)
@@ -1380,7 +1355,7 @@ def render_summary(
             )
         if g.line.text not in seen:
             seen.add(g.line.text)
-            evid.append(dataclasses.replace(g.line, language=g.language) if lang else g.line)
+            evid.append(g.line)
     return "\n".join(out), evid
 
 
@@ -1393,6 +1368,83 @@ def _cached(cache: Cache, key: str, fp: str) -> dict | None:
     invalidates it, so a rerun re-asks; ``Cache.get`` alone would return the older success."""
     row = cache.get(key, fp, include_failed=True)
     return row if row is not None and row.get("result") is not None else None
+
+
+# the sub-key suffixes of one digest stem (``_collapse_hierarchical``): chunks, final, level
+_STEM_SUFFIX = re.compile(r"\|(?:h\d+\|(?:c\d+of\d+|final)|level)$")
+
+
+class SharedDigests:
+    """The digest cache of one ``collapse`` under ``summ_store=<dir>``: the run's own cache plus
+    the per-layer store ``<dir>/<family>/L<layer>.jsonl`` (:class:`wsbench.cache.SharedLog`)
+    that every layer config of the same readouts shares, so an (item, layer) digest a
+    ``layers=[L]`` run asked is reused by a union run (and the other way round).
+
+    ``route`` maps a run-local digest stem (``digest:<id>|<tag>``) whose bundle is exactly ONE
+    layer's cells to ``(layer, store stem)``, the store stem always ``digest:<id>|<layer>``; every
+    sub-key of a routed stem (``|h<k>|c<i>of<n>``, ``|h<k>|final``, ``|level``,
+    ``ntok:<id>|<tag>``) is routed with it. Unrouted keys (a joint multi-layer bundle) never reach
+    the store. The store keys the SAME request fingerprint the run computes (prompt version,
+    model, effort, budget, rare tier, numbers, cap, lang, the item's task note, the bundle text,
+    the salt) extended with ``salt`` (the refusal-fallback setting, which the digest fingerprint
+    does not key), so a store row is served only for a byte-identical request under the same
+    fallback, cap and overflow (``salt``). Every write goes to both (the store first). The run's
+    own success always wins; on a local miss (or a local failed row older than the store's) a
+    store row is copied into the run's own cache, so an out dir stays self-contained."""
+
+    def __init__(
+        self, local: Cache, root: Path, route: Mapping[str, tuple[int, str]], salt: str
+    ) -> None:
+        self.local = local
+        self.root = Path(root)
+        self.route = dict(route)
+        self.salt = salt
+        self._logs: dict[int, SharedLog] = {}
+        self.adopted = 0  # store rows (digests, chunks, levels, counts) copied into the run's cache
+
+    def _store_key(self, key: str) -> tuple[SharedLog, str] | None:
+        if key.startswith("ntok:"):
+            hit = self.route.get("digest:" + key[len("ntok:") :])
+            if hit is None:
+                return None
+            layer, stem = hit
+            skey = "ntok:" + stem[len("digest:") :]
+        else:
+            m = _STEM_SUFFIX.search(key)
+            hit = self.route.get(key[: m.start()] if m else key)
+            if hit is None:
+                return None
+            layer, stem = hit
+            skey = stem + (key[m.start() :] if m else "")
+        if layer not in self._logs:
+            self._logs[layer] = SharedLog(self.root / f"L{layer}.jsonl")
+        return self._logs[layer], skey
+
+    def _sfp(self, fp: str) -> str:
+        return fingerprint("store", fp, self.salt)
+
+    def get(self, key: str, fp: str, *, include_failed: bool = False) -> dict[str, Any] | None:
+        row = self.local.get(key, fp, include_failed=include_failed)
+        if row is not None and row.get("result") is not None:
+            return row  # the run's own success always wins: a rerun never depends on the store
+        sk = self._store_key(key)
+        if sk is None:
+            return row
+        log, skey = sk
+        srow = log.get(skey, self._sfp(fp), include_failed=include_failed)
+        if srow is None or (row is not None and row.get("ts", 0) >= srow.get("ts", 0)):
+            return row
+        self.local.put(key, fp, {k: v for k, v in srow.items() if k not in ("key", "fp", "ts")})
+        self.adopted += 1
+        return self.local.get(key, fp, include_failed=True)
+
+    def put(self, key: str, fp: str, payload: dict[str, Any]) -> None:
+        # the store first: the run's own row is then never older than its mirror
+        sk = self._store_key(key)
+        if sk is not None:
+            log, skey = sk
+            log.put(skey, self._sfp(fp), payload)
+        self.local.put(key, fp, payload)
 
 
 @dataclass
@@ -1556,7 +1608,6 @@ def _digest_fp(s: Settings, task_note: str, text: str, salt: str = "") -> str:
         s.numbers,
         s.token_cap,
         s.decode,
-        *(["lang"] if s.lang else []),  # summ_lang keys its own entries (absent: unchanged)
         task_note if s.variant == "task" else "",
         text,
         *([salt] if salt else []),
@@ -1572,8 +1623,6 @@ def render_system(s: Settings, task_note: str, spare: int = 0) -> str:
         system = DIGEST_SYSTEM.replace("{max_items}", str(s.max_items)).replace(
             "{max_rare}", str(s.max_rare)
         )
-    if s.lang:
-        system += "\n\n" + DIGEST_LANG_LINE
     if s.variant == "task" and task_note.strip():  # an empty note adds no context line
         system += "\n\n" + DIGEST_TASK_LINE.replace("{task_note}", task_note)
     return system
@@ -1666,7 +1715,7 @@ def _statement(g: Grounded) -> dict[str, Any]:
 def _set_summary(col: Collapse, item_id: str, kept: Sequence[Grounded], s: Settings) -> None:
     """Record ``kept`` as the item's judged digest: text, evidence, statements, layer histogram
     and the synthetic cell's one sample."""
-    text, evid = render_summary(kept, s.render, lang=s.lang, show_key=s.show_key)
+    text, evid = render_summary(kept, s.render, show_key=s.show_key)
     col.summaries[item_id] = text
     col.evidence[item_id] = tuple(evid)
     col.statements[item_id] = [_statement(g) for g in kept]
@@ -1950,7 +1999,7 @@ def _collapse_stride(
     """``collapse`` under the ``stride`` ablation: one capped bundle per item, one call."""
     salt = f"spare{spare}" if spare else ""
     system_of = {i: render_system(s, notes[i], spare) for i in cells_by_item}
-    schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
+    schema = DIGEST_SCHEMA
     layers_tag = "all" if args.layers is None else ",".join(str(x) for x in sorted(args.layers))
     col = Collapse()
     col.diag = {
@@ -2071,7 +2120,7 @@ def _collapse_stride(
             continue
         dups, nds = [0], [0]
         kept, dropped = ground(
-            r, lines_of[item_id], duplicates=dups, numeral_drops=nds, lang=s.lang, **caps(s, spare)
+            r, lines_of[item_id], duplicates=dups, numeral_drops=nds, **caps(s, spare)
         )
         col.diag["n_key_duplicates"] += dups[0]
         col.diag["n_evidence_kept"] += len(kept)
@@ -2108,7 +2157,7 @@ def _collapse_layers(
     *,
     args: JudgeArgs,
     s: Settings,
-    cache: Cache,
+    cache: Cache | SharedDigests,
     spend: Spend,
     preflight: Callable[[], None] | None,
     notes: Mapping[str, str],
@@ -2129,6 +2178,8 @@ def _collapse_layers(
     owner: dict[str, str] = {}
     layer_of: dict[str, int | None] = {}
     stems: dict[str, str] = {}
+    # summ_store: every stem whose bundle is ONE layer's cells -> (layer, its layers=[L] stem)
+    route: dict[str, tuple[int, str]] = {}
     for item_id, cells in cells_by_item.items():
         if not cells:
             raise ValueError(f"{name}: collapse() got no cells for {item_id}")
@@ -2140,9 +2191,19 @@ def _collapse_layers(
                 pid = f"{item_id}{_PID}{layer}"
                 parts[pid], owner[pid], layer_of[pid] = by_layer[layer], item_id, layer
                 stems[pid] = f"digest:{item_id}|{layer}"
+                route[stems[pid]] = (layer, stems[pid])
         else:
             parts[item_id], owner[item_id], layer_of[item_id] = list(cells), item_id, None
             stems[item_id] = f"digest:{item_id}|{layers_tag}"
+            if len(by_layer) == 1:  # the run-local key keeps its tag; the store keys the layer
+                (layer,) = by_layer
+                route[stems[item_id]] = (layer, f"digest:{item_id}|{layer}")
+    store = args.extra.get(STORE_OPT)
+    if store:
+        # the salt adds every setting a sub-key's own fingerprint may omit (the halving level
+        # does not key the cap; no digest fingerprint keys the fallback)
+        salt = fingerprint(s.fallback, s.token_cap, s.overflow)
+        cache = SharedDigests(cache, Path(store).resolve() / name, route, salt=salt)
     pnotes = {pid: notes[owner[pid]] for pid in parts}
     salt = f"spare{spare}" if spare else ""
     kw: dict[str, Any] = {
@@ -2173,6 +2234,8 @@ def _collapse_layers(
                 part.grounded[pid] = ranked
     if s.numbers == 0 and not args.dry_run:
         _reask_collapsed(name, part, parts, salt=salt, kw=kw)
+    if isinstance(cache, SharedDigests):
+        part.diag["n_store_rows_adopted"] = cache.adopted
     return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
 
 
@@ -2536,7 +2599,7 @@ def _collapse_hierarchical(
     *,
     args: JudgeArgs,
     s: Settings,
-    cache: Cache,
+    cache: Cache | SharedDigests,
     spend: Spend,
     preflight: Callable[[], None] | None,
     notes: Mapping[str, str],
@@ -2565,7 +2628,7 @@ def _collapse_hierarchical(
     if stems is None:
         stems = {i: f"digest:{i}|{layers_tag}" for i in cells_by_item}
     system_of = {i: render_system(s, notes[i], spare) for i in cells_by_item}
-    schema = DIGEST_SCHEMA_LANG if s.lang else DIGEST_SCHEMA
+    schema = DIGEST_SCHEMA
     budget0 = min(s.token_cap, CONTEXT_WINDOW - MAX_TOKENS - CONTEXT_MARGIN)
     conc = s.concurrency or args.concurrency
     timeout = s.timeout or DIGEST_TIMEOUT
@@ -2859,9 +2922,7 @@ def _collapse_hierarchical(
                     continue  # a chunk with nothing to report contributes nothing
                 chunk_lines = [ln for g in gs for ln in g.lines]
                 nds = [0]
-                kept, dropped = ground(
-                    r, chunk_lines, numeral_drops=nds, lang=s.lang, **caps(s, spare)
-                )
+                kept, dropped = ground(r, chunk_lines, numeral_drops=nds, **caps(s, spare))
                 if not kept and not dropped and nds[0]:
                     continue  # no number in this chunk: contributes nothing
                 any_items = True
@@ -2969,7 +3030,6 @@ def _collapse_hierarchical(
             duplicates=dups,
             support_lines=lines_of[i],
             numeral_drops=nds,
-            lang=s.lang,
             **caps(s, spare),
         )
         col.diag["n_key_duplicates"] += dups[0]

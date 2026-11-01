@@ -15,7 +15,7 @@ from .prompts import SEED
 
 SUBFAMILIES = ("selfdescribe", "synthsys")
 INFERRED = "inferred_characterization"
-GATES = ("quote", "bullet", "value")
+GATES = ("quote", "bullet", "value", "hedge")
 
 
 def _rate(n_pass: int, n: int) -> float | None:
