@@ -296,3 +296,48 @@ def test_name_in_is_precompiled():
             wb.name_in(text, f)
     per_call = (time.perf_counter() - t) / (100 * len(forms))
     assert per_call < 0.005  # was ~0.033-0.05 s with the re cache overflowing
+
+
+# ------------------------------------------------------------------ 4. ASCII twins (wbforms-v4)
+DALI_ITEM = "painting_creator-Q2272625-death_year"
+
+
+@pytest.fixture(scope="module")
+def dali_forms():
+    it = next(i for i in wb.load_items() if i["id"] == DALI_ITEM)
+    return it["mc"]["forms"]["Salvador Dalí"]
+
+
+def test_lowercase_ascii_twin_no_longer_names_dali(dali_forms):
+    assert "Dali" in dali_forms  # the bank's own plain-ASCII twin of the label's "Dalí"
+    for text in ("by dali", "a dali-like scene", "the dali painting"):
+        assert not wb.name_in(text, dali_forms), text
+        assert not wb.name_spans(text, dali_forms), text
+
+
+def test_capitalized_twin_and_full_names_still_name_dali(dali_forms):
+    for text in ("by Dali", "a Dali-like scene", "Salvador Dali", "salvador dali", "Dalí"):
+        assert wb.name_in(text, dali_forms), text
+
+
+def test_twins_come_only_from_the_label():
+    twins = {
+        (o, t)
+        for it in wb.load_items()
+        for o, fs in it["mc"]["forms"].items()
+        for t in wb._ascii_twins(tuple(fs), wb.accent_only)
+    }
+    assert ("Paul Cézanne", "Cezanne") in twins and ("Georges Méliès", "Melies") in twins
+    assert not any(o in ("Vladimir Lenin", "Frédéric Chopin", "Nintendo") for o, _t in twins)
+    assert wp.FORMS_VERSION == "wbforms-v4"
+
+
+def test_option_audit_asks_for_a_reason_first():
+    props = mp.OPTION_AUDIT_SCHEMA["schema"]["properties"]["verdicts"]["items"]
+    assert list(props["properties"]) == ["line", "why", "rival"]
+    assert "even when both claims could" in mp.OPTION_AUDIT_SYSTEM
+
+
+def test_audit_key_omits_the_forms_stamp():
+    key = wb._audit_version(wp.PROMPT_VERSION)
+    assert wp.FORMS_VERSION not in key and wp.AUDIT_VERSION in key and wp.BANK_TAG in key

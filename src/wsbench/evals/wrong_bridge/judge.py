@@ -84,7 +84,7 @@ PICKS = (
 # them it matches as an English form, whole words only, and as one bare word only capitalized
 # ("Beyonce", "Dali" still count; "part of the sonata" does not). The checks therefore read the
 # text unfolded (:func:`norm`), never ``digest.fold_quote`` output.
-FORMS_VERSION = wp.FORMS_VERSION
+FORMS_VERSION = wp.FORMS_VERSION  # wbforms-v4: ASCII twins of accent-only forms (_ascii_twins)
 WORD_SUFFIX = 2
 WORD_SUFFIX_MIN = 4
 _SPACED = r"0-9a-z\u00c0-\u024f\u0370-\u03ff\u0400-\u052f\u0530-\u058f\u0590-\u05ff\u0600-\u06ff"
@@ -178,16 +178,45 @@ def _views_cached(text: str) -> tuple[str, str, str]:
     return _views(text)
 
 
+@functools.cache
+def _ascii_twins(forms: tuple[str, ...], acc_rule: _Rule) -> frozenset[str]:
+    """wbforms-v4 (review of PR #208, round 4d nit): the bank also lists an accent-only name's
+    plain-ASCII spelling as a form of its own ("Dali" beside "Dalí", "Cezanne", "Melies"), which
+    matched case-insensitively ("by dali", "a dali-like scene"). Such a one-word twin of an
+    accent-only label word follows the accent-only rule: as one bare word it counts only
+    capitalized."""
+    # the accented words of the option's own label (forms[0], the bank's order): "Dalí" of
+    # "Salvador Dalí"; an accent in some other language's form ("Lénine") makes no twin, so
+    # lowercase token-list "lenin" / "chopin" still count
+    label = forms[0] if forms else ""
+    acc = (
+        {mc.fold(w).strip(".,") for w in label.split() if not w.isascii()}
+        if acc_rule(label)
+        else set()
+    )
+    return frozenset(
+        f
+        for f in forms
+        if f.isascii() and " " not in f.strip() and not acc_rule(f) and mc.fold(f).strip() in acc
+    )
+
+
 def name_spans(text: str, forms: Sequence[str], *, glued: bool = True) -> list[tuple[int, int]]:
     """Where the forms occur in ``mc.fold(text)`` (see FORMS_VERSION); ``glued=False``: a Latin
     form glued by a hyphen into a longer name ("Wong Fei-Hung") does not count."""
     t, t_acc, t_case = _views_cached(text)
+    twins = _ascii_twins(tuple(forms), accent_only)
     out: list[tuple[int, int]] = []
     for f in forms:
         plan = _plan(f, glued)
         if plan is None:
             continue
         kind = plan[0]
+        if f in twins and kind == "plain":
+            out += [
+                (m.start(), m.end()) for m in plan[1].finditer(t) if t_case[m.start()].isupper()
+            ]
+            continue
         if kind == "hangul":
             if plan[1] in unicodedata.normalize("NFC", text).casefold():
                 out.append((0, 0))  # Hangul: presence only (NFC offsets differ from fold's)
@@ -209,6 +238,10 @@ def _any_plan(forms: Sequence[str]) -> tuple[re.Pattern[str] | None, tuple[str, 
     return _any_compiled(tuple(forms), inflecting, accent_only)
 
 
+def _twin(f: str, forms: tuple[str, ...], acc_rule: _Rule) -> bool:
+    return f in _ascii_twins(forms, acc_rule)
+
+
 @functools.cache
 def _any_compiled(
     forms: tuple[str, ...], infl_rule: _Rule, acc_rule: _Rule
@@ -220,7 +253,7 @@ def _any_compiled(
         plan = _compiled(f, True, infl_rule, acc_rule)
         if plan is None:
             continue
-        if plan[0] == "plain":
+        if plan[0] == "plain" and not _twin(f, forms, acc_rule):
             plain.append(f"(?:{plan[1].pattern})")
         else:
             rest.append(f)
@@ -714,6 +747,14 @@ def _mc_version(pv: str) -> str:
     return out
 
 
+def _audit_version(pv: str) -> str:
+    """The rival audit's fingerprint version: ``pv`` without the forms stamp (round 4e). A forms
+    change that moves which lines the audit sees changes its user message, so those calls are
+    re-asked anyway; one that does not re-scores the cached answers instead of re-asking every
+    audit (rounds 4c / 4d re-asked them all, and the re-ask variation moved cells)."""
+    return pv.replace("+" + wp.FORMS_VERSION, "", 1)
+
+
 def _valid_audit(_call: Call, r: dict) -> bool:
     return isinstance(r.get("verdicts"), list)
 
@@ -1000,7 +1041,7 @@ def _run_summary(
             audit_calls,
             schema=wp.AUDIT_SCHEMA,
             judge=args.judge,
-            prompt_version=pv,
+            prompt_version=_audit_version(pv),
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,
