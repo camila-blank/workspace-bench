@@ -442,6 +442,18 @@ def test_bar_counts_side_readers_both_ways():
     assert lg.bar({"uniform": {"mean": 0.2, "side_follow": 0.9}}) is None
 
 
+def test_bar_skips_every_uniform_line_but_counts_its_side_prior():
+    """Merge of main (#202 ``uniform_cands``) into #215: every ``uniform*`` line is model-free, so
+    neither its mean nor its guesser side readers set the bar, but its guesser-free side_prior
+    still does; a real guesser above that side_prior is the bar."""
+    cands = {"uniform_cands": {"mean": 0.9, "side_follow": 0.95, "side_contra": 0.05}}
+    assert lg.bar(cands) is None
+    assert lg.bar({**cands, "blind_cands": {"mean": 0.3}}) == (0.3, "blind_cands")
+    prior = {"uniform_cands": {"mean": 0.9, "side_prior": 0.6, "side_prior_dir": "no"}}
+    assert lg.bar(prior) == (0.6, "side_prior:no")
+    assert lg.bar({**prior, "question": {"mean": 0.7}}) == (0.7, "question")
+
+
 def _prior_rec(direction: str | None, side: str = "committed", kinds: dict = KINDS) -> dict:
     rec = _pick_rec([1, 2, 3, 4, 5], kinds=kinds)  # a tied lean: follow == contra == coin
     rec["sides"] = [side]

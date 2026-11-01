@@ -53,7 +53,17 @@ def _shard_case(tmp_path, monkeypatch, iid, answer, cap):
     rows.append({"id": iid, "layer": 60, "pos": 90, "samples": ["GOLDLINE relief hidden"]})
     path = _cells_file(tmp_path, rows)
     monkeypatch.setattr(cj, "SHARD_CHARS", cap)
-    fake = FakeLLM.install(monkeypatch, answer, digest=_all_lines)
+
+    def as_candidates(system, user, schema):
+        # round 4: a sharded digest's MC is a candidate list; a cannot-tell answer is an
+        # empty list, any other answer one candidate
+        a = answer(system, user, schema)
+        if schema.get("name") != "readout_mc_candidates":
+            return a
+        n_cannot = user.count("\n") and int(user.rsplit("\n", 1)[1].split(".")[0])
+        return {"candidates": [] if a["choice"] == n_cannot else [a]}
+
+    fake = FakeLLM.install(monkeypatch, as_candidates, digest=_all_lines)
     res = cj.run(summary_args(path, tmp_path / f"o{cap}", "pv", items=[iid], allow_missing=True))
     return res, fake
 
