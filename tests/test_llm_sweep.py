@@ -1,5 +1,6 @@
 """Plan 0059 `llm` changes: token / cache-token tallies, the OpenRouter output cap and overflow
-classifier, OpenRouter refusals, 200-body errors, and the ``transient`` / ``failed`` tallies."""
+classifier, OpenRouter refusals, 200-body errors, the ``transient`` / ``failed`` tallies, and the
+addendum A ``openai`` (WIF) route."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -151,12 +152,13 @@ def test_spend_report_unchanged_by_new_fields():
 # ---------------------------------------------------------------- output cap / overflow
 
 
-def test_max_out_env_clamps_openrouter_only(env, monkeypatch):
+def test_max_out_env_sets_the_openrouter_budget_only(env, monkeypatch):
     monkeypatch.setenv(llm.MAX_OUT_ENV, "500")
     fake = FakeOpenRouter([_or(), _or()])
     _run(monkeypatch, fake)
     _run(monkeypatch, fake, max_tokens=300)
-    assert [c["max_tokens"] for c in fake.calls] == [500, 300]  # min(requested, cap)
+    # the budget replaces the request both ways (a reasoning judge at 300 would be cut off)
+    assert [c["max_tokens"] for c in fake.calls] == [500, 500]
     calls: list[dict] = []
 
     class Anth(FakeAnthropic):
@@ -386,3 +388,176 @@ def test_text_route_tallies_transient_failed_and_cache_tokens(env, monkeypatch):
         ["u"], model=CLAUDE, on_result=lambda i, r: got.append(r), thinking=False, max_tokens=10
     )
     assert got[-1] is None and spend.failed == {"429": 1} and spend.throttled() == 1
+
+
+# ---------------------------------------------------------------- openai route (addendum A)
+
+WIF_MODEL = "openai/gpt-6-luna"
+WIF_ENV = {
+    "MODAL_IDENTITY_TOKEN": "jwt-identity",
+    "OPENAI_IDENTITY_PROVIDER_ID_MODAL": "idp-1",
+    "OPENAI_SERVICE_ACCOUNT_ID": "sa-1",
+    "OPENAI_PROJECT_ID": "proj-1",
+}
+
+
+class AuthenticationError(Exception):
+    """Named as the openai SDK class (in ``llm._FATAL``)."""
+
+    status_code = 401
+
+
+class _TokenPost:
+    """The token endpoint: a fresh access token per exchange (``tok-1``, ``tok-2``, ...)."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    async def __call__(self, url: str, payload: dict) -> tuple[int, Any]:
+        self.n += 1
+        return 200, {"access_token": f"tok-{self.n}", "expires_in": 3600}
+
+
+class FakeOpenAI:
+    """One shared outcome script across every ``AsyncOpenAI`` the WIF clients build (one per
+    access token); each call records the token it was made with."""
+
+    def __init__(self, outcomes: list[Any]):
+        self.outcomes = list(outcomes)
+        self.calls: list[dict[str, Any]] = []
+        self.built: list[tuple[str, str | None, dict[str, str]]] = []
+
+    def factory(self, key: str, base_url: str | None, headers: dict[str, str]) -> Any:
+        self.built.append((key, base_url, headers))
+
+        async def create(**kw: Any) -> Any:
+            self.calls.append({**kw, "_token": key})
+            out = self.outcomes.pop(0)
+            if isinstance(out, BaseException):
+                raise out
+            return out
+
+        async def close() -> None:
+            return None
+
+        return SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create)), close=close
+        )
+
+
+@pytest.fixture
+def wif(env, monkeypatch):
+    monkeypatch.setenv(llm.OPENAI_ROUTE_ENV, "wif")
+
+
+def _run_wif(monkeypatch, fake: FakeOpenAI, **kw: Any) -> tuple[list, Spend, Any]:
+    from wsbench.baselines import ati_remote as ar
+
+    post = _TokenPost()
+    clients = ar.Clients(
+        "openai-wif", env=WIF_ENV, factory=fake.factory, token=ar.WifToken(WIF_ENV, post=post)
+    )
+    routes: list[str] = []
+
+    def make(route: str, key: str) -> Any:
+        routes.append(route)
+        return llm._WifClient(clients)
+
+    monkeypatch.setattr(llm, "_make_client", make)
+    got: list[Any] = []
+    spend = stream_json(
+        [("s", "u")], schema=SCHEMA, model=WIF_MODEL, on_result=lambda i, r: got.append(r), **kw
+    )
+    assert routes == ["openai"]
+    return got, spend, post
+
+
+def test_openai_route_only_with_the_env(monkeypatch):
+    for m in (WIF_MODEL, "openai/gpt-6-astra", "openai/gpt-oss-120b", OR_MODEL):
+        assert llm.route(m) == "openrouter"  # env unset: unchanged
+    monkeypatch.setenv(llm.OPENAI_ROUTE_ENV, "wif")
+    assert llm.route(WIF_MODEL) == llm.route("openai/gpt-5-nano") == "openai"
+    assert llm.route("openai/gpt-oss-20b") == "openrouter"  # open weights: other providers
+    assert llm.route(OR_MODEL) == "openrouter" and llm.route(CLAUDE) == "anthropic"
+    assert llm.api_key(WIF_MODEL) == ""  # no key: the WIF client exchanges a token
+    monkeypatch.setenv(llm.OPENAI_ROUTE_ENV, "yes")
+    with pytest.raises(JudgeConfigError, match="expected 'wif'"):
+        llm.route(WIF_MODEL)
+
+
+def test_openai_route_request_shape(wif, monkeypatch):
+    usage = SimpleNamespace(prompt_tokens=120, completion_tokens=30)  # OpenAI: no cost field
+    fake = FakeOpenAI([_or(usage=usage), _or(usage=usage)])
+    got, spend, _post = _run_wif(monkeypatch, fake, reasoning={"effort": "low"}, temperature=0.0)
+    monkeypatch.setenv(llm.MAX_OUT_ENV, "900")
+    _run_wif(monkeypatch, fake, reasoning=None)
+    assert got == [{"a": 1}]
+    first, second = fake.calls
+    assert first["model"] == "gpt-6-luna"  # the openai/ prefix stripped
+    assert first["max_completion_tokens"] == llm._DEFAULT_MAX_TOKENS["openai"]
+    assert second["max_completion_tokens"] == 900  # the sweep output budget applies
+    assert first["reasoning_effort"] == "low" and "reasoning_effort" not in second
+    for c in fake.calls:
+        assert not {"temperature", "extra_body", "max_tokens", "reasoning"} & set(c)
+        assert c["messages"] == [
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "u"},
+        ]
+        assert c["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
+    assert fake.built[0] == ("tok-1", None, {"OpenAI-Project": "proj-1"})
+    assert (spend.input_tokens, spend.output_tokens, spend.usd) == (120, 30, 0.0)
+
+
+def test_openai_route_401_re_exchanges_then_succeeds(wif, monkeypatch):
+    fake = FakeOpenAI([AuthenticationError("expired"), _or()])
+    got, spend, post = _run_wif(monkeypatch, fake)
+    assert got == [{"a": 1}] and post.n == 2
+    assert [c["_token"] for c in fake.calls] == ["tok-1", "tok-2"]
+    assert spend.calls == 1 and spend.retries == 0 and spend.failed == {}
+
+
+def test_openai_route_repeated_401_is_fatal(wif, monkeypatch):
+    from wsbench.baselines import ati_remote as ar
+
+    n = ar.AUTH_REFRESHES + 1
+    fake = FakeOpenAI([AuthenticationError("bad identity") for _ in range(n)])
+    with pytest.raises(JudgeConfigError, match="AuthenticationError"):
+        _run_wif(monkeypatch, fake)
+    assert len(fake.calls) == n and len({c["_token"] for c in fake.calls}) == n
+
+
+def test_openai_route_403_is_fatal_even_when_flagged(wif, monkeypatch):
+    body = {"error": {"message": "flagged", "metadata": {"reasons": ["x"]}}}
+    fake = FakeOpenAI([PermissionDeniedError("Your input was flagged", body)])
+    with pytest.raises(JudgeConfigError):
+        _run_wif(monkeypatch, fake)
+
+
+def test_openai_route_refusal_and_length_rules_are_shared(wif, monkeypatch):
+    fake = FakeOpenAI([_or(refusal="no"), _or('{"a":', finish_reason="length")])
+    got, spend, _post = _run_wif(monkeypatch, fake, mark_refusals=True)
+    got2, spend2, _post = _run_wif(monkeypatch, fake)
+    assert got == [llm.REFUSED_JSON] and spend.refusals == 1
+    assert got2 == [None] and spend2.failed == {"length": 1} and len(fake.calls) == 2
+
+
+def test_openai_route_missing_wif_env_is_a_config_error(wif, monkeypatch):
+    for k in WIF_ENV:
+        monkeypatch.delenv(k, raising=False)
+    with pytest.raises(JudgeConfigError, match="openai-wif"):
+        stream_json([("s", "u")], schema=SCHEMA, model=WIF_MODEL, on_result=lambda i, r: None)
+
+
+def test_openai_route_judge_effort_and_digest_reasoning(monkeypatch):
+    from wsbench import digest
+    from wsbench.judge_config import DEFAULT_REASONING, JudgeConfig, resolve
+
+    monkeypatch.setenv(llm.OPENAI_ROUTE_ENV, "wif")
+    cfg = JudgeConfig(prompt_version="v", reasoning={"effort": "low", "anthropic_effort": "x"})
+    r = resolve(cfg, flag=WIF_MODEL, env={}, effort="high")
+    assert (r.reasoning, r.pinned) == ({"effort": "high"}, False)
+    assert resolve(cfg, flag=WIF_MODEL, env={}).reasoning == {"effort": "low"}  # non-Anthropic
+    assert resolve(JudgeConfig(), flag=WIF_MODEL, env={}).reasoning == DEFAULT_REASONING
+    assert resolve(cfg, flag=WIF_MODEL, env={}, effort="default").reasoning is None
+    assert digest.digest_reasoning(WIF_MODEL, "low") == {"effort": "low"}
+    assert digest.digest_reasoning(WIF_MODEL, "default") is None

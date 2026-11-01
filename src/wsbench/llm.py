@@ -8,11 +8,20 @@
   retried with jittered backoff; any other per-call failure yields ``None`` (an unjudged cell,
   never a clean one). Problems that would fail every call raise :class:`JudgeConfigError`.
 * ``on_result(i, result)`` fires as each call lands so callers can cache as they go.
-* OpenRouter route only (plan 0059): ``WSBENCH_OPENROUTER_MAX_OUT`` caps every call's
-  ``max_tokens``; a 400 naming the context length is too-long (``TOO_LONG_JSON`` under
+* OpenRouter route only (plan 0059): ``WSBENCH_OPENROUTER_MAX_OUT`` sets every call's
+  ``max_tokens`` (the per-model output budget, raising or lowering the request); a 400 naming
+  the context length is too-long (``TOO_LONG_JSON`` under
   ``mark_refusals``); ``message.refusal``, ``finish_reason == "content_filter"`` and a moderation
   403 are refusals; ``finish_reason == "length"`` with unparseable JSON is one failed call; an
   error delivered in a 200 body is classified by its ``error.code`` like an HTTP status.
+* Plan 0059 addendum A: with ``WSBENCH_OPENAI_ROUTE=wif`` an ``openai/*`` id (not
+  ``openai/gpt-oss-*``) takes a third route, ``openai``: OpenAI directly through
+  ``wsbench.baselines.ati_remote.Clients("openai-wif")`` (workload identity federation; a 401
+  re-exchanges the token up to ``ati_remote.AUTH_REFRESHES`` times, then is fatal). Unset, routing
+  is unchanged. The request carries ``max_completion_tokens`` (the same output budget),
+  ``reasoning_effort`` from the reasoning's ``effort``, no ``temperature``, no OpenRouter
+  ``extra_body``; the response rules are the OpenRouter ones (a 403 is always fatal). OpenAI
+  returns no cost, so ``Spend.usd`` stays 0 on this route.
 """
 
 import asyncio
@@ -31,9 +40,10 @@ OPENROUTER = "https://openrouter.ai/api/v1"
 _TRANSIENT = (408, 409, 429, 500, 502, 503, 504, 529)
 _FATAL = ("AuthenticationError", "PermissionDeniedError", "NotFoundError")
 _ATTEMPTS = 12
-_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000}
-# plan 0059: the OpenRouter output cap (outside every fingerprint; the sweep driver sets it to
-# min(max_out, 32 000, context // 4), so the output request can never be what overflows)
+_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000, "openai": 8000}
+# plan 0059: the OpenRouter output budget — every call's max_tokens, raised or lowered to it
+# (outside every fingerprint; the sweep driver sets it to min(max_out, 32 000, context // 4), so
+# the output request can never be what overflows)
 MAX_OUT_ENV = "WSBENCH_OPENROUTER_MAX_OUT"
 # an OpenRouter 400 whose message names the context length is a too-long input (pinned by a test;
 # "too many tokens" is deliberately absent: it also names an output request over the cap)
@@ -45,8 +55,11 @@ OPENROUTER_TOO_LONG = (
 )
 # the final statuses that mean a call was throttled (rate limit / exhausted quota), not broken
 THROTTLE_STATUSES = frozenset({"429", "quota"})
+# plan 0059 addendum A: "wif" sends openai/* ids (not gpt-oss) to OpenAI directly (route openai)
+OPENAI_ROUTE_ENV = "WSBENCH_OPENAI_ROUTE"
+_OPEN_WEIGHTS = "openai/gpt-oss"  # served by other providers, never by OpenAI: stays on OpenRouter
 
-Route = Literal["anthropic", "openrouter"]
+Route = Literal["anthropic", "openrouter", "openai"]
 
 
 class JudgeConfigError(RuntimeError):
@@ -97,11 +110,27 @@ class Spend:
 
 
 def route(model: str) -> Route:
-    return "anthropic" if model.startswith("claude-") else "openrouter"
+    if model.startswith("claude-"):
+        return "anthropic"
+    if model.startswith("openai/") and not model.startswith(_OPEN_WEIGHTS) and _openai_wif():
+        return "openai"
+    return "openrouter"
+
+
+def _openai_wif() -> bool:
+    """``WSBENCH_OPENAI_ROUTE`` is ``wif`` (unset / empty: ``False``; anything else is a
+    :class:`JudgeConfigError`)."""
+    raw = os.environ.get(OPENAI_ROUTE_ENV, "").strip()
+    if raw and raw != "wif":
+        raise JudgeConfigError(f"{OPENAI_ROUTE_ENV}={raw!r}: expected 'wif' or unset")
+    return raw == "wif"
 
 
 def api_key(model: str) -> str:
-    if route(model) == "anthropic":
+    route_ = route(model)
+    if route_ == "openai":
+        return ""  # workload identity federation: the token is exchanged by the client
+    if route_ == "anthropic":
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             return key
@@ -194,6 +223,13 @@ def _make_client(route: str, key: str) -> Any:
         if not key:  # an `ant` profile (ANTHROPIC_PROFILE): the SDK reads its OAuth credentials
             return AsyncAnthropic(max_retries=0)
         return AsyncAnthropic(api_key=key, max_retries=0)
+    if route == "openai":
+        from wsbench.baselines import ati_remote  # lazily: the route is opt-in
+
+        try:
+            return _WifClient(ati_remote.Clients("openai-wif"))
+        except ati_remote.AbortError as e:  # the openai-wif secret / Modal identity is missing
+            raise JudgeConfigError(str(e)) from e
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key=key, base_url=OPENROUTER, max_retries=0)
@@ -244,6 +280,87 @@ async def _openrouter_once(
         extra_body=extra_body,
         **kwargs,
     )
+    return _chat_result(
+        resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+    )
+
+
+class _WifClient:
+    """The ``openai`` route's client: ``ati_remote.Clients("openai-wif")`` (one ``AsyncOpenAI``
+    per access token) behind the ``close()`` the batch calls at the end."""
+
+    def __init__(self, clients: Any) -> None:
+        self.clients = clients
+        self._built: list[Any] = []
+
+    async def get(self) -> Any:
+        c = await self.clients.get()
+        if not any(c is b for b in self._built):
+            self._built.append(c)
+        return c
+
+    def auth_failed(self, client: Any) -> None:
+        self.clients.auth_failed(client)
+
+    async def close(self) -> None:
+        for c in self._built:
+            close = getattr(c, "close", None)
+            if close is not None:
+                await close()
+
+
+async def _openai_once(
+    wif: Any,
+    system: str,
+    user: str,
+    *,
+    schema: dict[str, Any],
+    model: str,
+    reasoning: dict[str, Any] | None,
+    max_tokens: int,
+    timeout: float,
+    spend: Spend,
+    mark_refusals: bool = False,
+) -> dict[str, Any] | None:
+    """One OpenAI chat completion through WIF (plan 0059 addendum A). A 401 drops the access
+    token and re-exchanges, up to ``ati_remote.AUTH_REFRESHES`` times; the last 401 propagates
+    (fatal in :func:`_one`). A failed token exchange is fatal (key / identity problem) or, on a
+    429 / 5xx from the token endpoint, a retried transient failure."""
+    from wsbench.baselines import ati_remote
+
+    kwargs: dict[str, Any] = {
+        "timeout": timeout,
+        "model": ati_remote.route_model(model, "openai-wif"),
+        "max_completion_tokens": max_tokens,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "response_format": {"type": "json_schema", "json_schema": schema},
+    }
+    effort = (reasoning or {}).get("effort")
+    if effort:
+        kwargs["reasoning_effort"] = str(effort)
+    for auth in range(ati_remote.AUTH_REFRESHES + 1):
+        try:
+            client = await wif.get()
+        except ati_remote.AbortError as e:
+            raise JudgeConfigError(str(e)) from e
+        try:
+            resp = await client.chat.completions.create(**kwargs)
+        except Exception as e:
+            if getattr(e, "status_code", None) == 401 and auth < ati_remote.AUTH_REFRESHES:
+                wif.auth_failed(client)  # the short-lived token may have expired mid-run
+                continue
+            raise
+        return _chat_result(
+            resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+        )
+    raise AssertionError("unreachable: the last 401 propagates")
+
+
+def _chat_result(
+    resp: Any, *, model: str, max_tokens: int, spend: Spend, mark_refusals: bool
+) -> dict[str, Any] | None:
+    """A chat-completions response (OpenRouter or OpenAI) -> the parsed object, a refusal or
+    ``None``; tallies cost and tokens."""
     spend.calls += 1
     if not getattr(resp, "choices", None):  # an error delivered in a 200 body
         raise _body_error(resp)
@@ -322,6 +439,8 @@ def _status_kind(e: Exception, status: Any) -> str | None:
     if status is not None:
         return str(status)
     name = type(e).__name__
+    if name == "TransientExchangeError":
+        return "token_exchange"
     if "Timeout" in name or "Deadline" in name:
         return "timeout"
     if "Connection" in name:
@@ -503,6 +622,19 @@ async def _one(
                     mark_refusals=mark_refusals,
                     fallbacks=fallbacks,
                 )
+            if route_ == "openai":
+                return await _openai_once(
+                    client,
+                    system,
+                    user,
+                    schema=schema,
+                    model=model,
+                    reasoning=reasoning,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    spend=spend,
+                    mark_refusals=mark_refusals,
+                )
             return await _openrouter_once(
                 client,
                 system,
@@ -517,6 +649,8 @@ async def _one(
                 mark_refusals=mark_refusals,
             )
         except Exception as e:
+            if isinstance(e, JudgeConfigError):  # the openai route's failed token exchange
+                raise
             name = type(e).__name__
             status = getattr(e, "status_code", None)
             if route_ == "openrouter" and status == 403 and _moderated(e):
@@ -536,6 +670,7 @@ async def _one(
                 or "Connection" in name
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
+                or name == "TransientExchangeError"  # openai route: token endpoint 429 / 5xx
                 # a 200-body error keeps the old retry unless it is a too-long input (the
                 # fatal 401-404 codes raised above)
                 or (isinstance(e, _BodyError) and not (status == 400 and _too_long(route_, str(e))))
@@ -556,10 +691,10 @@ async def _one(
 
 
 def _too_long(route_: Route, message: str) -> bool:
-    """A 400 that is a too-long input: "prompt is too long"; on OpenRouter with
-    ``WSBENCH_OPENROUTER_MAX_OUT`` set, any :data:`OPENROUTER_TOO_LONG` phrase (sound only under
-    that output cap, plan 0059: without it a "maximum context length" 400 can be the output
-    request)."""
+    """A 400 that is a too-long input: "prompt is too long"; on OpenRouter (and the ``openai``
+    route) with ``WSBENCH_OPENROUTER_MAX_OUT`` set, any :data:`OPENROUTER_TOO_LONG` phrase (sound
+    only under that output cap, plan 0059: without it a "maximum context length" 400 can be the
+    output request)."""
     msg = message.lower()
     if route_ == "anthropic" or openrouter_max_out() is None:  # the broad list needs the cap
         return "prompt is too long" in msg
@@ -605,7 +740,7 @@ async def stream_json_async(
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
     a config problem. Builds no client when there is nothing to call. ``temperature`` is sent on
     the OpenRouter route only: newer Claude models reject the field (400), so the Anthropic route
-    drops it with one printed warning per batch."""
+    drops it with one printed warning per batch (as does the ``openai`` route)."""
     spend = spend or Spend()
     if not prompts:
         return spend
@@ -616,10 +751,15 @@ async def stream_json_async(
     if temperature is not None and route_ == "anthropic":
         print(f"  llm: dropping temperature={temperature} for {model} (Anthropic route rejects it)")
         temperature = None
+    if temperature is not None and route_ == "openai":
+        print(f"  llm: dropping temperature={temperature} for {model} (OpenAI reasoning models)")
+        temperature = None
     if max_tokens is None:
         max_tokens = _DEFAULT_MAX_TOKENS[route_]
-    if route_ == "openrouter" and (cap := openrouter_max_out()) is not None:
-        max_tokens = min(max_tokens, cap)
+    if route_ != "anthropic" and (cap := openrouter_max_out()) is not None:
+        # the sweep's per-model output budget, up AND down: a reasoning judge at the default
+        # 8 000 is cut off mid-JSON (smoke, 2026-11-01); only tokens used are billed
+        max_tokens = cap
     client = _make_client(route_, key)
     sem = asyncio.Semaphore(concurrency)
 

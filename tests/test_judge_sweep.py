@@ -975,3 +975,78 @@ def test_models_tier_selection_is_backend_filtered_and_skips_opus():
         "claude-sonnet-5-5",
     ]
     assert js._models_arg("a,b", roster, claude=True) == ["a", "b"]  # explicit lists as given
+
+
+# ---------------------------------------------------------------- openai-wif (addendum A)
+
+
+def test_roster_routes_openai_models_to_wif_except_gpt_oss():
+    by = js.load_roster()
+    wif = {m for m, r in by.items() if r["route"] == js.WIF_ROUTE}
+    assert wif == {
+        "openai/gpt-6-luna",
+        "openai/gpt-6.1-terra",
+        "openai/gpt-6-astra",
+        "openai/gpt-5-nano",
+    }
+    assert by["openai/gpt-oss-120b"]["route"] == by["openai/gpt-oss-20b"]["route"] == "openrouter"
+    assert by["claude-haiku-5-5"]["route"] == "anthropic"
+    assert by["openai/gpt-6-luna"]["price_in"] == 0.1  # the catalog's (OpenAI list) price
+
+
+def test_route_env_sets_wif_only_for_wif_models():
+    base = {"A": "1", js.OPENAI_ROUTE_ENV: "wif"}  # an inherited value never leaks
+    assert js.route_env(base, {"route": js.WIF_ROUTE}) == {"A": "1", js.OPENAI_ROUTE_ENV: "wif"}
+    assert js.route_env(base, {"route": "openrouter"}) == {"A": "1"}
+    assert js.route_env({"A": "1"}, None) == {"A": "1"}
+
+
+def test_pricing_usd0_openai_wif_run_from_tokens(tmp_path):
+    p = _jsonl(
+        tmp_path / "spend.jsonl",
+        [
+            {"run_id": "r1", "usd": 0.0, "input_tokens": 2_000_000, "output_tokens": 100_000},
+            {"run_id": "r2", "usd": 0.0, "input_tokens": 1_000_000, "output_tokens": 0},
+        ],
+    )
+    led = js.ledger_total([p])
+    row = {"route": js.WIF_ROUTE, "price_in": 0.1, "price_out": 0.5, "price_cache_read": 0.01}
+    assert js.token_priced(row, "openai/gpt-6-luna")
+    assert js.cost_usd(row, "openai/gpt-6-luna", led) == pytest.approx(
+        (3_000_000 * 0.1 + 100_000 * 0.5) / 1e6
+    )
+    assert js.cost_usd(row, "openai/gpt-6-luna", led, resume=True) == pytest.approx(0.1)
+    orow = {**row, "route": "openrouter"}
+    assert not js.token_priced(orow, "openai/gpt-oss-20b")
+    assert js.cost_usd(orow, "openai/gpt-oss-20b", led) == 0.0  # OpenRouter: the ledger's usd
+    assert js.cost_usd(None, "openai/gpt-6-luna", led) == 0.0  # no roster row: not token-priced
+
+
+def test_markdown_labels_estimated_costs():
+    def model_row(model, cost, est):
+        return {
+            "model": model,
+            "tier": "cheap",
+            "cost_usd": cost,
+            "resume_usd": 0.0,
+            "cost_estimated": est,
+            "agreement_pooled": None,
+            "level": {},
+            "verdict": "matches",
+            "tolerance": "",
+            "families": {},
+        }
+
+    arm = {
+        "arm": "B",
+        "reference": "B'1",
+        "draws": ["B'1"],
+        "calibration": {},
+        "models": [model_row("openai/gpt-6-luna", 0.35, True), model_row("x/y", 0.2, False)],
+        "dropped_r4_not_a1": {},
+        "opus_pairs": {},
+    }
+    md = js.markdown({"sweep": "t", "arms": [arm], "notes": [], "opus_digest_cost": None})
+    assert "| openai/gpt-6-luna | cheap | ≈0.35 | ≈0.00 |" in md
+    assert "| x/y | cheap | 0.20 | 0.00 |" in md
+    assert "≈ = estimated: tokens x roster list price" in md

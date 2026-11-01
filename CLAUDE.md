@@ -42,7 +42,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   (Anthropic usage), OpenRouter `prompt_tokens` / `completion_tokens`, `transient` (status ->
   retried transient failures, recovered or not; parse retries excluded) and `failed` (final
   status of calls that ENDED failed; `throttled()` = those on 429 / quota). OpenRouter route
-  only: `WSBENCH_OPENROUTER_MAX_OUT` caps `max_tokens`; a 400 naming the context length
+  only: `WSBENCH_OPENROUTER_MAX_OUT` sets `max_tokens` (the output budget, up or down); a 400 naming the context length
   (`llm.OPENROUTER_TOO_LONG`) is `TOO_LONG_JSON` under `mark_refusals`; `message.refusal`,
   `finish_reason=content_filter` and a moderation 403 (`error.metadata.reasons` / "flagged") are
   refusals; `finish_reason=length` with bad JSON is one failed call (no retry); a 200-body
@@ -52,6 +52,14 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   there registers, and `<dest>/spend.jsonl` gets a cumulative snapshot every 30 s, at exit and
   when the family ends (`ledger.read_total` sums the last per `run_id`); `wsbench judge` writes
   none.
+- Plan 0059 addendum A: with `WSBENCH_OPENAI_ROUTE=wif` an `openai/*` id (not `openai/gpt-oss-*`)
+  takes route `openai`: OpenAI directly via `baselines.ati_remote.Clients("openai-wif")` (imported
+  lazily; a 401 re-exchanges the WIF token up to `AUTH_REFRESHES` times, then fatal; a 403 is
+  always fatal). Request: prefix-stripped model, `max_completion_tokens` (the same
+  `WSBENCH_OPENROUTER_MAX_OUT` budget), `reasoning_effort` = the reasoning's `effort`, no
+  `temperature` / `extra_body`; the response rules are OpenRouter's (`llm._chat_result`), `usd`
+  stays 0. Unset (the default, and `tests/conftest.py` unsets it), routing is unchanged.
+  `resolve` / `digest_reasoning` treat it as non-Anthropic (OpenRouter rules).
 
 ## Family conventions
 - `wsbench/family.py` holds the helpers the newer families share: `require_cells` (missing
@@ -413,6 +421,8 @@ in a git worktree (prefix commands with `PYTHONPATH=src` when it shares the main
   `evals/judge_sweep/models.json` from the committed catalog rows; `run --backend local` = Claude
   models + Opus draws `claude-opus-5-5@A1..A4` / `@B1..B3` behind the ant-token flock; `analyze`)
   and `scripts/judge_sweep_modal.py` (`upload` / `preflight` / `sweep` / `pull`; OpenRouter is
-  only ever called from there). Layout `outputs/judge_sweep/<sweep>/<arm>/<slug>/<family>/`, job
+  only ever called from there, as are the roster's `route: "openai-wif"` models: both secrets on
+  every function, `judge_sweep.route_env` sets `WSBENCH_OPENAI_ROUTE=wif` per job; `analyze`
+  prices them, like Claude, as tokens x roster price, marked `≈`). Layout `outputs/judge_sweep/<sweep>/<arm>/<slug>/<family>/`, job
   state in `<sweep>/jobs/`. Every "matches Opus" threshold lives in `judge_sweep.MATCH` (pinned
   by `tests/test_judge_sweep.py`); knowledge_cutoff runs its full bank unless `--exclude-nocot`.

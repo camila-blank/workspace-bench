@@ -232,6 +232,39 @@ def is_claude(model: str) -> bool:
     return model.startswith("claude-")
 
 
+# plan 0059 addendum A: this OpenRouter account is blocked from OpenAI's models, so every
+# roster openai/* model except the open-weights gpt-oss-* runs on OpenAI directly (Modal secret
+# openai-wif; the container gets WSBENCH_OPENAI_ROUTE=wif)
+WIF_ROUTE = "openai-wif"
+OPENAI_ROUTE_ENV = "WSBENCH_OPENAI_ROUTE"
+
+
+def roster_route(model_id: str) -> str:
+    """A roster model's route: ``anthropic`` (Claude), ``openai-wif`` (``openai/*`` except
+    ``openai/gpt-oss-*``) or ``openrouter``."""
+    if is_claude(model_id):
+        return "anthropic"
+    if model_id.startswith("openai/") and not model_id.startswith("openai/gpt-oss"):
+        return WIF_ROUTE
+    return "openrouter"
+
+
+def route_env(env: Mapping[str, str], row: Mapping[str, Any] | None) -> dict[str, str]:
+    """``env`` with ``WSBENCH_OPENAI_ROUTE=wif`` iff the model's roster route is ``openai-wif``
+    (and without it otherwise, so an OpenRouter model never inherits it)."""
+    out = dict(env)
+    out.pop(OPENAI_ROUTE_ENV, None)
+    if (row or {}).get("route") == WIF_ROUTE:
+        out[OPENAI_ROUTE_ENV] = "wif"
+    return out
+
+
+def token_priced(row: Mapping[str, Any] | None, model: str) -> bool:
+    """Whether a model's cost is estimated as tokens x roster price: the routes whose ledger
+    ``usd`` is 0 (Claude; ``openai-wif``, since OpenAI returns no cost)."""
+    return is_claude(model) or (row or {}).get("route") == WIF_ROUTE
+
+
 # ---------------------------------------------------------------- roster
 
 
@@ -254,7 +287,7 @@ def roster_row(cat: Mapping[str, Any], *, model_id: str, tier: str) -> dict[str,
         "id": model_id,
         "catalog_id": cat["id"],
         "tier": tier,
-        "route": "anthropic" if claude else "openrouter",
+        "route": roster_route(model_id),
         "price_in": _per_mtok(pricing.get("prompt")),
         "price_out": _per_mtok(pricing.get("completion")),
         "price_cache_read": _per_mtok(pricing.get("input_cache_read")),
@@ -1878,9 +1911,11 @@ def ledger_total(paths: Iterable[Path]) -> dict[str, Any]:
 def cost_usd(
     row: Mapping[str, Any] | None, model: str, led: Mapping[str, Any], *, resume: bool = False
 ) -> float | None:
-    """OpenRouter: the ledger's ``usd``; Claude: tokens x roster prices incl. cache read / write
-    (Anthropic ``input_tokens`` exclude cached tokens; OpenRouter's include them)."""
-    if not is_claude(model):
+    """OpenRouter: the ledger's ``usd``; Claude and ``openai-wif`` (:func:`token_priced`): tokens
+    x roster prices incl. cache read / write (Anthropic ``input_tokens`` exclude cached tokens;
+    OpenRouter's and OpenAI's include them, so an OpenAI estimate prices cached input at the full
+    input price: an upper bound)."""
+    if not token_priced(row, model):
         return float(led["resume_usd" if resume else "usd"])
     if row is None:
         return None
@@ -2174,9 +2209,14 @@ def analyze_arm(
                 "agreement_pooled": _pooled_agreement(mv, draws.get(ref_name, {}), families),
                 "cost_usd": cost_usd(row, model, led) if led else None,
                 "resume_usd": cost_usd(row, model, led, resume=True) if led else None,
+                "cost_estimated": token_priced(row, model),
                 "tokens_label": "excl. cached (Anthropic)"
                 if is_claude(model)
-                else "incl. cached (OpenRouter)",
+                else (
+                    "incl. cached (OpenAI)"
+                    if token_priced(row, model)
+                    else "incl. cached (OpenRouter)"
+                ),
                 "ledger": led,
                 "families": fam_rows,
             }
@@ -2314,15 +2354,22 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
         for r in sorted(arm["models"], key=lambda r: (r["cost_usd"] is None, r["cost_usd"] or 0)):
             lv = r["level"]
             mark = lambda k, lv=lv: "✓" if lv.get(k) else ("✗" if k in lv else "—")  # noqa: E731
+            est = "≈" if r.get("cost_estimated") and r["cost_usd"] is not None else ""
             out.append(
-                f"| {r['model']} | {r['tier']} | {_f(r['cost_usd'], 2)} | "
-                f"{_f(r['resume_usd'], 2)} | "
+                f"| {r['model']} | {r['tier']} | {est}{_f(r['cost_usd'], 2)} | "
+                f"{est if r.get('resume_usd') is not None else ''}{_f(r['resume_usd'], 2)} | "
                 f"{_f(r['agreement_pooled'])} | {lv.get('n_flagged', '—')} / {lv.get('n_f', '—')} "
                 f"(≤ {lv.get('k_max', '—')}) | {mark('c1')} | {mark('c2')} | {mark('c3')} | "
                 f"{mark('c4')} | {r['verdict']} | {r['tolerance']} |"
             )
         best = cheapest_match(arm["models"])
         out.append("")
+        if any(r.get("cost_estimated") for r in arm["models"]):
+            out.append(
+                "≈ = estimated: tokens x roster list price (routes that return no cost: Claude, "
+                "openai-wif; OpenAI input tokens include cached ones, priced in full)."
+            )
+            out.append("")
         if a == "A":
             dc = f"${digest_cost:.2f}" if isinstance(digest_cost, float) else "requires Opus digest"
             out.append(
