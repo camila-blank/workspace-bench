@@ -76,6 +76,13 @@ PICKS = (
 # non-English spelling, Croatian "Ivan Gundulić"); a plain-ASCII form is English-spelled (or
 # indistinguishable from it) and matches whole words only, since English does not inflect names:
 # "random" is not Ayn Rand, "a wilder story" not Oscar Wilde, "Hannah Arendt" not William Hanna.
+# wbforms-v3 (review of PR #208, round 4c nit): ``mc.fold`` strips accents, so an accent-only
+# form ("Pärt", "Dalí": its only non-ASCII letters are Latin accents) folded to an English word
+# ("part") or took the tail as a non-English spelling ("Dalit", "Dalian"). Such a form now takes
+# the tail only when the text keeps its accents ("Dalís", "Ivana Gundulića"); spelled without
+# them it matches as an English form, whole words only, and as one bare word only capitalized
+# ("Beyonce", "Dali" still count; "part of the sonata" does not). The checks therefore read the
+# text unfolded (:func:`norm`), never ``digest.fold_quote`` output.
 FORMS_VERSION = wp.FORMS_VERSION
 WORD_SUFFIX = 2
 WORD_SUFFIX_MIN = 4
@@ -92,6 +99,35 @@ def inflecting(form: str) -> bool:
     return any(ch.isalpha() and not ch.isascii() for ch in form)
 
 
+def accent_only(form: str) -> bool:
+    """The form's non-ASCII letters are all Latin accents: :func:`inflecting`, yet
+    ``mc.fold`` makes it plain ASCII ("Pärt" -> "part"), so its folded spelling can be an
+    English word (see FORMS_VERSION)."""
+    return inflecting(form) and mc.fold(form).isascii()
+
+
+_MD = re.compile(r"\*\*|__|[*_`]")
+
+
+def norm(text: str) -> str:
+    """``digest.fold_quote`` without the fold: NFC, markdown marks stripped, the bullet mark as
+    a space, whitespace collapsed; accents and case kept for :func:`name_spans`."""
+    t = _MD.sub("", unicodedata.normalize("NFC", text)).replace(digest.BULLET_MARK.strip(), " ")
+    return " ".join(t.split())
+
+
+def _views(text: str) -> tuple[str, str, str]:
+    """(``mc.fold(text)``, the same with each letter's accents kept, the same with its case
+    kept): equal lengths, so a span in one is the same span in the others."""
+    t, k, c_ = [], [], []
+    for c in unicodedata.normalize("NFC", text):
+        f, a = mc.fold(c), c.casefold()
+        t.append(f)
+        k.append(a if len(a) == len(f) else f)
+        c_.append(c if len(f) == 1 else f)
+    return "".join(t), "".join(k), "".join(c_)
+
+
 def _form_pattern(ff: str, inflect: bool = True) -> str:
     words = ff.split(" ")
     return " ".join(
@@ -103,7 +139,7 @@ def _form_pattern(ff: str, inflect: bool = True) -> str:
 def name_spans(text: str, forms: Sequence[str], *, glued: bool = True) -> list[tuple[int, int]]:
     """Where the forms occur in ``mc.fold(text)`` (see FORMS_VERSION); ``glued=False``: a Latin
     form glued by a hyphen into a longer name ("Wong Fei-Hung") does not count."""
-    t = mc.fold(text)
+    t, t_acc, t_case = _views(text)
     out: list[tuple[int, int]] = []
     for f in forms:
         if _HANGUL.search(f):
@@ -122,6 +158,17 @@ def name_spans(text: str, forms: Sequence[str], *, glued: bool = True) -> list[t
         if not glued:
             before += r"(?<![^\W\d_][-\u2010\u2011])"
             after += r"(?![-\u2010\u2011][^\W\d_])"
+        if accent_only(f):
+            fa = unicodedata.normalize("NFC", f).casefold().strip()
+            pat = before + _form_pattern(fa, True) + after
+            out += [(m.start(), m.end()) for m in re.finditer(pat, t_acc)]
+            pat = before + _form_pattern(ff, False) + after  # unaccented: as an English form
+            out += [
+                (m.start(), m.end())
+                for m in re.finditer(pat, t)
+                if " " in ff or t_case[m.start()].isupper()
+            ]
+            continue
         pat = before + _form_pattern(ff, inflecting(f)) + after
         out += [(m.start(), m.end()) for m in re.finditer(pat, t)]
     return out
@@ -174,19 +221,19 @@ def _option_tests(
     others = [o for o in it["mc"]["order"] if o != gold]
 
     def names_gold(text: str) -> bool:
-        return name_in(digest.fold_quote(text), forms[gold])
+        return name_in(norm(text), forms[gold])
 
     order = list(it["mc"]["order"])
 
     def single(o: str, ln: digest.Line) -> bool:
-        t = digest.fold_quote(ln.text)
+        t = norm(ln.text)
         return name_in(t, forms[o]) and not any(name_in(t, forms[x]) for x in order if x != o)
 
     def single_gold(ln: digest.Line) -> bool:
         return single(gold, ln)
 
     def single_option(rq: str, ln: digest.Line) -> bool:
-        named = [o for o in others if name_in(digest.fold_quote(rq), forms[o])]
+        named = [o for o in others if name_in(norm(rq), forms[o])]
         return len(named) == 1 and single(named[0], ln)
 
     return names_gold, single_gold, single_option
@@ -293,13 +340,14 @@ def option_line(it: dict[str, Any], o: str, ln: digest.Line) -> bool:
     (:func:`full_forms`, not hyphen-glued) with a role cue of the item's template or a word of
     the prompt's subject near that mention, and names no other candidate by any form."""
     forms = it["mc"]["forms"]
-    t = digest.fold_quote(ln.text)
+    t = norm(ln.text)
     if not name_in(t, forms[o]):
         return False
     if any(name_in(t, forms[x]) for x in it["mc"]["order"] if x != o):
         return False
     cues = (*ROLE_CUES.get(str(it.get("template", "")), ()), *subject_words(it["prompt"]))
-    return any(_role_tied(t, sp, cues) for sp in _form_spans(t, full_forms(forms[o], o)))
+    tf = mc.fold(t)  # name_spans' offsets are into the folded text
+    return any(_role_tied(tf, sp, cues) for sp in _form_spans(t, full_forms(forms[o], o)))
 
 
 def contrast_line(it: dict[str, Any], ln: digest.Line) -> bool:
@@ -310,7 +358,7 @@ def contrast_line(it: dict[str, Any], ln: digest.Line) -> bool:
 def _named_option(it: dict[str, Any], text: str) -> str | None:
     """The one non-gold candidate ``text`` names (any listed form), else None."""
     forms = it["mc"]["forms"]
-    t = digest.fold_quote(text)
+    t = norm(text)
     named = [o for o in it["mc"]["order"] if o != it["mc"]["gold"] and name_in(t, forms[o])]
     return named[0] if len(named) == 1 else None
 
@@ -428,7 +476,7 @@ def decide(
         out["pick"] = kind
         return out
     verified = digest.quote_ok(quote, lines)
-    form = name_in(digest.fold_quote(quote), it["mc"]["forms"][it["mc"]["gold"]])
+    form = name_in(norm(quote), it["mc"]["forms"][it["mc"]["gold"]])
     echo = echo_of_prompt(quote, it["prompt"])
     credited = verified and form and not echo
     out.update(

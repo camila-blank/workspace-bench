@@ -284,7 +284,7 @@ def _wb(iid: str, bank: str = "items_v3.json") -> dict:
 
 def test_matcher_tolerates_inflection_and_cjk_glue():
     assert wj.name_in(digest.fold_quote("Назван в честь Карла Маркса"), ["Карл Маркс"])
-    assert wj.name_in(digest.fold_quote("Ivana Gundulića"), ["Ivan Gundulić"])
+    assert wj.name_in("Ivana Gundulića", ["Ivan Gundulić"])  # unfolded text (wbforms-v3)
     assert wj.name_in("Blue Note以爵士乐闻名", ["Blue Note"])
     # never a different word: "Marxism" runs on 3 letters, a short word takes no ending
     assert not wj.name_in("Marxism and its critics", ["Marx"])
