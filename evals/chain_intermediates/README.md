@@ -58,15 +58,20 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   through `expect_all`). `extras.summary.n_truncated_items` is 0 on every complete run.
 - **Ties extend the five (round 4; Camila r2: "ties should be an exception, so we can include
   more than 5 numbers if there's a tie").** The digest asks for `summ_ties = 5` spare numbers
-  (10 in all) and `digest.tie_cut` keeps the first five in the summarizer's order plus every
-  later number whose support (samples stating it) ties or beats the weakest of those five and
-  is at least 2 samples; everything below is cut as before, so a flat run of one-off numbers is
-  still held to five. `col.diag["n_items_tie_extended"]` counts the items kept above five. The
-  stamp's digest suffix carries `-ties5` (`...+digest-v5-task-extractive-ties5+sj-v10`); the
-  digest calls are new (the prompt asks for 10 numbers), so the family needs a re-run. Live
-  check on the first 30 bank items at all-layer (final O-lens readouts, fresh digests): 23 keep
-  6-9 numbers, and no item's verdict changes against the heads-v3 run (3 pass, 27 fail, as
-  before).
+  (10 in all) and `digest.tie_cut` ranks them by support (samples stating each), keeps the
+  five best and adds exactly the numbers whose support equals the fifth-best support (support 1
+  included: a tie keeps all tied numbers). The summarizer's order never decides membership, and
+  the kept numbers stay in its order. `col.diag["n_items_tie_extended"]` counts the items kept
+  above five. The stamp's digest suffix carries `-rankties5`
+  (`...+digest-v5-task-extractive-rankties5+sj-v10`). Round 4 r2 fix: the first `-ties5` rule
+  kept the summarizer's first five plus every later number reaching the weakest of them (and
+  dropped support-1 ties), so one weak early number let better-supported later ones in
+  (chain-d3p-0753 counts `[60,20,12,12,5,10,7,8,6]` kept all 9; now `60,20,12,12,10`); `-ties5`
+  results are void. Live check on the first 30 bank items at all-layer (final O-lens readouts,
+  the cached 10-number digests re-cut): 21 keep five, 9 keep 6-8 through real ties (23 grew under
+  `-ties5`); the gold 13 (w2-d3p-0552) and 25 (w2-d3p-0684) that only the old rule let in are cut,
+  w2-d3p-0829's 28 stays as a genuine three-way tie at support 6; verdicts unchanged (3 pass,
+  27 fail).
 - **The MC judge (Camila: "either an mc judge OR use the same method as arithmetic
   intermediates": both).** One call per (item, intermediate slot) on the item's digest
   (`SYSTEM_MC` / `USER_MC` below; 156 calls per arm): the 8 frozen candidates plus "cannot tell
@@ -153,7 +158,7 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   (`n_empty_cells`). Rows add `answer_in_digest` / `start_in_digest` (whether the answer / start
   took one of the five key slots).
 - **Provenance.** `prompt_version` = `digest.prompt_version("chain-mc-2026-10-30+heads-v3", args, family)`,
-  i.e. `chain-mc-2026-10-30+heads-v3+digest-v5-task-extractive-ties5+sj-v10` at the defaults (judge calls keyed by
+  i.e. `chain-mc-2026-10-30+heads-v3+digest-v5-task-extractive-rankties5+sj-v10` at the defaults (judge calls keyed by
   `MC_CALL_VERSION` = `chain-mc-2026-10-30`, so the heads gate re-asks nothing) (`+reads-lite` under lite, `+rule-any`
   under `opts=rule=any`); `config.reads`, `sampling`, `sampling_source`, `reader`,
   `reads_checked`, `layers_judged` come from the shared loader.

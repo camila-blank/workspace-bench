@@ -185,14 +185,25 @@ def test_numbers_digest_stays_joint_and_capped(tmp_path, monkeypatch):
     """Leniency guard (F1): the five-number budget does NOT scale with the layers."""
 
     def reply(system, user):
-        nums = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+        lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+        nums = dict.fromkeys(ln for ln in lines if ln[:1].isdigit())  # one entry per number
         return {"items": [_entry(n, n.split()[0]) for n in nums], "rare": []}
 
     fake = Scripted(monkeypatch, reply)
-    cells = [_prose("a", ly, p, f"{ly + p} is it") for ly in (20, 24, 28) for p in range(4)]
+    # distinct supports (number 20 + j in j + 1 of the 48 samples): no tie at the fifth -> five
+    said = [f"{20 + j} is it" for j in range(9) for _ in range(j + 1)] + ["nothing"] * 3
+    cells = [
+        _prose("a", ly, p, *said[4 * i : 4 * i + 4])
+        for i, (ly, p) in enumerate((ly, p) for ly in (20, 24, 28) for p in range(4))
+    ]
     col = _collapse(tmp_path, "chain_intermediates", {"a": cells})
     assert len(fake.calls) == 1  # joint
     assert len([x for x in col.statements["a"] if x["tier"] == "numbers"]) == 5
+    # round 4 r2 (tie_cut keeps every number tied with the fifth, support 1 included): a flat
+    # run of one-off numbers is one tie, bounded by the 5 + summ_ties candidates, never x layers
+    flat = [_prose("a", ly, p, f"{ly + p} is it") for ly in (20, 24, 28) for p in range(4)]
+    col = _collapse(tmp_path / "flat", "chain_intermediates", {"a": flat})
+    assert len([x for x in col.statements["a"] if x["tier"] == "numbers"]) == 10
 
 
 def test_partial_layers_are_recorded(tmp_path, monkeypatch):

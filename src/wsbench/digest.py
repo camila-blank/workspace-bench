@@ -281,8 +281,8 @@ FAMILY_DEFAULTS: dict[str, dict[str, str]] = {
     # the digest hands the judge at most five numbers, so a gold value merely present among many
     # numbers cannot pass
     # round 4 (Camila r2: "ties should be an exception, so we can include more than 5 numbers if
-    # there's a tie"): the chain digest asks for summ_ties spare numbers and keeps every one whose
-    # support ties (or beats) the weakest of the five kept (tie_cut)
+    # there's a tie"): the chain digest asks for summ_ties spare numbers, ranks all by support and
+    # keeps the five best plus every number tied with the fifth-best support (tie_cut)
     "chain_intermediates": {"summ_numbers": "5", "summ_rare": "0", "summ_ties": "5"},
     "arithmetic_intermediates": {"summ_numbers": "5", "summ_rare": "0"},
     # plan 0037: 11-layer full-span bundles of long conversations run hierarchical and long; the
@@ -342,8 +342,8 @@ class Settings:
     token_cap: int
     max_rare: int = DEFAULT_MAX_RARE
     numbers: int = 0  # > 0: the numbers digest with this many numbers (plan 0022 Part B)
-    # > 0 (a numbers digest): ask for this many spare numbers and keep, beyond ``numbers``, every
-    # one whose support ties or beats the weakest kept number (:func:`tie_cut`; round 4, chain)
+    # > 0 (a numbers digest): ask for this many spare numbers, keep the ``numbers`` best by support
+    # plus every one tied with the ``numbers``-th best support (:func:`tie_cut`; round 4, chain)
     ties: int = 0
     decode: bool = True
     overflow: str = DEFAULT_OVERFLOW
@@ -592,7 +592,8 @@ def prompt_version(pv: str, args: JudgeArgs, family: str | None = None) -> str:
     s = settings(args, family)
     tail = ("-lang" if s.lang else "") + ("-stride" if s.overflow == "stride" else "")
     tail += "-joint" if s.layer_mode == "joint" and s.numbers == 0 else ""
-    tail += f"-ties{s.ties}" if s.numbers > 0 and s.ties > 0 else ""
+    # "-rankties": round 4 r2, support-ranked tie_cut (the first-five-in-order "-ties" rule is void)
+    tail += f"-rankties{s.ties}" if s.numbers > 0 and s.ties > 0 else ""
     return f"{pv}+{DIGEST_PROMPT_VERSION}-{s.variant}-{s.render}{tail}+{SUMMARY_JUDGE_VERSION}"
 
 
@@ -1876,21 +1877,21 @@ def collapse(
     return col
 
 
-TIE_MIN_SUPPORT = 2  # a number one sample states never extends the digest
-
-
 def tie_cut(gs: Sequence[Grounded], cap: int) -> list[Grounded]:
     """Round 4 (chain; Camila r2: "ties should be an exception, so we can include more than 5
-    numbers if there's a tie"): the first ``cap`` numbers in the summarizer's order, then every
-    later one whose support (``count``, samples stating it) ties or beats the weakest of those
-    ``cap`` AND is at least :data:`TIE_MIN_SUPPORT` (a flat run of one-off numbers is no tie
-    worth showing: the five-number budget still binds it). A number below that support is cut,
-    as before; with ``cap`` or fewer entries nothing changes."""
-    head = list(gs[:cap])
-    if len(gs) <= cap or not head:
+    numbers if there's a tie"): rank the candidates by support (``count``, samples stating it),
+    keep the ``cap`` best, and add exactly the candidates whose support EQUALS the ``cap``-th
+    best -- every number tied with the fifth, support 1 included (a tie keeps ALL tied
+    numbers). The summarizer's order is not a support order, so it never decides membership
+    (round 4 r2 fix: the old rule kept its first ``cap`` and every later number reaching the
+    weakest of them, so one weak early number let every better-supported later one in). The
+    kept entries stay in the summarizer's order; with ``cap`` or fewer entries nothing changes.
+    A tie group is only as large as the candidates the summarizer returned (``summ_ties``
+    spares)."""
+    if cap <= 0 or len(gs) <= cap:
         return list(gs)
-    floor = max(min(g.count for g in head), TIE_MIN_SUPPORT)
-    return head + [g for g in gs[cap:] if g.count >= floor]
+    floor = sorted((g.count for g in gs), reverse=True)[cap - 1]
+    return [g for g in gs if g.count >= floor]
 
 
 def _ties_pass(col: Collapse, s: Settings) -> None:

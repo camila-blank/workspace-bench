@@ -144,12 +144,42 @@ def test_chain_tie_with_the_fifth_extends_the_digest():
     assert [g.key for g in kept] == ["9", "7", "5", "4", "3", "13", "23"]  # both 3s kept
 
 
-def test_chain_numbers_below_the_fifth_or_seen_once_are_still_cut():
+def test_chain_numbers_below_the_fifth_are_still_cut():
     gs = [_g(k, c) for k, c in (("9", 9), ("7", 7), ("5", 5), ("4", 4), ("3", 3), ("2", 2))]
     assert [g.key for g in digest.tie_cut(gs, 5)] == ["9", "7", "5", "4", "3"]
-    ones = [_g(str(k), 1) for k in range(10)]  # a flat run of one-off numbers: no tie extension
-    assert len(digest.tie_cut(ones, 5)) == 5
     assert digest.tie_cut(gs[:4], 5) == gs[:4]
+
+
+def _counts(counts):
+    return [_g(f"n{i}", c) for i, c in enumerate(counts)]
+
+
+def test_chain_tie_cut_ranks_by_support_not_summarizer_order():
+    # round 4 r2 (too lenient): live chain-d3p-0753 all-layer digest, summarizer order. The five
+    # best by support are 60,20,12,12,10 and nothing ties 10, but the old first-five-in-order rule
+    # (weakest of the first five = 5) kept all 9
+    kept = digest.tie_cut(_counts([60, 20, 12, 12, 5, 10, 7, 8, 6]), 5)
+    assert [g.count for g in kept] == [60, 20, 12, 12, 10]
+    # chain-d2p-0227: the fifth best is 15, untied -> five kept (the old rule kept 9)
+    kept = digest.tie_cut(_counts([60, 39, 30, 20, 8, 12, 15, 12, 8]), 5)
+    assert [g.count for g in kept] == [60, 39, 30, 20, 15]
+    # a later number BEATING an early weak one displaces it; the kept stay in summarizer order
+    kept = digest.tie_cut(_counts([9, 1, 8, 7, 6, 5]), 5)
+    assert [g.key for g in kept] == ["n0", "n2", "n3", "n4", "n5"]
+
+
+def test_chain_tie_cut_keeps_every_number_tied_with_the_fifth_support_one_included():
+    # round 4 r2 (too strict): a support-1 tie at the fifth slot keeps ALL tied numbers (the old
+    # TIE_MIN_SUPPORT = 2 dropped them), common at single layers with 4 samples
+    kept = digest.tie_cut(_counts([4, 3, 2, 1, 1, 1, 1]), 5)
+    assert [g.count for g in kept] == [4, 3, 2, 1, 1, 1, 1]
+    ones = _counts([1] * 10)  # a flat run of one-off numbers is one 10-way tie
+    assert len(digest.tie_cut(ones, 5)) == 10
+    # a tie across the cut whose members the summarizer listed early AND late: all kept
+    kept = digest.tie_cut(_counts([3, 9, 8, 7, 1, 3, 2]), 5)
+    assert [g.count for g in kept] == [3, 9, 8, 7, 3]
+    kept = digest.tie_cut(_counts([3, 9, 8, 3, 7, 1, 3]), 5)
+    assert [g.count for g in kept] == [3, 9, 8, 3, 7, 3]
 
 
 def _chain_args(tmp_path):
@@ -192,7 +222,7 @@ def test_chain_digest_asks_for_tie_candidates_and_keeps_the_tied(tmp_path, monke
     assert keys == ["11", "14", "6", "8", "15", "12"]  # 12 ties the fifth (2); 20 (1) is cut
     assert col.diag["n_items_tie_extended"] == 1
     pv = digest.prompt_version("p", _chain_args(tmp_path), "chain_intermediates")
-    assert "-ties5" in pv
+    assert "-rankties5" in pv and "-ties5" not in pv
     assert "-ties" not in digest.prompt_version(
         "p", _chain_args(tmp_path), "arithmetic_intermediates"
     )
