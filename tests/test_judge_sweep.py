@@ -1050,3 +1050,11 @@ def test_markdown_labels_estimated_costs():
     assert "| openai/gpt-6-luna | cheap | ≈0.35 | ≈0.00 |" in md
     assert "| x/y | cheap | 0.20 | 0.00 |" in md
     assert "≈ = estimated: tokens x roster list price" in md
+
+
+def test_job_opts_drop_the_reference_summ_store():
+    ref = "aggregate=summary,summ_store=/workspace/x/store,summ_max=10"
+    row = {"context": 1_000_000}
+    for kind in ("A", "A'", "B", "B'"):
+        got = js.job_opts(ref, kind, "deepseek/deepseek-v4-flash", row)
+        assert "summ_store" not in got and "summ_max=10" in got

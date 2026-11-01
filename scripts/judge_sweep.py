@@ -517,8 +517,12 @@ def job_opts(ref: str, kind: str, model: str, row: Mapping[str, Any] | None) -> 
     - ``B`` (Arm B swept): ``summ_model=<m>``, ``summ_fallback=none`` (REPLACING any reference
       ``summ_fallback=``), ``summ_effort=default``, ``summ_context=<roster context>``;
     - ``B'`` (Opus draws B1-B3): the reference opts unchanged (its family fallback defaults on).
+
+    ``summ_store=`` is always dropped: the reference's shared per-layer store (#219) changes no
+    request, its path does not exist on Modal, and a sweep job must never write into it (the
+    reference's out dirs already hold every digest it used, so seeding needs no store).
     """
-    pairs = parse_opts(ref)
+    pairs = [(k, v) for k, v in parse_opts(ref) if k != "summ_store"]
     if kind in ("A", "A'"):
         return render_opts(set_opt(pairs, "summ_cache_only", "1"))
     if kind == "B":
