@@ -17,6 +17,7 @@ the true bridge's own line (:func:`contrast_line`: a full name in the role) and 
 line a second call, the rival audit (:func:`audit_lines`), marks as naming a different entity
 in question: it must lead the strongest by ``rival.FAR_MORE`` and outweigh their sum."""
 
+import functools
 import re
 import unicodedata
 from collections import defaultdict
@@ -136,47 +137,102 @@ def _form_pattern(ff: str, inflect: bool = True) -> str:
     )
 
 
+_Rule = Callable[[str], bool]
+
+
+def _plan(f: str, glued: bool) -> tuple[Any, ...] | None:
+    """:func:`_compiled`, keyed by the module's current spelling rules (:func:`inflecting`,
+    :func:`accent_only`), so a patched rule is a new key, never a stale pattern."""
+    return _compiled(f, glued, inflecting, accent_only)
+
+
+@functools.cache
+def _compiled(f: str, glued: bool, infl_rule: _Rule, acc_rule: _Rule) -> tuple[Any, ...] | None:
+    """One form's compiled matcher (cached: an option lists up to ~350 forms, which overflowed
+    ``re``'s 512-entry cache, so every call recompiled every pattern, ~33 ms per ``name_in``)."""
+    if _HANGUL.search(f):
+        ff = unicodedata.normalize("NFC", f).casefold().strip()
+        return ("hangul", ff) if ff else None
+    ff = mc.fold(f).strip()
+    if not ff:
+        return None
+    if mc.is_cjk(ff):
+        return ("cjk", re.compile(re.escape(ff)))
+    before, after = _BEFORE, _AFTER
+    if not glued:
+        before += r"(?<![^\W\d_][-\u2010\u2011])"
+        after += r"(?![-\u2010\u2011][^\W\d_])"
+    if acc_rule(f):
+        fa = unicodedata.normalize("NFC", f).casefold().strip()
+        return (
+            "accent",
+            re.compile(before + _form_pattern(fa, True) + after),
+            re.compile(before + _form_pattern(ff, False) + after),  # unaccented: English form
+            " " in ff,
+        )
+    return ("plain", re.compile(before + _form_pattern(ff, infl_rule(f)) + after))
+
+
+@functools.lru_cache(maxsize=4096)
+def _views_cached(text: str) -> tuple[str, str, str]:
+    return _views(text)
+
+
 def name_spans(text: str, forms: Sequence[str], *, glued: bool = True) -> list[tuple[int, int]]:
     """Where the forms occur in ``mc.fold(text)`` (see FORMS_VERSION); ``glued=False``: a Latin
     form glued by a hyphen into a longer name ("Wong Fei-Hung") does not count."""
-    t, t_acc, t_case = _views(text)
+    t, t_acc, t_case = _views_cached(text)
     out: list[tuple[int, int]] = []
     for f in forms:
-        if _HANGUL.search(f):
-            ff = unicodedata.normalize("NFC", f).casefold().strip()
-            tn = unicodedata.normalize("NFC", text).casefold()
-            if ff and ff in tn:
+        plan = _plan(f, glued)
+        if plan is None:
+            continue
+        kind = plan[0]
+        if kind == "hangul":
+            if plan[1] in unicodedata.normalize("NFC", text).casefold():
                 out.append((0, 0))  # Hangul: presence only (NFC offsets differ from fold's)
-            continue
-        ff = mc.fold(f).strip()
-        if not ff:
-            continue
-        if mc.is_cjk(ff):
-            out += [(m.start(), m.end()) for m in re.finditer(re.escape(ff), t)]
-            continue
-        before, after = _BEFORE, _AFTER
-        if not glued:
-            before += r"(?<![^\W\d_][-\u2010\u2011])"
-            after += r"(?![-\u2010\u2011][^\W\d_])"
-        if accent_only(f):
-            fa = unicodedata.normalize("NFC", f).casefold().strip()
-            pat = before + _form_pattern(fa, True) + after
-            out += [(m.start(), m.end()) for m in re.finditer(pat, t_acc)]
-            pat = before + _form_pattern(ff, False) + after  # unaccented: as an English form
+        elif kind == "cjk":
+            out += [(m.start(), m.end()) for m in plan[1].finditer(t)]
+        elif kind == "accent":
+            out += [(m.start(), m.end()) for m in plan[1].finditer(t_acc)]
             out += [
                 (m.start(), m.end())
-                for m in re.finditer(pat, t)
-                if " " in ff or t_case[m.start()].isupper()
+                for m in plan[2].finditer(t)
+                if plan[3] or t_case[m.start()].isupper()
             ]
-            continue
-        pat = before + _form_pattern(ff, inflecting(f)) + after
-        out += [(m.start(), m.end()) for m in re.finditer(pat, t)]
+        else:
+            out += [(m.start(), m.end()) for m in plan[1].finditer(t)]
     return out
+
+
+def _any_plan(forms: Sequence[str]) -> tuple[re.Pattern[str] | None, tuple[str, ...]]:
+    return _any_compiled(tuple(forms), inflecting, accent_only)
+
+
+@functools.cache
+def _any_compiled(
+    forms: tuple[str, ...], infl_rule: _Rule, acc_rule: _Rule
+) -> tuple[re.Pattern[str] | None, tuple[str, ...]]:
+    """(one alternation of every plain form's pattern, the other forms): :func:`name_in` asks
+    only whether some form occurs, so the plain forms are searched in one pass."""
+    plain, rest = [], []
+    for f in forms:
+        plan = _compiled(f, True, infl_rule, acc_rule)
+        if plan is None:
+            continue
+        if plan[0] == "plain":
+            plain.append(f"(?:{plan[1].pattern})")
+        else:
+            rest.append(f)
+    return (re.compile("|".join(plain)) if plain else None), tuple(rest)
 
 
 def name_in(text: str, forms: Sequence[str]) -> bool:
     """A listed form of an option occurs in ``text`` (see FORMS_VERSION)."""
-    return bool(name_spans(text, forms))
+    alt, rest = _any_plan(forms)
+    if alt is not None and alt.search(_views_cached(text)[0]):
+        return True
+    return bool(rest) and bool(name_spans(text, rest))
 
 
 def load_items() -> list[dict[str, Any]]:
@@ -376,16 +432,85 @@ def prominent(count: int, gold: int) -> bool:
     return count >= PROMINENT * gold
 
 
+# capitalized words that start sentences or clauses and name nobody (other_name)
+_NOT_NAMES = frozenset(
+    {"a", "an", "the", "this", "that", "these", "those", "it", "its", "he", "his", "she", "her"}
+    | {"they", "their", "there", "here", "in", "on", "of", "at", "by", "for", "from", "with"}
+    | {"and", "but", "or", "so", "as", "also", "however", "both", "while", "when", "which"}
+    | {"who", "whose", "what", "yes", "no", "not", "fact"}
+)
+_CAP_WORD = re.compile(r"[^\W\d_][^\W_]*")
+
+
+def other_name(it: dict[str, Any], text: str, *, cjk: bool = True) -> bool:
+    """A line that names the gold could also give someone else in the role only if it holds
+    another name: a capitalized word outside the gold's own mentions that is no function word
+    and no word of the prompt, or a CJK character outside them. A line naming only the gold
+    ("the sonata is by **Beethoven**") is not sent to the rival audit (wbaudit-v2). ``cjk=False``:
+    CJK characters do not count (they cannot be told from a name without segmentation)."""
+    t = norm(text)
+    _fold, _acc, case = _views_cached(t)
+    keep = list(case)
+    for a, b in name_spans(t, it["mc"]["forms"][it["mc"]["gold"]]):
+        keep[a:b] = " " * (b - a)
+    rest = "".join(keep)
+    if cjk and mc.is_cjk(rest):
+        return True
+    prompt = set(mc.fold(it["prompt"]).split())
+    for m in _CAP_WORD.finditer(rest):
+        w = m.group()
+        if w[0].isupper() and mc.fold(w) not in _NOT_NAMES and mc.fold(w) not in prompt:
+            return True
+    return False
+
+
 def audit_lines(
     it: dict[str, Any], gold: int, grounded: Sequence[digest.Grounded]
 ) -> list[digest.Grounded]:
-    """The digest entries the rival audit checks: every :func:`prominent` entry (smaller ones
-    cannot weigh in :func:`combined_support`) whose line names no form of the gold (a line that
-    also names the pick is no rival), largest first, at most :data:`AUDIT_MAX_LINES`."""
+    """The digest entries the rival audit checks first: every :func:`prominent` entry (smaller
+    ones cannot weigh in :func:`combined_support`) whose line names no form of the gold, largest
+    first, at most :data:`AUDIT_MAX_LINES` (:func:`audit_shown` appends the gold's split
+    candidates after them)."""
     names_gold = _option_tests(it)[0]
     keep = [g for g in grounded if prominent(g.count, gold) and not names_gold(g.line.text)]
     keep.sort(key=lambda g: -g.count)  # stable: digest order within a count
     return keep[:AUDIT_MAX_LINES]
+
+
+def split_candidates(
+    it: dict[str, Any], gold: int, grounded: Sequence[digest.Grounded], *, cjk: bool = True
+) -> list[digest.Grounded]:
+    """The :func:`prominent` entries that name the gold AND hold another name
+    (:func:`other_name`), largest first: wbaudit-v2 (review of PR #208, round 4d) checks them
+    too, since such a line may give the gold and a different person in the same role (a split
+    line, weighed as that rival's, :func:`audit_split`). wbaudit-v1 skipped every line naming
+    the gold, so L52 composer-Q182537 (Lennon) passed with "The composer of the song tax was Paul
+    McCartney" on ~16 samples of Lennon lines, weighed nowhere."""
+    names_gold = _option_tests(it)[0]
+    keep = [
+        g
+        for g in grounded
+        if prominent(g.count, gold)
+        and names_gold(g.line.text)
+        and other_name(it, g.line.text, cjk=cjk)
+    ]
+    keep.sort(key=lambda g: -g.count)
+    return keep
+
+
+def audit_shown(
+    it: dict[str, Any], gold: int, grounded: Sequence[digest.Grounded]
+) -> list[digest.Grounded]:
+    """The numbered lines of the rival audit: :func:`audit_lines`, then the
+    :func:`split_candidates` (so a non-gold line keeps its number), at most
+    :data:`AUDIT_MAX_LINES`. Empty (no audit call) when there is no non-gold line and no
+    gold line holds another Latin-script name: a CJK line always holds other characters, so it
+    joins an audit but never starts one."""
+    base = audit_lines(it, gold, grounded)
+    if not base and not split_candidates(it, gold, grounded, cjk=False):
+        return []
+    extra = split_candidates(it, gold, grounded)
+    return (base + extra)[:AUDIT_MAX_LINES]
 
 
 def render_audit_lines(gs: Sequence[digest.Grounded]) -> str:
@@ -395,18 +520,68 @@ def render_audit_lines(gs: Sequence[digest.Grounded]) -> str:
     )
 
 
+def audit_rivals(
+    it: dict[str, Any], audit: dict[str, Any] | None, shown: Sequence[digest.Grounded]
+) -> list[tuple[digest.Grounded, str]]:
+    """The (entry, name) pairs the rival audit marks a rival: ``audit["verdicts"]`` numbers the
+    ``shown`` lines (:func:`audit_lines`); a name that is the gold's is no rival."""
+    names_gold = _option_tests(it)[0]
+    out: list[tuple[digest.Grounded, str]] = []
+    if not isinstance(audit, dict) or not isinstance(audit.get("verdicts"), list):
+        return out
+    for e in audit["verdicts"]:
+        if not isinstance(e, dict) or e.get("rival") is not True:
+            continue
+        n = e.get("line")
+        if not isinstance(n, int) or not 1 <= n <= len(shown):
+            continue
+        name = str(e.get("name", "") or "").strip()
+        if name and names_gold(name):
+            continue
+        out.append((shown[n - 1], name))
+    return out
+
+
+def audit_split(
+    it: dict[str, Any], audit: dict[str, Any] | None, shown: Sequence[digest.Grounded]
+) -> set[int]:
+    """``id`` of every entry that names the gold and that the rival audit marks a rival (it also
+    gives a different person in the role): a split line, counting for neither side in
+    ``rival.contest`` and weighed as that rival's in :func:`rival_entities` (wbaudit-v2)."""
+    names_gold = _option_tests(it)[0]
+    return {
+        id(g)
+        for g, name in audit_rivals(it, audit, shown)
+        if names_gold(g.line.text) and line_names(it, name, g.line.text)
+    }
+
+
+def line_names(it: dict[str, Any], name: str, text: str) -> bool:
+    """The audit's rival ``name`` occurs in ``text``: a listed candidate through its forms, else
+    the name itself or its last word (4+ letters, "McCartney" for "Paul McCartney"). A split
+    line is cut from the gold only on a name it holds, never on the audit's word alone."""
+    t = norm(text)
+    opt = _named_option(it, name)
+    if opt is not None:
+        return name_in(t, it["mc"]["forms"][opt])
+    words = name.split()
+    forms = [name] + ([words[-1]] if len(words) > 1 and len(words[-1]) >= 4 else [])
+    return bool(name.strip()) and name_in(t, forms)
+
+
 def rival_entities(
     it: dict[str, Any],
     result: dict[str, Any],
     grounded: Sequence[digest.Grounded],
     audit: dict[str, Any] | None,
+    shown: Sequence[digest.Grounded] | None = None,
 ) -> dict[str, digest.Grounded]:
     """Each competing entity's best digest entry (round 4 of PR #208): the contrast's own line
     (:func:`contrast_line`), every :func:`audit_lines` entry the rival audit marks a rival
     (``audit["verdicts"]``: line number, rival, name) and the MC call's ``rival_quote``. A line
     that names the gold is no rival. Keyed by the listed candidate a name singles out, else by
     the folded name; the MC rival quote joins the entity of the audited line holding it."""
-    names_gold, single_gold, single_option = _option_tests(it)
+    names_gold, _single_gold, single_option = _option_tests(it)
     best: dict[str, digest.Grounded] = {}
     key_of: dict[int, str] = {}  # id(entry) -> the audit's entity key
 
@@ -416,30 +591,37 @@ def rival_entities(
                 best[key] = g
 
     add(it["mc"]["contrast"], [g for g in grounded if contrast_line(it, g.line)])
-    if isinstance(audit, dict) and isinstance(audit.get("verdicts"), list):
-        gold = max((g.count for g in grounded if single_gold(g.line)), default=0)
-        shown = audit_lines(it, gold, grounded)
-        for e in audit["verdicts"]:
-            if not isinstance(e, dict) or e.get("rival") is not True:
-                continue
-            n = e.get("line")
-            if not isinstance(n, int) or not 1 <= n <= len(shown):
-                continue
-            name = str(e.get("name", "") or "").strip()
-            if name and names_gold(name):
-                continue
-            g = shown[n - 1]
-            key = _named_option(it, name) or "~" + (digest.fold_quote(name) or str(n))
-            key_of[id(g)] = key
-            add(key, [g])
+    if shown is None:
+        shown = audit_shown(it, pre_gold_support(it, result, grounded), grounded)
+    for n, (g, name) in enumerate(audit_rivals(it, audit, shown), 1):
+        if names_gold(g.line.text) and not line_names(it, name, g.line.text):
+            continue  # a gold line is a rival's only through a name it holds (audit_split)
+        key = _named_option(it, name) or "~" + (digest.fold_quote(name) or f"line{n}")
+        key_of[id(g)] = key
+        add(key, [g])
     rq = str(result.get("rival_quote", "") or "").strip()
     if rq and not names_gold(rq):
-        hs = [g for g in rival.holders(rq, grounded) if not names_gold(g.line.text)]
+        hs = [
+            g for g in rival.holders(rq, grounded) if id(g) in key_of or not names_gold(g.line.text)
+        ]
         if hs:
             same = [key_of[id(g)] for g in hs if id(g) in key_of]
             key = _named_option(it, rq) or (same[0] if same else "~rival_quote")
             add(key, hs + [g for g in grounded if single_option(rq, g.line)])
     return best
+
+
+def pre_gold_support(
+    it: dict[str, Any], result: dict[str, Any] | None, grounded: Sequence[digest.Grounded]
+) -> int:
+    """The gold support before the rival audit (``rival.contest`` without audit splits): the
+    prominence bar of :func:`audit_lines`, so the run and :func:`decide` number the same
+    lines."""
+    names_gold, single_gold, _single_option = _option_tests(it)
+    rv = rival.contest(
+        result, grounded, single_gold=single_gold, names_gold=names_gold, margin=rival.FAR_MORE
+    )
+    return int(rv["gold_support"])
 
 
 def combined_support(gold: int, entities: dict[str, digest.Grounded]) -> int:
@@ -488,6 +670,8 @@ def decide(
     )
     if credited and grounded is not None:
         names_gold, single_gold, single_option = _option_tests(it)
+        shown = audit_shown(it, pre_gold_support(it, result, grounded), grounded)
+        cut = audit_split(it, audit, shown)
         rv = rival.contest(
             result,
             grounded,
@@ -495,6 +679,7 @@ def decide(
             names_gold=names_gold,
             single_option=single_option,
             margin=rival.FAR_MORE,
+            split=lambda g: id(g) in cut,
         )
         # the true bridge B (the contrast) is the canonical rival whether or not the judge names
         # it: its best digest line naming it in full and in the role counts too (round 3: L52
@@ -503,7 +688,7 @@ def decide(
         rv["contrast_support"] = max(
             (g.count for g in grounded if contrast_line(it, g.line)), default=0
         )
-        ents = rival_entities(it, result, grounded, audit)
+        ents = rival_entities(it, result, grounded, audit, shown)
         rv["rival_entities"] = {k: g.count for k, g in ents.items()}
         rv["top_rival_support"] = max((g.count for g in ents.values()), default=0)
         rv["combined_support"] = combined_support(rv["gold_support"], ents)
@@ -801,7 +986,7 @@ def _run_summary(
             r = results.get(call.key)
             gr = list(col.grounded.get(i, ()))
             pre_v = decide(r, by_id[i], list(col.evidence.get(i, ())), gr)
-            shown = audit_lines(by_id[i], int(pre_v.get("gold_support") or 0), gr)
+            shown = audit_shown(by_id[i], pre_gold_support(by_id[i], r, gr), gr)
             if pre_v.get("credited") and shown:
                 audit_calls.append(
                     Call(

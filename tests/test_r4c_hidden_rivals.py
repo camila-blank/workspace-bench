@@ -140,5 +140,5 @@ def test_restoring_dirhams_to_the_shown_list_fails_the_item_gate():
 
 
 def test_stamp_is_optrv_v3_and_calls_stay_keyed():
-    assert "+optrv-v3+" in BRMT_PROMPT_VERSION
+    assert "+optrv-v4+" in BRMT_PROMPT_VERSION
     assert "+optrv-v1+" in fam.call_pv(BRMT_PROMPT_VERSION)
