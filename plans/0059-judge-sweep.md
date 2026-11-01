@@ -428,3 +428,54 @@ OpenRouter) runs on OpenAI directly through the existing `openai-wif` Modal secr
   401 re-exchanges then succeeds; repeated 401 → fatal; tokens tallied; `resolve` with
   `judge_effort` on an openai-route model; analysis prices a usd-0 OpenAI run from tokens; the
   existing OpenRouter tests unchanged (env unset).
+
+## Addendum B (2026-11-01): Gemini models via Vertex AI workload identity federation
+
+The OpenRouter account is also blocked by Google (403 ToS, 2026-10-31). Camila, 2026-11-01: "we
+also have gemini wif now". Every roster `google/gemini-*` model (gemini-2.5-flash-lite,
+gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-3-flash-preview, gemini-3.8-flash; NOT
+`google/gemma-*`, open weights served by other OpenRouter providers, which stay on OpenRouter and
+are dropped by preflight if blocked) runs on Vertex AI through Modal's OIDC identity token. Recipe
+(from the access note): Modal workspace safety-sahan-2, environment camila-blank only;
+`google.auth.identity_pool.Credentials(audience=
+"//iam.googleapis.com/projects/514946254119/locations/global/workloadIdentityPools/modal/providers/modal-oidc",
+subject_token_type="urn:ietf:params:oauth:token-type:jwt",
+token_url="https://sts.googleapis.com/v1/token", subject_token_supplier=<returns
+$MODAL_IDENTITY_TOKEN>, scopes=[cloud-platform])`, then
+`genai.Client(vertexai=True, project="camila-blank", location="global", credentials=creds)`
+(`google-genai>=2.3`, `google-auth>=2.40`; no Modal secret needed; token refresh is automatic —
+one client per process). A 429 is shared capacity: transient, backoff.
+
+- **`llm` route `gemini`** (a fourth `Route`): `route(model)` returns `"gemini"` for a
+  `google/gemini-*` id ONLY when env `WSBENCH_GEMINI_ROUTE=vertex` is set (any other non-empty
+  value: `JudgeConfigError`); unset, routing is unchanged, so every existing run is
+  byte-identical. Model id: prefix `google/` stripped. Request: `client.aio.models.
+  generate_content(model, contents=user, config=GenerateContentConfig(system_instruction=system,
+  response_mime_type="application/json", response_json_schema=<the schema's "schema" object>,
+  max_output_tokens=<the same WSBENCH_OPENROUTER_MAX_OUT budget, else 8000>,
+  thinking_config=ThinkingConfig(thinking_level=<effort>) when the reasoning has an effort,
+  temperature only when the caller sets one))`. Response: text → JSON parse (unparseable after a
+  `MAX_TOKENS` finish = one failed call, `failed["length"]`, like OpenRouter); `finish_reason` in
+  {SAFETY, PROHIBITED_CONTENT, BLOCKLIST, SPII, RECITATION} or `prompt_feedback.block_reason` set →
+  refusal (`REFUSED_JSON` under `mark_refusals`, `spend.refusals`); tokens from `usage_metadata`
+  (`prompt_token_count`, `candidates_token_count` + `thoughts_token_count` as output,
+  `cached_content_token_count` as cache read); `spend.usd` stays 0 (priced from tokens × roster
+  price in the analysis, labelled estimated, like openai-wif). Errors: `google.genai.errors.
+  APIError.code` is the status (429 / 5xx transient through the shared `_one` logic; 401/403/404
+  fatal `JudgeConfigError`); a 400 whose message names the input token limit ("input token count"
+  / "exceeds the maximum number of tokens") is too-long under the output budget, else a plain error.
+  `google-genai` / `google-auth` are imported lazily (optional; the Modal image installs them).
+- **`judge_config.resolve` / `digest_reasoning`**: the gemini route follows the non-Anthropic rules
+  (`{"effort": l}`; `judge_effort` allowed). Effort `low` → thinking_level "low"; `default` → none.
+- **Roster:** `google/gemini-*` rows get `route: "gemini-vertex"` (prices stay the catalog's, which
+  OpenRouter passes through at Google list price).
+- **Modal:** image adds `google-genai>=2.3`, `google-auth>=2.40`; a job whose roster route is
+  `gemini-vertex` runs with `WSBENCH_GEMINI_ROUTE=vertex` (and never carries the other route's env);
+  the over-context probe uses the Vertex client and records the overflow message.
+- **Analysis:** `gemini-vertex` priced from tokens like openai-wif.
+- **Tests (fakes, no network):** route selection with / without env, gemma exclusion, bad value;
+  request shape (stripped id, system_instruction, JSON schema, max_output_tokens = budget,
+  thinking_level from effort, no temperature by default); safety finish → refusal; MAX_TOKENS
+  unparseable → failed length; 429 retried, 403 fatal, token-limit 400 → too-long under the
+  budget; usage tallies incl. thoughts; roster WIF/vertex sets; `route_env` sets exactly one route
+  env; existing tests unchanged.
