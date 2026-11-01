@@ -131,7 +131,9 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      digest.py:1416-1441; no test asserts that key set) — added for all summary runs.
 4. **OpenRouter output cap and overflow (`llm`, OpenRouter route only; the Anthropic route is
    byte-identical).** Env `WSBENCH_OPENROUTER_MAX_OUT`: when set, every OpenRouter call's
-   `max_tokens` is `min(requested, cap)` (outside every fingerprint). The driver sets
+   `max_tokens` IS the cap, raised or lowered to it (outside every fingerprint; smoke 2026-11-01:
+   DeepSeek V4 Flash at the default 8 000 was cut off mid-JSON by its own reasoning, so the budget
+   must also raise the request; only tokens used are billed). The driver sets
    cap = min(roster `max_out`, 32 000, context // 4), NOT `max_out` itself: OpenRouter rejects
    input + max_tokens > context, so a model with `max_out == context` would 400 on every call.
    With cap ≤ context // 4 the output request can never be what overflows, so every OpenRouter
@@ -348,7 +350,7 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
 - `judge_effort`: replaces family + default OpenRouter reasoning, `pinned=False`; absent =
   unchanged (run.json key absent); Claude judge → exit 2; `baseline` / `capable` reject it.
 - `llm`: OpenRouter fake with `usage` → tokens; Anthropic fake with cache usage → cache tokens;
-  `WSBENCH_OPENROUTER_MAX_OUT` clamps; context-length 400 → `TOO_LONG_JSON`, a max_tokens 400
+  `WSBENCH_OPENROUTER_MAX_OUT` sets the budget both ways; context-length 400 → `TOO_LONG_JSON`, a max_tokens 400
   does not.
 - Anthropic and OpenRouter usage fields are read with getattr defaults (existing fakes, e.g.
   tests/test_text_inversion.py:535 and tests/test_prompt_only_opus.py:113, have no cache fields).
@@ -386,3 +388,43 @@ has non-zero tokens and cost; the table and plot render.
 
 The full sweep (~41 models × 2 arms + 7 Opus draws, ≈ $3.3k at list prices) and its writeup; a
 JSON-mode fallback for models without structured outputs; a Claude judge-effort sweep.
+
+## Addendum A (2026-11-01): OpenAI models via workload identity federation
+
+Smoke finding: this OpenRouter account is blocked from OpenAI's models (`403 Policy Violation:
+this user has been blocked for a previous policy violation`, gpt-6-luna). Camila, 2026-11-01:
+"for open ai use the wif". So every roster `openai/*` model (gpt-6-luna, gpt-6.1-terra,
+gpt-6-astra, gpt-5-nano; NOT gpt-oss-*, open weights served by other providers, which stay on
+OpenRouter) runs on OpenAI directly through the existing `openai-wif` Modal secret and
+`wsbench.baselines.ati_remote` (`WifToken` / `Clients("openai-wif")`, the text-inversion route).
+
+- **`llm` route `openai`** (a third `Route`): `route(model)` returns `"openai"` for an `openai/*`
+  id ONLY when env `WSBENCH_OPENAI_ROUTE=wif` is set; otherwise unchanged (`openrouter`), so every
+  existing run is byte-identical. The client is `ati_remote.Clients("openai-wif")` (token exchange,
+  re-exchange on a 401 up to `ati_remote.AUTH_REFRESHES`, then fatal); the model id is
+  `ati_remote.route_model(model, "openai-wif")` (prefix stripped); the request is the OpenAI chat
+  completions call with `response_format` json_schema, `max_completion_tokens` (the same
+  `WSBENCH_OPENROUTER_MAX_OUT` budget applies — rename-free: it is "the sweep output budget"),
+  `reasoning_effort` from the resolved reasoning's `effort` (a `None` reasoning sends none), no
+  `temperature` (OpenAI reasoning models reject it), no OpenRouter `extra_body`. Response handling
+  shares `_openrouter_once`'s post-processing (tokens from `usage.prompt_tokens` /
+  `completion_tokens`, refusal / content_filter / length rules); `spend.usd` stays 0 (OpenAI does
+  not return a cost) — the analysis prices it from tokens × roster price, like Claude. Retries and
+  the `transient` / `failed` tallies are the shared `_one` logic; a 403 is fatal (no moderation
+  carve-out: that is an OpenRouter body shape).
+- **`judge_config.resolve`** treats the `openai` route like OpenRouter for reasoning keys
+  (non-Anthropic) and `judge_effort` (allowed; `{"effort": l}` → `reasoning_effort=l`).
+- **Digest** (`digest_reasoning`): non-Claude rule unchanged (`None` / `{"effort": l}`).
+- **Roster:** `openai/*` rows (except gpt-oss) get `route: "openai-wif"`; prices stay the catalog's
+  (OpenAI list prices, which OpenRouter passes through).
+- **Modal:** `run_job` / `preflight_job` attach BOTH secrets (`openrouter`, `openai-wif`); a job
+  whose model's roster route is `openai-wif` runs with `WSBENCH_OPENAI_ROUTE=wif`. The
+  over-context probe for those models uses the WIF client and records OpenAI's overflow error;
+  the classifier gets OpenAI's phrase ("maximum context length" already matches).
+- **Analysis:** cost = tokens × roster price for every route whose ledger `usd` is 0 (Claude and
+  openai-wif), labelled as estimated.
+- **Tests:** route selection with / without the env; request shape (model id stripped,
+  `max_completion_tokens`, `reasoning_effort`, no temperature / extra_body) via a fake client; a
+  401 re-exchanges then succeeds; repeated 401 → fatal; tokens tallied; `resolve` with
+  `judge_effort` on an openai-route model; analysis prices a usd-0 OpenAI run from tokens; the
+  existing OpenRouter tests unchanged (env unset).
