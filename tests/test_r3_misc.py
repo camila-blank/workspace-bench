@@ -172,8 +172,9 @@ def test_chain_unrelated_or_bare_rival_heads_do_not_tie():
     ]
     heads = chain.answer_head_counts(cells, ops)
     assert heads == {13: 2} and not chain.head_tie(13, [6, 12, 4, 11, 8, 9, 13, 10], heads)
-    # a gold credited only from a computed statement (no head) is not compared on heads
-    assert not chain.head_tie(26, [22, 24, 26], {22: 4})
+    # heads-v3: a gold with no counted head is held to the one-head bar (no quote exemption)
+    assert chain.head_tie(26, [22, 24, 26], {22: 4})
+    assert not chain.head_tie(26, [22, 24, 26], {})
     # a rival LEAD (more heads than the gold) fails
     assert chain.head_tie(10, [24, 10], {10: 2, 24: 4})
 
