@@ -329,4 +329,4 @@ def test_language_question_has_no_single_line_credit():
     assert "is enough" not in QUESTION_LANGUAGE_V2
     assert "no other option" not in QUESTION_LANGUAGE_V2
     assert "TOPIC does not count" in QUESTION_LANGUAGE_V2  # the topic exclusion is kept
-    assert ML_MC_PROMPT_VERSION == "mc-ml-2026-10-31f"
+    assert ML_MC_PROMPT_VERSION == "mc-ml-2026-11-01"  # round 4: alias table over bank v3

@@ -16,7 +16,10 @@ def _g(text: str, count: int) -> digest.Grounded:
 
 
 def _item(qid: str) -> dict:
-    return next(it for it in wb.load_items() if qid in it["id"])
+    # the cited cases were judged on bank v2's lists (round 4 froze new lists in bank v3)
+    from wsbench.banks import load_bank
+
+    return next(it for it in load_bank("evals/wrong_bridge/items_v2.json")[1] if qid in it["id"])
 
 
 def _v(it: dict, gs: list, quote: str, rq: str = "", audit: dict | None = None) -> dict:
@@ -197,7 +200,8 @@ def test_small_rivals_do_not_sum_against_a_clear_gold():
 
 
 def test_mc_calls_keep_their_cached_key():
-    assert wp.PROMPT_VERSION.endswith("+" + wp.AUDIT_VERSION)
+    # round 4 appends the forms and bank tags after the audit stamp; none enters the call key
+    assert "+" + wp.AUDIT_VERSION + "+" in wp.PROMPT_VERSION
     assert wb._mc_version(wp.PROMPT_VERSION) == "wb-mc-2026-10-31r+rv-2026-10-31e"
 
 

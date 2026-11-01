@@ -10,7 +10,7 @@ from summary_fakes import FakeLLM, digest_lines, summary_args
 from wsbench import digest, registry
 from wsbench.evals.multihop_mt_v2 import SPEC as MH2
 from wsbench.evals.multilingual_mt import SPEC as ML
-from wsbench.multitoken.prompts import PROMPT_VERSION, V2_ANCHOR_TAG
+from wsbench.multitoken.prompts import PROMPT_VERSION, V2_SAME_SAMPLE_TAG
 from wsbench.multitoken.regex import SCORER_VERSION
 
 HOUR, OCTO = "mlh-ar-hourglass", "mlh-ar-octopus"
@@ -182,7 +182,7 @@ def _unpin(monkeypatch):
         monkeypatch.delenv(f"WSB_BANK_FILE_{name.upper()}", raising=False)
 
 
-V2_SUFFIX = "+" + V2_ANCHOR_TAG + ML_SUFFIX  # multilingual_mt: + round-3 anchoring
+V2_SUFFIX = "+" + V2_SAME_SAMPLE_TAG + ML_SUFFIX  # multilingual_mt: + round-4 same-sample rule
 
 
 def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypatch):
@@ -201,10 +201,12 @@ def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypa
     assert fake.n("digest") == 2 * 2 and len(fake.calls) == 2 * 2
     rows = {x["id"]: x for x in r.rows}
     assert {x["id"]: x["pass"] for x in native.rows} == {HOUR: True, OCTO: False}
-    assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is True
+    # round 4 (Camila r2, same-sample-v1): multilingual_mt no longer relaxes the conjunction over
+    # the evidence samples: OCTO's concept and language naming sit in different samples
+    assert rows[HOUR]["pass"] is True and rows[OCTO]["pass"] is False
     assert rows[HOUR]["content_hit"] is True
     assert r.config["prompt_version"] == SCORER_VERSION + V2_SUFFIX
-    assert native.config["prompt_version"] == SCORER_VERSION + "+" + V2_ANCHOR_TAG
+    assert native.config["prompt_version"] == SCORER_VERSION + "+" + V2_SAME_SAMPLE_TAG
 
 
 def _positions_rows(item, layers, texts):

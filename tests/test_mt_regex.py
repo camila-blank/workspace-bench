@@ -14,7 +14,7 @@ from wsbench.cli import main
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.multitoken import family as fam
 from wsbench.multitoken import regex
-from wsbench.multitoken.prompts import V2_ANCHOR_TAG, V2_NAMING_TAG
+from wsbench.multitoken.prompts import V2_SAME_SAMPLE_TAG, V2_TYPO_TAG
 from wsbench.multitoken.regex import SCORER_VERSION, ScoredUnit
 from wsbench.results import read_results
 
@@ -325,8 +325,8 @@ def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monke
     # register the v2 bank tag
     tag = {
         "typo_mt": "+typo-v2",
-        "multilingual_mt": "+" + V2_ANCHOR_TAG,  # round 3: + the anchoring rule
-        "multilingual_typo": "+" + V2_NAMING_TAG,
+        "multilingual_mt": "+" + V2_SAME_SAMPLE_TAG,  # round 4: + the same-sample rule
+        "multilingual_typo": "+" + V2_TYPO_TAG,  # round 4: + anchored support
     }
     assert spec.scorer == "regex" and spec.judge.prompt_version == SCORER_VERSION + tag.get(
         name, ""
