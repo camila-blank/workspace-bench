@@ -338,6 +338,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   undecided (never a fail), a row whose only shortfall is such refusals stays complete
   (`runner.refusals_only`), and `results` marks a row with > 20% undecided not measurable.
   Tests that drive the chunk machinery with multi-layer cells pin `summ_layers=joint`.
+  `summ_store=<dir>` shares every one-layer digest (key `digest:<id>|<L>`, same fingerprint)
+  across out dirs, so `layers=[L]` and the union run ask each (item, layer) once
+  (`tests/test_digest_store.py`; docs/summarizer.md "Shared per-layer store").
   Plan 0059: the digest reasoning is route-aware (`digest.digest_reasoning`: `claude-*` keeps
   `{"anthropic_effort": …}`, so every existing fingerprint holds); `summ_context=N` replaces
   `CONTEXT_WINDOW` in the hierarchical budget (>= 128 000; in `to_json` only when not the
