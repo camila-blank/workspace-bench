@@ -55,7 +55,7 @@ WANT_N = {
     "Diets": {10},
     "Religion": {10},
     "ReligiousAffiliation": {10},
-    "Gender": {2},  # um-v3.4: male / female only (aliases.SHOWN_POOL)
+    "Gender": {3},  # um-v3.4: male / female / nonbinary (aliases.SHOWN_POOL)
     "Continent": {7},
     "AgeGroup": {8},
     "MaritalStatus": {6},
@@ -118,10 +118,10 @@ def test_chance_is_per_item_mean():
     opts = build_options(items)
     want = sum(1 / (len(opts[it["name"]][0]) + 1) for it in items) / 100
     assert options.chance(opts, [it["name"] for it in items]) == pytest.approx(want)
-    # um-v3.4: Gender is binary (1/3 with the escape), so the mean rose from ~0.117 to ~0.144
-    assert 0.14 < want < 0.15
+    # um-v3.4: Gender shows 3 values (1/4 with the escape), so the mean rose from ~0.117 to ~0.130
+    assert 0.125 < want < 0.135
     label = options.chance_label(items, opts)
-    assert "Gender 2" in label and "Country 10" in label and "do not quote" in label
+    assert "Gender 3" in label and "Country 10" in label and "do not quote" in label
 
 
 # ---------------------------------------------------------------- prompts (C2, C3)
