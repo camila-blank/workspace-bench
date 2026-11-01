@@ -185,14 +185,25 @@ def test_numbers_digest_stays_joint_and_capped(tmp_path, monkeypatch):
     """Leniency guard (F1): the five-number budget does NOT scale with the layers."""
 
     def reply(system, user):
-        nums = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+        lines = [ln[2:] for ln in user.splitlines() if ln.startswith("- ")]
+        nums = dict.fromkeys(ln for ln in lines if ln[:1].isdigit())  # one entry per number
         return {"items": [_entry(n, n.split()[0]) for n in nums], "rare": []}
 
     fake = Scripted(monkeypatch, reply)
-    cells = [_prose("a", ly, p, f"{ly + p} is it") for ly in (20, 24, 28) for p in range(4)]
+    # distinct supports (number 20 + j in j + 1 of the 48 samples): no tie at the fifth -> five
+    said = [f"{20 + j} is it" for j in range(9) for _ in range(j + 1)] + ["nothing"] * 3
+    cells = [
+        _prose("a", ly, p, *said[4 * i : 4 * i + 4])
+        for i, (ly, p) in enumerate((ly, p) for ly in (20, 24, 28) for p in range(4))
+    ]
     col = _collapse(tmp_path, "chain_intermediates", {"a": cells})
     assert len(fake.calls) == 1  # joint
     assert len([x for x in col.statements["a"] if x["tier"] == "numbers"]) == 5
+    # round 4 r2 (tie_cut keeps every number tied with the fifth, support 1 included): a flat
+    # run of one-off numbers is one tie, bounded by the 5 + summ_ties candidates, never x layers
+    flat = [_prose("a", ly, p, f"{ly + p} is it") for ly in (20, 24, 28) for p in range(4)]
+    col = _collapse(tmp_path / "flat", "chain_intermediates", {"a": flat})
+    assert len([x for x in col.statements["a"] if x["tier"] == "numbers"]) == 10
 
 
 def test_partial_layers_are_recorded(tmp_path, monkeypatch):
@@ -332,7 +343,7 @@ def test_f3_families_take_the_jailbreak_route():
         "jailbreak_recognition",
     ):
         s = digest.settings(_args(Path("/tmp")), fam)
-        assert s.server_fallback == "default" and s.refusal_model == "claude-sonnet-5", fam
+        assert s.server_fallback == "default" and s.refusal_model == "claude-sonnet-5-5", fam
 
 
 # ---------------------------------------------------------------- F3: reporting
@@ -478,14 +489,17 @@ def test_rank_numbers_demotes_operands_and_fills_free_slots_with_consensus():
     ]
     gs = [_g("87"), _g("88"), _g("175", 9), _g("16")]
     out = digest.rank_numbers(gs, cons, operands=[87.0, 88.0], cap=5)
-    assert [g.key for g in out] == ["175", "16", "18", "87", "88"]
-    assert out[2].consensus.startswith("first number of 4 of 4 samples at [L52 pos -8]")
-    assert out[2].support.startswith("4 samples; first number of 4 of 4")
+    # round 3 (+cons-r3, ROUND3_TODO: reserve slots for consensus values): marked numbers first
+    assert [g.key for g in out] == ["18", "175", "16", "87", "88"]
+    assert out[0].consensus.startswith("first number of 4 of 4 samples at [L52 pos -8]")
+    assert out[0].support.startswith("4 samples; first number of 4 of 4")
     assert out[3].consensus == ""  # an operand is not marked even with a lead consensus
     # leniency guard: the slot count stays capped, consensus or not
     many = [_g(str(v)) for v in (1, 2, 3, 4, 5, 6)]
     assert len(digest.rank_numbers(many, cons, operands=[], cap=5)) == 5
-    assert [g.key for g in digest.rank_numbers(many, cons, [], 5)] == ["1", "2", "3", "4", "5"]
+    # the consensus values (18, and 87: no operand here) are no longer cut by the cap; the last
+    # unmarked numbers are
+    assert [g.key for g in digest.rank_numbers(many, cons, [], 5)] == ["18", "87", "1", "2", "3"]
 
 
 def test_keyed_number_with_consensus_is_annotated():
@@ -555,6 +569,7 @@ def test_arithmetic_digest_gets_operands_and_consensus(tmp_path, monkeypatch):
         consensus=True,
     )
     keys = [x["key"] for x in col.statements["i"]]
-    assert keys == ["300", "301", "302", "175", "87"]  # cap 5; two operands demoted out
-    assert col.statements["i"][3]["consensus"].startswith("first number of 4 of 4")
+    # cap 5; two operands demoted out; round 3 (+cons-r3): the consensus value ranks first
+    assert keys == ["175", "300", "301", "302", "87"]
+    assert col.statements["i"][0]["consensus"].startswith("first number of 4 of 4")
     assert digest.number_keys(_args(tmp_path), "arithmetic_intermediates", col, "i") == keys

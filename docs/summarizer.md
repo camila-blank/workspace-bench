@@ -20,7 +20,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
 
 - `DIGEST_PROMPT_VERSION = "digest-v5"`, `SUMMARY_JUDGE_VERSION = "sj-v10"`. A summary-mode
   result stamps `digest.prompt_version(<family PV>, args, family)`: under the defaults
-  `<family PV>+digest-v5-task-extractive+sj-v10` (plus `-lang` under `summ_lang=1`, `-stride`
+  `<family PV>+digest-v5-task-extractive+sj-v10` (plus `-stride`
   under the stride ablation, `-joint` under the `summ_layers=joint` ablation, and `+reads-lite`
   from `reads.stamp`). Family docs cite the
   function's output, never a literal.
@@ -34,7 +34,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
   truncation) stays an explicit ablation (`summ_overflow=stride`, stamped `-stride`; a
   truncated item makes the run incomplete). No family sets `summ_token_cap`; the allowed
   `FAMILY_DEFAULTS` keys are `summ_concurrency`, `summ_timeout`, `summ_fallback`, `summ_max`,
-  `summ_rare`, `summ_numbers`, `summ_lang`. Real token counts (`llm.count_tokens`, cached
+  `summ_rare`, `summ_numbers` (`summ_lang` was removed on 2026-11-01). Real token counts (`llm.count_tokens`, cached
   `ntok:<id>|<layers>`) are asked only for bundles estimated above 60% of the cap; a call
   estimated above 150k tokens gets at least 1800 s.
 - **Task context on by default** (`summ_variant=task`; `blind` is the ablation): the family's
@@ -68,9 +68,8 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
   bullet) and count `extras.n_unverified_bullet`. `digest.number_flood` voids a whole sample that
   lists five or more distinct numbers.
 - **Renders** (`summ_render`). `extractive` (default): the judge reads only the WHOLE readout
-  samples the note-taker picked, one `[support] <sample>` line each (`EXTRACTIVE_LINE`; with
-  `summ_lang=1` `EXTRACTIVE_LINE_LANG` adds the note-taker's `[in <language>]` label, shown to
-  the judge and never gated on), `support` the entry's per-claim sample count (digest-v5, below).
+  samples the note-taker picked, one `[support] <sample>` line each (`EXTRACTIVE_LINE`; the
+  `summ_lang` `[in <language>]` label was removed on 2026-11-01), `support` the entry's per-claim sample count (digest-v5, below).
   No text the note-taker wrote reaches the judge. `abstractive` (ablation) also shows the
   statement.
 - **Two tiers** (`items` up to `summ_max`, default 10; `rare` up to `summ_rare`, default 15) and
@@ -110,6 +109,27 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     `extras.summary_top_layer_share`). `wsbench report by_layer=True` writes
     `layer_union_check.json` and a WARN line per family listing the items a single-layer row
     passes and the all-layer row does not (`results.layer_union_check`; leads to audit).
+  - *Shared per-layer store* (`summ_store=<dir>`, final-run speed 2026-11-01): the cache is one
+    `cells.jsonl` per out dir, so a `layers=[L]` run and an all-layer union run in different out
+    dirs never saw each other's digest of L. With `summ_store=<dir>` (the same dir for every
+    layer config of one arm's readouts) every digest whose bundle is exactly ONE layer's cells
+    (a union part, a `layers=[L]` item, a one-layer item of a multi-layer run) and its sub-keys
+    (chunks, final, halving level, token count) are also read from and written to
+    `<dir>/<family>/L<layer>.jsonl` under the key `digest:<id>|<layer>` and the run's own request
+    fingerprint (prompt version, model, effort, budget, rare tier, numbers, cap, lang, task note,
+    bundle text, salt) plus the refusal-fallback setting, the cap and the overflow (the halving
+    level's own fingerprint does not key the cap). The union's per-layer step already sends
+    the byte-identical request a `layers=[L]` run sends, so a union run only adds its missing
+    layers, merge and judge calls; results are identical to a run without the store, no request
+    byte changed and the stamp stays `digest-v5`. A store row read is copied into the out dir's
+    own cache only on a local miss (`extras.n_store_rows_adopted`; the run's own success always
+    wins, so a rerun adopts nothing); call-count extras (`n_chunk_calls`, …) count only the calls
+    actually sent, as on any warm cache; `config.digest_store` records the resolved path, outside
+    `config.summarizer` (not instrument identity). Shared too: `arithmetic_intermediates`
+    (numbers per layer), and a one-layer item under any mode. Not shared: a joint multi-layer
+    bundle (`chain_intermediates` all-layer, `summ_layers=joint`) and the stride ablation
+    (ignores the store). Writers append whole lines
+    (`cache.SharedLog`, `flock` where supported); a torn line is a miss, never a wrong row.
   - *F2, per-claim counts.* Every digest entry carries the note-taker's `count`: the samples that
     make the SAME claim, not those that merely contain the key word (a month list or a restated
     question does not count). It is capped mechanically at the samples holding the key
@@ -118,7 +138,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     several / many) is a diagnostic only.
   - *F3, refused or collapsed digests.* introspection,
     moral_rationale, user_modeling and model_specific_DM take the jailbreak route
-    (`summ_fallback=default+claude-sonnet-5`). Out of halvings, or with a final call that is
+    (`summ_fallback=default+claude-sonnet-5-5`; Sonnet 5 before 2026-11-01). Out of halvings, or with a final call that is
     refused or too large, an item is judged on its chunk digests directly (`n_items_chunk_direct`)
     instead of being given up; layers whose chunks stayed unserved are listed in `partial`
     (`row.summary_partial_layers`, `extras.n_items_partial`); the refused / too-long subset is
@@ -149,14 +169,21 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
 - **Refusal fallbacks** (`summ_fallback`): `default` passes the server-side refusal fallback
   (`fallbacks="default"`); `default+<claude model>` additionally re-runs a call still declined
   after it once on that model, at the same level, before any halving (plan 0037 J10;
-  jailbreak_recognition uses `default+claude-sonnet-5`). Every fallback-served digest is counted in
-  `extras.digest_served_by` and the row's `summary_served_by`.
+  jailbreak_recognition and the four F3 families use `default+claude-sonnet-5-5`, i.e.
+  `digest.REFUSAL_MODEL`; Sonnet 5 before 2026-11-01). Every fallback-served digest is counted in
+  `extras.digest_served_by` and the row's `summary_served_by`. The digest fingerprint does not key
+  the fallback, so each fallback-served cache row records how it was served (`digest.SERVED_VIA`:
+  `client` or `server`), and a row a client-side refusal model other than the run's own served
+  is a cache miss: a pre-switch row (no `SERVED_VIA`) served by a retired model
+  (`digest.RETIRED_REFUSAL_MODELS`, i.e. Sonnet 5) is re-asked, served by Sonnet 5.5 and
+  re-judged, never silently reused. Server-side-served and unserved rows stay cached.
 
 ## Digest prompt
 
 System (`summ_variant=task`, the default, appends `DIGEST_TASK_LINE` filled with the item's task
-note; `summ_variant=blind` is the ablation; `summ_lang=1` appends `DIGEST_LANG_LINE` and asks
-every entry for a `language` field):
+note; `summ_variant=blind` is the ablation. Camila 2026-11-01: the four multilingual families
+no longer run `summ_lang` (the option, `DIGEST_LANG_LINE` and the `language` field are gone);
+their digest gets a neutral task note instead):
 
 `DIGEST_SYSTEM`:
 
@@ -200,13 +227,6 @@ Every entry has: "statement" (one short line in the readouts' own terms), "key" 
 
 ```text
 TASK CONTEXT: while these readouts were taken, {task_note}. Use this only to judge what in the readouts is relevant to this kind of task: record every mention that bears on it, even one that appears in a single sample or at one layer, rather than discarding it as noise. Do not use the context to guess, answer, translate or add anything the readouts do not say.
-```
-
-`DIGEST_LANG_LINE` (`summ_lang=1`: multilingual, multilingual_mt, multilingual_multihop,
-multilingual_typo):
-
-```text
-For every entry also give "language": the language the evidence span is written in (e.g. English, Russian; "mixed: Russian + English" when it mixes). Record it; never translate the evidence.
 ```
 
 `DIGEST_USER`:
@@ -254,12 +274,6 @@ A line whose items are separated by " | " is one ranked list of the top vocabula
 
 ```text
 [{support}] {evidence}
-```
-
-`EXTRACTIVE_LINE_LANG` (`summ_lang=1`):
-
-```text
-[{support}] [in {language}] {evidence}
 ```
 
 `ABSTRACTIVE_LINE`:
