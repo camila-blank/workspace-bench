@@ -522,3 +522,129 @@ def test_replay_flips_attributes_only_dropped_rivals(ml):
     flips = ml.replay_flips(old, new, before, after)
     assert [(f["config"], f["attributable"]) for f in flips] == [("o/L48", True), ("o/L44", False)]
     assert flips[0]["dropped"] == {"Wednesday": 3} and flips[1]["named"] == {"Wednesday": False}
+
+
+# ---------------------------------------------------------------- PR #214 review r7
+
+
+def test_gold_slots_deal_balanced_per_subfamily_and_overall(ml):
+    """The documented deal: per subfamily (sorted) the items in sha256 order get slots
+    round-robin, continuing across subfamilies; counts differ by <= 1 within each subfamily and
+    over the bank; deterministic; a subfamily mixing option counts exits."""
+    from collections import Counter
+
+    def it(i, sub, n=4):
+        return {"id": f"{sub}-{i}", "subfamily": sub, "mc": {"distractors": ["x"] * n}}
+
+    items = [it(i, "b") for i in range(7)] + [it(i, "a") for i in range(6)]
+    slots = ml.gold_slots(items)
+    assert slots == ml.gold_slots(list(reversed(items)))  # input order is irrelevant
+    for sub in ("a", "b"):
+        c = Counter(v for k, v in slots.items() if k.startswith(sub))
+        assert max(c.values()) - min(c.values()) <= 1 and set(c) <= set(range(5)), (sub, c)
+    total = Counter(slots.values())
+    assert set(total) == set(range(5)) and max(total.values()) - min(total.values()) <= 1
+    # "a" is dealt first (6 items: slots 0..4 then 0), so "b" starts at slot 1
+    assert sorted(v for k, v in slots.items() if k.startswith("a")) == [0, 0, 1, 2, 3, 4]
+    with pytest.raises(SystemExit, match="mixes option counts"):
+        ml.gold_slots([it(0, "a"), it(1, "a", n=3)])
+
+
+def test_ends_line_both_directions(ml):
+    """What poetry v5 keeps: a word closing a digest line or a ' / ' verse line (punctuation and
+    closing quotes allowed), or governed by a plan cue. A mid-line mention, a longer word or
+    another inflection is no line ending."""
+    assert ml.ends_line("strand", "Where palm trees rose and cliffs and strand. / Relief came")
+    assert ml.ends_line("stay", "And here I'll always STAY”")
+    assert ml.ends_line("flight", "it rhymes with flight here")
+    assert not ml.ends_line("strand", "a strand of hair / fell down")
+    assert not ml.ends_line("stay", "they stayed. / home")
+    assert not ml.ends_line("complete", "incomplete. /")
+    assert ml.mentions("strand", "a strand of hair") and not ml.mentions("stay", "stayed")
+
+
+def _po_item():
+    import json
+
+    from wsbench.banks import label_of
+
+    raw = json.loads((REPO / "evals/poetry/items_v2.json").read_text("utf-8"))
+    it = next(x for x in raw["items"] if x["name"] == "v3-po-sand-land")
+    return {**it, "id": label_of(it["name"])}
+
+
+def test_poetry_rivals_keep_line_endings_of_failing_digests_only(ml):
+    """Review r7: v3-po-sand-land L52 was a v2 cannot-tell whose digest ends a line on 'strand'
+    once (below the gold, so no veto rival: v4 dropped it). A line ending in the digest of a
+    non-pass cell is evidence; the same line in a passing cell, or a mid-line mention, is not;
+    a judge pick and a veto-count tie stay evidence as under v4."""
+    it = _po_item()
+    dis = ml.poetry_distractors(it)
+    assert "strand" in dis and "hand" in dis and "planned" in dis
+    fail_row = {"id": it["id"], "gold": "land", "pass": False, "pick": "cannot",
+                "summary": "[7 samples] cliffs and strand. / found dry sand!\n"
+                           "[1 sample] as we planned the trip / home"}  # fmt: skip
+    pass_row = {**fail_row, "pass": "True", "summary": "[2 samples] the sun's warm hand, / sand"}
+    pick_row = {**fail_row, "pick": "distractor", "picked": "hand", "summary": ""}
+    tie_row = {**fail_row, "summary": "", "counts": {"land": 1, "band": 1, "hand": 0}}
+    out = ml.poetry_rivals(
+        {it["id"]: it},
+        [
+            ("o/L52", fail_row),
+            ("o/L40", pass_row),
+            ("o/L44", pick_row),
+            ("o/L48", tie_row),
+        ],
+    )
+    assert out == {it["id"]: {
+        "strand": ["line end: o/L52 (1 digest lines, v2 fail)"],
+        "hand": ["judge pick: o/L44"],
+        "band": ["rival: digest:o/L48 (1 vs 1)"],
+    }}  # fmt: skip
+
+
+def test_evidence_poetry_merges_the_v4_evidence(ml, monkeypatch, tmp_path):
+    """Poetry's v5 evidence = bank v4's evidence file (readout-level veto rivals) plus the new
+    digest evidence, so v5 keeps everything v4 kept; without --base it exits."""
+    import json
+
+    it = _po_item()
+    monkeypatch.setattr(ml, "load", lambda fam, path=None: ({}, [it]))
+    row = {"id": it["id"], "gold": "land", "pass": False, "pick": "cannot",
+           "summary": "cliffs and strand. /"}  # fmt: skip
+    monkeypatch.setattr(ml, "judged_cells", lambda judged, family: [("o/L52", row)])
+    base = tmp_path / "v4.json"
+    base.write_text(json.dumps({it["id"]: {"band": ["rival: readouts:o/L28 (2 vs 1)"]}}), "utf-8")
+    dest = tmp_path / "v5.json"
+    out = ml.evidence(ml.FAMS["poetry"], tmp_path, dest, base)
+    assert out[it["id"]] == {
+        "band": ["rival: readouts:o/L28 (2 vs 1)"],
+        "strand": ["line end: o/L52 (1 digest lines, v2 fail)"],
+    }
+    assert json.loads(dest.read_text("utf-8")) == out
+    with pytest.raises(SystemExit, match="--base"):
+        ml.evidence(ml.FAMS["poetry"], tmp_path, dest)
+    assert "line ending" in ml.OBSERVED_RULE_POETRY_V5 and ml.OBSERVED_RULE_POETRY_V5 != (
+        ml.OBSERVED_RULE
+    )
+
+
+def test_replay_flips_poetry_attributes_dropped_line_endings(ml):
+    """Poetry replay: a flip whose dropped v2 option ends a line of the cell's digest is
+    attributable; a dropped option the digest only mentions mid-line is reported as mentioned,
+    not attributable; a flip on an unchanged list is same_list noise."""
+    it = _po_item()
+    dis = ml.poetry_distractors(it)
+    new = {it["id"]: {**it, "mc": {**it["mc"], "candidates": [
+        c for c in it["mc"]["candidates"] if c != "strand"]}}}  # fmt: skip
+    assert "strand" not in ml.poetry_distractors(new[it["id"]])
+    before = [
+        ("o/L52", {"id": it["id"], "pass": False, "summary": "cliffs and strand. /"}),
+        ("o/L48", {"id": it["id"], "pass": False, "summary": "a strand of hair / sand"}),
+    ]
+    after = [(c, {**r, "pass": "True"}) for c, r in before]
+    flips = ml.replay_flips({it["id"]: it}, new, before, after)
+    assert [(f["config"], f["attributable"]) for f in flips] == [("o/L52", True), ("o/L48", False)]
+    assert flips[0]["dropped"] == {"strand": 1} and flips[1]["mentioned"] == {"strand": True}
+    same = ml.replay_flips({it["id"]: it}, {it["id"]: it}, before, after)
+    assert all(f["same_list"] and not f["attributable"] for f in same) and len(dis) == 4
