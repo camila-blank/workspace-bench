@@ -402,7 +402,4 @@ def test_native_mode_keeps_quote_support_so_the_native_ati_gate_stands(tmp_path,
     assert fake.n("ec_support_locator") == 0 and fake.n("ec_reason_ml") > 0
     assert all(row["support_rule"] == "quotes" for row in r.rows)
     ati = json.loads((ROOT / "evals/baselines/anti_text_inversion.json").read_text())
-    # round 4: the registered instrument moved to ec-v7 (bank v5), so the ec-v5d entry is
-    # pending its run-phase re-gate (test_refilled_banks.PENDING_REGATE)
-    assert ati["moral_rationale"]["instrument"] == "ec-v5d"
-    assert ti.gate_instrument("moral_rationale") == "ec-v7"
+    assert ati["moral_rationale"]["instrument"] == ti.gate_instrument("moral_rationale") == "ec-v5d"
