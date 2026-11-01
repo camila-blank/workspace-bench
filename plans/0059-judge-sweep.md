@@ -16,7 +16,8 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
 - **Arm A (judge swap).** Digests only from the Opus 5.5 reference run's cache (R4), read with
   `summ_cache_only=1` (below); the swept model judges (`judge_model=<m>`).
 - **Arm B (matched).** The swept model writes the digest AND judges (`summ_model=<m>`,
-  `judge_model=<m>`, and an explicit `summ_fallback=none` for EVERY model, Claude included, so no
+  `judge_model=<m>`, and `summ_fallback=none` for EVERY model — replacing, not appending to, any
+  `summ_fallback=` in the reference opts — Claude included, so no
   Arm B digest is served by another model).
 - **Opus draws (all required, all `judge_model=claude-opus-5-5`, R4's instrument opts incl. its
   family `summ_fallback` defaults).** A′1–A′4 = Opus judging the seeded digests through the
@@ -24,7 +25,13 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
   ~$37 each). B′1–B′3 = fresh full Opus digest+judge runs (~$250 each).
 - **Reference = A′1 for both arms** (it is Opus digest + Opus judge on exactly Arm A's inputs).
   Noise pairs: Arm A = the six pairs of A′1–A′4; Arm B = the six pairs of {A′1, B′1, B′2, B′3}
-  (A′1 is itself an Opus digest + Opus judge draw). R4 is a **display column only** (never in a margin or floor): it
+  (A′1 is itself an Opus digest + Opus judge draw). **Every draw has its own out dir** (judge
+  verdicts are cached per `(key, fp)` with nothing per-run in the key, so two Opus draws sharing
+  a dir would replay each other): model slugs `claude-opus-5-5@A1` … `@A4`, `@B1` … `@B3`.
+  Before launch the driver asserts a draw's `cells.jsonl` holds only seed rows (A′) or does not
+  exist (B′); `analyze` refuses a noise pair whose judge rows are identical. The A′ draws run the
+  judge-dependent set PLUS the deterministic-scorer and `mc+regex` families (cache-only, so the
+  deterministic ones cost nothing), so A′1 is a reference for every Arm B table. R4 is a **display column only** (never in a margin or floor): it
   keeps its family pins (Sonnet 5 for agentic / jailbreak, introspection at default effort) and,
   on items that exhausted halvings, judged in-memory chunk claims a cache-only rerun leaves
   unsummarized. `analyze` lists, per family, items summarized in R4 but not in A′1.
@@ -68,9 +75,11 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
    without their refusal rescue for every model (the driver's explicit `none`); `analyze` says so.
 2. **`summ_context=N`** (default = today's `CONTEXT_WINDOW` 1 000 000): replaces the hard-coded
    context window in the digest's budget arithmetic (digest.py:2410-2411, 2513;
-   `CONTEXT_MARGIN` 64 000 retained). Values below 128 000 exit 2 (below that `budget0` =
+   `CONTEXT_MARGIN` 64 000 retained). (`level_fp` does not include the budget, so two runs of one model with
+   different `summ_context` would share `|level` rows; one context per model makes this moot.)
+   Values below 128 000 exit 2 (below that `budget0` =
    context − 32 000 − 64 000 goes to ~0 and every group becomes its own chunk); the driver runs
-   models with context < 128k in Arm A only. In `Settings.to_json` only when not the default (the
+   models with context < 128k in Arm A only. Added to `KNOWN_KEYS`. In `Settings.to_json` only when not the default (the
    `show_key` pattern), so existing fingerprints are unchanged. The Arm B driver sets it to the
    roster context. Non-Claude token counts use the existing 1.7× estimate (`count_tokens` is
    Anthropic-only; noted, not changed).
@@ -171,7 +180,8 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      price_in, price_out, price_cache_read, price_cache_write, context, max_out,
      supports_reasoning, rpm}` from the OpenRouter catalog snapshot (fetched on Modal,
      2026-10-30; Claude prices from its `anthropic/*` rows). Admitted only with
-     `structured_outputs`; `excluded` lists the rest with the reason. Free models note their
+     `structured_outputs` and context > 8 192 (OpenRouter silently middle-out-compresses prompts
+     on ≤ 8k endpoints); `excluded` lists the rest with the reason. Free models note their
      per-account daily quota (a full Arm A is weeks of free quota; the driver resumes).
    - Instrument opts: the reference's **literal `opts=` strings, per family** (R4's launcher runs
      families in groups with different opts, e.g. agentic as its own `judge`; the driver takes
@@ -189,33 +199,42 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      with a paired-bootstrap 90% CI, raw agreement + PABAK + κ on A′1's decided items with a
      swept-judge `None` counted as a disagreement (a sweep-local wrapper; `agreement_stats` takes
      bool maps only), κ vs the leave-one-out majority of the other judges **within the arm**,
-     Δ vs R4 (display), cost from the ledger (OpenRouter `usd`; Claude = tokens × roster prices
+     Δ vs R4 (display, on the nocot-free ids like everything else), cost from the ledger (OpenRouter `usd`; Claude = tokens × roster prices
      incl. cache read/write). jailbreak_recognition compares positives AND controls (headline =
-     recall − control FPR) via a sweep-local extractor. Never filters on `complete`. **Finished gate:** a (model, arm,
-     family) is scored only when its `counts.n_unjudged_cells` ≤ the max over the arm's Opus
-     draws (a partly finished run — free-tier quota 429s, transient errors cached as failed rows
-     — would otherwise enter with fake low coverage); the rest are listed as `blocked` with the
-     count. Opus pairs use the same None-as-disagreement agreement / PABAK as swept judges.
+     recall − control FPR) via a sweep-local extractor. Never filters on `complete`. **Unfinished vs terminal:** the driver
+     re-runs a job (resume hits the cache; failed rows re-ask) until a pass adds no new successful
+     row and its ledger shows no 429 / transient errors — only then is it terminal and scored,
+     its remaining failures (refusals, content filters, schema / parse failures, unsummarized
+     digests) counted as disagreements under the None rule and shown in a `failures` column.
+     `blocked` is reserved for jobs still making progress (e.g. free-tier daily quota); a model
+     blocked on any judge-dependent family cannot be declared a match. Opus pairs use the same None-as-disagreement agreement / PABAK as swept judges.
      `input_tokens` is labelled per route (Anthropic excludes cached tokens, OpenRouter includes
      them). analyze reads per-family `results.json` only (jobs sharing an out dir overwrite
      `run.json` / `summary.md`). Outputs
      `analysis.json`, `analysis.md` and a cost-vs-agreement scatter (log-x, Pareto frontier,
      one panel per arm).
-   - **"Matches Opus"** — a point estimate compared with the noise distribution of the same point
-     estimate (no CI-inside-a-bootstrap-margin double count):
+   - **"Matches Opus"** — a point estimate against a sign-flip null built from the Opus pairs:
+     - Null: for each of the arm's Opus noise pairs, take the per-item paired differences and
+       flip each item's sign at random (2 000 replicates per pair); pool the replicates' Δ over
+       the pairs. This is centred by construction (a plain item bootstrap of a pair would add
+       the pair's own Δ_ij and double the variance).
      - Family f (≥ 20 decided items; smaller ones shown, never gating) is flagged when
-       |Δ_f(model, A′1)| > δ_f, δ_f = max(0.05, q95 of |Δ_f| over the item-bootstrap replicates
-       of the arm's six Opus noise pairs, pooled). An exchangeable Opus clone is flagged ~5% of
-       the time per family.
-     - Model level: flagged families ≤ the 95th percentile of Binomial(N_f, p̂), p̂ = the
-       clone false-flag rate measured below (not a σ from three points); AND the lower 95%
-       bootstrap bound of item-weighted macro agreement(model, A′1) ≥ the mean Opus-pair agreement
-       − 0.03.
+       |Δ_f(model, A′1)| > δ_f, δ_f = max(0.05, q95 of the pooled null |Δ|): ~5% per family for
+       an exchangeable Opus clone.
+     - Model level: flagged families ≤ the 95th percentile of Binomial(N_f, max(p̂, 0.05)), p̂
+       = the measured clone false-flag rate (floored so the threshold never collapses to 0); AND
+       the lower 95% bootstrap bound of item-weighted macro agreement(model, A′1) ≥ the mean
+       Opus-pair agreement − 0.03.
+     - Arm B comparisons (swept models and noise pairs alike) drop the items summarized in R4 but
+       not in A′1 (the cache-only artifact), so {A′1, B′k} and {B′i, B′j} pairs share one noise
+       distribution.
      - Calibration, leave-one-pair-out: each Opus pair is scored against δ_f recomputed without
        it; `analyze` reports the resulting clone false-flag rate per family and overall, and if the
        overall rate exceeds 0.10 the table says the rule is uncalibrated instead of reporting
        matches. Fewer than six pairs (the smoke) → the same computation over the pairs present,
-       marked `degraded`. All thresholds are printed in the table.
+       marked `degraded`; with fewer than 2 pairs there is no δ_f or p̂ — Δ / κ / agreement are
+       reported and the verdict column reads `uncalibrated` (tested). All thresholds are printed
+       in the table.
 
 ## Tests
 
@@ -250,7 +269,8 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
 
 On today's instrument (current main), families `association` + `multihop`, `limit=5`: Opus
 reference locally (seed), then on Modal Arm A + Arm B for `deepseek/deepseek-v4-flash` and
-`openai/gpt-6-luna`, locally Arm A for `claude-haiku-5-5` and A′1/A′2, then `analyze`. Budget ≤
+`openai/gpt-6-luna`, locally Arm A for `claude-haiku-5-5`, A′1/A′2 and one B′1, each draw in
+its own slug dir, then `analyze` (degraded / `uncalibrated` verdicts expected). Budget ≤
 $5. Gate: every job completes; Arm A `extras.n_digest_calls == 0` for every family; the ledger
 has non-zero tokens and cost; the table and plot render.
 
