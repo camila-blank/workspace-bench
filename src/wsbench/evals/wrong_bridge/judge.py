@@ -70,6 +70,12 @@ PICKS = (
 # into up to WORD_SUFFIX letters of its own script: "Карла Маркса" for "Карл Маркс", Croatian
 # "Ivana Gundulića"), word boundaries counted against letters of the form's own scripts only (a
 # Latin name glued to CJK text, "Blue Note以", is a whole word), and Hangul forms compared in NFC.
+# wbforms-v2 (review of PR #208, round 4b): the inflection tolerance is for inflecting
+# languages only (Camila asked for Russian / inflection tolerance, not English): it applies to a
+# form spelled with a letter outside ASCII (Cyrillic, Greek, ..., or an accented Latin letter: a
+# non-English spelling, Croatian "Ivan Gundulić"); a plain-ASCII form is English-spelled (or
+# indistinguishable from it) and matches whole words only, since English does not inflect names:
+# "random" is not Ayn Rand, "a wilder story" not Oscar Wilde, "Hannah Arendt" not William Hanna.
 FORMS_VERSION = wp.FORMS_VERSION
 WORD_SUFFIX = 2
 WORD_SUFFIX_MIN = 4
@@ -80,10 +86,17 @@ _TAIL = rf"[{_SPACED[3:]}]{{0,{WORD_SUFFIX}}}"
 _HANGUL = re.compile(r"[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]")
 
 
-def _form_pattern(ff: str) -> str:
+def inflecting(form: str) -> bool:
+    """The form (as listed, before folding) is spelled with a letter outside ASCII: a
+    non-English spelling, whose words may take an inflectional ending (see FORMS_VERSION)."""
+    return any(ch.isalpha() and not ch.isascii() for ch in form)
+
+
+def _form_pattern(ff: str, inflect: bool = True) -> str:
     words = ff.split(" ")
     return " ".join(
-        re.escape(w) + (_TAIL if len(w) >= WORD_SUFFIX_MIN and w[-1].isalpha() else "")
+        re.escape(w)
+        + (_TAIL if inflect and len(w) >= WORD_SUFFIX_MIN and w[-1].isalpha() else "")
         for w in words
     )
 
@@ -110,7 +123,8 @@ def name_spans(text: str, forms: Sequence[str], *, glued: bool = True) -> list[t
         if not glued:
             before += r"(?<![^\W\d_][-\u2010\u2011])"
             after += r"(?![-\u2010\u2011][^\W\d_])"
-        out += [(m.start(), m.end()) for m in re.finditer(before + _form_pattern(ff) + after, t)]
+        pat = before + _form_pattern(ff, inflecting(f)) + after
+        out += [(m.start(), m.end()) for m in re.finditer(pat, t)]
     return out
 
 
