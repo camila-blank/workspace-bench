@@ -136,7 +136,7 @@ class MCProfile:
     regex_version: str = SCORER_VERSION
     # round 4 (multihop_mt_v2, reaudit r2 lite tippecanoe / sabre): the judge also returns
     # rival_quote and a summary-mode pick a rival nearly matches is ``contested``
-    # (:func:`contested_verdict`, rival.AT_LEAST, as basic_readout_mt)
+    # (:func:`contested_verdict`, rival.MORE_THAN since round 4b, as basic_readout_mt)
     rival: bool = False
 
 
@@ -1727,7 +1727,7 @@ def contested_verdict(
         single_gold=single_gold,
         names_gold=names_gold,
         single_option=single_option,
-        margin=rival.AT_LEAST,
+        margin=rival.MORE_THAN,
     )
     # round 4 (OPTION_RIVAL_VERSION): every other listed option is weighed in code too, whether
     # or not the judge quotes it: its best digest entry singling it out (by its shown name, no
@@ -1747,7 +1747,7 @@ def contested_verdict(
             ):
                 best_other = g.count
     rv["option_rival_support"] = best_other
-    if rival.AT_LEAST.contested(rv["gold_support"], best_other):
+    if rival.MORE_THAN.contested(rv["gold_support"], best_other):
         rv["contested"] = True
     out = {**v, **rv}
     if rv["contested"]:
@@ -1755,7 +1755,19 @@ def contested_verdict(
     return out
 
 
-OPTION_RIVAL_VERSION = "optrv-v1"  # contested_verdict weighs every listed option in code
+# optrv-v1: contested_verdict weighs every listed option in code; optrv-v2 (round 4b): the margin
+# is rival.MORE_THAN, a tie is contested. A rule-only bump: the judge calls stay keyed by
+# OPTION_RIVAL_CALL_VERSION, so cached answers are re-scored
+OPTION_RIVAL_VERSION = "optrv-v2"
+OPTION_RIVAL_CALL_VERSION = "optrv-v1"
+
+
+def call_pv(pv: str) -> str:
+    """The judge calls' cache key: ``rival.call_version`` plus the option-rival rule version
+    mapped to :data:`OPTION_RIVAL_CALL_VERSION` (both rule-only bumps re-score cached answers)."""
+    return rival.call_version(pv).replace(
+        f"+{OPTION_RIVAL_VERSION}+", f"+{OPTION_RIVAL_CALL_VERSION}+", 1
+    )
 
 
 def _gate(
@@ -2026,7 +2038,7 @@ def run_mc(args: JudgeArgs, *, name: str, pinned: bool = False) -> FamilyResult:
             calls,
             schema=cfg.schema,
             judge=args.judge,
-            prompt_version=rival.call_version(pv),
+            prompt_version=call_pv(pv),
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,
@@ -2181,7 +2193,7 @@ def _run_mc_summary(
             calls,
             schema=cfg.schema,
             judge=args.judge,
-            prompt_version=rival.call_version(pv),
+            prompt_version=call_pv(pv),
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,
@@ -2264,7 +2276,10 @@ def _run_mc_summary(
         if cfg.rival:
             extras["n_contested"] = sum(v.get("kind") == "contested" for v in verdicts)
             extras["n_rival_unverified"] = sum(v.get("rival_verified") is False for v in verdicts)
-            extras["rival_margin"] = {"ratio": rival.AT_LEAST.ratio, "lead": rival.AT_LEAST.lead}
+            extras["rival_margin"] = {
+                "ratio": rival.MORE_THAN.ratio,
+                "lead": rival.MORE_THAN.lead,
+            }
     result = pass_rate_result(
         name=name,
         # a regex family's diagnostic: never pinned, so never complete and never in the macro
@@ -2633,7 +2648,7 @@ def _run_mc_profile(
             calls,
             schema=BRMT_SCHEMA if profile.rival else SCHEMA,
             judge=args.judge,
-            prompt_version=rival.call_version(pv),
+            prompt_version=call_pv(pv),
             cache=cache,
             spend=spend,
             concurrency=args.concurrency,

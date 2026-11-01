@@ -46,8 +46,7 @@ def _probe(cfg: dict[str, Any]) -> Any:
     for k in keys:
         if k in names and k in summ and summ[k] not in (None, ""):
             extra[names[k]] = str(summ[k])
-    if summ.get("lang"):
-        extra["summ_lang"] = "1"
+    # an old run's summ_lang=1 is not replayed: the option was removed on 2026-11-01
     return digest._probe(extra)
 
 

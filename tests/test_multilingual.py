@@ -399,17 +399,20 @@ def _lang_digest(language):
     return digest_fn
 
 
-def test_summ_lang_on_for_four_families_only(real_families):
+def test_summ_lang_off_for_every_family(real_families):
+    """Camila 2026-11-01: the summarizer language tag is dropped for the four multilingual
+    families (and the option is gone), so no family's stamp carries "-lang"."""
     args = summary_args(Path("x"), Path("y"), "v")
     for name in sorted(real_families):
-        assert digest.settings(args, name).lang is (name in FOUR), name
-        assert ("-lang" in digest.prompt_version("pv", args, name)) is (name in FOUR), name
+        assert not hasattr(digest.settings(args, name), "lang"), name
+        assert "-lang" not in digest.prompt_version("pv", args, name), name
+        assert "summ_lang" not in digest.FAMILY_DEFAULTS.get(name, {}), name
 
 
 @pytest.mark.parametrize("name", ["multilingual", "multilingual_multihop"])
 def test_language_label_alone_fails_language_role(name, tmp_path, monkeypatch):
-    """'[one] [in German] drei': the label is the note-taker's, never the readout naming the
-    language; 'drei (German)' names it."""
+    """'drei' alone never names the language (the summ_lang label that used to sit beside it is
+    gone since 2026-11-01); 'drei (German)' names it."""
     item = HALF if name == "multilingual" else KENTE
     lang = "German" if name == "multilingual" else "Arabic"
     for evidence, ok in (("drei", False), (f"drei ({lang})", True)):
@@ -424,7 +427,8 @@ def test_language_label_alone_fails_language_role(name, tmp_path, monkeypatch):
         v = r.rows[0]["mc"]["language"]
         assert v["kind"] == "correct" and v["quote_ok"] and v["correct"] is ok, evidence
         picks = [u for n, _s, u in fake.calls if n == "pick"]
-        assert any(f"[in {lang}]" in u for u in picks)  # the label is SHOWN to the judge
+        # summ_lang removed (2026-11-01): no note-taker label reaches the judge
+        assert picks and not any(f"[in {lang}]" in u for u in picks)
         assert r.rows[0]["pass"] is False  # the content role picked cannot tell
 
 
@@ -478,7 +482,8 @@ def test_language_label_alone_fails_regex_unit(name, tmp_path, monkeypatch):
     spec = _spec(name)
     r = spec.run(summary_args(path, tmp_path / "o", spec.judge.prompt_version, items=[it["id"]]))
     row = r.rows[0]
-    assert fake.n("digest") == 1 and f"[in {lang}]" in row["summary"]
+    # summ_lang removed (2026-11-01): the digest carries no label at all now
+    assert fake.n("digest") == 1 and f"[in {lang}]" not in row["summary"]
     assert row["unit_hit"]["language"] is False and row["pass"] is False  # Line.text only
 
 
@@ -516,8 +521,10 @@ def test_v2_registrations(name, real_families):
     spec = real_families[name]
     scorer, group, pv = REGS[name]
     assert spec.scorer == scorer and spec.group == group and spec.judge.prompt_version == pv
-    # round 4: every family but multilingual_typo judges its v3 bank (new MC lists, or bademcik)
-    v = "items_v2.json" if name == "multilingual_typo" else "items_v3.json"
+    # round 4b: multilingual keeps its v3 bank; multilingual_typo judges v3, the other two v4
+    v = {"multilingual": "items_v3.json", "multilingual_typo": "items_v3.json"}.get(
+        name, "items_v4.json"
+    )
     assert spec.bank == Path("evals") / name / v
     assert spec.flat_types == () and not spec.multi_select
     assert spec.task_note and "Chinese" not in spec.task_note and "German" not in spec.task_note

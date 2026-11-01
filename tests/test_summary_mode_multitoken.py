@@ -16,8 +16,8 @@ from wsbench.multitoken.regex import SCORER_VERSION
 HOUR, OCTO = "mlh-ar-hourglass", "mlh-ar-octopus"
 MH = "mh2-coeur-de-lion-brother-charter-q2"
 SUFFIX = "+digest-v5-task-extractive+sj-v10"
-# plan 0032 §2.2.2: multilingual_mt's digest records each evidence span's language (summ_lang)
-ML_SUFFIX = "+digest-v5-task-extractive-lang+sj-v10"
+# summ_lang was removed on 2026-11-01 (Camila): multilingual_mt's stamp no longer has "-lang"
+ML_SUFFIX = "+digest-v5-task-extractive+sj-v10"
 
 
 @pytest.fixture(autouse=True)

@@ -13,7 +13,7 @@ SPEC = register(
         "Basic readout (multi-token)",
         calls_per_arm="≈ 240 (summary: 99 digests + 138 MC)",
         scorer="mc",
-        bank=Path("evals/basic_readout_mt/items_v3.json"),
+        bank=Path("evals/basic_readout_mt/items_v4.json"),
         prompt_version=BRMT_PROMPT_VERSION,
         # a v2 chat render is >= 15 tokens; 8 contiguous positions ending at -1 rule out a
         # lite or truncated file under reads=full

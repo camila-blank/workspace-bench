@@ -20,7 +20,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
 
 - `DIGEST_PROMPT_VERSION = "digest-v5"`, `SUMMARY_JUDGE_VERSION = "sj-v10"`. A summary-mode
   result stamps `digest.prompt_version(<family PV>, args, family)`: under the defaults
-  `<family PV>+digest-v5-task-extractive+sj-v10` (plus `-lang` under `summ_lang=1`, `-stride`
+  `<family PV>+digest-v5-task-extractive+sj-v10` (plus `-stride`
   under the stride ablation, `-joint` under the `summ_layers=joint` ablation, and `+reads-lite`
   from `reads.stamp`). Family docs cite the
   function's output, never a literal.
@@ -34,7 +34,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
   truncation) stays an explicit ablation (`summ_overflow=stride`, stamped `-stride`; a
   truncated item makes the run incomplete). No family sets `summ_token_cap`; the allowed
   `FAMILY_DEFAULTS` keys are `summ_concurrency`, `summ_timeout`, `summ_fallback`, `summ_max`,
-  `summ_rare`, `summ_numbers`, `summ_lang`. Real token counts (`llm.count_tokens`, cached
+  `summ_rare`, `summ_numbers` (`summ_lang` was removed on 2026-11-01). Real token counts (`llm.count_tokens`, cached
   `ntok:<id>|<layers>`) are asked only for bundles estimated above 60% of the cap; a call
   estimated above 150k tokens gets at least 1800 s.
 - **Task context on by default** (`summ_variant=task`; `blind` is the ablation): the family's
@@ -68,9 +68,8 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
   bullet) and count `extras.n_unverified_bullet`. `digest.number_flood` voids a whole sample that
   lists five or more distinct numbers.
 - **Renders** (`summ_render`). `extractive` (default): the judge reads only the WHOLE readout
-  samples the note-taker picked, one `[support] <sample>` line each (`EXTRACTIVE_LINE`; with
-  `summ_lang=1` `EXTRACTIVE_LINE_LANG` adds the note-taker's `[in <language>]` label, shown to
-  the judge and never gated on), `support` the entry's per-claim sample count (digest-v5, below).
+  samples the note-taker picked, one `[support] <sample>` line each (`EXTRACTIVE_LINE`; the
+  `summ_lang` `[in <language>]` label was removed on 2026-11-01), `support` the entry's per-claim sample count (digest-v5, below).
   No text the note-taker wrote reaches the judge. `abstractive` (ablation) also shows the
   statement.
 - **Two tiers** (`items` up to `summ_max`, default 10; `rare` up to `summ_rare`, default 15) and
@@ -155,8 +154,9 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
 ## Digest prompt
 
 System (`summ_variant=task`, the default, appends `DIGEST_TASK_LINE` filled with the item's task
-note; `summ_variant=blind` is the ablation; `summ_lang=1` appends `DIGEST_LANG_LINE` and asks
-every entry for a `language` field):
+note; `summ_variant=blind` is the ablation. Camila 2026-11-01: the four multilingual families
+no longer run `summ_lang` (the option, `DIGEST_LANG_LINE` and the `language` field are gone);
+their digest gets a neutral task note instead):
 
 `DIGEST_SYSTEM`:
 
@@ -200,13 +200,6 @@ Every entry has: "statement" (one short line in the readouts' own terms), "key" 
 
 ```text
 TASK CONTEXT: while these readouts were taken, {task_note}. Use this only to judge what in the readouts is relevant to this kind of task: record every mention that bears on it, even one that appears in a single sample or at one layer, rather than discarding it as noise. Do not use the context to guess, answer, translate or add anything the readouts do not say.
-```
-
-`DIGEST_LANG_LINE` (`summ_lang=1`: multilingual, multilingual_mt, multilingual_multihop,
-multilingual_typo):
-
-```text
-For every entry also give "language": the language the evidence span is written in (e.g. English, Russian; "mixed: Russian + English" when it mixes). Record it; never translate the evidence.
 ```
 
 `DIGEST_USER`:
@@ -254,12 +247,6 @@ A line whose items are separated by " | " is one ranked list of the top vocabula
 
 ```text
 [{support}] {evidence}
-```
-
-`EXTRACTIVE_LINE_LANG` (`summ_lang=1`):
-
-```text
-[{support}] [in {language}] {evidence}
 ```
 
 `ABSTRACTIVE_LINE`:
