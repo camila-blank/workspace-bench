@@ -624,7 +624,9 @@ def test_leakage_standard_holds_topic_binding_for_every_family():
     # the verdicts of the other families name the topic guesser too
     assert set(fails("poetry")) == {"described", "topic"}
     assert set(fails("directed_modulation")) == {"topic"}
-    assert set(fails("basic_readout")) == {"described", "topic"}
+    # bank v5 (PR #214 review r6: every v2 option a non-pass digest names kept) adds `blind`,
+    # through the option order on the content-free processing lists (evals/baselines/README.md)
+    assert set(fails("basic_readout")) == {"blind", "described", "topic"}
 
 
 def test_leakage_failures_bar_edges():

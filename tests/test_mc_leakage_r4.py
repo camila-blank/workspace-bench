@@ -408,3 +408,117 @@ def test_observe_changes_nothing_without_evidence_and_says_why_it_drops(ml, monk
     state.write_text(json.dumps(st), "utf-8")
     with pytest.raises(SystemExit, match="not the state"):
         ml.observe(fam, empty, state)
+
+
+# ---------------------------------------------------------------- evidence (PR #214 review r6)
+
+
+def _br_item(gold="Saturday", dis=("Monday", "Sunday", "Wednesday", "Thursday")):
+    return {"id": "fri", "name": "fri", "prompt": "What day comes after Friday?",
+            "mc": {"gold": gold, "aliases": [], "distractors": list(dis),
+                   "distractor_aliases": {}}}  # fmt: skip
+
+
+def _row(passed, statements, layers=None, summary=""):
+    return {"id": "fri", "pass": passed, "summary": summary, "layers": layers or {},
+            "summary_statements": [{"key": k, "count": c} for k, c in statements]}  # fmt: skip
+
+
+def test_stated_support_counts_single_option_keys_only(ml):
+    it = _br_item()
+    n = ml.stated_support(it, _row(False, [("Saturday", 9), ("**Wednesday**", 3),
+                                           ("Wednesday or Thursday", 4)]))  # fmt: skip
+    assert n == {"Saturday": 9, "Monday": 0, "Sunday": 0, "Wednesday": 3, "Thursday": 0}
+
+
+def test_stated_rivals_keeps_the_rival_behind_a_cannot_tell(ml):
+    """Review r6: dayafter-friday L48 (Saturday 9 vs Wednesday 3) was a v2 cannot-tell; v4's bar
+    (at least the gold's support) missed Wednesday. A rival stated >= 2x in a cell the v2 judge
+    did not pass is now evidence, and so is a tie or better in a passing cell or a judge pick."""
+    it = _br_item()
+    pick = {"24": {"pick": "distractor", "choice": "Monday"}}
+    cells = [
+        ("o/L48", _row(False, [("Saturday", 9), ("Wednesday", 3)])),
+        ("o/L20", _row("True", [("Saturday", 3), ("Thursday", 3)])),
+        ("o/L24", _row(False, [("Saturday", 1)], pick)),
+    ]
+    out = ml.stated_rivals({"fri": it}, cells)
+    assert out == {"fri": {
+        "Wednesday": ["rival: o/L48 (3 vs gold 9, v2 fail)"],
+        "Thursday": ["rival: o/L20 (3 vs gold 3)"],
+        "Monday": ["judge pick: o/L24"],
+    }}  # fmt: skip
+
+
+def test_stated_rivals_keeps_any_option_a_failing_digest_names(ml):
+    """A v2 option the digest of a non-pass cell names at all (one sample, or inside a line whose
+    key is another word) is evidence too: removing it could flip that cell to a pass."""
+    it = _br_item()
+    summ = "[9 samples] Saturday\n[1 sample] the day after Friday is Wednesday, no wait"
+    cells = [("o/L48", _row(False, [("Saturday", 9), ("Wednesday", 1)], summary=summ))]
+    assert ml.stated_rivals({"fri": it}, cells) == {
+        "fri": {"Wednesday": ["named: o/L48 (1 stated vs gold 9, v2 fail)"]}
+    }
+
+
+def test_stated_rivals_ignores_weak_or_outvoted_mentions(ml):
+    """The other direction: a key naming two options, a minority rival or a mention in a cell the
+    v2 judge passed, a gold pick, and a digest's sample-count prefix ("[10 samples]" for an arith
+    item listing 10) are no evidence."""
+    it = _br_item()
+    arith = {"id": "a", "name": "a", "prompt": "What is 2 + 2?",
+             "mc": {"gold": "4", "aliases": [], "distractors": ["10", "6", "7", "5"],
+                    "distractor_aliases": {}}}  # fmt: skip
+    cells = [
+        ("o/L48", _row(False, [("Saturday", 9), ("Sunday or Monday", 5)])),
+        ("o/L20", _row(True, [("Saturday", 6), ("Thursday", 5)], summary="Thursday")),
+        ("o/L24", _row(True, [("Saturday", 6)], {"24": {"pick": "gold", "choice": "Saturday"}})),
+        ("o/L28", {**_row(False, [("Four", 10)], summary="[10 samples] Four."), "id": "a"}),
+    ]
+    assert ml.stated_rivals({"fri": it, "a": arith}, cells) == {}
+
+
+def test_observe_v5_writes_a_new_version_and_leaves_v4(ml, monkeypatch, tmp_path):
+    """Bank v5 is the same rebuild from v3 under the wider rule: a new file that supersedes v4,
+    built from v3, with the v5 rule in its header; v4 is never rewritten, and only versions 4
+    and 5 exist."""
+    import json
+
+    state = _obs_setup(ml, monkeypatch, tmp_path)
+    fam = ml.FAMS["basic_readout"]
+    monkeypatch.setattr(fam, "v4", "evals/basic_readout/items_v4.json")
+    monkeypatch.setattr(fam, "v5", "evals/basic_readout/items_v5.json")
+    v4 = tmp_path / "evals/basic_readout/items_v4.json"
+    v4.write_text("frozen", "utf-8")
+    obs = tmp_path / "observed.json"
+    ev = {"mon": {"Saturday": ["rival: L48 (3 vs gold 9, v2 fail)"]}}
+    obs.write_text(json.dumps(ev), "utf-8")
+    assert ml.observe(fam, obs, state, version=5) == ["mon"]
+    assert v4.read_text("utf-8") == "frozen"
+    v5 = json.loads((tmp_path / "evals/basic_readout/items_v5.json").read_text("utf-8"))
+    assert v5["version"] == 5 and v5["supersedes"] == "items_v4.json"
+    assert v5["built_from"] == "items_v3.json"
+    assert v5["mc_leakage"]["observed"]["rule"] == ml.OBSERVED_RULE_V5 != ml.OBSERVED_RULE
+    assert "v2 judge did not pass" in ml.OBSERVED_RULE_V5
+    mon = next(it for it in v5["items"] if it["name"] == "mon")["mc"]
+    assert "Saturday" in mon["distractors"]
+    with pytest.raises(SystemExit, match="no bank v6"):
+        ml.observe(fam, obs, state, version=6)
+
+
+def test_replay_flips_attributes_only_dropped_rivals(ml):
+    """A fail -> pass flip whose dropped v2 option the digest names is attributable (the rival
+    left the list); one whose dropped option the digest never names is noise; a cell that
+    passed before, or still fails, is no flip."""
+    old = {"fri": _br_item()}
+    new = {"fri": _br_item(dis=("Monday", "Sunday", "Tuesday", "Thursday"))}
+    before = [
+        ("o/L48", _row(False, [("Saturday", 9), ("Wednesday", 3)], summary="Wednesday; Saturday")),
+        ("o/L44", _row(False, [("Saturday", 2)], summary="[2 samples] Saturday")),
+        ("o/L40", _row(True, [("Saturday", 2)], summary="Saturday")),
+        ("o/L36", _row(False, [("Saturday", 2)], summary="Wednesday")),
+    ]
+    after = [(c, {**r, "pass": c != "o/L36"}) for c, r in before]
+    flips = ml.replay_flips(old, new, before, after)
+    assert [(f["config"], f["attributable"]) for f in flips] == [("o/L48", True), ("o/L44", False)]
+    assert flips[0]["dropped"] == {"Wednesday": 3} and flips[1]["named"] == {"Wednesday": False}
