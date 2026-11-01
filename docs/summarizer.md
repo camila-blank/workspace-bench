@@ -109,6 +109,27 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     `extras.summary_top_layer_share`). `wsbench report by_layer=True` writes
     `layer_union_check.json` and a WARN line per family listing the items a single-layer row
     passes and the all-layer row does not (`results.layer_union_check`; leads to audit).
+  - *Shared per-layer store* (`summ_store=<dir>`, final-run speed 2026-11-01): the cache is one
+    `cells.jsonl` per out dir, so a `layers=[L]` run and an all-layer union run in different out
+    dirs never saw each other's digest of L. With `summ_store=<dir>` (the same dir for every
+    layer config of one arm's readouts) every digest whose bundle is exactly ONE layer's cells
+    (a union part, a `layers=[L]` item, a one-layer item of a multi-layer run) and its sub-keys
+    (chunks, final, halving level, token count) are also read from and written to
+    `<dir>/<family>/L<layer>.jsonl` under the key `digest:<id>|<layer>` and the run's own request
+    fingerprint (prompt version, model, effort, budget, rare tier, numbers, cap, lang, task note,
+    bundle text, salt) plus the refusal-fallback setting, the cap and the overflow (the halving
+    level's own fingerprint does not key the cap). The union's per-layer step already sends
+    the byte-identical request a `layers=[L]` run sends, so a union run only adds its missing
+    layers, merge and judge calls; results are identical to a run without the store, no request
+    byte changed and the stamp stays `digest-v5`. A store row read is copied into the out dir's
+    own cache only on a local miss (`extras.n_store_rows_adopted`; the run's own success always
+    wins, so a rerun adopts nothing); call-count extras (`n_chunk_calls`, …) count only the calls
+    actually sent, as on any warm cache; `config.digest_store` records the resolved path, outside
+    `config.summarizer` (not instrument identity). Shared too: `arithmetic_intermediates`
+    (numbers per layer), and a one-layer item under any mode. Not shared: a joint multi-layer
+    bundle (`chain_intermediates` all-layer, `summ_layers=joint`) and the stride ablation
+    (ignores the store). Writers append whole lines
+    (`cache.SharedLog`, `flock` where supported); a torn line is a miss, never a wrong row.
   - *F2, per-claim counts.* Every digest entry carries the note-taker's `count`: the samples that
     make the SAME claim, not those that merely contain the key word (a month list or a restated
     question does not count). It is capped mechanically at the samples holding the key
