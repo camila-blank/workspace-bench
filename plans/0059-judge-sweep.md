@@ -142,8 +142,10 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
    makes this sound, so the driver refuses a cap above context // 4. On the OpenRouter route (keyed on the real route in `_one`, not
    on the tests' shim — tests/conftest.py:58-96 routes `claude-*` family tests through
    `_openrouter_once`, so every new branch uses getattr defaults and stays inert on those fakes):
-   `message.refusal` set, `finish_reason == "content_filter"`, or empty content with a refusal is a
-   non-transient **refusal** (`spend.refusals`; `REFUSED_JSON` under `mark_refusals`). A response
+      `message.refusal` set, `finish_reason == "content_filter"`, empty content with a refusal, or a
+   **403 carrying moderation metadata** (`error.metadata.reasons`, or a "flagged" input message —
+   OpenRouter's moderated-provider response; every other 403 stays fatal) is a non-transient
+   **refusal** (`spend.refusals`; `REFUSED_JSON` under `mark_refusals`). A response
    with `finish_reason == "length"` and unparseable JSON is
    non-transient (a too-small output cap would otherwise retry 12× and pay
    each time); counted in `errors`. A 404 stays fatal
@@ -169,16 +171,19 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      directed_modulation/score.py:232; not the baselines' / `capable`'s own spend fields). **Sanctioned test updates, the only ones:**
      tests/test_results.py:60 (the counts key set) and tests/test_mt_regex.py:203
      (`r.counts == {…}`) gain exactly those two keys.
-   - `Spend` also gains `transient` (a dict status → count: HTTP 408/409/429/5xx and
+      - `Spend` also gains `transient` (a dict status → count: HTTP 408/409/429/5xx and
      `"timeout"` / `"connection"` only — parse retries are not counted), tallied in `_one`'s retry
-     branch; `retries` / `errors` / `refusals` already exist.
+     branch (recovered retries included), and `failed` (status → count of calls that ENDED
+     failed, incremented beside `spend.errors`; keys are the final HTTP status, `"timeout"`,
+     `"connection"`, or an OpenRouter 200-body `error.code`, which `llm` now parses instead of
+     the bare "response has no choices" retry); `retries` / `errors` / `refusals` already exist.
    - Ledger (survives a kill): `runner` runs each family under a `ContextVar` holding its
      `dest` (the `out_of` path) and family, propagated into worker threads via `contextvars.copy_context()`;
      every `Spend` built under it registers in a process-level registry. A daemon thread writes,
      every 30 s and at exit, one cumulative snapshot line per registered family to
      `<dest>/spend.jsonl` (`{run_id = pid+start time, time, usd, input_tokens,
      output_tokens, cache_read_tokens, cache_write_tokens, calls, retries, errors, refusals,
-     transient}`), plus a final snapshot when each family finishes. (Main-thread preflights are
+     transient, failed}`), plus a final snapshot when each family finishes. (Main-thread preflights are
      outside any family and not in the ledger; one call each.) `analyze` sums the last
      snapshot of each `run_id`. A SIGKILL loses ≤ 30 s of tally. The digest shares the family's
      `Spend` (verified at every `collapse` call site), so Arm B cost is digest + judge combined —
@@ -203,7 +208,8 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      scope (asserted disjoint), keyed by the tuple (reference opts string, `judge_effort`,
      `items=`): knowledge_cutoff gets its nocot-free `items=` (computed from the LOADED bank —
      nocot items merge in at load from `evals/knowledge_cutoff/obscure_items.json`,
-     knowledge_cutoff/judge.py:78-87), `anthropic_effort` families their `judge_effort=default`: `python -m wsbench run
+     knowledge_cutoff/judge.py:78-87), `anthropic_effort` families their `judge_effort=default` for
+     OpenRouter models only (Claude jobs pass no `judge_effort`, which would exit 2): `python -m wsbench run
      families=<scope> … out=/vol/runs/<sweep>/<arm>/<model-slug>` (wsbench appends
      `<family>/`); Arm A seeds each family's `cells.jsonl` from the seed if absent. Volume
      commit every 60 s and on exit; resumable. `rpm` is a per-account budget: the roster's
@@ -257,7 +263,8 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
        ids); `failures` (refusals, content filters, schema / parse failures, unsummarized
        digests); cost from the ledger (OpenRouter `usd`; Claude = tokens × roster prices incl.
        cache read/write; `input_tokens` labelled per route — Anthropic excludes cached tokens,
-       OpenRouter includes them) and re-ask spend. Never filters on `complete`. Reads per-family
+       OpenRouter includes them) and resume spend (the ledger total of passes 2+, by run_id
+       order). Never filters on `complete`. Reads per-family
        `results.json` only (jobs sharing an out dir overwrite `run.json` / `summary.md`).
      - Outputs `analysis.json`, `analysis.md` and a cost-vs-agreement scatter (log-x, Pareto
        frontier, one panel per arm).
@@ -270,15 +277,16 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
      - **Error**: any family outcome ≠ `ok` (exit 2 cache miss or missing cells, exit 3
        JudgeConfigError — OpenRouter 401/402/404). The pass counts toward nothing, the job is
        never scored, and the driver stops and reports it for a fix.
-     - A pass is **throttled** when some call ENDED failed with a 429 / quota status (recovered
-       429s do not count); `llm` parses `resp.error.code` from OpenRouter 200-body errors
-       (llm.py:191, today a `ValueError` parse retry) into the same `transient` tally, so
-       body-delivered rate limits are seen.
+          - A pass is **throttled** when its run_id's last ledger snapshot has `failed["429"]` (or a
+       quota code) > 0 — calls that ENDED failed; recovered 429s (only in `transient`) do not
+       count.
      - **Terminal**: an all-`ok`, unthrottled pass leaves every family's decided count unchanged,
        or 5 all-`ok` unthrottled passes have run (bounds re-paying persistent refusals / parse
        failures). Only a terminal job is scored; its leftover failures count as disagreements.
-     - **Blocked**: otherwise; after 10 throttled passes or 72 h wall-clock per job the driver
-       stops re-running it and reports it `blocked` as final — listed with decided counts, never
+          - **Blocked**: otherwise; after 10 throttled passes or 72 h wall-clock per job the driver
+       stops re-running it and reports it `blocked` as final. **Free tier** is exempt from those
+       two bounds: between throttled passes the driver waits for the provider's daily quota
+       reset, with a 30-day ceiling per job, after which it is `blocked` as final — listed with decided counts, never
        scored. A model blocked on any judge-dependent family is neither a match nor a non-match.
    - **"Matches Opus".** Every threshold appears ONLY in this bullet; the implementation reads
      them from one constants block, pinned by a test.
@@ -309,9 +317,12 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
        margin; (2) uses max(0.10, the quantile) and (3) max(0.02, the quantile), so at full-sweep n
        a statistically detectable but immaterial shift (≈ 1pp pooled) does not decide the headline.
        "Matches" therefore means "within these stated practical margins of Opus".
-          - **Calibration**, leave-one-pair-out with the full rule: for a held-out pair (i, j), j plays
-       the reference and i the swept model, and every statistic (null, δ_f, p̂, the (4)
-       comparator) is recomputed relative to j over the remaining draws, excluding i; reports the per-family clone false-flag rate (= p̂) and "k of 6 pairs declared
+               - **Calibration**, leave-one-pair-out, in two passes (never nested — 4 draws cannot support
+       an inner calibration): for each held-out pair (i, j), j plays the reference and i the swept
+       model, and the null, δ_f and the (4) comparator are recomputed relative to j over the
+       remaining draws, excluding i. Pass 1 runs the per-family sub-tests (a)–(c) in all 6 folds;
+       their mean flag rate is p̂. Pass 2 evaluates the full model-level rule per fold with p̂ taken
+       as the mean of the OTHER 5 folds' flag rates, giving "k of 6 pairs declared
        non-matching". If p̂ > 0.10 (2× the design rate) or k ≥ 2, the verdict column reads
        `uncalibrated` instead of reporting matches. The six pairs share draws, so this catches
        only gross miscalibration (said in the deliverable). Fewer than six pairs (the smoke): the
@@ -349,7 +360,12 @@ Arm B (summarizer = judge) model that match Opus — the latter is the candidate
   OpenRouter refusal / `content_filter` / `finish_reason=length` are non-transient; the
   `Spend.transient` tally incl. 200-body `error.code`; the driver refuses a cap above
   context // 4; `n_reask_cache_miss` and `n_digest_cached_failed`; the threshold constants block;
-  the driver's error / throttled / terminal / blocked transitions.
+    the driver's error / throttled / terminal / blocked transitions (free-tier exemption included);
+  `Spend.failed` vs `transient` (recovered 429 vs exhausted 429 vs 200-body code); the moderation
+  403 → refusal and other 403 → fatal; the `draw.json` marker and seed-only assertion; `analyze`
+  refusing identical noise-pair judge rows; job groups disjoint; Arm B replacing (not appending)
+  `summ_fallback=none`; the pre-launch `config.summarizer` match check; Arm B dropping the
+  R4-but-not-A′1 items; the nocot-free `items=` from the loaded bank; the two-pass calibration.
 - No other pre-existing test assertion changes (the two in change 6 are the only sanctioned ones).
 
 ## Smoke (before the full sweep)
