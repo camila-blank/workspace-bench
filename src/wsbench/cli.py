@@ -698,8 +698,8 @@ class Baseline(Command):
     readouts of protocol po-opus-v1 (plan 0032 §2.11); judge them with ``wsbench run all=True
     readouts_root=<dir>/readouts allow_missing=True`` and freeze with
     ``source=<dir>/readouts/run_config.json``. ``stage=fallback_ask|fallback_readouts
-    src=<opus dir>[,<dir>...] out=<fb dir>``: the Sonnet 5 fallback for the ids Opus refused
-    (``po-opus-v1+sonnet5-fallback``), judged and frozen the same way after the Opus run."""
+    src=<opus dir>[,<dir>...] out=<fb dir>``: the Sonnet 5.5 fallback for the ids Opus refused
+    (``po-opus-v1+sonnet55-fallback``), judged and frozen the same way after the Opus run."""
 
     def __init__(self) -> None:
         super().__init__()
