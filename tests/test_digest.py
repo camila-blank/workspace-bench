@@ -358,6 +358,7 @@ def test_single_global_token_cap(tmp_path, real_families):
         "summ_max",
         "summ_rare",
         "summ_numbers",
+        "summ_ties",  # round 4: the chain digest's tie extension (digest.tie_cut)
     }
     for name in real_families:
         assert digest.settings(_args(tmp_path), name).token_cap == digest.DEFAULT_TOKEN_CAP

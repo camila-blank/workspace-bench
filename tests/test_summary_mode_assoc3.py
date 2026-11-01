@@ -22,6 +22,8 @@ from wsbench.evals.role_bound_association.judge import build_block_v2
 from wsbench.mc import listing
 from wsbench.mcjudge import load_bank
 
+REL_CANNOT = rel_prompts.N_CONTENT_OPTIONS + 1  # the relational cannot-tell line (listed last)
+
 REPO = Path(__file__).resolve().parents[1]
 EX = REPO / "examples/readouts"
 SUFFIX = "+digest-v5-task-extractive+sj-v10"
@@ -70,7 +72,7 @@ def _generic(system: str, user: str, schema: dict) -> dict:
     if name == "interp":
         return {"interpretation": "a reading"}
     if name == "relation_mc_v2":
-        return {"choice": 14, "quote": ""}
+        return {"choice": REL_CANNOT, "quote": ""}
     if name == "readout_mc" and "q1_choice" in json.dumps(schema):
         return {"q1_choice": 6, "q2_choice": 6, "q3_choice": 6, "evidence": ""}
     return {"choice": 14, "quote": ""}
@@ -172,7 +174,7 @@ def _rel_judge():
         assert "[position" not in user and schema["name"] == "relation_mc_v2"
         if listing(opts_a.shown) in user:  # item a: the gold chain, quoted from one bullet
             return {"choice": opts_a.gold, "quote": "Avery's landlord's sibling"}
-        return {"choice": 14, "quote": ""}
+        return {"choice": REL_CANNOT, "quote": ""}
 
     return judge
 
@@ -206,7 +208,11 @@ def test_relational_one_composed_call_on_one_summary(tmp_path, monkeypatch):
         if f"[L{L} pos" in b
     )
     rows = {x["id"]: x for x in r.rows}
-    assert rows["rel-s00-a"]["pass"] is True and rows["rel-s00-b"]["pass"] is False
+    assert rows["rel-s00-a"]["pass"] is True and rows["rel-s00-a"]["gate"] == "pass"
+    # relgate-v4 (round 4, sanctioned): the judge's non-gold answer on s00-b is decided by the
+    # decisive raw count (its readouts state the gold chain cleanly at every position)
+    b = rows["rel-s00-b"]
+    assert b["pick_class"] != "gold" and b["gate"] == "prominence" and b["pass"] is True
     assert rows["rel-s00-a"]["layer"] == -1 and rows["rel-s00-a"]["key"] == "rel-s00-a|L-1"
     stamp = pv + SUFFIX  # PROMPT_VERSION carries the F12 order-gate stamp
     assert pv.endswith("+" + rel_prompts.GATE_VERSION)
@@ -243,7 +249,8 @@ def test_relational_unsummarized_is_fail_and_unjudged(tmp_path, monkeypatch):
     rows = {x["id"]: x for x in r.rows}
     assert rows["rel-s00-a"]["summary_state"] == "unsummarized"
     assert rows["rel-s00-a"]["pass"] is False and rows["rel-s00-a"]["judged"] is False
-    assert r.value == 0.0 and r.n_items == 2
+    # relgate-v4: the judged s00-b is decided by its decisive raw count (prominence)
+    assert rows["rel-s00-b"]["gate"] == "prominence" and r.n_items == 2
     assert r.counts["n_unjudged_cells"] == 1 and not r.complete
 
 

@@ -530,7 +530,8 @@ def test_stamp_carries_present_and_the_cache_key_does_not(tmp_path, monkeypatch)
     by JUDGE_PROMPT_VERSION, so caches written before the rule change still hit."""
     from wsbench.evals.multi_concept_directed_modulation import prompts as p
 
-    assert p.PROMPT_VERSION == p.JUDGE_PROMPT_VERSION + "+bank-v2+notokinterp-2026-10-30"
+    # round 3 adds the deterministic +pins-r3 to the stamp only
+    assert p.PROMPT_VERSION == p.JUDGE_PROMPT_VERSION + "+bank-v2+notokinterp-2026-10-30+pins-r3"
     seen = {}
 
     def fake_run_calls(calls, **kw):

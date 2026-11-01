@@ -68,7 +68,9 @@ def test_flat_types_and_versions():
     assert assoc_prompts.PROMPT_VERSION == "assoc-mc-2026-10-31-r3"
     assert rb_prompts.PROMPT_VERSION == "oa-v2.3"
     assert digest.SUMMARY_JUDGE_VERSION == "sj-v10"
-    assert kc_prompts.PROMPT_VERSION == "cutoff-judge-2026-10-31"
+    assert (
+        kc_prompts.PROMPT_VERSION == "cutoff-judge-2026-10-31+kcgate-v3"
+    )  # round 3 gates (v3: review topic filter)
     assert dm_prompts.JUDGE_PROMPT_VERSION == "dm-2026-10-31"
     assert mc.TOKEN_NOTE_VERSION == "tn-2026-10-31-q4"
 
