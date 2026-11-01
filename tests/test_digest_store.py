@@ -59,7 +59,7 @@ def test_union_reuses_the_single_layer_digest_and_matches_an_uncached_run(tmp_pa
     union = _run(tmp_path, "union", {"a": cells}, store=store)
     new = fake.calls[n0:]
     assert len(new) == 2 and all("[L20" not in u for _s, u in new)  # 0 new L20 calls
-    assert union.diag["n_digest_store_hits"] == 1
+    assert union.diag["n_store_rows_adopted"] == 1
     n1 = len(fake.calls)
     fresh = _run(tmp_path, "fresh", {"a": cells})  # no store, its own cache: 3 calls
     assert len(fake.calls) - n1 == 3
@@ -100,6 +100,18 @@ def test_store_never_serves_other_readouts_or_settings(tmp_path, monkeypatch):
         n0 = len(fake.calls)
         _run(tmp_path, f"o{k}", cbi, layers=[20], store=store, **kw)
         assert len(fake.calls) == n0 + 1, kw
+
+
+def test_rerun_of_an_out_dir_adopts_nothing(tmp_path, monkeypatch):
+    fake = Scripted(monkeypatch, _per_layer_reply)
+    store = tmp_path / "store"
+    first = _run(tmp_path, "union", {"a": _layers_item(3)}, store=store)
+    n_rows = len((tmp_path / "union.jsonl").read_text().splitlines())
+    n0 = len(fake.calls)
+    again = _run(tmp_path, "union", {"a": _layers_item(3)}, store=store)
+    assert len(fake.calls) == n0 and again.diag["n_store_rows_adopted"] == 0
+    assert len((tmp_path / "union.jsonl").read_text().splitlines()) == n_rows
+    _same(first, again)
 
 
 def test_one_layer_item_of_a_multi_layer_run_shares_its_layer(tmp_path, monkeypatch):
@@ -153,6 +165,18 @@ def test_chunked_and_refused_layers_share_level_chunks_and_final(tmp_path, monke
     fresh = _run(tmp_path, "fresh", {"a": big}, **kw)
     assert any("[L20" in u for _s, u in fake.calls[n1:])
     _same(union, fresh)
+    assert union.chunks == fresh.chunks and union.served_by == fresh.served_by
+    # review r1: the halving level does not key the cap; another cap must not reuse it
+    for cap in ("690000", "100000"):
+        n2 = len(fake.calls)
+        other = _run(tmp_path, f"cap{cap}", {"a": _at(big, 20)}, layers=[20], store=store,
+                     summ_token_cap=cap)  # fmt: skip
+        mine = _run(tmp_path, f"cap{cap}-fresh", {"a": _at(big, 20)}, layers=[20],
+                    summ_token_cap=cap)  # fmt: skip
+        n_store = len(fake.calls[n2:]) // 2
+        assert n_store >= 1  # nothing shared across caps
+        _same(other, mine)
+        assert other.chunks == mine.chunks
 
 
 def test_numbers_union_family_shares_and_joint_numbers_family_does_not(tmp_path, monkeypatch):
@@ -239,7 +263,7 @@ def test_family_layers_l_then_all_layers_reuses_l(tmp_path, monkeypatch, _regist
     r_all, f_all = _family(tmp_path, monkeypatch, path, "all", None, store)
     digests = [u for n, _s, u in f_all.calls if n == "digest"]
     assert len(digests) == len(GRID) - 1 and all("[L44 " not in u for u in digests)
-    assert r_all.config["digest_store"] == str(store)
+    assert r_all.config["digest_store"] == str(store.resolve())
     assert "digest_store" not in r_all.config["summarizer"]  # not instrument identity
     fresh, f_fresh = _family(tmp_path, monkeypatch, path, "fresh", None, None)
     assert f_fresh.n("digest") == len(GRID)

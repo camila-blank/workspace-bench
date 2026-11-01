@@ -634,14 +634,14 @@ def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None)
     summ = settings(args, family).to_json()
     summ["concurrency"] = summ["concurrency"] or args.concurrency
     summ["timeout"] = summ["timeout"] or DIGEST_TIMEOUT
-    store = args.extra.get(STORE_OPT)
+    store = args.extra.get(STORE_OPT) if summ["overflow"] == "hierarchical" else None
     return {
         "aggregate": "summary",
         "summarizer": summ,
         "source_kind": source_kind,
         # provenance only, kept out of ``summarizer`` (the instrument identity floors and
         # alt-judge rows match on): a shared store changes no request
-        **({"digest_store": store} if store else {}),
+        **({"digest_store": str(Path(store).resolve())} if store else {}),
     }
 
 
@@ -1412,8 +1412,9 @@ class SharedDigests:
     model, effort, budget, rare tier, numbers, cap, lang, the item's task note, the bundle text,
     the salt) extended with ``salt`` (the refusal-fallback setting, which the digest fingerprint
     does not key), so a store row is served only for a byte-identical request under the same
-    fallback. Every write goes to both; a store row read on a local miss (or newer than the
-    local row) is copied into the run's own cache, so an out dir stays self-contained."""
+    fallback, cap and overflow (``salt``). Every write goes to both (the store first). The run's
+    own success always wins; on a local miss (or a local failed row older than the store's) a
+    store row is copied into the run's own cache, so an out dir stays self-contained."""
 
     def __init__(
         self, local: Cache, root: Path, route: Mapping[str, tuple[int, str]], salt: str
@@ -1423,7 +1424,7 @@ class SharedDigests:
         self.route = dict(route)
         self.salt = salt
         self._logs: dict[int, SharedLog] = {}
-        self.hits = 0  # store rows adopted into the run's cache
+        self.adopted = 0  # store rows (digests, chunks, levels, counts) copied into the run's cache
 
     def _store_key(self, key: str) -> tuple[SharedLog, str] | None:
         if key.startswith("ntok:"):
@@ -1448,6 +1449,8 @@ class SharedDigests:
 
     def get(self, key: str, fp: str, *, include_failed: bool = False) -> dict[str, Any] | None:
         row = self.local.get(key, fp, include_failed=include_failed)
+        if row is not None and row.get("result") is not None:
+            return row  # the run's own success always wins: a rerun never depends on the store
         sk = self._store_key(key)
         if sk is None:
             return row
@@ -1456,15 +1459,16 @@ class SharedDigests:
         if srow is None or (row is not None and row.get("ts", 0) >= srow.get("ts", 0)):
             return row
         self.local.put(key, fp, {k: v for k, v in srow.items() if k not in ("key", "fp", "ts")})
-        self.hits += srow.get("result") is not None
+        self.adopted += 1
         return self.local.get(key, fp, include_failed=True)
 
     def put(self, key: str, fp: str, payload: dict[str, Any]) -> None:
-        self.local.put(key, fp, payload)
+        # the store first: the run's own row is then never older than its mirror
         sk = self._store_key(key)
         if sk is not None:
             log, skey = sk
             log.put(skey, self._sfp(fp), payload)
+        self.local.put(key, fp, payload)
 
 
 @dataclass
@@ -2185,7 +2189,10 @@ def _collapse_layers(
                 route[stems[item_id]] = (layer, f"digest:{item_id}|{layer}")
     store = args.extra.get(STORE_OPT)
     if store:
-        cache = SharedDigests(cache, Path(store) / name, route, salt=s.fallback)
+        # the salt adds every setting a sub-key's own fingerprint may omit (the halving level
+        # does not key the cap; no digest fingerprint keys the fallback)
+        salt = fingerprint(s.fallback, s.token_cap, s.overflow)
+        cache = SharedDigests(cache, Path(store).resolve() / name, route, salt=salt)
     pnotes = {pid: notes[owner[pid]] for pid in parts}
     salt = f"spare{spare}" if spare else ""
     kw: dict[str, Any] = {
@@ -2217,7 +2224,7 @@ def _collapse_layers(
     if s.numbers == 0 and not args.dry_run:
         _reask_collapsed(name, part, parts, salt=salt, kw=kw)
     if isinstance(cache, SharedDigests):
-        part.diag["n_digest_store_hits"] = cache.hits
+        part.diag["n_store_rows_adopted"] = cache.adopted
     return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
 
 

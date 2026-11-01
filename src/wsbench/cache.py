@@ -81,8 +81,8 @@ class SharedLog:
     ``O_APPEND`` write of a whole line (under ``flock`` where the filesystem supports it), and a
     ``get`` first reads whatever other processes appended since the last read when it misses in
     memory or the last read is older than ``max_age`` seconds (so a failed row another process
-    wrote after a success, invalidating it, is seen within ``max_age``; a stat per lookup on a
-    network filesystem would cost more than it saves). A torn or interleaved line fails to parse
+    wrote after a success, invalidating it, is seen within ``max_age``). A miss costs one stat
+    (and a read of only the appended bytes). A torn or interleaved line fails to parse
     and is skipped (a miss, never a wrong row: a row is served only on an exact ``(key, fp)``
     match)."""
 
@@ -94,6 +94,7 @@ class SharedLog:
         self._off = 0
         self._tail = b""
         self._read_at = float("-inf")
+        self._ino = -1
 
     def _lookup(self, key: str, fp: str, include_failed: bool) -> dict[str, Any] | None:
         for row in reversed(self._rows.get(key, [])):
@@ -104,11 +105,13 @@ class SharedLog:
     def _refresh(self) -> None:
         self._read_at = time.monotonic()
         try:
-            size = self.path.stat().st_size
+            st = self.path.stat()
         except FileNotFoundError:
             return
-        if size < self._off:  # replaced or truncated: start over
+        size = st.st_size
+        if size < self._off or st.st_ino != self._ino:  # replaced or truncated: start over
             self._rows, self._off, self._tail = {}, 0, b""
+            self._ino = st.st_ino
         if size == self._off:
             return
         with self.path.open("rb") as fh:
