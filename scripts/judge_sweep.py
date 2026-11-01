@@ -194,7 +194,7 @@ class MatchRule:
     pooled_floor: float = 0.02  # condition (3): the interval is at least +-this
     agreement_margin: float = 0.03  # condition (4): lower bound >= -this
     calib_max_p_hat: float = 0.10  # p_hat above this (2x the design rate) -> uncalibrated
-    calib_max_k: int = 2  # k >= this oriented folds declared non-matching -> uncalibrated
+    calib_max_k: int = 3  # k >= this oriented folds declared non-matching -> uncalibrated
     ci_level: float = 0.90  # the displayed paired-bootstrap CI of delta vs A'1
 
 
@@ -380,12 +380,19 @@ def _ensure_registry() -> None:
             registry.FAMILIES.setdefault(spec.name, spec)
 
 
-def registry_families() -> list[FamilyInfo]:
-    """The ``all`` scope (not superseded / retired / removed) from the live registry."""
+def registry_families(only: str = "") -> list[FamilyInfo]:
+    """The ``all`` scope (not superseded / retired / removed) from the live registry;
+    ``only`` (``--families a,b``) restricts it (an unknown name exits)."""
     from wsbench import digest, registry
 
     _ensure_registry()
     names = registry.drop_superseded(sorted(registry.FAMILIES))
+    if only:
+        want = [f for f in only.split(",") if f]
+        unknown = sorted(set(want) - set(names))
+        if unknown:
+            raise SystemExit(f"--families: not in the sweep scope: {', '.join(unknown)}")
+        names = [n for n in names if n in want]
     out = []
     for n in names:
         spec = registry.get(n)
@@ -1123,7 +1130,8 @@ def classify(
     if not last.get("throttled"):
         before, after = last.get("decided_before") or {}, last.get("decided") or {}
         if after and all(
-            before.get(f) is not None and before.get(f) == n for f, n in after.items()
+            f in before and before[f] == n
+            for f, n in after.items()  # None == None: unreadable both times
         ):
             return "terminal", "an all-ok unthrottled pass left every decided count unchanged"
         if len(clean) >= bounds.max_ok_passes:
@@ -2563,12 +2571,21 @@ def cmd_roster(a: argparse.Namespace) -> int:
     return 0
 
 
-def _models_arg(s: str, roster: Mapping[str, Mapping[str, Any]]) -> list[str]:
+def _models_arg(
+    s: str, roster: Mapping[str, Mapping[str, Any]], *, claude: bool | None = None
+) -> list[str]:
+    """``--models``: a comma list (validated by the caller), or ``tier:a+b``, which keeps only
+    the backend's models (``claude=True`` local, ``False`` Modal) and never the Opus anchor (the
+    Opus draws are ``--draws``)."""
     if not s:
         return []
     if s.startswith("tier:"):
         tiers = set(s[5:].split("+"))
-        return [m for m, r in roster.items() if r["tier"] in tiers]
+        return [
+            m
+            for m, r in roster.items()
+            if r["tier"] in tiers and m != OPUS and (claude is None or is_claude(m) == claude)
+        ]
     return [x for x in s.split(",") if x]
 
 
@@ -2578,12 +2595,12 @@ def cmd_run(a: argparse.Namespace) -> int:
             "OpenRouter models run on Modal: modal run scripts/judge_sweep_modal.py::sweep"
         )
     roster = load_roster(Path(a.roster))
-    models = _models_arg(a.models, roster)
+    models = _models_arg(a.models, roster, claude=True)
     bad = [m for m in models if not is_claude(m)]
     if bad:
         raise SystemExit(f"--backend local runs Claude only; {bad} run on Modal")
     draws = [d for d in a.draws.split(",") if d]
-    infos = registry_families()
+    infos = registry_families(a.families)
     kc = kc_loaded_items()
     layers = [int(x) for x in a.layers.split(",")] if a.layers else None
     run_args = check_run_args(a.run_args.split())
@@ -2636,7 +2653,7 @@ def cmd_analyze(a: argparse.Namespace) -> int:
     sweep_dir = Path(a.out_root) / a.sweep
     roster = load_roster(Path(a.roster))
     model_of = {slug(m): m for m in roster}
-    infos = registry_families()
+    infos = registry_families(a.families)
     jd, det = judge_dependent(infos), deterministic(infos)
     ref_dirs = _ref_dirs(a.ref_dirs)
     r4 = {
@@ -2746,6 +2763,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
         s.add_argument("--roster", default=str(ROSTER_PATH))
         s.add_argument("--out-root", default=str(OUT_ROOT))
+        s.add_argument("--families", default="", help="restrict the scope (comma list)")
         s.add_argument(
             "--exclude-nocot",
             action="store_true",

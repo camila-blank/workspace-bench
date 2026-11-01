@@ -536,6 +536,9 @@ async def _one(
                 or "Connection" in name
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
+                # a 200-body error keeps the old retry unless it is a too-long input (the
+                # fatal 401-404 codes raised above)
+                or (isinstance(e, _BodyError) and not (status == 400 and _too_long(route_, str(e))))
             )
             if transient and attempt < n_attempts - 1:
                 spend.retries += 1
@@ -553,10 +556,12 @@ async def _one(
 
 
 def _too_long(route_: Route, message: str) -> bool:
-    """A 400 that is a too-long input: Anthropic's "prompt is too long"; on OpenRouter any
-    :data:`OPENROUTER_TOO_LONG` phrase (sound only under the output cap, plan 0059)."""
+    """A 400 that is a too-long input: "prompt is too long"; on OpenRouter with
+    ``WSBENCH_OPENROUTER_MAX_OUT`` set, any :data:`OPENROUTER_TOO_LONG` phrase (sound only under
+    that output cap, plan 0059: without it a "maximum context length" 400 can be the output
+    request)."""
     msg = message.lower()
-    if route_ == "anthropic":
+    if route_ == "anthropic" or openrouter_max_out() is None:  # the broad list needs the cap
         return "prompt is too long" in msg
     return any(p in msg for p in OPENROUTER_TOO_LONG)
 

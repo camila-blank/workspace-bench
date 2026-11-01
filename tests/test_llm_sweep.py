@@ -186,6 +186,11 @@ def test_openrouter_context_length_400_is_too_long(env, monkeypatch, phrase):
         "prompt is too long",
     )
     err = BadRequestError(f"Error code: 400 - This endpoint's {phrase} is 131072 tokens")
+    # without the output cap only "prompt is too long" is too-long (a "maximum context length"
+    # 400 can then be the output request; review of #217)
+    got, _spend = _run(monkeypatch, FakeOpenRouter([err]), mark_refusals=True)
+    assert got == ([llm.TOO_LONG_JSON] if phrase == "prompt is too long" else [None])
+    monkeypatch.setenv(llm.MAX_OUT_ENV, "8000")
     got, spend = _run(monkeypatch, FakeOpenRouter([err]), mark_refusals=True)
     assert got == [llm.TOO_LONG_JSON] and spend.errors == 1 and spend.retries == 0
     got, _spend = _run(monkeypatch, FakeOpenRouter([err]))  # without mark_refusals: None
@@ -295,15 +300,20 @@ def test_200_body_error_code_is_classified(env, monkeypatch):
     fake = FakeOpenRouter([_body_error("429") for _ in range(llm._ATTEMPTS)])
     got, spend = _run(monkeypatch, fake)
     assert got == [None] and spend.failed == {"429": 1} and spend.throttled() == 1
-    # a non-numeric quota code is final at once, and counts as throttled
-    got, spend = _run(monkeypatch, FakeOpenRouter([_body_error("quota", "daily quota")]))
+    # a non-numeric code keeps the old retry; still failing at the end it is throttled
+    fake = FakeOpenRouter([_body_error("quota", "daily quota") for _ in range(llm._ATTEMPTS)])
+    got, spend = _run(monkeypatch, fake)
     assert got == [None] and spend.failed == {"quota": 1} and spend.throttled() == 1
+    # a plain body 400 keeps the old retry too
+    got, spend = _run(monkeypatch, FakeOpenRouter([_body_error(400, "upstream error"), _or()]))
+    assert got == [{"a": 1}] and spend.retries == 1
     # a code-less rate-limit message reads as 429
     got, spend = _run(
         monkeypatch, FakeOpenRouter([_body_error(None, "Rate limit exceeded"), _or()])
     )
     assert got == [{"a": 1}] and spend.transient == {"429": 1}
-    # a context-length body error is too long under mark_refusals
+    # a context-length body error is too long under mark_refusals (with the output cap set)
+    monkeypatch.setenv(llm.MAX_OUT_ENV, "8000")
     body = _body_error(400, "maximum context length is 131072 tokens")
     got, _spend = _run(monkeypatch, FakeOpenRouter([body]), mark_refusals=True)
     assert got == [llm.TOO_LONG_JSON]

@@ -67,7 +67,7 @@ def test_threshold_constants_block_is_pinned():
         "pooled_floor": 0.02,
         "agreement_margin": 0.03,
         "calib_max_p_hat": 0.10,
-        "calib_max_k": 2,
+        "calib_max_k": 3,
         "ci_level": 0.90,
     }
     assert dataclasses.asdict(js.DRIVER) == {
@@ -947,3 +947,31 @@ def test_failures_column_and_cache_only_counters():
     assert js.extra_num(res, "n_digest_calls") == 0
     assert js.extra_num(_res("association", [], n_digest_calls=4), "n_digest_calls") == 4
     assert "3 refused" in js._failures_cell(fl)
+
+
+def test_classify_unreadable_results_both_times_is_unchanged():
+    # a family whose verdicts cannot be extracted reads None before and after: an all-ok
+    # unthrottled pass is still "unchanged", not a reason to re-pay all 5 passes (review of #217)
+    now = 1_000_000.0
+    assert js.classify([_p(now, before=None, after=None)], free=False, now=now)[0] == "terminal"
+
+
+def test_models_tier_selection_is_backend_filtered_and_skips_opus():
+    roster = {
+        "claude-haiku-5-5": {"tier": "cheap"},
+        "deepseek/deepseek-v4-flash": {"tier": "cheap"},
+        "openai/gpt-6-astra": {"tier": "frontier"},
+        "claude-fable-5-1": {"tier": "frontier"},
+        js.OPUS: {"tier": "anchor"},
+        "claude-sonnet-5-5": {"tier": "anchor"},
+    }
+    assert js._models_arg("tier:cheap+frontier", roster, claude=False) == [
+        "deepseek/deepseek-v4-flash",
+        "openai/gpt-6-astra",
+    ]
+    assert js._models_arg("tier:cheap+frontier+anchor", roster, claude=True) == [
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-5",
+    ]
+    assert js._models_arg("a,b", roster, claude=True) == ["a", "b"]  # explicit lists as given

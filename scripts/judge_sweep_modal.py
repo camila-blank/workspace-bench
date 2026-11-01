@@ -8,7 +8,8 @@ OpenRouter is only ever called from here (secret ``openrouter``), never from a d
     /vol/runs/<sweep>/<arm>/<model-slug>/<family>/   one ``wsbench run`` out dir per (arm, model)
     /vol/scratch/<sweep>/   preflight runs
 
-Entry points (run with ``PYTHONPATH=src``; the driver loop runs on the client, in tmux):
+Entry points (run with the project venv's ``modal`` and ``PYTHONPATH=src`` — the client imports
+``judge_sweep.py``, which needs numpy and ``wsbench``; the driver loop runs on the client, in tmux):
 
     modal run scripts/judge_sweep_modal.py::upload --name s3d --readouts DIR --ref-dir R4 \\
         [--ref-dirs map.json] [--exclude-nocot]
@@ -233,10 +234,15 @@ def _plan(
     ref_opts: str,
     exclude_nocot: bool,
     roster_path: str,
+    families: str = "",
 ) -> tuple[Any, list[Any], list[str], dict[str, Any]]:
     js = _js()
     roster = js.load_roster(Path(roster_path))
-    ids = js._models_arg(models, roster) if models else [m for m in roster if not js.is_claude(m)]
+    ids = (
+        js._models_arg(models, roster, claude=False)
+        if models
+        else [m for m in roster if not js.is_claude(m)]
+    )
     bad = [m for m in ids if js.is_claude(m)]
     if bad:
         raise SystemExit(
@@ -249,7 +255,7 @@ def _plan(
         draws=[],
         arms=[a for a in arms.split(",") if a],
         roster=roster,
-        infos=js.registry_families(),
+        infos=js.registry_families(families),
         ref_opts=js._ref_opts(ref_opts),
         kc_items=js.nocot_free_ids(kc) if exclude_nocot else None,
     )
@@ -334,13 +340,14 @@ def preflight(
     run_args: str = "",
     exclude_nocot: bool = False,
     roster: str = "",
+    families: str = "",
 ) -> None:
     """Per OpenRouter model and arm: one preflight per JOB GROUP (same partition as
     ``run_job``) with ``items=`` = that group's first-item-with-readouts union, plus one
     over-context probe per model. Writes ``outputs/judge_sweep/<sweep>/preflight.json``
     (models that fail are dropped, reason kept; a 404 / unmapped overflow drops Arm B)."""
     js, jobs, notes, ros = _plan(
-        sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH)
+        sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH), families
     )
     if not readouts:
         raise SystemExit("--readouts: the local readouts dir (probe items are picked from it)")
@@ -401,11 +408,12 @@ def sweep(
     retry_errors: bool = False,
     exclude_nocot: bool = False,
     roster: str = "",
+    families: str = "",
 ) -> None:
     """The resume loop for the OpenRouter models (Arm A / Arm B), minus the models
     ``preflight.json`` dropped (and their Arm B jobs when it lists an Arm B exception)."""
     js, jobs, notes, _ros = _plan(
-        sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH)
+        sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH), families
     )
     pf = js._read_json(js.OUT_ROOT / sweep / "preflight.json")
     if pf is None:
