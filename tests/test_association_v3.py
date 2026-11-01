@@ -109,3 +109,53 @@ def test_v3_distractor_forms_block_the_gold_line_rule_both_ways():
         assert _gate(it, q, [q + ".", t], aj.bank_concepts(bare)) == "gold_listed_evidence", t
     for t in ["她去了图书馆。", "She returned books to the library and then went home."]:
         assert _gate(it, q, [q + ".", t], concepts) == "gold_listed_evidence", t
+
+
+def test_v3_kinship_repair_drops_kinds_and_near_synonyms_of_the_gold():
+    """PR #214 review r4 (finding 2): the first v3 offered espresso for coffee (15 final-olens
+    readouts name it, 12 beside the gold), separation for divorce and spa for sauna: not wrong
+    answers but a kind of, a near-synonym of or a setting for the gold, so gates 3b/3c refused
+    the gold. The repaired lists hold none of them (and none of the hand bans); the old lists
+    (``distractors_pre_kin``) did. Annulment stays on divorce (``KIN_KEEP``: a distinct legal
+    remedy, the topic's one rival)."""
+    raw = json.loads(V3.read_text(encoding="utf-8"))
+    kin = raw["mc_leakage"]["kinship"]
+    by = {it["name"]: it["mc"] for it in raw["items"]}
+    bad = {
+        "bf-coffee": {"espresso", "latte", "cappuccino", "mocha"},
+        "divorce": {"separation", "breakup", "custody battle"},
+        "b3-as-sauna": {"spa"},
+        "bf-rain": {"storm", "thunderstorm"},
+    }
+    for name, kinds in bad.items():
+        assert not kinds & set(by[name]["distractors"]), name
+        assert kinds & set(by[name]["distractors_pre_kin"]), name  # the first v3 offered one
+        assert len(by[name]["distractors"]) == 7, name
+    for name, bans in kin["hand_bans"].items():
+        assert not set(bans) & set(by[name]["distractors"]), name
+    assert kin["hand_keeps"] == {"divorce": ["annulment"]}
+    assert "annulment" in by["divorce"]["distractors"]
+    assert sorted(n for n, m in by.items() if "distractors_pre_kin" in m) == kin["items"]
+    assert len(kin["items"]) == 20
+
+
+def test_kinship_repair_lets_a_coffee_sentence_rescue_the_gold():
+    """The gate-level effect of the repair, both directions: a readout sentence naming the gold
+    beside espresso ("pulled another espresso ... fresh coffee") cannot rescue the gold (3c)
+    while espresso is a shown option, and does once the repaired list is shown."""
+    items = _bank(V3)
+    it = next(x for x in items if x["name"] == "bf-coffee")
+    m = it["mc"]
+    concepts = aj.bank_concepts(items)
+    lines = [
+        digest.Line(
+            text="The barista pulled another espresso and the shop smelled of fresh coffee."
+        )
+    ]
+
+    def rescued(distractors: list[str]) -> bool:
+        others = aj.other_option_forms(distractors, aj.gold_forms(it), concepts)
+        return aj.evidence_names_gold(lines, forms=aj.gold_forms(it), others=others)
+
+    assert not rescued(m["distractors_pre_kin"])
+    assert rescued(m["distractors"])

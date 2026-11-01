@@ -591,8 +591,9 @@ def test_leakage_standard_holds_topic_binding_for_every_family():
     assert lg.analytic_floor(lg.build_family("association")) == pytest.approx(1 / 8)
     assoc = fails("association")
     assert set(assoc) == {"described", "topic"}
-    assert assoc["topic"] == pytest.approx(0.578, abs=1e-3)
-    assert assoc["described"] == pytest.approx(0.301, abs=1e-3)
+    # review r4's kinship repair (no kind / near-synonym / part of the gold) raised 0.578 / 0.301
+    assert assoc["topic"] == pytest.approx(0.624, abs=1e-3)
+    assert assoc["described"] == pytest.approx(0.351, abs=1e-3)
     # the superseded "binding = what the judge is shown" rule would still fail it on described
     old_rule = {v: fl["association"][v] for v in ("blind", "described")}
     assert set(lg.leakage_failures(old_rule, 1 / 8)) == {"described"}
