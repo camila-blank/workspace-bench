@@ -28,6 +28,41 @@ for its spelling alone, and every Stage-P "in" / "partial" grade names its groun
 (validated; a grade citing a token not shown is a reject). (4) No tool name in any prompt
 (`mc.READOUT_PHRASE`). v3 numbers are not comparable to v2's.
 
+**Round 3 (`jlens-pr-v3+fw-v1`, now `+fw-v2+sense-v1`, deterministic; calls keyed `jlens-pr-v3`, none re-asked).** A
+Stage-P "in" / "partial" grade whose grounding token is a function word (a conjunction,
+preposition, article or copula in the languages the top-10 lists show: " or", " of", "-of", " in",
+" with", " than", "或", " или", " หรือ" ...) that the concept merely CONTAINS as a word counts as
+out (`prompts.function_word_grounded`): pt-fineweb-0022 L56 credited "more or fewer neutrons" and
+"more or fewer protons in isotopes" 'in' via " or" (cell precision 0.583 -> 0.417, the audit's
+hand view ~0.42). A function word whose MEANING is the concept is untouched (" or" partial for
+"recommendation of alternatives", " IF" / " THEN" for "conditional page branching"). On the
+cached final O-lens grades this changes 0-12 cells per single layer (none at L44, the headline
+layer, whose 0.325 is unchanged) and lowers single-layer precision by 0.003 at most (L60 0.284 -> 0.280).
+
+**Review (`jlens-pr-v3+fw-v2+sense-v1`, deterministic; no call re-asked).** fw-v1 also zeroed a
+grade it claimed to spare: "then" is a word of "if-then-else conditional". fw-v2 leaves a
+concept ABOUT a function word alone: a compound of function words ("if-then-else", "either/or",
+"and/or") or a logic / grammar word ("conditional", "conjunction", "boolean", "operator",
+"alternatives", "clause", "branching" ...). sense-v1 adds two same-sense rules on the Stage-P
+grounding token (`prompts.grounding_void`): (1) a frequency adverb ("often", "typically",
+"commonly", "往往", "通常" ...) grounds a concept only when the concept states frequency,
+typicality or invariance ("common", "frequent", "usual", "most", "determinism", "annual" ...),
+and "common" in a shared / vernacular collocation ("common names", "common ground", "common
+sense", "in common" ...) states none: pt-fineweb-0021 lite L24 ("often" partial for "common
+names") 0.100 -> 0.067 and L48 (" commonly" 'in' for "common names") 0.071 -> 0.000, the audit's
+hand view ~0.07; (2) an agent noun built on the concept's word for an ACT, the word after an
+article / adjective or after "to" ("a quick read", "chapter to read"), names the doer, not the
+act: pt-pile-0050 L36 (" reader" partial for "not a quick read") 0.075 -> 0.050 (hand view
+~0.05), and the same grade at L40 and on the all config; it also voids "players" for "role to
+play" (pt-pile-0052 L20, 0.094 -> 0.063). Kept: "reader" for "book reader" (the concept names
+the agent), "prayer" for "pray", "researchers" for "research team", "yours" for "next to you"
+(pronouns are no act), "typically" for "common workplace hazards", "往往" for "most common
+scenario", "always" for "session determinism". Over the cached final O-lens grades the two
+sense rules void 12 grades (the cells above, nothing else) and fw-v2 restores none (no cached
+grade had the shape); precision moves by <= 0.0002 per config (L20 0.1903 -> 0.1902, L36 0.3142
+-> 0.3141, L40 0.3489 -> 0.3488, L48 0.2877 -> 0.2875), and the L44 headline 0.3251 is
+unchanged.
+
 ## Bank (`evals/jlens_concept_pr/`)
 
 Frozen 2026-09-12 from `evals/workspace-bench/jlens_pr/` in the source repo (copied verbatim):
@@ -67,7 +102,7 @@ the labels, families and read positions plus the reference files above.
   zero); a PRESENT-but-empty row is scored as zero concepts ("lens silent"), carries
   `has_text = false` and counts in `n_empty_cells` — so the shared "empty cells <= 5% of
   expected" completeness rule applies here, which the source did not have.
-- **Models:** `JudgeConfig(model=DEFAULT_JUDGE, prompt_version="jlens-pr-v3",
+- **Models:** `JudgeConfig(model=DEFAULT_JUDGE, prompt_version="jlens-pr-v3+fw-v2+sense-v1",
   reasoning={"effort": "minimal"})`. All three stages run on the family judge. **Instrument
   change (2026-09-16, Camila):** the source judge of record ran Stage A (concept extraction) on
   `deepseek/deepseek-v4-flash` with reasoning off; this repo runs it on the family judge like

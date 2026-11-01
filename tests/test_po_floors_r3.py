@@ -640,3 +640,18 @@ def test_fallback_ask_resumes_on_sonnet55_and_reasks_retired_rows(tmp_path, monk
     assert stats["f"]["served_by_sonnet"] == ["b"] and stats["f"]["refused_both"] == ["c"]
     rows = [json.loads(x) for x in (out / "readouts/f.jsonl").read_text().splitlines()]
     assert [(r["id"], r["samples"]) for r in rows] == [("a", ["opus a"]), ("b", ["sonnet55 b"])]
+
+
+def test_retired_lang_off_floor_matches_a_live_row_without_lang(real_families):
+    """summ_lang was removed (#208): live rows carry no ``lang`` key while the committed floors
+    carry ``lang: False``. Off and absent are one instrument; a labelled (``lang: True``) digest
+    is still a different one, on either side."""
+    e = json.loads(FROZEN.read_text(encoding="utf-8"))["association"]
+    assert e["summarizer"].get("lang") is False
+    cfg = _live_config("association", e)
+    assert "lang" not in cfg["summarizer"]
+    assert po.summary_floor_matches(e, cfg)
+    on = {**cfg, "summarizer": {**cfg["summarizer"], "lang": True}}
+    assert not po.summary_floor_matches(e, on)
+    e_on = {**e, "summarizer": {**e["summarizer"], "lang": True}}
+    assert not po.summary_floor_matches(e_on, cfg)

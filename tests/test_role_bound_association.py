@@ -16,6 +16,8 @@ from wsbench.readouts import load_readouts
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = json.loads((ROOT / "tests/golden/role_bound_association_options.json").read_text())
 GOLDEN_V2 = json.loads((ROOT / "tests/golden/role_bound_association_options_v2.json").read_text())
+# round 4: the judge's blocks are oa-v3 (judge.build_block_v3); the run tests read these golds
+GOLDEN_V3 = json.loads((ROOT / "tests/golden/role_bound_association_options_v3.json").read_text())
 EXAMPLE = ROOT / "examples/readouts/role_bound_association.jsonl"
 AB, BA = "oa-police-thief-chase-ab", "oa-police-thief-chase-ba"
 HUG = "oa-child-grandparent-hug-ab"  # Mia, the child, hugged Ruth, the grandparent
@@ -84,7 +86,7 @@ def test_rendered_prompt_matches_golden_v2():
     b = build_block_v2(bank[0], bank, gate.load_lexicon())
     got = prompts.SYSTEM + "\n\n=== USER ===\n" + prompts.render_user("TOY READOUT", b.text)
     assert got == (ROOT / "tests/golden/role_bound_association_prompt_v2.txt").read_text()
-    assert prompts.PROMPT_VERSION == "oa-v2.3"
+    assert prompts.PROMPT_VERSION == "oa-v3.1"  # round 4: the oa-v2.4 prompts on oa-v3 lists
     assert prompts.SCHEMA["schema"]["required"] == [
         "q1_choice",
         "q2_choice",
@@ -241,8 +243,8 @@ def _responder(system, user):
         return {"a": 1}
     assert system == prompts.SYSTEM
     tag = tag_of(user)
-    g = GOLDEN_V2[tag.split(":")[0]]["golds"]
-    rev = GOLDEN_V2[tag.split(":")[0]]["reversed_golds"]
+    g = GOLDEN_V3[tag.split(":")[0]]["golds"]
+    rev = GOLDEN_V3[tag.split(":")[0]]["reversed_golds"]
     if tag == f"{AB}:L20:p1":
         return {
             "q1_choice": g[0],
@@ -270,7 +272,9 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     fake = fake_llm(_responder)
     args = mk_args(_scripted(tmp_path), items=[AB, BA])
     res = judge.run(args)
-    assert res.n_items == 2 and res.value == 0.5
+    # pair-v1 (review of #202 round 5): AB passes and BA fails, so the per-item rate is the old
+    # 0.5 and the pair (the headline) fails
+    assert res.n_items == 2 and res.extras["item_pass_rate"] == 0.5 and res.value == 0.0
     c = res.counts
     assert c["n_expected_cells"] == 9 and c["n_empty_cells"] == 1 and c["n_unjudged_cells"] == 1
     by_key = {r["key"]: r for r in res.rows}
@@ -296,6 +300,8 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
         "one_statement": True,
         "agent_ref": True,
         "patient_ref": True,
+        "action_ref": True,  # final r1: the gold action is stated in the quote
+        "relation_ok": True,  # round 3: no conflicting kin phrase
     }
     assert by_key[f"{AB}__L020__p2"]["correct"] == [False, True, False]
     assert by_key[f"{BA}__L020__p1"]["pass"] is False
@@ -342,12 +348,19 @@ def test_native_extras_have_layer_pick_columns(tmp_path, fake_llm, mk_args):
 def test_config_stamps_roles_lexicon(tmp_path, fake_llm, mk_args):
     fake_llm(_responder)
     res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
-    assert res.config["roles_lexicon"] == prompts.ROLES_LEXICON == "roles-v1"
-    assert res.config["prompt_version"] == "oa-v2.3"
+    assert res.config["roles_lexicon"] == prompts.ROLES_LEXICON == "roles-v1.4"
+    assert res.config["prompt_version"] == "oa-v3.1"
+
+
+def test_config_stamps_actions_lexicon(tmp_path, fake_llm, mk_args):
+    # round 3 of #202: the action lexicon's version is part of the instrument stamp
+    fake_llm(_responder)
+    res = judge.run(mk_args(_scripted(tmp_path), items=[AB, BA]))
+    assert res.config["actions_lexicon"] == prompts.ACTIONS_LEXICON == "actions-v1.4"
 
 
 def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_args):
-    g = GOLDEN_V2[AB]["golds"]
+    g = GOLDEN_V3[AB]["golds"]
     rows = [
         {"id": AB, "layer": 20, "pos": p, "samples": [f"R:{AB}:p{p} {t}"]}
         for p, t in (
@@ -368,7 +381,9 @@ def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_
 
     fake_llm(respond)
     res = judge.run(mk_args(path, items=[AB]))
-    assert res.value == 0.0 and not any(r["pass"] for r in res.rows)
+    # pair-v1: a one-direction scope decides no pair (value None); the item rate keeps the 0.0
+    assert res.extras["item_pass_rate"] == 0.0 and not any(r["pass"] for r in res.rows)
+    assert res.value is None
     e = res.extras
     assert e["n_gate_rejected"] == 3
     assert e["n_quote_unverified"] == 2  # p1 (not in the sample) and p3 (empty quote)
@@ -390,7 +405,7 @@ def test_tokens_native_judges_raw_list(tmp_path, fake_llm, mk_args):
 
 
 def test_token_quote_through_gate_needs_one_list(tmp_path, fake_llm, mk_args):
-    g = GOLDEN_V2[AB]["golds"]
+    g = GOLDEN_V3[AB]["golds"]
     rows = [
         {"id": AB, "layer": 20, "pos": 1, "tokens": ["Marcus", "chased", "Dylan"]},
         {"id": AB, "layer": 20, "pos": 2, "tokens": ["officer", "thief"]},
@@ -525,7 +540,7 @@ def test_plan_emits_full_and_lite_sites():
 
 
 def _hug_judge(quote: str):
-    g = GOLDEN_V2[HUG]["golds"]
+    g = GOLDEN_V3[HUG]["golds"]
 
     def respond(system, user, schema):
         assert system == prompts.SYSTEM
@@ -562,7 +577,7 @@ def test_summary_mode_requires_single_statement_binding(tmp_path, monkeypatch):
     path = write_jsonl(tmp_path / "c.jsonl", [{"id": HUG, "layer": 44, "pos": 1, "samples": [gen]}])
     FakeLLM.install(monkeypatch, _hug_judge("Mia, the grandchild, hugs Ruth"))
     r = SPEC.run(summary_args(path, tmp_path / "o3", prompts.PROMPT_VERSION, items=[HUG]))
-    assert r.rows[0]["pass"] is True and r.value == 1.0
+    assert r.rows[0]["pass"] is True and r.extras["item_pass_rate"] == 1.0  # pair-v1: item rate
 
 
 def test_summary_task_note_reaches_digest(tmp_path, monkeypatch):
@@ -581,8 +596,8 @@ def test_summary_stamp_is_computed(tmp_path, monkeypatch):
     want = reads.stamp(
         digest.prompt_version(prompts.PROMPT_VERSION, args, SPEC.name), reads.mode(args)
     )
-    assert r.config["prompt_version"] == want and want.startswith("oa-v2.3+digest-")
-    assert r.config["roles_lexicon"] == "roles-v1"
+    assert r.config["prompt_version"] == want and want.startswith("oa-v3.1+digest-")
+    assert r.config["roles_lexicon"] == "roles-v1.4"
 
 
 def test_in_macro(tmp_path, fake_llm, mk_args):

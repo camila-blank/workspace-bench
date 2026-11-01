@@ -107,6 +107,11 @@ def _floor_match_key(summ: object) -> object:
     fallback (decision 2026-11-01). The stored entry keeps the full ``fallback`` string."""
     if not isinstance(summ, dict):
         return summ
+    # summ_lang was removed 2026-11-01 (#208): a live row's summarizer has no ``lang`` key, while
+    # the floors frozen before it carry ``lang: False``. An off label is the same instrument as
+    # no label, so a falsy ``lang`` is dropped; a ``lang: True`` (labelled) digest still differs.
+    if not summ.get("lang", False):
+        summ = {k: v for k, v in summ.items() if k != "lang"}
     fb = summ.get("fallback")
     if not isinstance(fb, str):
         return summ
