@@ -37,6 +37,7 @@ from wsbench.registry import JudgeArgs
 from wsbench.results import FamilyResult, completeness
 
 from .concept_pr import ItemScore, bootstrap_ci, is_content_token, is_junk_token, score_item
+from .prompts import grounding_void
 
 M = 10
 HEADLINE_LAYER = 44
@@ -457,7 +458,12 @@ def verdict_rows(out_dir: Path) -> list[dict[str, Any]]:
                     "tokens": list(meta["tokens"]),
                     "grade": grade,
                     "token": str(meta["token"]) if kind[0] == "B" else str(g.get("token", "")),
-                    "pass": grade != "out",
+                    # fw-v2 + sense-v1: a Stage-P grade on a void grounding scores as out
+                    "pass": grade != "out"
+                    and not (
+                        kind[0] != "B"
+                        and grounding_void(str(g.get("token", "")), str(g.get("concept", "")))
+                    ),
                 }
             )
     return out

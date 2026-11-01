@@ -94,3 +94,37 @@ def test_frozen_floors_are_read_by_the_standard():
         r = rows[(v, "family_rule")]
         assert r["value"] == e[v]["family_rule"] and r["chance"] == e[v]["family_chance"]
     assert e["topic"]["topics"] == lg.topics_version("conjunctive_association")
+
+
+# merge of #202 with main: the per-list topic labels (main, an ``items`` map) and the per-item
+# story lines (#202, a ``topics`` map) share TOPICS_DIR; ``topic_form`` routes each family
+def test_topic_form_routes_each_file_form():
+    assert lg.topic_form("basic_readout_mt") == "lists"
+    assert lg.topic_form("role_bound_association") == "item"
+    assert lg.topic_form("conjunctive_association") == "item"
+    assert lg.topic_form("typo_mt") is None
+
+
+def test_list_form_topic_message_heads_lists_and_shows_examples():
+    items = lg.with_topics(lg.build_family("basic_readout_mt"), "basic_readout_mt")
+    ex = lg.pick_examples(items, 0, "basic_readout_mt", 0)
+    msg = lg.user_message(items[0], "topic", "basic_readout_mt", ex)
+    assert "(topic: " in msg and "(correct)" in msg  # list labels + solved examples
+    assert msg.endswith(lg.render_lists(items[0], topics=True))
+
+
+def test_item_form_topic_message_never_uses_list_labels():
+    items = lg.build_family("conjunctive_association")
+    msg = lg.user_message(items[0], "topic", "conjunctive_association", None)
+    assert "(topic: " not in msg and "(correct)" not in msg
+    assert lg.load_topics("conjunctive_association")[items[0].id] in msg
+    with pytest.raises(ValueError, match="no topics map"):
+        lg.load_topics("basic_readout_mt")  # a list-form file is not read as item lines
+
+
+def test_topic_variant_without_a_topic_file_raises():
+    items = lg.build_family("typo_mt")
+    with pytest.raises(ValueError, match="no topic file"):
+        lg.user_message(items[0], "topic", "typo_mt", None)
+    with pytest.raises(FileNotFoundError, match="no topic labels"):
+        lg.load_list_topics("typo_mt")

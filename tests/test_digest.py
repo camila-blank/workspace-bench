@@ -358,7 +358,7 @@ def test_single_global_token_cap(tmp_path, real_families):
         "summ_max",
         "summ_rare",
         "summ_numbers",
-        "summ_lang",
+        "summ_ties",  # round 4: the chain digest's tie extension (digest.tie_cut)
     }
     for name in real_families:
         assert digest.settings(_args(tmp_path), name).token_cap == digest.DEFAULT_TOKEN_CAP
@@ -416,28 +416,25 @@ def test_served_by_in_extras(tmp_path, scripted):
     assert col.extras()["digest_served_by"] == {"claude-opus-5-5": 1}
 
 
-def test_summ_lang_label_rendered_but_not_gated(tmp_path):
-    from wsbench import mc
-
+def test_summ_lang_removed_no_language_label(tmp_path):
+    """Camila 2026-11-01: the summarizer language tag is gone. A Grounded's (inert) language
+    field is never rendered, and the option is no longer a known key."""
     ln = _pl("The answer is the hourglass")
     g = digest.Grounded("s", "one", ln.text, ln, "hourglass", "items", "Russian")
-    text, evid = digest.render_summary([g], "extractive", lang=True)
-    assert text == "[one] [in Russian] The answer is the hourglass"
-    assert evid[0].text == ln.text and evid[0].language == "Russian"
-    # the label is never gated on: a Russian-form unit is decided on the evidence text only
-    assert not mc.form_in(evid[0].text, ["песочные часы"])
-    _plain, evid2 = digest.render_summary([g], "extractive", lang=False)
-    assert mc.form_in(evid2[0].text, ["hourglass"]) == mc.form_in(evid[0].text, ["hourglass"])
+    text, evid = digest.render_summary([g], "extractive")
+    assert text == "[one] The answer is the hourglass"
+    assert evid[0].text == ln.text
+    assert "summ_lang" not in digest.KNOWN_KEYS and "summ_lang" not in digest.FAMILY_DEFAULT_KEYS
+    assert "DIGEST_LANG_LINE" not in digest.PROMPTS
 
 
-def test_summ_lang_stamp(tmp_path):
-    assert digest.prompt_version("pv", _args(tmp_path), "multilingual_mt") == (
-        "pv+digest-v5-task-extractive-lang+sj-v10"
-    )
-    assert digest.prompt_version("pv", _args(tmp_path), "poetry") == (
-        "pv+digest-v5-task-extractive+sj-v10"
-    )
-    assert "language" in digest.render_system(digest.settings(_args(tmp_path), "multilingual"), "")
+def test_summ_lang_stamp_dropped(tmp_path):
+    for fam in ("multilingual", "multilingual_mt", "multilingual_multihop", "multilingual_typo"):
+        assert digest.prompt_version("pv", _args(tmp_path), fam) == (
+            "pv+digest-v5-task-extractive+sj-v10"
+        )
+        system = digest.render_system(digest.settings(_args(tmp_path), fam), "")
+        assert '"language"' not in system
 
 
 def test_token_evidence_noncontiguous_same_line_verifies():

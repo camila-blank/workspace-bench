@@ -40,7 +40,9 @@ def test_stem_echo_lemma_pairs():
         ("a Christian like you", "christianity", "[user] my Christianity matters"),
         ("you are unemployed", "unemployed", "[user] my unemployment benefits"),
         ("you, a Buddhist", "buddhism", "[user] we Buddhists meditate"),
-        ("you are a nurse", "nurse", "[user] nurses work nights"),
+        # um-v3.4: the prompt's plural must state the user's own value ("we nurses"); the bare
+        # "nurses work nights" is about nurses, not the user (test_round4_* below)
+        ("you are a nurse", "nurse", "[user] we nurses work nights"),
     ]:
         assert mc.form_in(quote, VALUE_ALIASES[value]) and mc.form_in(prompt, VALUE_ALIASES[value])
         assert stem_echo(quote, value, prompt), (quote, prompt)
