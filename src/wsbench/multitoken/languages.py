@@ -36,7 +36,8 @@ A form starting with :data:`RE_PREFIX` is a regular expression, matched by
 does not matter)."""
 
 import re
-from collections.abc import Sequence
+import unicodedata
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 
 
@@ -326,7 +327,13 @@ def case_sensitive_forms() -> frozenset[str]:
 # official language is X", "X language exam / course / market", _TOPIC_AFTER_LANGUAGE; tr bare
 # "Türkçe" only before punctuation or a closed list of text nouns, never "Türkçe futbol"; vi
 # "tiếng Việt" only after / before a closed list of words, never "môn tiếng Việt")
-NAMING_VERSION = "ln-2026-10-31e"  # bump on any edit of NAMING / naming_forms
+# ln-2026-10-31f (round 3): "X <up to three free lower-case words> <input noun>" names the
+# passage's language ("a simple Spanish arithmetic question", "the French antonym of premier",
+# "a Hungarian descriptive definition"; _INPUT_NAMING): the closed modifier list voided 7 correct
+# prompt-only namings of multilingual. The free words exclude function words, verbs and people /
+# institution nouns (_FREE_STOP: "the Russian writer wrote this sentence" names no language),
+# and are lower-case only (never a title).
+NAMING_VERSION = "ln-2026-10-31f"  # bump on any edit of NAMING / naming_forms
 RE_PREFIX = "re:"
 _P = r"""[,.:;!?()\]"'»“”*—–/-]"""  # noqa: RUF001
 # what may follow "in X" for it to name the language: punctuation, the end, or a verb /
@@ -458,6 +465,69 @@ _LANG_VERBS = (
 )
 
 
+# ln-2026-10-31f: the nouns that name the INPUT itself, and the words that may never stand between
+# the language name and such a noun
+_INPUT_NOUNS = (
+    r"prompts?|questions?|sentences?|texts?|riddles?|sequences?|antonyms?|words?|phrases?|"
+    r"definitions?|clues?|puzzles?|passages?"
+)
+_FREE_STOP = (
+    r"a|an|the|this|that|these|those|his|her|their|its|my|our|your|which|who|whom|whose|of|in|"
+    r"on|at|to|for|by|with|from|and|or|but|not|no|is|are|was|were|be|been|being|has|have|had|"
+    r"do|does|did|write|writes|wrote|written|say|says|said|ask|asks|asked|use|uses|used|means|"
+    r"meant|king|queen|writer|writers|author|authors|poet|poets|people|speaker|speakers|"
+    r"government|president|minister|army|team|club|man|woman|men|women|teacher|teachers|"
+    r"student|students|official|national|language|languages"
+)
+_FREE_WORD = rf"(?!(?:{_FREE_STOP})(?![a-z'\-]))[a-z][a-z'\-]*"
+_INPUT_AFTER = rf"\s+(?:{_FREE_WORD}\s+){{0,3}}(?i:{_INPUT_NOUNS})(?![^\W_])"
+
+
+def _input_named(
+    text: str, names: Sequence[str], case_sensitive: Collection[str], after: str
+) -> bool:
+    for n in names:
+        x = re.escape(n).replace("\\ ", r"\s+")
+        x = x if n in case_sensitive else f"(?i:{x})"
+        folded = "".join(
+            c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
+        )
+        if re.search(rf"(?<![^\W_]){x}{after}", folded):
+            return True
+    return False
+
+
+def input_naming(text: str, names: Sequence[str], case_sensitive: Collection[str] = ()) -> bool:
+    """``text`` names the INPUT as being in one of the English language ``names`` by the
+    ln-2026-10-31f form ("a Spanish fill-in prompt", "the French antonym of premier"):
+    the naming of the passage itself, which needs no other anchor."""
+    return _input_named(text, names, case_sensitive, _INPUT_AFTER)
+
+
+# round 3 review (PR #208): for multilingual_mt's ANCHORING (``family.anchored``), only a noun
+# that can be the passage itself, never one followed by a gloss: "<Lang> word / phrase / text"
+# names any word ("Kylmäinen is a Finnish word that translates to 'refrigerator'", "the Turkish
+# text of the famous Azerbaijani folk song"), so it is not about the item's object. The naming
+# FORM above (a language unit hit) is unchanged; "this text / sentence is in X" is
+# ``family._states_text_language``.
+_PASSAGE_NOUNS = r"prompts?|questions?|riddles?|puzzles?|clues?|passages?"
+_GLOSS_AFTER = (
+    r"\s+(?:for|meaning|means|meant|translat\w*|(?:that|which)\s+(?:means|meant|translat\w*))"
+    r"(?![^\W_])"
+)
+_PASSAGE_AFTER = (
+    rf"\s+(?:{_FREE_WORD}\s+){{0,3}}(?i:{_PASSAGE_NOUNS})(?![^\W_])(?!(?i:{_GLOSS_AFTER}))"
+)
+
+
+def input_passage_naming(
+    text: str, names: Sequence[str], case_sensitive: Collection[str] = ()
+) -> bool:
+    """:func:`input_naming` restricted to a passage noun with no gloss after it ("a Polish
+    riddle", "a Spanish arithmetic question"; never "a Finnish word that means ...")."""
+    return _input_named(text, names, case_sensitive, _PASSAGE_AFTER)
+
+
 def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
     """The naming-context forms of one English language name ``name``."""
     x = re.escape(name).replace("\\ ", r"\s+")
@@ -469,6 +539,8 @@ def _en_naming(name: str, case_sensitive: bool) -> tuple[str, ...]:
         rf"{RE_PREFIX}{b}{x}{e}{_EN_IN_STYLE}",
         rf"{RE_PREFIX}\(\s*{x}\s*\)",
         rf"{RE_PREFIX}{b}{x}{_EN_AFTER}",
+        # ln-2026-10-31f: the input named as being in X ("a Spanish counting sequence")
+        rf"{RE_PREFIX}{b}{x}{_INPUT_AFTER}",
         # X introducing a quoted / emphasised word: "the Finnish *hammaslääkäri*", "Greek 'λόγος'"
         rf"{RE_PREFIX}{b}{x}\s+[*_\"'\u00ab\u201c\u201e\u2018]",
         rf"{RE_PREFIX}{b}(?i:speaks?|speaking|spoken)\s+{x}{e}",
@@ -523,6 +595,20 @@ _TR_BARE = (
 )
 
 
+# ln-2026-10-31f: words that make the rest of an Arabic sentence about teaching or learning the
+# language (a topic, never a naming), checked up to the sentence's end
+_AR_TOPIC_WORDS = (
+    "المتعلم", "المتعلمين", "متعلم", "التعلم", "تعلم", "التعليم", "تعليم", "التعليمي",
+    "التعليمية", "المعلم", "المعلمين", "معلم", "الطلاب", "الطالب", "الطلبة", "المدرسة",
+    "المدارس", "الصف", "صفوف", "مهارة", "مهارات", "المنهج", "المناهج", "تدريس", "التدريس",
+)  # fmt: skip
+_AR_TOPIC_AFTER = (
+    r"(?![^.!?\n\u061f]*(?<![^\W_])(?:ل|ب|و|ف)?(?:"
+    + "|".join(re.escape(w) for w in _AR_TOPIC_WORDS)
+    + r")(?![^\W_]))"
+)
+
+
 def _rx(*patterns: str) -> tuple[str, ...]:
     return tuple(f"{RE_PREFIX}{p}" for p in patterns)
 
@@ -531,11 +617,15 @@ def _rx(*patterns: str) -> tuple[str, ...]:
 # word-bounded; ``re:`` forms as regular expressions, see the module docstring)
 NAMING_OWN: dict[str, tuple[str, ...]] = {
     "ar": (
-        "بالعربية",
-        "اللغة العربية",
-        "باللغة العربية",
-        "بالعربي",
-        "للغة العربية",
+        # ln-2026-10-31f: never in a sentence about teaching / learning the language (a topic:
+        # multilingual_multihop ar-suryavarman L60 "في اللغة العربية يشير البناء البنيوي إلى عملية
+        # بناء المعرفة اللغوية لدى المتعلم")
+        *_rx(
+            *(
+                rf"(?<![^\W_]){re.escape(f)}(?![^\W_]){_AR_TOPIC_AFTER}"
+                for f in ("بالعربية", "اللغة العربية", "باللغة العربية", "بالعربي", "للغة العربية")
+            )
+        ),
         # "the Arabic translation / word / term / name / text"
         *_rx(r"(?<![^\W_])(?:ال)?(?:ترجمة|كلمة|مصطلح|اسم|نص|لفظ)\s+(?:ال)?عربي(?:ة)?(?![^\W_])"),
     ),

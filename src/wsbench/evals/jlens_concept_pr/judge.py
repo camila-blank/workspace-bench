@@ -56,6 +56,7 @@ from wsbench.results import FamilyResult
 from . import score
 from .concept_pr import is_content_token
 from .prompts import (
+    CALL_VERSION,
     PROMPT_VERSION,
     STAGE_A_SCHEMA,
     STAGE_A_SYSTEM,
@@ -63,6 +64,7 @@ from .prompts import (
     STAGE_B_SYSTEM,
     STAGE_P_SCHEMA,
     STAGE_P_SYSTEM,
+    function_word_grounded,
     parse_stage_a,
     parse_stage_b,
     parse_stage_p,
@@ -341,7 +343,7 @@ def run(args: JudgeArgs) -> FamilyResult:
             calls["a"],
             schema=STAGE_A_SCHEMA,
             judge=a_judge,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=CALL_VERSION,
             preflight=pre.for_judge(a_judge),
             validate=lambda call, r: _valid(parse_stage_a, r),
             max_tokens=MAX_TOKENS,
@@ -384,7 +386,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                 b_all,
                 schema=STAGE_B_SCHEMA,
                 judge=args.judge,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=CALL_VERSION,
                 preflight=pre.for_judge(args.judge),
                 validate=lambda call, r: _valid(parse_stage_b, r, concepts[call.meta["cell"]]),
                 max_tokens=MAX_TOKENS,
@@ -428,7 +430,7 @@ def run(args: JudgeArgs) -> FamilyResult:
                 p_all,
                 schema=STAGE_P_SCHEMA,
                 judge=args.judge,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=CALL_VERSION,
                 preflight=pre.for_judge(args.judge),
                 validate=lambda call, r: _valid(
                     parse_stage_p, r, call.meta["concepts"], call.meta["tokens"]
@@ -466,7 +468,14 @@ def run(args: JudgeArgs) -> FamilyResult:
                     "key": call.key,
                     "chunk": call.meta["chunk"],
                     "offset": call.meta["offset"],
-                    "support": parse_stage_p(r, call.meta["concepts"], call.meta["tokens"]),
+                    "support": [
+                        0.0 if fw else g
+                        for g, fw in zip(
+                            parse_stage_p(r, call.meta["concepts"], call.meta["tokens"]),
+                            function_word_grounded(r, call.meta["concepts"]),
+                            strict=True,
+                        )
+                    ],
                 }
             )
     reject_rate = {

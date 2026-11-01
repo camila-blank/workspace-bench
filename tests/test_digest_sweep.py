@@ -72,7 +72,10 @@ def test_family_default_fallback_becomes_none_for_non_claude(tmp_path):
     assert digest.settings(a, fam).fallback == "none"
     assert digest.config(a, "prose", family=fam)["summarizer"]["fallback"] == "none"
     # a Claude digest keeps the family's refusal rescue
-    assert digest.settings(_args(tmp_path), fam).fallback == "default+claude-sonnet-5"
+    assert (
+        digest.settings(_args(tmp_path), fam).fallback
+        == digest.FAMILY_DEFAULTS[fam]["summ_fallback"]
+    )
 
 
 def test_summ_context(tmp_path):

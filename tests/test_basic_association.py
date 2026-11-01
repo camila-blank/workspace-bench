@@ -117,8 +117,8 @@ def test_registered_spec(real_families):
 
     assert SPEC.group == "basic" and SPEC.metric == "pass_rate"
     assert SPEC.judge.model == DEFAULT_JUDGE
-    assert SPEC.judge.prompt_version == ASSOC_PV == "assoc-mc-2026-10-31-r3"
-    assert SPEC.calls_per_arm == "≈ 200" and str(SPEC.bank).endswith("items_v2.json")
+    assert SPEC.judge.prompt_version == ASSOC_PV == "assoc-mc-2026-11-01-v3"
+    assert SPEC.calls_per_arm == "≈ 200" and str(SPEC.bank).endswith("items_v3.json")
 
 
 def test_readme_carries_the_verbatim_prompt():

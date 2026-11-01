@@ -234,6 +234,23 @@ def decided_outcomes(rows: Sequence[Mapping[str, Any]], n_items: int | None = No
     return out
 
 
+# families whose headline unit is a pair of items (``<pair_id>-ab`` / ``-ba``): their item
+# outcomes are folded to pairs before a shared-id comparison (role_bound ``pair-v1``, review of
+# #202 round 5), so the bracketed rates read the same unit as the headline
+DIRECTION_PAIR_FAMILIES = frozenset({"role_bound_association"})
+
+
+def fold_direction_pairs(outcomes: Mapping[str, bool]) -> dict[str, bool]:
+    """``{pair_id: both directions pass}`` over the pairs whose ``ab`` AND ``ba`` items are both
+    decided; a pair with one direction undecided or absent is left out (undecided)."""
+    dirs: dict[str, dict[str, bool]] = {}
+    for i, ok in outcomes.items():
+        pid, _sep, d = i.rpartition("-")
+        if pid and d in ("ab", "ba"):
+            dirs.setdefault(pid, {})[d] = ok
+    return {pid: dv["ab"] and dv["ba"] for pid, dv in dirs.items() if len(dv) == 2}
+
+
 def on_shared_ids(a: Mapping[str, bool], b: Mapping[str, bool]) -> tuple[int, float, float] | None:
     """``(n, rate_a, rate_b)`` over the ids decided in both (audit F3: lens vs floor, main vs
     alt on the same item set); ``None`` when no id is shared."""
@@ -274,7 +291,10 @@ def shared_floor_text(r: FamilyResult, entry: Mapping[str, Any] | None, text: st
     the floor (the frozen entry's ``decided``), and the row's own rate on them."""
     if not entry or not isinstance(entry.get("decided"), dict):
         return text
-    got = on_shared_ids(entry["decided"], decided_outcomes(r.rows, r.n_items))
+    floor_ids, row_ids = entry["decided"], decided_outcomes(r.rows, r.n_items)
+    if r.family in DIRECTION_PAIR_FAMILIES:
+        floor_ids, row_ids = fold_direction_pairs(floor_ids), fold_direction_pairs(row_ids)
+    got = on_shared_ids(floor_ids, row_ids)
     if got is None:
         return text
     n, floor, lens = got
