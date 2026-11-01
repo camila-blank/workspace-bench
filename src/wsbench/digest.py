@@ -10,11 +10,12 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from wsbench import llm
 from wsbench import mc as _mc
-from wsbench.cache import Cache, fingerprint
+from wsbench.cache import Cache, SharedLog, fingerprint
 from wsbench.family import _fold, fail
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend, schema_block
@@ -52,6 +53,11 @@ OVERFLOWS = ("stride", "hierarchical")
 # joint: its five-number budget is deliberately fixed (plan 0022 Part B).
 LAYER_MODES = ("union", "joint")
 DEFAULT_LAYER_MODE = "union"
+# ``summ_store=<dir>``: the per-layer digest store shared by every layer config of one readouts
+# file (a ``layers=[L]`` run and any multi-layer union run of the same family). Each (item, layer)
+# digest is asked ONCE across those configs (``SharedDigests``); it changes no request, so it is
+# not in the instrument string. Hierarchical overflow only (the stride ablation ignores it).
+STORE_OPT = "summ_store"
 DEFAULT_OVERFLOW = "hierarchical"  # plan 0032 §2.2.1: never drops a readout; stride = ablation
 BULLET_MARK = " \u205e "  # " ⁞ ": joins the top-level bullets of one free-text sample
 DEFAULT_RENDER = "extractive"
@@ -527,6 +533,7 @@ KNOWN_KEYS = frozenset(
         "summ_lang",
         "summ_layers",
         "summ_showkey",
+        STORE_OPT,
     }
 )
 
@@ -627,10 +634,14 @@ def config(args: JudgeArgs, source_kind: Kind | None, family: str | None = None)
     summ = settings(args, family).to_json()
     summ["concurrency"] = summ["concurrency"] or args.concurrency
     summ["timeout"] = summ["timeout"] or DIGEST_TIMEOUT
+    store = args.extra.get(STORE_OPT)
     return {
         "aggregate": "summary",
         "summarizer": summ,
         "source_kind": source_kind,
+        # provenance only, kept out of ``summarizer`` (the instrument identity floors and
+        # alt-judge rows match on): a shared store changes no request
+        **({"digest_store": store} if store else {}),
     }
 
 
@@ -1383,6 +1394,79 @@ def _cached(cache: Cache, key: str, fp: str) -> dict | None:
     return row if row is not None and row.get("result") is not None else None
 
 
+# the sub-key suffixes of one digest stem (``_collapse_hierarchical``): chunks, final, level
+_STEM_SUFFIX = re.compile(r"\|(?:h\d+\|(?:c\d+of\d+|final)|level)$")
+
+
+class SharedDigests:
+    """The digest cache of one ``collapse`` under ``summ_store=<dir>``: the run's own cache plus
+    the per-layer store ``<dir>/<family>/L<layer>.jsonl`` (:class:`wsbench.cache.SharedLog`)
+    that every layer config of the same readouts shares, so an (item, layer) digest a
+    ``layers=[L]`` run asked is reused by a union run (and the other way round).
+
+    ``route`` maps a run-local digest stem (``digest:<id>|<tag>``) whose bundle is exactly ONE
+    layer's cells to ``(layer, store stem)``, the store stem always ``digest:<id>|<layer>``; every
+    sub-key of a routed stem (``|h<k>|c<i>of<n>``, ``|h<k>|final``, ``|level``,
+    ``ntok:<id>|<tag>``) is routed with it. Unrouted keys (a joint multi-layer bundle) never reach
+    the store. The store keys the SAME request fingerprint the run computes (prompt version,
+    model, effort, budget, rare tier, numbers, cap, lang, the item's task note, the bundle text,
+    the salt) extended with ``salt`` (the refusal-fallback setting, which the digest fingerprint
+    does not key), so a store row is served only for a byte-identical request under the same
+    fallback. Every write goes to both; a store row read on a local miss (or newer than the
+    local row) is copied into the run's own cache, so an out dir stays self-contained."""
+
+    def __init__(
+        self, local: Cache, root: Path, route: Mapping[str, tuple[int, str]], salt: str
+    ) -> None:
+        self.local = local
+        self.root = Path(root)
+        self.route = dict(route)
+        self.salt = salt
+        self._logs: dict[int, SharedLog] = {}
+        self.hits = 0  # store rows adopted into the run's cache
+
+    def _store_key(self, key: str) -> tuple[SharedLog, str] | None:
+        if key.startswith("ntok:"):
+            hit = self.route.get("digest:" + key[len("ntok:") :])
+            if hit is None:
+                return None
+            layer, stem = hit
+            skey = "ntok:" + stem[len("digest:") :]
+        else:
+            m = _STEM_SUFFIX.search(key)
+            hit = self.route.get(key[: m.start()] if m else key)
+            if hit is None:
+                return None
+            layer, stem = hit
+            skey = stem + (key[m.start() :] if m else "")
+        if layer not in self._logs:
+            self._logs[layer] = SharedLog(self.root / f"L{layer}.jsonl")
+        return self._logs[layer], skey
+
+    def _sfp(self, fp: str) -> str:
+        return fingerprint("store", fp, self.salt)
+
+    def get(self, key: str, fp: str, *, include_failed: bool = False) -> dict[str, Any] | None:
+        row = self.local.get(key, fp, include_failed=include_failed)
+        sk = self._store_key(key)
+        if sk is None:
+            return row
+        log, skey = sk
+        srow = log.get(skey, self._sfp(fp), include_failed=include_failed)
+        if srow is None or (row is not None and row.get("ts", 0) >= srow.get("ts", 0)):
+            return row
+        self.local.put(key, fp, {k: v for k, v in srow.items() if k not in ("key", "fp", "ts")})
+        self.hits += srow.get("result") is not None
+        return self.local.get(key, fp, include_failed=True)
+
+    def put(self, key: str, fp: str, payload: dict[str, Any]) -> None:
+        self.local.put(key, fp, payload)
+        sk = self._store_key(key)
+        if sk is not None:
+            log, skey = sk
+            log.put(skey, self._sfp(fp), payload)
+
+
 @dataclass
 class Collapse:
     """The synthetic Cells of one family's summary-mode run, keyed by item id."""
@@ -2058,7 +2142,7 @@ def _collapse_layers(
     *,
     args: JudgeArgs,
     s: Settings,
-    cache: Cache,
+    cache: Cache | SharedDigests,
     spend: Spend,
     preflight: Callable[[], None] | None,
     notes: Mapping[str, str],
@@ -2079,6 +2163,8 @@ def _collapse_layers(
     owner: dict[str, str] = {}
     layer_of: dict[str, int | None] = {}
     stems: dict[str, str] = {}
+    # summ_store: every stem whose bundle is ONE layer's cells -> (layer, its layers=[L] stem)
+    route: dict[str, tuple[int, str]] = {}
     for item_id, cells in cells_by_item.items():
         if not cells:
             raise ValueError(f"{name}: collapse() got no cells for {item_id}")
@@ -2090,9 +2176,16 @@ def _collapse_layers(
                 pid = f"{item_id}{_PID}{layer}"
                 parts[pid], owner[pid], layer_of[pid] = by_layer[layer], item_id, layer
                 stems[pid] = f"digest:{item_id}|{layer}"
+                route[stems[pid]] = (layer, stems[pid])
         else:
             parts[item_id], owner[item_id], layer_of[item_id] = list(cells), item_id, None
             stems[item_id] = f"digest:{item_id}|{layers_tag}"
+            if len(by_layer) == 1:  # the run-local key keeps its tag; the store keys the layer
+                (layer,) = by_layer
+                route[stems[item_id]] = (layer, f"digest:{item_id}|{layer}")
+    store = args.extra.get(STORE_OPT)
+    if store:
+        cache = SharedDigests(cache, Path(store) / name, route, salt=s.fallback)
     pnotes = {pid: notes[owner[pid]] for pid in parts}
     salt = f"spare{spare}" if spare else ""
     kw: dict[str, Any] = {
@@ -2123,6 +2216,8 @@ def _collapse_layers(
                 part.grounded[pid] = ranked
     if s.numbers == 0 and not args.dry_run:
         _reask_collapsed(name, part, parts, salt=salt, kw=kw)
+    if isinstance(cache, SharedDigests):
+        part.diag["n_digest_store_hits"] = cache.hits
     return _merge_parts(part, parts, owner, layer_of, cells_by_item, s, pos)
 
 
@@ -2480,7 +2575,7 @@ def _collapse_hierarchical(
     *,
     args: JudgeArgs,
     s: Settings,
-    cache: Cache,
+    cache: Cache | SharedDigests,
     spend: Spend,
     preflight: Callable[[], None] | None,
     notes: Mapping[str, str],
