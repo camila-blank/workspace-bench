@@ -244,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         todo = set(lists)
         for rnd in range(ROUNDS):
             items = lg.build_family(family)
-            topics = lg.load_topics(family)
+            topics = lg.load_list_topics(family)
             new_items = []
             targets: dict[str, list[int]] = {}
             for it in items:

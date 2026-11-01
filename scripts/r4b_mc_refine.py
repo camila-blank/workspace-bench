@@ -570,7 +570,7 @@ def assemble(
     family: str, lists: dict[tuple[str, str], dict[str, Any]], choice: dict, bank: dict
 ) -> list[lg.Item]:
     items = lg.build_family(family)
-    topics = lg.load_topics(family) if family not in CONCEPT_FAMILIES else {}
+    topics = lg.load_list_topics(family) if family not in CONCEPT_FAMILIES else {}
     out = []
     for it in items:
         roles = list(it.meta.get("roles") or [])
