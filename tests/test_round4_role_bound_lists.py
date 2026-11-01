@@ -97,7 +97,7 @@ def test_judge_and_lucky_guessing_use_the_v3_lists():
     items = {it.id: it for it in lg.build_family("role_bound_association")}
     assert items[AB].golds == list(blocks[AB].golds)
     assert "bouncer" in json.dumps(items[AB].lists)  # the v3 police-thief distractors
-    assert prompts.PROMPT_VERSION == "oa-v3"
+    assert prompts.PROMPT_VERSION == "oa-v3.1"
 
 
 def test_an_unfrozen_pair_keeps_the_v2_block():
