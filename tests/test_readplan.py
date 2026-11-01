@@ -335,19 +335,23 @@ def test_association_reads_summarize_suffix():
 
 
 def test_association_lite_rule(monkeypatch):
-    # round 3 (gpu R4d): the frozen support-share choice is the assistant header's <|im_start|>
+    # Camila r2 (2026-11-01, "Make lite subset all positions"): association lite reads every one
+    # of the 19 full sites (the summary request + chat tail) at every layer, i.e. lite == full
     for s in readplan.plan("association"):
         assert s.lite_positions == readplan.frozen_lite_rule("association")
-        assert s.lite_positions == {"kind": "offset_from_end", "k": 7} and s.lite_layers is None
-    # it is one of the 19 full sites: the 7th from the end of the real Qwen tail is <|im_start|>
+        assert s.lite_positions == {"kind": "same"} and s.lite_layers is None
     toks = ["Os", "Ġtambores", ".", "ĊĊ", "Sum", "mar", "ize", "Ġthe", "Ġpreceding", "Ġstory",
             "Ġin", "Ġone", "Ġsentence", ".", "<|im_end|>", "Ċ", "<|im_start|>", "assistant", "Ċ",
             "<think>", "ĊĊ", "</think>", "ĊĊ"]  # fmt: skip
     full = readplan.resolve(readplan.plan("association")[0].positions, toks)
+    assert readplan.lite_select(full, readplan.frozen_lite_rule("association")) == full
+    # the superseded round-3 single site (k=7, the <|im_start|>) would keep 1 of the 19 sites
+    assert readplan.lite_select(full, {"kind": "offset_from_end", "k": 7}) == [full[-7]]
     assert toks[full[-7]] == "<|im_start|>"
-    # an adapted bank (another chat template) without its own lite source reads the final token
-    assert readplan._adapted_offset({"kind": "offset_from_end", "k": 7}, {}) is False
+    # an all-positions rule is not an offset rule: an adapted bank reads every full site too
     monkeypatch.setenv(readplan.BANK_ROOT_ENV, "/nonexistent")
+    assert readplan._adapted_offset({"kind": "same"}, {}) is False
+    # the adapted-bank guard itself is unchanged for the offset siblings
     assert readplan._adapted_offset({"kind": "offset_from_end", "k": 7}, {}) is True
     assert not readplan._adapted_offset(
         {"kind": "offset_from_end", "k": 7}, {"readout": {"lite": "x"}}
