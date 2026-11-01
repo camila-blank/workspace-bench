@@ -120,7 +120,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   Opus 5.5 refuses are re-asked on Sonnet 5.5 (`po-opus-v1+sonnet55-fallback`, 2026-11-01); the
   committed floors carry the frozen Sonnet 5 protocol (`po.PO_FALLBACK_SONNET5`), still read and
   labelled (`po.PO_FALLBACKS`), never written; `prompt_only_opus.fallback_rows` ignores answers
-  of any other fallback model in a resumed dir.
+  of any other fallback model in a resumed dir. A summary floor matches a row regardless of the
+  digest's client-side refusal model (`po._floor_match_key` keeps only the fallback mode), so the
+  Sonnet 5 floors still draw beside Sonnet 5.5 rows.
   `text_inversion` builds the anti-text-inversion subset (`evals/baselines/anti_text_inversion.json`,
   plan 0019 panel gate, which replaced plan 0014's Opus-only gate): Qwen3.6-27B + the frontier
   group (Claude slot opus/sonnet, `openai/gpt-6-astra`, `google/gemini-4-argon`) x 3 draws, each
