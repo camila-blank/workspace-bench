@@ -107,6 +107,25 @@ def test_the_one_pick_still_counts_beside_the_list(tmp_path, monkeypatch):
     assert res.rows[0]["pick"] == "gold"
 
 
+def test_list_requote_of_the_one_picks_option_is_kept(tmp_path, monkeypatch):
+    """The one pick names the gold with a quote that is in no readout; the list names the gold
+    again with the verbatim line: the list's candidate is gated on its own."""
+    it, shown, gold, _inv = _item_with_twin()
+    res, _ = _run(
+        tmp_path,
+        monkeypatch,
+        it["id"],
+        one_pick=lambda u: (
+            {"choice": gold, "quote": "a paraphrase in no readout"}
+            if GOLDLINE in u
+            else {"choice": len(shown), "quote": ""}
+        ),
+        cands=lambda u: [{"choice": gold, "quote": GOLDLINE}] if GOLDLINE in u else [],
+        rejudge=lambda u: gold,
+    )
+    assert res.rows[0]["pick"] == "gold" and res.rows[0]["quote"] == GOLDLINE
+
+
 # ---- 1. the too-lenient shapes still fail
 
 
