@@ -21,6 +21,7 @@ from wsbench.evals.association import prompts as ap
 
 REPO = Path(__file__).resolve().parents[1]
 V1 = REPO / "evals/association/items.json"
+V2 = REPO / "evals/association/items_v2.json"
 V1_SHA = "e8b1307bd24b41c01c9d7eb27031d87adaa34a717d854ca6d5a153d6b099764d"
 RETIRED = {"nasa", "cia", "history-h", "love-h", "death-h", "game-h", "de-konig"}
 GRID = readplan.GRID
@@ -31,6 +32,14 @@ FILL = "- a short story is being summarized\n- one sentence"
 @pytest.fixture(autouse=True)
 def _registered(real_families):
     return real_families
+
+
+@pytest.fixture(autouse=True)
+def _bank_v2(monkeypatch):
+    """Round 4 registers bank v3 (re-chosen distractors, MC leakage standard); this module's
+    tests were written against bank v2's option lists and keep reading them
+    (``$WSB_BANK_FILE_ASSOCIATION``). Bank v3 is tested in ``test_association_v3.py``."""
+    monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + "ASSOCIATION", str(V2))
 
 
 def items() -> dict[str, dict]:
@@ -598,7 +607,9 @@ def test_prompt_only_rows_take_the_same_instrument(tmp_path):
 # ---------------------------------------------------------------- C6: lite
 
 
-def test_lite_reads_one_site(tmp_path):
+def test_lite_reads_every_full_site(tmp_path):
+    # Camila r2 (2026-11-01): association lite = ALL 19 positions of the summary request, the
+    # same cells as reads=full (no longer the round-3 single site k=7)
     path = write_cells(tmp_path / "r.jsonl", {(BD, 44, LAST): "- a birthday cake"}, [BD])
     r, fake = judge_run(
         tmp_path,
@@ -608,15 +619,18 @@ def test_lite_reads_one_site(tmp_path):
         ["cake"],
         extra={"reads": "lite"},
     )
-    # audit F1: one digest per read layer; together they carry every cell
     bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     groups = set(re.findall(r"^\[L(\d+) pos (\d+)\]$", bundle, flags=re.M))
-    # round 3: the frozen lite site is offset_from_end k=7 (the <|im_start|>), 6 before LAST
-    assert groups == {(str(L), str(POS[-7])) for L in GRID}
+    assert groups == {(str(L), str(p)) for L in GRID for p in POS}
     assert r.config["prompt_version"].endswith("+reads-lite")
-    assert json.loads(r.config["lite_rule"]) == [
-        {"positions": {"kind": "offset_from_end", "k": 7}, "layers": None}
-    ]
+    assert json.loads(r.config["lite_rule"]) == [{"positions": {"kind": "same"}, "layers": None}]
+    assert r.value == 1.0  # the gold hit at the final site is still read under lite
+    # the full run reads the identical cells
+    _rf, ffake = judge_run(
+        tmp_path / "f", path, [BD], lambda s, u, sc: answer(u, "birthday", "birthday"), ["cake"]
+    )
+    fbundle = "\n".join(u for n, _s, u in ffake.calls if n == "digest")
+    assert set(re.findall(r"^\[L(\d+) pos (\d+)\]$", fbundle, flags=re.M)) == groups
 
 
 def _lite_table_module():
@@ -669,7 +683,7 @@ def test_lite_site_table_uses_support_share(tmp_path):
 def test_registered_spec_is_summary_family():
     assert SPEC.name not in digest.NATIVE_ONLY and not SPEC.targets_judge
     assert SPEC.flat_types == () and SPEC.multi_select is False
-    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-10-31-r3"
+    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-11-01-v3"
 
 
 # ---------------------------------------------------------------- round 3: quote gate 3b / 3c
