@@ -147,7 +147,7 @@ def test_rendered_prompt_matches_golden_v3():
 
 
 def test_rubric_v3_text():
-    assert prompts.PROMPT_VERSION == "um-v3.2"
+    assert prompts.PROMPT_VERSION == "um-v3.3"
     native, summ = _render_both()
     for text in (native, summ, prompts.UM_ATTRIBUTE_SYSTEM):
         low = text.lower()
@@ -282,7 +282,7 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     assert set(r) == {
         "key", "id", "subfamily", "attr_class", "layer", "pos", "sample_idx", "options",
         "gold_position", "choice", "basis", "evidence", "rationale", "pick", "pick_value",
-        "choice_invalid", "pick_raw", "gate",
+        "choice_invalid", "pick_raw", "gate", "basis_raw", "stem_echo",
     }  # fmt: skip
     assert r["sample_idx"] == 2 and r["pick"] == "cannot_tell" and r["choice_invalid"] is False
     assert r["pick_value"] == mc.CANNOT and r["basis"] == "absent" and r["evidence"] == "ev"
@@ -315,7 +315,7 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     # native any-layer MC columns (critique item 18)
     assert e["n_items_gold_any_layer"] == 2 and e["n_items_distractor_any_layer"] == 1
     assert res.complete is False and res.pinned_instrument is True
-    assert res.config["prompt_version"] == "um-v3.2"
+    assert res.config["prompt_version"] == "um-v3.3"
     assert res.config["items"] == [A, B, C]
     judge_calls = [u for _s, u in fake.calls if not u.startswith("Return")]
     assert len(judge_calls) == 7  # k samples -> k calls; blank samples make no call

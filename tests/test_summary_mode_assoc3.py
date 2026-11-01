@@ -114,7 +114,9 @@ def test_conjunctive_one_call_per_item(tmp_path, monkeypatch):
     assert rows["q01_b"]["correct"] is False and rows["q01_b"]["quote_ok"] is False
     assert rows["q01_a"]["summary_state"] == "summarized" and rows["q01_a"]["summary_evidence"]
     assert r.value == 0.5 and r.config["aggregate"] == "summary"
-    assert r.config["prompt_version"] == conj_prompts.PROMPT_VERSION + SUFFIX
+    assert r.config["prompt_version"] == (
+        conj_prompts.PROMPT_VERSION + conj_prompts.RULE_VERSION + SUFFIX
+    )
     assert r.extras["summary"]["n_items_summarized"] == 2
     FakeLLM.install(monkeypatch, _generic)
     n = CONJ.run(_n(CONJ, CONJ_EX, tmp_path / "n", conj_prompts.PROMPT_VERSION))

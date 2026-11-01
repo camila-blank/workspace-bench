@@ -778,22 +778,6 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ] + _nocot_rows()
-    if family in ("medical_diagnosis", "medical_diagnosis_alt"):
-        _h, items = _bank(family)
-        return [
-            ReadSpec(
-                family,
-                it["id"],
-                "chat",
-                {"kind": "all_from_end"},
-                GRID,
-                text=it["prompt"],
-                note="every prompt position of the chat render as a negative offset (reply "
-                "start, the last prompt token, is -1); never a response token",
-                lite_positions=FINAL,
-            )
-            for it in items
-        ]
     if family == "model_specific_directed_modulation":
         _h, items = _bank(family)
         return [
@@ -874,7 +858,10 @@ def _plan(family: str) -> list[ReadSpec]:
         # v2 scene is `prompt`; the siblings' is `stimulus`)
         header, items = _bank(family)
         lite = frozen_lite_rule(family)
-        if family == "role_bound_association" and _adapted_offset(lite, header):
+        # role_bound plan 0055 C3.3, applied to every sibling with an offset rule (association's
+        # round-3 k=7): the offset counts Qwen chat-tail tokens, so an adapted bank without its
+        # own lite source reads the final token
+        if _adapted_offset(lite, header or {}):
             lite = dict(FINAL)
         return [
             ReadSpec(

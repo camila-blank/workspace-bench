@@ -17,7 +17,7 @@ WSB = AGAM / "workspace-bench"
 sys.path.insert(0, str(WSB / "src"))
 from wsbench.viewer.build import GROUPS, _family_view, _header, _items, _read_gates  # noqa: E402
 from wsbench.viewer.build import view_item as view_item_full  # noqa: E402,F401
-from wsbench.registry import REMOVED_FAMILIES  # noqa: E402
+from wsbench.registry import REMOVED_FAMILIES, RETIRED_FAMILIES  # noqa: E402
 
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_FILE = CACHE_DIR / "index.pkl"
@@ -833,8 +833,10 @@ def build_index(force: bool = False) -> dict:
         cells: dict[str, dict] = {}
         if r.get("summary"):
             fams, head = _summary_scores(r["summary"])
-            # a removed family (registry.REMOVED_FAMILIES) is never shown, also in old runs
-            scores.update({k: v for k, v in fams.items() if k not in REMOVED_FAMILIES})
+            # a removed family (registry.REMOVED_FAMILIES) is never shown, also in old runs; nor
+            # is a retired one (RETIRED_FAMILIES, plan 0058) while it stays retired
+            hidden = REMOVED_FAMILIES.keys() | RETIRED_FAMILIES.keys()
+            scores.update({k: v for k, v in fams.items() if k not in hidden})
             r["head"] = head
             if r.get("headline") is None:
                 r["headline"] = head.get("headline_23") or head.get("headline")

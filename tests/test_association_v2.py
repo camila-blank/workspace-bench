@@ -360,10 +360,23 @@ def test_cjk_quote_needs_listed_form(tmp_path):
         tmp_path, path, [BD], lambda s, u, sc: answer(u, "birthday", "生日"), ["生日"]
     )
     assert r.rows[0]["outcome"] == "gold_listed_form" and fake.n("quote_mc") == 0
+    # round 3: no sample of this readout names a listed form, so step 3c cannot rescue it
+    bare = write_cells(
+        tmp_path / "bare.jsonl",
+        {(BD, 44, LAST): "- 庆祝活动", (BD, 48, LAST): "- 庆祝活动吧"},
+        [BD],
+    )
     r, fake = judge_run(
-        tmp_path / "b", path, [BD], lambda s, u, sc: answer(u, "birthday", "庆祝"), ["庆祝"]
+        tmp_path / "b", bare, [BD], lambda s, u, sc: answer(u, "birthday", "庆祝"), ["庆祝"]
     )
     assert r.rows[0]["outcome"] == "gold_unlisted_script" and r.rows[0]["pass"] is False
+    assert fake.n("quote_mc") == 0
+    # round 3 step 3c: the same unlisted quote verifies when ANOTHER sample names the gold
+    # (生日快乐) and no other shown option
+    r, fake = judge_run(
+        tmp_path / "c", path, [BD], lambda s, u, sc: answer(u, "birthday", "庆祝"), ["庆祝"]
+    )
+    assert r.rows[0]["outcome"] == "gold_listed_evidence" and r.rows[0]["pass"] is True
     assert fake.n("quote_mc") == 0
 
 
@@ -598,10 +611,11 @@ def test_lite_reads_one_site(tmp_path):
     # audit F1: one digest per read layer; together they carry every cell
     bundle = "\n".join(u for n, _s, u in fake.calls if n == "digest")
     groups = set(re.findall(r"^\[L(\d+) pos (\d+)\]$", bundle, flags=re.M))
-    assert groups == {(str(L), str(LAST)) for L in GRID}
+    # round 3: the frozen lite site is offset_from_end k=7 (the <|im_start|>), 6 before LAST
+    assert groups == {(str(L), str(POS[-7])) for L in GRID}
     assert r.config["prompt_version"].endswith("+reads-lite")
     assert json.loads(r.config["lite_rule"]) == [
-        {"positions": {"kind": "final_token"}, "layers": None}
+        {"positions": {"kind": "offset_from_end", "k": 7}, "layers": None}
     ]
 
 
@@ -655,4 +669,233 @@ def test_lite_site_table_uses_support_share(tmp_path):
 def test_registered_spec_is_summary_family():
     assert SPEC.name not in digest.NATIVE_ONLY and not SPEC.targets_judge
     assert SPEC.flat_types == () and SPEC.multi_select is False
-    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-10-31"
+    assert dataclasses.asdict(SPEC.judge)["prompt_version"] == "assoc-mc-2026-10-31-r3"
+
+
+# ---------------------------------------------------------------- round 3: quote gate 3b / 3c
+
+
+def _gate(iid: str, quote: str, texts: list[str]) -> str:
+    it = items()[iid]
+    shown, gp = aj.build_options(it)
+    others = [o for i, o in enumerate(shown[:-1], start=1) if i != gp]
+    lines = [digest.Line(t, None, "[L32 pos 40]", 32, 40) for t in texts]
+    return aj.gate_gold(
+        quote, lines, forms=aj.gold_forms(it), others=others, sampling="bullet4", rivals=[]
+    )
+
+
+PRISON = (
+    '304 Prison / The Detention Center** The phrase "the letters were strictly controlled" '
+    "reveals that the people living in these accommodation blocks were **prisoners**. In "
+    "George Orwell's *1984* this matches."
+)
+
+
+def test_r3_quote_in_a_sample_that_names_the_gold_verifies():
+    """Too strict before (prison@L32, auction@L28, troy@L36): the judge quoted the clause next
+    to the gold's name, and the quote-only re-judge voided it."""
+    q = "reveals that the people living in these accommodation blocks were **prisoners**"
+    assert _gate("b3-as-prison", q, [PRISON]) == "gold_listed_line"
+    troy = (
+        "301's siege or attack on Troy - a famous strategic paradox. The Greeks built a giant "
+        "wooden horse as a gift. To avoid escaping Troy's walls they waited."
+    )
+    q = "The Greeks built a giant wooden horse as a gift."
+    assert _gate("b3-as-troy", q, [troy]) == "gold_listed_line"
+
+
+def test_r3_line_rule_stays_strict():
+    """The lenient shapes still go to the re-judge: the gold's sentence also names a shown
+    option; the gold only farther away in a long sample; the gold only in a denial."""
+    q = "the people living in these blocks were **prisoners**"
+    both = (
+        "It is a prison or a school for the poor. The people living in these blocks were "
+        "**prisoners**."
+    )
+    assert _gate("b3-as-prison", q, [both]) == "needs_rejudge"
+    far = (
+        "Grey walls and bells. The people living in these blocks were **prisoners**. Meals at "
+        "six. Lights out at nine. Some call it a prison, others a school."
+    )
+    assert _gate("b3-as-prison", q, [far]) == "needs_rejudge"
+    deny = "The people living in these blocks were **prisoners**, though there is no prison here."
+    assert _gate("b3-as-prison", q, [deny]) == "needs_rejudge"
+
+
+def test_r3_other_sample_naming_only_the_gold_verifies():
+    """bf-library@L24: the 'librarian' quote verifies because another sample names the
+    library and no other option."""
+    q = "She whispered her request to the librarian and quietly descended."
+    texts = [
+        "2. She whispered her request to the librarian and quietly descended.** (smooth)",
+        "2. She whispered her plea in the empty library and hurriedly stamped the book.",
+    ]
+    assert _gate("bf-library", q, texts) == "gold_listed_evidence"
+    # too lenient: the only other gold sentence also names shown options (museum, bookstore)
+    texts[1] = "Books went to the library, the museum, or the campus bookstore."
+    assert _gate("bf-library", q, texts) == "needs_rejudge"
+
+
+def test_r3_shape_echo_is_not_the_pentagon():
+    """The audit's pentagon fails stay fails: a lower-case shape word or a hyphen compound is
+    not the (capitalised) Pentagon building; the capitalised name is."""
+    q = "inspecting all five sides of this pentagonal building from the inside"
+    shape = [
+        "inspecting all five sides of this pentagonal building from the inside.",
+        "This suggests a building with five sides (a pentagon), yet only one entrance.",
+        "a 5-sided building (a pentagon-shaped or similarly complex structure).",
+    ]
+    assert _gate("pentagon", q, shape) == "needs_rejudge"
+    shape.append("He was a staffer at the Pentagon, lost in its rings.")
+    assert _gate("pentagon", q, shape) == "gold_listed_evidence"
+
+
+def test_r3_rare_option_pins(tmp_path):
+    """lie@L24: the one raw 'he was lying' sample the digest dropped is pinned with its real
+    count; an unnamed distractor is pinned by the same rule; a named option gets no pin."""
+    lie = "lie"
+    hits = {
+        (lie, 44, LAST): "- her boyfriend confessed a shocking truth",
+        (lie, 36, LAST - 1): "- his hesitation revealed he was lying",
+        (lie, 40, LAST - 2): "- she kept a secret from him",
+    }
+    path = write_cells(tmp_path / "r.jsonl", hits, [lie])
+    r, fake = judge_run(
+        tmp_path, path, [lie], lambda s, u, sc: answer(u, "lie", "he was lying"), ["truth"]
+    )
+    (user,) = mc_users(fake)
+    assert "[1 sample] - his hesitation revealed he was lying" in user
+    assert "[1 sample] - she kept a secret from him" in user  # a distractor, same rule
+    assert user.count("confessed a shocking truth") == 1  # named already: not pinned again
+    assert r.rows[0]["outcome"] == "gold_listed_form" and r.rows[0]["pass"] is True
+    # an item whose digest already names every option that the raw samples name: no pins
+    r, fake = judge_run(
+        tmp_path / "b",
+        path,
+        [lie],
+        lambda s, u, sc: answer(u, "lie", "he was lying"),
+        ["truth", "lying", "secret"],
+    )
+    (user2,) = mc_users(fake)
+    assert user2.count("he was lying") == 1 and user2.count("kept a secret") == 1
+
+
+def test_r3_description_outnamed_by_a_distractor_word():
+    """film-h@L24 (too lenient): "a cinematic atmosphere" credited as film while 4 raw samples
+    say "novel" and none says film. b3-as-weightlifting@L24 (must stay a pass): one stray
+    "wrestling room" sample does not out-name "barbells ... powerlifting"."""
+    concepts = aj.bank_concepts(list(items().values()))
+    it = items()["film-h"]
+    shown, gp = aj.build_options(it)
+    raw = [digest.Line(t) for t in ["The novel *The Tempest* in one sentence."] * 4]
+    raw.append(digest.Line("creating a theatrical or cinematic atmosphere"))
+    counts = aj.raw_counts(it, shown, gp, raw, concepts)
+    assert counts[gp - 1] == 0 and max(counts) == 4 and aj.outnamed(counts, gp)
+    it = items()["b3-as-weightlifting"]
+    shown, gp = aj.build_options(it)
+    raw = [
+        digest.Line("Charlie entered the wrestling room."),
+        digest.Line("barbells, or weights in a powerlifting competition"),
+    ]
+    counts = aj.raw_counts(it, shown, gp, raw, concepts)
+    assert sum(counts) == 1 and not aj.outnamed(counts, gp)
+    # the gold named as often as the distractor: the description credit stands
+    tie = [0] * 8
+    tie[gp - 1] = tie[gp % 8] = 2
+    assert not aj.outnamed(tie, gp)
+
+
+def _gate_c(iid: str, quote: str, texts: list[str]) -> str:
+    """:func:`_gate` with the real bank concepts (the distractors' translations / aliases)."""
+    it = items()[iid]
+    shown, gp = aj.build_options(it)
+    others = [o for i, o in enumerate(shown[:-1], start=1) if i != gp]
+    lines = [digest.Line(t, None, "[L32 pos 40]", 32, 40) for t in texts]
+    concepts = aj.bank_concepts(list(items().values()))
+    return aj.gate_gold(
+        quote, lines, forms=aj.gold_forms(it), others=others, sampling="bullet4", rivals=concepts
+    )
+
+
+def test_r3_quote_naming_a_distractor_is_not_rescued():
+    """Review of #205 (too lenient): 3c passed on ANY gold-only sentence elsewhere, whatever the
+    judge quoted. A quote that itself names another shown option goes to the re-judge; the same
+    readout with a quote naming no option still verifies by 3c, and by 3b when the gold-only
+    sentence is next to the quote."""
+    texts = [
+        "She walked into the museum; the museum hall was silent.",
+        "He went to a museum.",
+        "Another museum visit.",
+        "She once used a library card.",
+    ]
+    assert _gate_c("bf-library", "the museum hall was silent", texts) == "needs_rejudge"
+    assert _gate("bf-library", "the museum hall was silent", texts) == "needs_rejudge"
+    # a distractor's plural in the quote blocks the same way
+    texts2 = ["the museums were all closed that day", "She once used a library card."]
+    assert _gate_c("bf-library", "the museums were all closed", texts2) == "needs_rejudge"
+    # too strict guard: a quote naming no option still verifies
+    texts3 = [*texts, "She whispered to the clerk behind the desk."]
+    assert _gate_c("bf-library", "She whispered to the clerk", texts3) == "gold_listed_evidence"
+    near = ["She whispered to the clerk behind the desk. It was the town library."]
+    assert _gate_c("bf-library", "She whispered to the clerk", near) == "gold_listed_line"
+
+
+def test_r3_other_options_count_by_all_their_forms():
+    """Review of #205 (option asymmetry): the gold counted by every listed form but a
+    distractor only by its bare string, so plurals / translations / aliases of a distractor
+    never blocked 3b/3c. Now they do; the gold's own forms (plural, Chinese) and unrelated
+    words still pass."""
+    q = "She whispered to the clerk"
+    blocked = [
+        "She returned books to the library and then visited the museums downtown.",
+        "她去了图书馆\uff0c又去了博物馆。",
+        "The library or the casinos?",
+        "She went to the library and then the schools.",
+        "She went to the library and then the bookstores.",
+        "The library was next to the old jail.",
+        "The library was beside a gambling hall.",
+    ]
+    for t in blocked:
+        assert _gate_c("bf-library", q, [q + ".", t]) == "needs_rejudge", t
+        # the same sentence next to the quote (3b) is blocked too
+        assert _gate_c("bf-library", q, [f"{q}. {t}"]) == "needs_rejudge", t
+    passing = [
+        "She returned books to the library and then went home.",
+        "她去了图书馆。",
+        "Two public libraries share one roof.",
+        "The library smelled of old paper and coffee.",
+    ]
+    for t in passing:
+        assert _gate_c("bf-library", q, [q + ".", t]) == "gold_listed_evidence", t
+    concepts = aj.bank_concepts(list(items().values()))
+    gold = aj.gold_forms(items()["bf-library"])
+    of = aj.other_option_forms(["museum", "library"], gold, concepts)
+    assert "博物馆" in of and "museums" in of and "library" not in of and "图书馆" not in of
+
+
+def test_r3_evidence_credit_outnamed_by_a_distractor(tmp_path):
+    """Review of #205: 3c (a gold sentence away from the quote) gets the step-5 out-naming
+    guard. A lone 'library' sample against 3 'museum' samples fails; against 1 it passes."""
+    lib = "bf-library"
+    quote = "She whispered her request to the clerk and quietly descended."
+
+    def run(n_museum: int, sub: str):
+        hits = {(lib, 44, LAST): f"- {quote}", (lib, 44, LAST - 1): "- the empty library"}
+        for k in range(n_museum):
+            hits[(lib, 40, LAST - k)] = "- the grand museum hall"
+        path = write_cells(tmp_path / f"{sub}.jsonl", hits, [lib])
+        r, fake = judge_run(
+            tmp_path / sub,
+            path,
+            [lib],
+            lambda s, u, sc: answer(u, "library", quote),
+            ["clerk", "empty library", "museum"],
+        )
+        return r.rows[0], fake
+
+    row, fake = run(3, "many")
+    assert row["outcome"] == "gold_evidence_outnamed" and row["pass"] is False
+    assert fake.n("quote_mc") == 0
+    row, _f = run(1, "one")
+    assert row["outcome"] == "gold_listed_evidence" and row["pass"] is True
