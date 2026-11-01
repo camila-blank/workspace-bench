@@ -205,7 +205,8 @@ def test_all_layer_producer_file_is_judged(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- W2/W3: options and forms
 
 
-@pytest.mark.parametrize(("bank", "golden_path"), [(V2_BANK, GOLDEN), (V3_BANK, GOLDEN_V3), (V4_BANK, GOLDEN_V3)]
+@pytest.mark.parametrize(
+    ("bank", "golden_path"), [(V2_BANK, GOLDEN), (V3_BANK, GOLDEN_V3), (V4_BANK, GOLDEN_V3)]
 )
 def test_options_frozen_and_golden(bank, golden_path):
     golden = json.loads(golden_path.read_text(encoding="utf-8"))

@@ -95,8 +95,7 @@ def inflecting(form: str) -> bool:
 def _form_pattern(ff: str, inflect: bool = True) -> str:
     words = ff.split(" ")
     return " ".join(
-        re.escape(w)
-        + (_TAIL if inflect and len(w) >= WORD_SUFFIX_MIN and w[-1].isalpha() else "")
+        re.escape(w) + (_TAIL if inflect and len(w) >= WORD_SUFFIX_MIN and w[-1].isalpha() else "")
         for w in words
     )
 

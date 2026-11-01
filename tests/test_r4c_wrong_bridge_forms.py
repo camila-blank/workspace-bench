@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """Review of PR #208 (round 4b), BLOCKING 1: wrong_bridge bank v3 took Wikidata labels and
 aliases in every language with no sanity filter, and the matcher let every Latin word of 4+
 letters take a 2-letter tail, so ordinary English words and other people's names counted as the
