@@ -848,6 +848,8 @@
    "any_hit": null,
    "mean_picks": null,
    "analytic_floor": 0.008000000000000002,
+   "family_rule": 0.012,
+   "family_chance": 6.400000000000002e-05,
    "n_items": 100,
    "n_draws": 5,
    "n_api_fail": 0,
@@ -859,7 +861,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "single pick",
    "instrument": "oa-v3.1",
-   "written": "2026-11-01T03:50:22+00:00"
+   "written": "2026-11-01T04:32:09+00:00"
   },
   "described": {
    "mean": 0.148,
@@ -869,6 +871,8 @@
    "any_hit": null,
    "mean_picks": null,
    "analytic_floor": 0.008000000000000002,
+   "family_rule": 0.005600000000000001,
+   "family_chance": 6.400000000000002e-05,
    "n_items": 100,
    "n_draws": 5,
    "n_api_fail": 0,
@@ -880,7 +884,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "single pick",
    "instrument": "oa-v3.1",
-   "written": "2026-11-01T03:50:35+00:00"
+   "written": "2026-11-01T04:32:09+00:00"
   },
   "uniform": {
    "mean": 0.01,
@@ -890,6 +894,8 @@
    "any_hit": null,
    "mean_picks": null,
    "analytic_floor": 0.008000000000000002,
+   "family_rule": 0.0,
+   "family_chance": 6.400000000000002e-05,
    "n_items": 100,
    "n_draws": 5,
    "n_api_fail": 0,
@@ -901,7 +907,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "single pick",
    "instrument": "oa-v3.1",
-   "written": "2026-11-01T03:50:56+00:00"
+   "written": "2026-11-01T04:32:10+00:00"
   },
   "topic": {
    "mean": 0.22599999999999998,
@@ -911,6 +917,8 @@
    "any_hit": null,
    "mean_picks": null,
    "analytic_floor": 0.008000000000000002,
+   "family_rule": 0.0,
+   "family_chance": 6.400000000000002e-05,
    "topics": "topic-v2",
    "n_items": 100,
    "n_draws": 5,
@@ -923,7 +931,7 @@
    "prompt_version": "lucky-2026-09-16",
    "rule": "single pick",
    "instrument": "oa-v3.1",
-   "written": "2026-11-01T03:50:55+00:00"
+   "written": "2026-11-01T04:32:09+00:00"
   }
  },
  "typo_mt": {

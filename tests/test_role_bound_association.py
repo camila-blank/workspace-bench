@@ -272,7 +272,9 @@ def test_run_verdicts_and_numbers(tmp_path, fake_llm, mk_args):
     fake = fake_llm(_responder)
     args = mk_args(_scripted(tmp_path), items=[AB, BA])
     res = judge.run(args)
-    assert res.n_items == 2 and res.value == 0.5
+    # pair-v1 (review of #202 round 5): AB passes and BA fails, so the per-item rate is the old
+    # 0.5 and the pair (the headline) fails
+    assert res.n_items == 2 and res.extras["item_pass_rate"] == 0.5 and res.value == 0.0
     c = res.counts
     assert c["n_expected_cells"] == 9 and c["n_empty_cells"] == 1 and c["n_unjudged_cells"] == 1
     by_key = {r["key"]: r for r in res.rows}
@@ -379,7 +381,9 @@ def test_gold_choices_with_bad_quote_is_fail_and_counted(tmp_path, fake_llm, mk_
 
     fake_llm(respond)
     res = judge.run(mk_args(path, items=[AB]))
-    assert res.value == 0.0 and not any(r["pass"] for r in res.rows)
+    # pair-v1: a one-direction scope decides no pair (value None); the item rate keeps the 0.0
+    assert res.extras["item_pass_rate"] == 0.0 and not any(r["pass"] for r in res.rows)
+    assert res.value is None
     e = res.extras
     assert e["n_gate_rejected"] == 3
     assert e["n_quote_unverified"] == 2  # p1 (not in the sample) and p3 (empty quote)
@@ -573,7 +577,7 @@ def test_summary_mode_requires_single_statement_binding(tmp_path, monkeypatch):
     path = write_jsonl(tmp_path / "c.jsonl", [{"id": HUG, "layer": 44, "pos": 1, "samples": [gen]}])
     FakeLLM.install(monkeypatch, _hug_judge("Mia, the grandchild, hugs Ruth"))
     r = SPEC.run(summary_args(path, tmp_path / "o3", prompts.PROMPT_VERSION, items=[HUG]))
-    assert r.rows[0]["pass"] is True and r.value == 1.0
+    assert r.rows[0]["pass"] is True and r.extras["item_pass_rate"] == 1.0  # pair-v1: item rate
 
 
 def test_summary_task_note_reaches_digest(tmp_path, monkeypatch):

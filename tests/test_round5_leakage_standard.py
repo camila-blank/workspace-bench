@@ -133,8 +133,8 @@ def test_family_chance_is_the_rule_not_the_per_draw_floor():
     fam = lg.family_chance("conjunctive_association", items)
     assert fam < 0.01 < 0.04 < lg.analytic_floor(items)  # ~0.007 against 0.048
     # a family without a multi-draw rule keeps the per-draw floor
-    rb = lg.build_family("role_bound_association")
-    assert lg.family_chance("role_bound_association", rb) == lg.analytic_floor(rb)
+    um = lg.build_family("user_modeling")
+    assert lg.family_chance("user_modeling", um) == lg.analytic_floor(um)
 
 
 def _entry(**kw):
@@ -158,13 +158,9 @@ def test_a_rule_rate_within_five_points_of_the_rules_chance_passes():
     (row,) = lg.standard("conjunctive_association", {"topic": _entry(family_rule=0.05)})
     assert row["pass"]
     # a family without a rule reads the per-draw mean against the per-draw floor
-    (row,) = lg.standard(
-        "role_bound_association", {"blind": {"mean": 0.05, "analytic_floor": 0.008}}
-    )
+    (row,) = lg.standard("user_modeling", {"blind": {"mean": 0.05, "analytic_floor": 0.008}})
     assert row["rule"] == "mean" and row["pass"]
-    (row,) = lg.standard(
-        "role_bound_association", {"blind": {"mean": 0.12, "analytic_floor": 0.008}}
-    )
+    (row,) = lg.standard("user_modeling", {"blind": {"mean": 0.12, "analytic_floor": 0.008}})
     assert not row["pass"]
 
 
