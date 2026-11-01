@@ -561,6 +561,11 @@ def test_ends_line_both_directions(ml):
     assert not ml.ends_line("stay", "they stayed. / home")
     assert not ml.ends_line("complete", "incomplete. /")
     assert ml.mentions("strand", "a strand of hair") and not ml.mentions("stay", "stayed")
+    # review of r7: an opening quote before the word and a spaced dash after it still end a line
+    assert ml.ends_line("strand", "cliffs and 'strand' / x")
+    assert ml.ends_line("strand", "cliffs and \u2018strand\u2019 / x")
+    assert ml.ends_line("lend", "you must not lend \u2013 /")
+    assert not ml.ends_line("lend", "blend /") and not ml.ends_line("lend", "o'lend /")
 
 
 def _po_item():

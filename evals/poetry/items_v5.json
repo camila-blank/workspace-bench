@@ -764,7 +764,9 @@
       "line end: final-olens-rl600-x4/all (1 digest lines, v2 fail)"
      ],
      "lend": [
-      "judge pick: final-olens-rl600-x4/all"
+      "judge pick: final-olens-rl600-x4/all",
+      "line end: final-olens-rl600-x4/L52 (1 digest lines, v2 fail)",
+      "line end: final-olens-rl600-x4/all (1 digest lines, v2 fail)"
      ]
     },
     "v3-po-streams-dreams": {
