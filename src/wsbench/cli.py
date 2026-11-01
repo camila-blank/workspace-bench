@@ -817,6 +817,10 @@ class Baseline(Command):
                     ):
                         print(f"{name}: no candidate-list judge, {variant} variant skipped")
                         continue
+                    if variant == "topic" and lucky_guessing.topic_form(name) is None:
+                        # a family WITH a topic file always runs it (either form, topic_form)
+                        print(f"{name}: no topic file, {variant} variant skipped")
+                        continue
                     r = lucky_guessing.run_family(
                         name,
                         variant,
