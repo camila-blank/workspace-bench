@@ -70,7 +70,9 @@ def test_plans_match_the_bank_specs():
     assert mcdm.layers == readplan.GRID and mcdm.positions == {"kind": "last_n", "n": 12}
     conj = readplan.plan("conjunctive_association")[0]
     assert conj.layers == readplan.GRID and conj.suffix == readplan.SUMMARIZE_SUFFIX
-    assert conj.lite_positions == {"kind": "final_token"} and conj.lite_layers is None
+    # Camila r3 (2026-11-01): conjunctive lite reads the same positions as full (lite_rule.json)
+    assert conj.lite_positions == {"kind": "same"} and conj.lite_layers is None
+    assert readplan.lite_select(range(31, 50), conj.lite_positions) == list(range(31, 50))
     multihop = readplan.plan("multihop")  # plan 0048 C2 (sanctioned): full = every token
     assert {s.positions["kind"] for s in multihop} == {"all_from_end"}
     assert {s.lite_positions["kind"] for s in multihop} == {"offset_from_end"}
