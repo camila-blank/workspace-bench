@@ -125,22 +125,11 @@ def test_introspection_bank_unchanged_by_the_refill():
 # re-gates it (gpu.md G13 / R8); exactly these may be stale (plan 0038 C17)
 # (all re-gated 2026-10-31, decision R1-ATI: plans 0038/0039/0043-0046/0050/0053/0054/0056 and
 # the conjunctive comp-v3 entry; evals/baselines/README.md "Fix-round-1 re-gate")
-PENDING_REGATE: dict[str, str] = {
-    "conjunctive_association": "round 4 bank v3 (two never-gold grid confusers per cluster)",
-    # round 4 (Camila r2 MC leakage standard): bank v3, new options and name forms
-    "wrong_bridge": "bank v3 (Opus same-topic distractors, Wikidata forms); re-gate at the run",
-    "basic_readout_mt": "bank v4 (round 4b refined lists); re-gate at the run",
-    "multilingual": "bank v3 (concept + language lists); re-gate at the run",
-    "multilingual_multihop": "bank v4 (round 4b refined bridge lists); re-gate at the run",
-    "multilingual_mt": "bank v4 (tonsil forms, round 4b lists); re-gate at the run",
-    "multilingual_typo": "bank v3 (round 4b frozen concept + language lists); re-gate at the run",
-    # round 4 (Camila r2's MC leakage standard): bank v3 re-chose the options the gate's judge
-    # scores the panel answers with; the panel answers (prompts unchanged) are re-judged in the
-    # run phase
-    "association": "bank v3 (round 4 MC leakage)",
-    "basic_readout": "bank v3 (round 4 MC leakage)",
-    "poetry": "bank v3 (round 4 MC leakage)",
-}
+# Empty since 2026-11-01 (decision R1-ATI gemini): every entry above was re-gated on the full
+# four-reader panel at its current bank and instrument (conjunctive comp-v5, wrong_bridge /
+# basic_readout_mt / multilingual* bank v3-v4, association / basic_readout / poetry round-4 MC
+# banks). A family PR that changes a bank adds its entry back here until the re-gate.
+PENDING_REGATE: dict[str, str] = {}
 
 
 def test_every_panel_entry_is_gated_on_the_current_bank(frozen):

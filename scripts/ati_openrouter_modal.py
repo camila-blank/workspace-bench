@@ -10,14 +10,17 @@ its ``route``. Launch with ``--detach`` for long runs (a client disconnect then 
 containers); rerun to collect.
 
 Routes (``wsbench.baselines.ati_remote``; same question, same parameters):
-``--route openrouter`` (default; the ``openrouter`` secret) or, for astra only,
+``--route openrouter`` (default; the ``openrouter`` secret); for astra only,
 ``--route openai-wif``: OpenAI directly via workload identity federation (the ``openai-wif``
 secret holds OPENAI_IDENTITY_PROVIDER_ID_MODAL / OPENAI_SERVICE_ACCOUNT_ID / OPENAI_PROJECT_ID;
-the container's MODAL_IDENTITY_TOKEN is exchanged for a short-lived access token kept in memory).
+the container's MODAL_IDENTITY_TOKEN is exchanged for a short-lived access token kept in memory);
+for argon only, ``--route gemini-wif``: Gemini on Vertex AI via Google workload identity
+federation (no secret: the container's MODAL_IDENTITY_TOKEN is the subject token; works only in
+Modal workspace safety-sahan-2, environment camila-blank, so run with ``-e camila-blank``).
 
-    PYTHONPATH=src modal run scripts/ati_openrouter_modal.py --answerer astra \\
-        [--route openai-wif] [--out outputs/baselines/text_inversion] [--families a,b] \\
-        [--shards 8] [--limit-items 3]
+    PYTHONPATH=src modal run [-e camila-blank] scripts/ati_openrouter_modal.py --answerer astra \\
+        [--route openai-wif|gemini-wif] [--out outputs/baselines/text_inversion] \\
+        [--families a,b] [--shards 8] [--limit-items 3] [--smoke]
 """
 
 import json
@@ -31,12 +34,13 @@ app = modal.App("wsb-ati-openrouter")
 answers_vol = modal.Volume.from_name("wsb-ati-answers", create_if_missing=True)
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("openai>=1.60", "httpx")
+    .pip_install("openai>=1.60", "httpx", "google-genai>=2.3", "google-auth>=2.40")
     .add_local_python_source("wsbench")
 )
 VOL = "/answers"
 CONCURRENCY = 16  # per container
 SECRETS = {"openrouter": "openrouter", "openai-wif": "openai-wif"}  # route -> Modal secret
+# gemini-wif needs no secret: Modal injects MODAL_IDENTITY_TOKEN into every container
 
 
 def _run_shard(
@@ -100,6 +104,11 @@ def answer_shard_wif(run: str, answerer: str, model: str, shard: int, reqs: list
     return _run_shard(run, answerer, model, shard, reqs, "openai-wif")
 
 
+@app.function(**FN)
+def answer_shard_gemini(run: str, answerer: str, model: str, shard: int, reqs: list[dict]) -> int:
+    return _run_shard(run, answerer, model, shard, reqs, "gemini-wif")
+
+
 def _preflight(model: str, route: str) -> str:
     """One neutral call outside the bank, so a dead key never looks like a refusal."""
     import asyncio
@@ -107,6 +116,12 @@ def _preflight(model: str, route: str) -> str:
     async def go() -> str:
         clients = ar.Clients(route)
         kw = ar.completion_kwargs(route, model, "Say OK.")
+        if route == "gemini-wif":
+            kw["config"] = {"max_output_tokens": 2000}
+            r = ar._gemini_reply(
+                await (await clients.get()).aio.models.generate_content(**kw), kw["model"]
+            )
+            return f"{route} {r['model']}: {r['text'][:40]!r} (finish {r['finish']})"
         kw["max_completion_tokens" if route == "openai-wif" else "max_tokens"] = 2000
         r = await (await clients.get()).chat.completions.create(**kw)
         text = (r.choices[0].message.content or "") if r.choices else "<no choices>"
@@ -125,6 +140,18 @@ def preflight_wif(model: str) -> str:
     return _preflight(model, "openai-wif")
 
 
+@app.function(image=image, timeout=600)
+def preflight_gemini(model: str) -> str:
+    return _preflight(model, "gemini-wif")
+
+
+ROUTE_FNS = {
+    "openrouter": (preflight, answer_shard),
+    "openai-wif": (preflight_wif, answer_shard_wif),
+    "gemini-wif": (preflight_gemini, answer_shard_gemini),
+}
+
+
 @app.local_entrypoint()
 def main(
     answerer: str,
@@ -134,6 +161,7 @@ def main(
     draws: int = 3,
     route: str = "openrouter",
     limit_items: int = 0,
+    smoke: bool = False,
 ) -> None:
     from wsbench.baselines import text_inversion as ti
 
@@ -141,9 +169,12 @@ def main(
         raise SystemExit(f"answerer must be one of {sorted(ti.OPENROUTER_ANSWERERS)}")
     if route not in ar.ROUTES:
         raise SystemExit(f"route must be one of {ar.ROUTES}")
-    if route == "openai-wif" and answerer not in ar.WIF_ANSWERERS:
-        raise SystemExit(f"route openai-wif serves {sorted(ar.WIF_ANSWERERS)} only")
+    if route in ar.ROUTE_ANSWERERS and answerer not in ar.ROUTE_ANSWERERS[route]:
+        raise SystemExit(f"route {route} serves {sorted(ar.ROUTE_ANSWERERS[route])} only")
     model = ti.PANEL[answerer]
+    if smoke:  # the preflight alone ("Say OK."), no bank question
+        print("preflight:", ROUTE_FNS[route][0].remote(model), flush=True)
+        return
     out_p = Path(out)
     fams = {f for f in families.split(",") if f} or None
     run = ti.run_key(out_p)
@@ -156,11 +187,7 @@ def main(
         reqs = [r for r in reqs if (r["family"], r["id"]) in set(keep)]
     print(f"{answerer} ({model}, {route}): {len(reqs)} requests pending, run {run}", flush=True)
     if reqs:
-        pre, shard_fn = (
-            (preflight_wif, answer_shard_wif)
-            if route == "openai-wif"
-            else (preflight, answer_shard)
-        )
+        pre, shard_fn = ROUTE_FNS[route]
         print("preflight:", pre.remote(model), flush=True)
         k = max(1, min(shards, len(reqs)))
         parts = [reqs[i::k] for i in range(k)]

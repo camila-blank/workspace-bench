@@ -821,7 +821,13 @@ def test_frozen_argon_decisive_counts_match_the_statuses():
         for f, e in frozen.items()
         if not f.startswith("_") and isinstance(e, dict) and "status_order" in e
     }
-    assert recorded, "no reduced-panel entry in the ATI file"
+    # decision R1-ATI gemini (2026-11-01): argon answers via Gemini WIF, so every entry is
+    # gated on the full four-reader panel again and no reduced-panel entry is left
+    assert not recorded, f"reduced-panel entries left: {sorted(recorded)}"
+    for f, e in frozen.items():
+        if not f.startswith("_") and isinstance(e, dict) and e.get("gate") == ti.GATE_VERSION:
+            assert set(e["panel"]) == {"qwen", "claude", "astra", "argon"}
+            assert "provisional" not in e and "argon_decisive_items" not in e
     for fam, e in recorded.items():
         if "argon_decisive_items" not in e:
             assert e.get("provisional") is True, fam

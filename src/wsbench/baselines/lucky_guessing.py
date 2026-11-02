@@ -1550,7 +1550,18 @@ def instrument_versions() -> dict[str, str]:
         from wsbench.mcjudge import load_bank
 
         out["conjunctive_association"] += bank_stamp(load_bank("conjunctive_association"))
+    out.update({k: v for k, v in mc_diagnostic_instruments().items() if k in out})
     return out
+
+
+def mc_diagnostic_instruments() -> dict[str, str]:
+    """Families whose HEADLINE judge shows no options (poetry, round 5 / Camila r3: a
+    free-response judge) but which keep an MC judge as a diagnostic column: the guessers here
+    guess that MC judge's option lists, so its floor belongs to the MC prompt version, not the
+    headline's."""
+    from wsbench.evals.poetry.prompts import MC_PROMPT_VERSION
+
+    return {"poetry": MC_PROMPT_VERSION}
 
 
 def freeze(run_dir: Path, dst: Path = FROZEN) -> dict[str, Any]:
