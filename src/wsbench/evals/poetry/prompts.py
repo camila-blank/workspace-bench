@@ -186,7 +186,9 @@ _TN_TAIL = (
     "a target that is one word of such a run is not singled out by that line, even when it is "
     "ranked first and is the only target on the line."
 )
-_TN_FREE_TAIL = "a word of such a run is not singled out by that line, even when it is ranked first."
+_TN_FREE_TAIL = (
+    "a word of such a run is not singled out by that line, even when it is ranked first."
+)
 
 
 def free_token_note(targets_note: str) -> str:
