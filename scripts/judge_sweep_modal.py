@@ -550,16 +550,23 @@ def sweep(
 
 
 @app.local_entrypoint()
-def pull(sweep: str, out: str = "") -> None:
-    """``/vol/runs/<sweep>/`` -> ``outputs/judge_sweep/<sweep>/`` (results, caches, ledgers)."""
+def pull(sweep: str, out: str = "", light: bool = False) -> None:
+    """``/vol/runs/<sweep>/`` -> ``outputs/judge_sweep/<sweep>/`` (results, caches, ledgers).
+    Incremental: a file already local at the same size is skipped. ``--light`` also skips the
+    ``cells.jsonl`` call caches (GBs per sweep; ``analyze`` / ``feasibility`` never read them)."""
     js = _js()
     dest = Path(out) if out else js.OUT_ROOT / sweep
-    n = 0
+    n = skipped = 0
     for entry in vol.listdir(f"/runs/{sweep}", recursive=True):
         if entry.type != modal.volume.FileEntryType.FILE:
             continue
         rel = Path(entry.path.lstrip("/")).relative_to(f"runs/{sweep}")
         target = dest / rel
+        if (light and rel.name == "cells.jsonl") or (
+            target.exists() and target.stat().st_size == entry.size
+        ):
+            skipped += 1
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".tmp")
         with tmp.open("wb") as fh:
@@ -567,4 +574,4 @@ def pull(sweep: str, out: str = "") -> None:
                 fh.write(chunk)
         tmp.replace(target)
         n += 1
-    print(f"pulled {n} files to {dest} ({time.strftime('%Y-%m-%d %H:%M')})")
+    print(f"pulled {n} files to {dest}, {skipped} skipped ({time.strftime('%Y-%m-%d %H:%M')})")
