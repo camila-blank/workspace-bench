@@ -27,31 +27,51 @@ def first_lines_digest(user: str, k: int = 3) -> dict:
     }
 
 
+def keep_all_merge(user: str) -> dict:
+    """A passive fake jailbreak union merge (jbc-v1): keep every numbered line, in order, the
+    first 12 as "items" and the rest as "rare" (no folding)."""
+    n = len(re.findall(r"^\[\d+\] ", user, flags=re.M))
+    return {
+        "items": [{"line": k, "same_as": []} for k in range(1, min(n, 12) + 1)],
+        "rare": [{"line": k, "same_as": []} for k in range(13, n + 1)],
+    }
+
+
 class FakeLLM:
     """Install with ``FakeLLM.install(monkeypatch, judge=...)``. ``digest`` maps a user prompt to
     a digest result (default: :func:`first_lines_digest`); ``judge(system, user, schema)``
     answers every other call. ``calls`` records ``(schema_name, system, user)``."""
 
-    def __init__(self, judge: Responder, digest: Callable[[str], dict | None] | None = None):
+    def __init__(
+        self,
+        judge: Responder,
+        digest: Callable[[str], dict | None] | None = None,
+        merge: Callable[[str], dict | None] | None = None,
+    ):
         self.judge = judge
         self.digest = digest or first_lines_digest
+        self.merge = merge or keep_all_merge
         self.calls: list[tuple[str, str, str]] = []
 
     def stream_json(self, prompts, *, schema, on_result, **_kw) -> Spend:
         name = schema.get("name", "")
         for i, (system, user) in enumerate(prompts):
             self.calls.append((name, system, user))
-            on_result(
-                i, self.digest(user) if name == "digest" else self.judge(system, user, schema)
-            )
+            if name == "digest":
+                r = self.digest(user)
+            elif name == "jb_union_merge":
+                r = self.merge(user)
+            else:
+                r = self.judge(system, user, schema)
+            on_result(i, r)
         return Spend()
 
     def n(self, name: str) -> int:
         return sum(1 for c in self.calls if c[0] == name)
 
     @classmethod
-    def install(cls, monkeypatch, judge: Responder, digest=None) -> "FakeLLM":
-        fake = cls(judge, digest)
+    def install(cls, monkeypatch, judge: Responder, digest=None, merge=None) -> "FakeLLM":
+        fake = cls(judge, digest, merge)
         monkeypatch.setattr(llm, "stream_json", fake.stream_json)
         monkeypatch.setattr(llm, "preflight", lambda model, reasoning: None)
         return fake
