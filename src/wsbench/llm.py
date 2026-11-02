@@ -793,6 +793,13 @@ async def _anthropic_once(
     return _parse_object(text)
 
 
+def _moderation_flagged(e: Exception) -> bool:
+    """OpenRouter's moderation 403 names the flagged input in ``error.metadata.flagged_input``."""
+    body = getattr(e, "body", None)
+    meta = body.get("metadata") if isinstance(body, dict) else None
+    return isinstance(meta, dict) and "flagged_input" in meta
+
+
 async def _one(
     route_: Route,
     client: Any,
