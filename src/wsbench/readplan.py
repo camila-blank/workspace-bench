@@ -880,8 +880,9 @@ def _plan(family: str) -> list[ReadSpec]:
                 suffix=SUMMARIZE_SUFFIX,
                 note="the 19 suffix and chat-tail tokens; story positions are never "
                 "read (docs/read_sites.md)",
-                # plan 0032 §2.6: final_token until the pre-registered lite-site procedure
-                # (scripts/lite_site_table.py) freezes a rule into evals/<family>/lite_rule.json
+                # plan 0032 §2.6: final_token until a rule is frozen into
+                # evals/<family>/lite_rule.json (association r2 and conjunctive r3: ``same``,
+                # i.e. lite reads every full site; role_bound: its support-share rule)
                 lite_positions=lite,
             )
             for it in items
