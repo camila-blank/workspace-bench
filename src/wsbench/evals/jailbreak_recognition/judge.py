@@ -32,7 +32,7 @@ from wsbench.readouts import Cell, LoadReport
 from wsbench.registry import JudgeArgs
 from wsbench.results import ATI_SCOPE, FamilyResult
 
-from . import condense, prompts, score
+from . import prompts, score
 from .prompts import (
     CALL_VERSION,
     MARKER,
@@ -889,13 +889,6 @@ def _pin_reactions(args: JudgeArgs, col: digest.Collapse, cells: dict[str, list[
         )
 
 
-def _merge_config(cfg: dict[str, Any], merged: bool) -> dict[str, Any]:
-    """The summarizer stamp of a merged (jbc-v1) run carries ``union_merge``; else unchanged."""
-    if not merged:
-        return cfg
-    return {**cfg, "summarizer": {**cfg["summarizer"], "union_merge": condense.settings_json()}}
-
-
 def _run_summary(
     args: JudgeArgs,
     scope: list[dict],
@@ -913,11 +906,8 @@ def _run_summary(
         by_item.setdefault(c.id, []).append(c)
     spend = Spend()
     pre = Preflighter(args.dry_run)
-    # v1.0.1 (jbc-v1): a multi-layer run condenses its union digest (condense.py) and stamps
-    # "+jbc-v1" on both strings; a single-layer run keeps the v1.0 instrument unchanged
-    merged = condense.active(args, sorted({c.layer for c in cells}))
-    pv = condense.stamp(digest.prompt_version(CALL_VERSION, args, FAMILY), merged)  # keys calls
-    stamp = condense.stamp(digest.prompt_version(PROMPT_VERSION, args, FAMILY), merged)
+    pv = digest.prompt_version(CALL_VERSION, args, FAMILY)  # keys the calls
+    stamp = digest.prompt_version(PROMPT_VERSION, args, FAMILY)
     with Cache(args.out / "cells.jsonl") as cache:
         passed = {i: by_item[i] for i in by_id if by_item.get(i)}
         col = digest.collapse(
@@ -930,16 +920,6 @@ def _run_summary(
             task_note=prompts.DIGEST_TASK_NOTE,
             expect_all=[c for cs in passed.values() for c in cs],
         )
-        if merged and not args.dry_run:
-            condense.condense(
-                col,
-                args=args,
-                family=FAMILY,
-                task_note=prompts.DIGEST_TASK_NOTE,
-                cache=cache,
-                spend=spend,
-                preflight=pre.for_judge(digest.summarizer_judge(args, FAMILY)),
-            )
         if not args.dry_run:
             _pin_reactions(args, col, passed)
         source_kind = digest.as_prose(rep)
@@ -1014,7 +994,7 @@ def _run_summary(
             read=regime,
             judge_max_tokens=READOUT_MAX_TOKENS,
             judge_timeout=READOUT_TIMEOUT,
-            **_merge_config(digest.config(args, source_kind, FAMILY), merged),
+            **digest.config(args, source_kind, FAMILY),
         ),
         n_api_failed=n_api_failed + len(col.unsummarized),
         empty_ids=col.empty,

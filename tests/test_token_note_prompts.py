@@ -70,8 +70,7 @@ def test_summary_judge_receives_the_spec_token_note(family, tmp_path, monkeypatc
     # every call fails (the fake answers None): the prompts are what count
     with contextlib.suppress(Exception):
         spec.run(summary_args(path, tmp_path / "o", "pv", allow_missing=True))
-    # summarizer-side calls (the per-layer digests, jailbreak's jbc-v1 union merge) are not judges
-    calls = [(s, u) for name, s, u in fake.calls if name not in ("digest", "jb_union_merge")]
+    calls = [(s, u) for name, s, u in fake.calls if name != "digest"]
     if family == "poetry":
         # round 5: poetry's HEADLINE judge is free-response (no options, no targets); it gets the
         # spec's targets-variant note made target-free; its MC diagnostic gets ``want``

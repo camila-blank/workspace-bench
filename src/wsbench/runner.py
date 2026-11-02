@@ -105,6 +105,8 @@ def judge_family(
     if getattr(args, "anti_text_inversion", False):
         ati = text_inversion.subset_entry(spec.name)
         items, scope = list(ati["ids"]), text_inversion.SCOPE
+    # v1.1.0: a multi-layer summary run of a non-numbers family defaults to summ_layers=layered
+    opts = digest.resolve_layer_mode(spec.name, opts, run_layer_count(readouts, args.layers))
     jargs = JudgeArgs(
         readouts=readouts,
         out=out,
@@ -218,6 +220,19 @@ def readouts_path(root: Path, name: str) -> Path | None:
         if (legacy := root / f"{old}.jsonl").exists():
             return legacy
     return None
+
+
+def run_layer_count(path: Path, layers: Sequence[int] | None) -> int:
+    """How many layers a run reads: ``layers=`` when given, else the sidecar's declared
+    ``layers``, else the layers present in the file (one load)."""
+    if layers:
+        return len(set(layers))
+    from wsbench.readouts import read_sidecar
+
+    meta = read_sidecar(path) if Path(path).exists() else None
+    if meta and isinstance(meta.get("layers"), list):
+        return len(set(meta["layers"]))
+    return len(file_layers(path)) if Path(path).exists() else 0
 
 
 def file_layers(path: Path) -> list[int]:

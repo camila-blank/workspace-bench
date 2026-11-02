@@ -27,13 +27,19 @@ def first_lines_digest(user: str, k: int = 3) -> dict:
     }
 
 
-def keep_all_merge(user: str) -> dict:
-    """A passive fake jailbreak union merge (jbc-v1): keep every numbered line, in order, the
-    first 12 as "items" and the rest as "rare" (no folding)."""
-    n = len(re.findall(r"^\[\d+\] ", user, flags=re.M))
+def layered_digest(user: str, k: int = 50) -> dict:
+    """A passive fake stage-2 (layered) digest: every distinct sample shown, quoted whole, its
+    header as ``where``, a large count (the code caps it at the members' summed counts)."""
+    got = re.findall(r"^  sample (\[L\d+ pos -?\d+\]): (.*)$", user, flags=re.M)
+    seen: dict[str, str] = {}
+    for where, text in got:
+        seen.setdefault(text, where)
     return {
-        "items": [{"line": k, "same_as": []} for k in range(1, min(n, 12) + 1)],
-        "rare": [{"line": k, "same_as": []} for k in range(13, n + 1)],
+        "items": [
+            {"statement": f"LAYERED-{i}", "key": "", "where": w, "evidence": t, "count": 10**6}
+            for i, (t, w) in enumerate(list(seen.items())[:k])
+        ],
+        "rare": [],
     }
 
 
@@ -46,21 +52,22 @@ class FakeLLM:
         self,
         judge: Responder,
         digest: Callable[[str], dict | None] | None = None,
-        merge: Callable[[str], dict | None] | None = None,
+        layered: Callable[[str], dict | None] | None = None,
     ):
         self.judge = judge
         self.digest = digest or first_lines_digest
-        self.merge = merge or keep_all_merge
+        self.layered = layered or layered_digest
         self.calls: list[tuple[str, str, str]] = []
 
     def stream_json(self, prompts, *, schema, on_result, **_kw) -> Spend:
         name = schema.get("name", "")
         for i, (system, user) in enumerate(prompts):
             self.calls.append((name, system, user))
-            if name == "digest":
+            if name == "digest" and user.startswith("LAYER DIGESTS:"):
+                self.calls[-1] = ("layered", system, user)
+                r = self.layered(user)
+            elif name == "digest":
                 r = self.digest(user)
-            elif name == "jb_union_merge":
-                r = self.merge(user)
             else:
                 r = self.judge(system, user, schema)
             on_result(i, r)
@@ -70,8 +77,8 @@ class FakeLLM:
         return sum(1 for c in self.calls if c[0] == name)
 
     @classmethod
-    def install(cls, monkeypatch, judge: Responder, digest=None, merge=None) -> "FakeLLM":
-        fake = cls(judge, digest, merge)
+    def install(cls, monkeypatch, judge: Responder, digest=None, layered=None) -> "FakeLLM":
+        fake = cls(judge, digest, layered)
         monkeypatch.setattr(llm, "stream_json", fake.stream_json)
         monkeypatch.setattr(llm, "preflight", lambda model, reasoning: None)
         return fake
