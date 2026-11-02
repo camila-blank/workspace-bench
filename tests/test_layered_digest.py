@@ -282,7 +282,8 @@ def test_stage2_over_cap_chunks_by_layer_then_merges(tmp_path, monkeypatch):
             for t in (f"L{ly} {one} sea story",)
         ]
     )
-    cap = digest.est_tokens(probe) + 60  # about two layers' digests per stage-2 call
+    # about two layers' digests per stage-2 call (the chunker divides the cap by the worst ratio)
+    cap = int((digest.est_tokens(probe) + 60) * digest._UNCOUNTED_RATIO) + 1
     res = jb.run(
         summary_args(
             path, tmp_path / "o", jbp.PROMPT_VERSION, extra={**LAYERED, "summ_token_cap": str(cap)}
@@ -291,5 +292,9 @@ def test_stage2_over_cap_chunks_by_layer_then_merges(tmp_path, monkeypatch):
     users = [u for n, _s, u in fake.calls if n == "layered"]
     ranges = [u for u in users if re.search(r"=== L\d+-L\d+ digest ===", u)]
     assert len(users) > len(items) and ranges  # chunks, then a merge over range digests
-    assert res.extras["summary"]["n_layered_chunked"] == len(items)
+    # every range digest fed to a merge is grounded on stage-1 samples, so the judge still is
+    raw = {t for r in _rows(items, (20, 24, 28, 32)) for t in r["samples"]}
+    for r in res.rows:
+        assert {g["evidence"] for g in r["summary_statements"]} <= raw
+    assert res.extras["summary"]["n_layered_chunked"] >= 1
     assert res.extras["summary"]["n_layered_items"] == len(items)

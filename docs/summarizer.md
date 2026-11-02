@@ -204,7 +204,8 @@ and this goes to the judge." The default for a multi-layer config since bench v1
 - **Budget:** `summ_layered_x` (default 2) times the single-layer `summ_max` / `summ_rare`, i.e.
   20 prominent + 30 rare entries under the defaults (50 + 50 for agentic_misalignment /
   knowledge_cutoff). A non-default multiple is stamped (`-layered-v1x3`).
-- **Overflow:** a stage-2 input over the global cap (`DEFAULT_TOKEN_CAP`, estimated) is cut into
+- **Overflow:** a stage-2 input over the global cap (`DEFAULT_TOKEN_CAP` divided by the worst
+  real/estimate token ratio `_UNCOUNTED_RATIO`, by estimate) is cut into
   contiguous layer ranges, each condensed by the same call (labelled `L<a>-L<b>`), and the range
   digests merged by one more call (hierarchically, up to 4 levels).
 - **Refusals / failures:** as a digest: the server-side fallback of `summ_fallback`, then a

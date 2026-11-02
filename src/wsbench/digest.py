@@ -2519,6 +2519,7 @@ LAYERED_USER = "LAYER DIGESTS:\n{digests}"
 PROMPTS["LAYERED_SYSTEM"] = LAYERED_SYSTEM
 PROMPTS["LAYERED_USER"] = LAYERED_USER
 LAYERED_ATTEMPTS = 2  # a stage-2 answer with no grounded entry is re-asked once
+MAX_LAYERED_DEPTH = 4  # hierarchical stage-2 levels before one final call over everything
 
 
 def layered_caps(s: Settings) -> tuple[int, int]:
@@ -2628,7 +2629,9 @@ def _layered_pass(
     if not todo:
         return
     conc = s.concurrency or args.concurrency
-    budget = s.token_cap
+    # the stage-2 input is cut by ESTIMATE; dividing by the worst measured real/estimate ratio
+    # keeps every call's real size under the global cap without a count_tokens round trip
+    budget = int(s.token_cap / _UNCOUNTED_RATIO)
     served: dict[str, str] = {}
 
     def call(batch: list[tuple[str, str, str, str]]) -> dict[str, object]:
@@ -2750,20 +2753,23 @@ def _layered_pass(
     while level:
         depth += 1
         jobs: dict[str, tuple[str, list]] = {}
-        split: dict[str, list[str]] = {}
+        # per split item: its next-level groups, in layer order; a str is a pending job key, a
+        # tuple a group carried over unchanged (a range that fits only by itself)
+        split: dict[str, list[Any]] = {}
         for i, groups in level.items():
             parts_ = chunks(groups)
-            if len(parts_) == 1 or depth > 4:
-                jobs[f"layered:{i}|{layers_tag}|d{depth}"] = (
-                    i,
-                    parts_[0] if depth <= 4 else groups,
-                )
-            else:
-                col.diag["n_layered_chunked"] += depth == 1
-                for k, p in enumerate(parts_):
-                    jk = f"layered:{i}|{layers_tag}|d{depth}|c{k + 1}of{len(parts_)}"
-                    jobs[jk] = (i, p)
-                    split.setdefault(i, []).append(jk)
+            if len(parts_) == 1 or depth > MAX_LAYERED_DEPTH or all(len(p) == 1 for p in parts_):
+                # one call over everything (an input still over the cap comes back too_long)
+                jobs[f"layered:{i}|{layers_tag}|d{depth}"] = (i, list(groups))
+                continue
+            col.diag["n_layered_chunked"] += depth == 1
+            for k, p in enumerate(parts_):
+                if len(p) == 1:
+                    split.setdefault(i, []).append(p[0])
+                    continue
+                jk = f"layered:{i}|{layers_tag}|d{depth}|c{k + 1}of{len(parts_)}"
+                jobs[jk] = (i, p)
+                split.setdefault(i, []).append(jk)
         res = stage(jobs)
         nxt: dict[str, list[tuple[Sequence[int], Sequence[Grounded]]]] = {}
         for jk, (i, _groups) in jobs.items():
@@ -2774,15 +2780,16 @@ def _layered_pass(
                 failed[i] = why
             else:
                 final[i] = kept
-        for i, jks in split.items():
-            outs = [res[jk] for jk in jks]
-            bad = [w for k, w in outs if k is None]
+        for i, seq in split.items():
+            bad = [res[x][1] for x in seq if isinstance(x, str) and res[x][0] is None]
             if bad:
                 failed[i] = bad[0]
                 continue
             nxt[i] = [
-                (tuple(sorted({x for _l, gs in jobs[jk][1] for x in _l})), res[jk][0] or [])
-                for jk in jks
+                (tuple(sorted({y for ly, _gs in jobs[x][1] for y in ly})), res[x][0] or [])
+                if isinstance(x, str)
+                else x
+                for x in seq
             ]
         level = nxt
     for i in todo:
