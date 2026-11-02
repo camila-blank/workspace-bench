@@ -1133,3 +1133,15 @@ def test_pricing_usd0_gemini_vertex_run_from_tokens(tmp_path):
     assert js.cost_usd(row, "google/gemini-3.8-flash", led) == pytest.approx(
         (1_000_000 * 0.5 + 100_000 * 3.0 + 500_000 * 0.05) / 1e6
     )
+
+
+def test_first_with_readouts_stops_at_the_bank_lead():
+    def lines():
+        yield json.dumps({"id": "b", "samples": ["x"]})
+        yield json.dumps({"id": "a", "samples": ["y"]})
+        raise AssertionError("read past the bank's first item")
+
+    assert js.first_with_readouts(lines(), ["a", "b"]) == "a"
+    # a dropped lead is skipped: the next bank item with readouts wins after a full read
+    rows = [json.dumps({"id": i, "samples": ["s"]}) for i in ("c", "b")]
+    assert js.first_with_readouts(rows, ["a", "b", "c"], drop=["a"]) == "b"

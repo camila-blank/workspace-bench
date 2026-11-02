@@ -967,6 +967,9 @@ def first_with_readouts(
     skip = set(drop)
     have: list[str] = []
     seen: set[str] = set()
+    # the bank's first eligible item, once seen, is the answer: stop reading (64-layer readouts
+    # run to GBs; plan 0059 f64 preflight read 15 GB over a network mount per layer config)
+    lead = next((i for i in bank if i not in skip), None)
     for line in lines:
         try:
             r = json.loads(line)
@@ -980,6 +983,8 @@ def first_with_readouts(
         if nonempty and i not in skip and i not in seen:
             seen.add(i)
             have.append(i)
+            if i == lead:
+                return i
     for i in bank:
         if i in seen:
             return i
@@ -995,7 +1000,8 @@ def probe_items(
         p = Path(readouts_root) / f"{f}.jsonl"
         if not p.exists():
             continue
-        i = first_with_readouts(_read_lines(p), _bank_order(f), drop)
+        with p.open(encoding="utf-8", errors="replace") as fh:  # streamed: stops at the answer
+            i = first_with_readouts((x.rstrip("\n") for x in fh), _bank_order(f), drop)
         if i is not None:
             out[f] = i
     return out
