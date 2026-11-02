@@ -487,3 +487,12 @@ one client per process). A 429 is shared capacity: transient, backoff.
   unparseable → failed length; 429 retried, 403 fatal, token-limit 400 → too-long under the
   budget; usage tallies incl. thoughts; roster WIF/vertex sets; `route_env` sets exactly one route
   env; existing tests unchanged.
+
+## Addendum C (2026-11-02): cheap models only
+
+Camila, 2026-11-02: "don't test other frontier models, we dont need argon, gemini pro, or astra.
+we are looking for cheap models only." The swept set is `--models tier:cheap` (20 runnable:
+gemini-2.5-flash-lite is 404 on Vertex for this project and drops at preflight), launched with
+Claude (`claude-haiku-5-5`) on the local backend and the rest on Modal. No mid, frontier or
+anchor-tier model is swept; Opus 5.5 stays the reference and the A′/B′ draws. The roster rows stay
+(the analysis can still show them as context if ever run); only the launch selection changes.
