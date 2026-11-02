@@ -1,5 +1,6 @@
 """``wsbench run``: judge several families concurrently, fail-soft, one preflight per model."""
 
+import contextvars
 import json
 import os
 import sys
@@ -10,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from wsbench import digest, llm, mc, mcjudge, reads, registry
+from wsbench import digest, ledger, llm, mc, mcjudge, reads, registry
 from wsbench.baselines import text_inversion
 from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
@@ -34,6 +35,7 @@ class Options(Protocol):
     """The judge options ``wsbench judge`` passes down (``cli.JudgeOptions``)."""
 
     judge_model: str | None
+    judge_effort: str | None  # plan 0059: OpenRouter judge reasoning override (judge_config)
     layers: list[int] | None
     items: list[str] | None
     limit: int
@@ -241,9 +243,11 @@ def _one(
     opts: Mapping[str, str],
 ) -> FamilyOutcome:
     """One family, fail-soft: ``JudgeConfigError`` -> failed/3, ``SystemExit`` (missing cells,
-    refused input) -> failed/2. Anything else propagates."""
+    refused input) -> failed/2. Anything else propagates. The family runs under the spend ledger
+    (``wsbench.ledger``): ``out/spend.jsonl``."""
     try:
-        result = judge_family(spec, args, readouts, out, judge=judge, opts=opts)
+        with ledger.family(out, spec.name):
+            result = judge_family(spec, args, readouts, out, judge=judge, opts=opts)
     except JudgeConfigError as e:
         print(f"{spec.name}: judge config error: {e}", file=sys.stderr)
         return FamilyOutcome(spec.name, "failed", error=str(e), exit_code=3)
@@ -292,7 +296,10 @@ def run_families(
     in-flight ones to finish their current batch (they are recorded normally)."""
     env = os.environ if env is None else env
     opts = parse_opts(args.opt)
-    judges = {s.name: resolve(s.judge, flag=args.judge_model, env=env) for s in specs}
+    effort = getattr(args, "judge_effort", None)
+    judges = {
+        s.name: resolve(s.judge, flag=args.judge_model, env=env, effort=effort) for s in specs
+    }
     outcomes: dict[str, FamilyOutcome] = {}
     runnable: list[tuple[EvalSpec, Path]] = []
     for s in specs:
@@ -326,7 +333,8 @@ def run_families(
     # a family with a deterministic scorer of record makes no call unless opts=judge=mc
     needs_llm = [s for s, _r in runnable if not s.scorer or opts.get("judge") == "mc"]
     to_preflight: dict[str, ResolvedJudge] = {s.name: judges[s.name] for s in needs_llm}
-    if opts.get("aggregate") == "summary":  # every family's digest model (plan 0020)
+    # every family's digest model (plan 0020); a cache-only digest makes no call (plan 0059)
+    if opts.get("aggregate") == "summary" and not digest.cache_only_opt(opts):
         for s, _r in runnable:
             to_preflight[f"digest:{s.name}"] = digest.preflight_judge(opts, s.judge.aux_models)
     if to_preflight and not args.dry_run:
@@ -343,7 +351,9 @@ def run_families(
     try:
         for s, readouts in runnable:
             dest = out_of(s.name) if out_of is not None else out / s.name
-            fut = executor.submit(_one, s, args, readouts, dest, judges[s.name], opts)
+            # the caller's context rides into the worker thread (ledger.family sets its own)
+            ctx = contextvars.copy_context()
+            fut = executor.submit(ctx.run, _one, s, args, readouts, dest, judges[s.name], opts)
             futures[fut] = s.name
         for fut in as_completed(futures):
             oc = fut.result()
@@ -422,4 +432,6 @@ def run_manifest(
     }
     if getattr(args, "hb_method", ""):  # plan 0040: `wsbench report` prints its HB index
         manifest["hb_method"] = args.hb_method
+    if getattr(args, "judge_effort", None):  # plan 0059: only when given
+        manifest["judge_effort"] = args.judge_effort
     return manifest

@@ -8,6 +8,28 @@
   retried with jittered backoff; any other per-call failure yields ``None`` (an unjudged cell,
   never a clean one). Problems that would fail every call raise :class:`JudgeConfigError`.
 * ``on_result(i, result)`` fires as each call lands so callers can cache as they go.
+* OpenRouter route only (plan 0059): ``WSBENCH_OPENROUTER_MAX_OUT`` sets every call's
+  ``max_tokens`` (the per-model output budget, raising or lowering the request); a 400 naming
+  the context length is too-long (``TOO_LONG_JSON`` under
+  ``mark_refusals``); ``message.refusal``, ``finish_reason == "content_filter"`` and a moderation
+  403 are refusals; ``finish_reason == "length"`` with unparseable JSON is one failed call; an
+  error delivered in a 200 body is classified by its ``error.code`` like an HTTP status.
+* Plan 0059 addendum A: with ``WSBENCH_OPENAI_ROUTE=wif`` an ``openai/*`` id (not
+  ``openai/gpt-oss-*``) takes a third route, ``openai``: OpenAI directly through
+  ``wsbench.baselines.ati_remote.Clients("openai-wif")`` (workload identity federation; a 401
+  re-exchanges the token up to ``ati_remote.AUTH_REFRESHES`` times, then is fatal). Unset, routing
+  is unchanged. The request carries ``max_completion_tokens`` (the same output budget),
+  ``reasoning_effort`` from the reasoning's ``effort``, no ``temperature``, no OpenRouter
+  ``extra_body``; the response rules are the OpenRouter ones (a 403 is always fatal). OpenAI
+  returns no cost, so ``Spend.usd`` stays 0 on this route.
+* Plan 0059 addendum B: with ``WSBENCH_GEMINI_ROUTE=vertex`` a ``google/gemini-*`` id (not
+  ``google/gemma-*``) takes a fourth route, ``gemini``: Vertex AI through ``google-genai`` with
+  workload identity federation on Modal's OIDC identity token (``MODAL_IDENTITY_TOKEN``; both
+  packages imported lazily). Unset, routing is unchanged. The request carries the schema as
+  ``response_json_schema``, ``max_output_tokens`` (the same output budget), ``thinking_level`` from
+  the reasoning's ``effort`` and ``temperature`` only when set; a SAFETY-class finish or a blocked
+  prompt is a refusal, an unparseable ``MAX_TOKENS`` finish one failed call, the error status is
+  ``APIError.code`` (401/403/404 fatal). Vertex returns no cost: ``Spend.usd`` stays 0.
 """
 
 import asyncio
@@ -17,16 +39,58 @@ import random
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from wsbench import ledger
 
 OPENROUTER = "https://openrouter.ai/api/v1"
 _TRANSIENT = (408, 409, 429, 500, 502, 503, 504, 529)
 _FATAL = ("AuthenticationError", "PermissionDeniedError", "NotFoundError")
 _ATTEMPTS = 12
-_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000}
+_DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000, "openai": 8000, "gemini": 8000}
+# plan 0059: the OpenRouter output budget — every call's max_tokens, raised or lowered to it
+# (outside every fingerprint; the sweep driver sets it to min(max_out, 32 000, context // 4), so
+# the output request can never be what overflows)
+MAX_OUT_ENV = "WSBENCH_OPENROUTER_MAX_OUT"
+# an OpenRouter 400 whose message names the context length is a too-long input (pinned by a test;
+# "too many tokens" is deliberately absent: it also names an output request over the cap)
+OPENROUTER_TOO_LONG = (
+    "maximum context length",
+    "context length",
+    "context window",
+    "prompt is too long",
+)
+# the final statuses that mean a call was throttled (rate limit / exhausted quota), not broken
+THROTTLE_STATUSES = frozenset({"429", "quota"})
+# plan 0059 addendum A: "wif" sends openai/* ids (not gpt-oss) to OpenAI directly (route openai)
+OPENAI_ROUTE_ENV = "WSBENCH_OPENAI_ROUTE"
+_OPEN_WEIGHTS = "openai/gpt-oss"  # served by other providers, never by OpenAI: stays on OpenRouter
+# plan 0059 addendum B: "vertex" sends google/gemini-* ids (not google/gemma-*, open weights served
+# by other OpenRouter providers) to Vertex AI (route gemini)
+GEMINI_ROUTE_ENV = "WSBENCH_GEMINI_ROUTE"
+_GEMINI = "google/gemini-"
+# the Vertex WIF recipe (access note, 2026-11-01): Modal workspace safety-sahan-2, environment
+# camila-blank only (the pool trusts that environment's identity tokens)
+VERTEX_PROJECT = "camila-blank"
+VERTEX_LOCATION = "global"
+VERTEX_AUDIENCE = (
+    "//iam.googleapis.com/projects/514946254119/locations/global/workloadIdentityPools/modal/"
+    "providers/modal-oidc"
+)
+VERTEX_TOKEN_URL = "https://sts.googleapis.com/v1/token"
+VERTEX_SUBJECT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt"
+VERTEX_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+MODAL_IDENTITY_ENV = "MODAL_IDENTITY_TOKEN"
+# a Vertex 400 naming the input token limit is a too-long input (sound only under the output
+# budget, as on OpenRouter)
+GEMINI_TOO_LONG = ("input token count", "exceeds the maximum number of tokens")
+# finish reasons that mean the model / filter declined (never retried)
+GEMINI_REFUSALS = frozenset({"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"})
+# raw httpx connection failures (google-genai does not wrap them, unlike the openai SDK)
+_HTTPX_CONNECTION = frozenset({"ConnectError", "RemoteProtocolError", "ReadError", "WriteError"})
 
-Route = Literal["anthropic", "openrouter"]
+Route = Literal["anthropic", "openrouter", "openai", "gemini"]
 
 
 class JudgeConfigError(RuntimeError):
@@ -36,7 +100,15 @@ class JudgeConfigError(RuntimeError):
 @dataclass
 class Spend:
     """Per-run tally. ``calls`` counts HTTP 200 responses (including garbled bodies that were
-    then retried); ``errors``/``refusals`` count cells left unjudged."""
+    then retried); ``errors``/``refusals`` count cells left unjudged. ``input_tokens`` excludes
+    cached prompt tokens on the Anthropic route (those are ``cache_read_tokens`` /
+    ``cache_write_tokens``) and includes them on OpenRouter (``prompt_tokens``); output tokens
+    include thinking / reasoning on both. ``transient``: status -> count of retried transient
+    failures (``"408"`` ... ``"529"``, ``"timeout"``, ``"connection"``; parse retries are not
+    counted), recovered or not; ``failed``: final status -> count of calls that ENDED failed with
+    one (an HTTP status, ``"timeout"`` / ``"connection"``, or a 200-body ``error.code``), so a
+    call that ended throttled (:meth:`throttled`) is told from a recovered retry. A Spend built
+    inside a runner family registers in the spend ledger (``wsbench.ledger``)."""
 
     usd: float = 0.0
     calls: int = 0
@@ -45,6 +117,18 @@ class Spend:
     refusals: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    transient: dict[str, int] = field(default_factory=dict)
+    failed: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        ledger.register(self)
+
+    def throttled(self) -> int:
+        """Calls that ENDED failed on a rate limit or an exhausted quota (recovered 429s are
+        not counted)."""
+        return sum(n for k, n in self.failed.items() if k in THROTTLE_STATUSES)
 
     def report(self) -> str:
         s = (
@@ -57,11 +141,43 @@ class Spend:
 
 
 def route(model: str) -> Route:
-    return "anthropic" if model.startswith("claude-") else "openrouter"
+    if model.startswith("claude-"):
+        return "anthropic"
+    if model.startswith("openai/") and not model.startswith(_OPEN_WEIGHTS) and _openai_wif():
+        return "openai"
+    if model.startswith(_GEMINI) and _gemini_vertex():
+        return "gemini"
+    return "openrouter"
+
+
+def _openai_wif() -> bool:
+    """``WSBENCH_OPENAI_ROUTE`` is ``wif`` (unset / empty: ``False``; anything else is a
+    :class:`JudgeConfigError`)."""
+    raw = os.environ.get(OPENAI_ROUTE_ENV, "").strip()
+    if raw and raw != "wif":
+        raise JudgeConfigError(f"{OPENAI_ROUTE_ENV}={raw!r}: expected 'wif' or unset")
+    return raw == "wif"
+
+
+def _gemini_vertex() -> bool:
+    """``WSBENCH_GEMINI_ROUTE`` is ``vertex`` (unset / empty: ``False``; anything else is a
+    :class:`JudgeConfigError`)."""
+    raw = os.environ.get(GEMINI_ROUTE_ENV, "").strip()
+    if raw and raw != "vertex":
+        raise JudgeConfigError(f"{GEMINI_ROUTE_ENV}={raw!r}: expected 'vertex' or unset")
+    return raw == "vertex"
+
+
+def gemini_model(model: str) -> str:
+    """The Vertex model id of a ``google/gemini-*`` roster id (the ``google/`` prefix stripped)."""
+    return model.removeprefix("google/")
 
 
 def api_key(model: str) -> str:
-    if route(model) == "anthropic":
+    route_ = route(model)
+    if route_ in ("openai", "gemini"):
+        return ""  # workload identity federation: the token is exchanged by the client
+    if route_ == "anthropic":
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             return key
@@ -154,9 +270,86 @@ def _make_client(route: str, key: str) -> Any:
         if not key:  # an `ant` profile (ANTHROPIC_PROFILE): the SDK reads its OAuth credentials
             return AsyncAnthropic(max_retries=0)
         return AsyncAnthropic(api_key=key, max_retries=0)
+    if route == "openai":
+        from wsbench.baselines import ati_remote  # lazily: the route is opt-in
+
+        try:
+            return _WifClient(ati_remote.Clients("openai-wif"))
+        except ati_remote.AbortError as e:  # the openai-wif secret / Modal identity is missing
+            raise JudgeConfigError(str(e)) from e
+    if route == "gemini":
+        return _GeminiClient(_vertex_client())
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key=key, base_url=OPENROUTER, max_retries=0)
+
+
+_VERTEX_CREDS: Any = None  # one federated credential per process (google-auth refreshes it)
+_VERTEX_LOCK = threading.Lock()
+
+
+def _vertex_credentials() -> Any:
+    """The process's WIF credential: Modal's OIDC identity token exchanged at Google STS
+    (``google.auth.identity_pool``, imported lazily). No identity token or no package is a
+    :class:`JudgeConfigError`."""
+    global _VERTEX_CREDS
+    with _VERTEX_LOCK:
+        if _VERTEX_CREDS is not None:
+            return _VERTEX_CREDS
+        try:
+            from google.auth import identity_pool
+        except ImportError as e:
+            raise JudgeConfigError(
+                "the gemini route needs google-auth>=2.40 (the Modal image installs it)"
+            ) from e
+        if not os.environ.get(MODAL_IDENTITY_ENV):
+            raise JudgeConfigError(
+                f"{MODAL_IDENTITY_ENV} is missing: the gemini route runs only in a Modal container "
+                "of environment camila-blank"
+            )
+
+        class _ModalToken(identity_pool.SubjectTokenSupplier):
+            def get_subject_token(self, context: Any, request: Any) -> str:
+                return os.environ[MODAL_IDENTITY_ENV]
+
+        _VERTEX_CREDS = identity_pool.Credentials(
+            audience=VERTEX_AUDIENCE,
+            subject_token_type=VERTEX_SUBJECT_TOKEN_TYPE,
+            token_url=VERTEX_TOKEN_URL,
+            subject_token_supplier=_ModalToken(),
+            scopes=list(VERTEX_SCOPES),
+        )
+        return _VERTEX_CREDS
+
+
+def _vertex_client() -> Any:
+    """A ``genai.Client`` on Vertex AI with the process's WIF credential (a fresh client per
+    batch: its async HTTP session is bound to the batch's event loop; the credential is shared)."""
+    try:
+        from google import genai
+    except ImportError as e:
+        raise JudgeConfigError(
+            "the gemini route needs google-genai>=2.3 (the Modal image installs it)"
+        ) from e
+    return genai.Client(
+        vertexai=True,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
+        credentials=_vertex_credentials(),
+    )
+
+
+class _GeminiClient:
+    """The ``gemini`` route's client: a ``genai.Client`` behind the ``close()`` the batch calls."""
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.aio = client.aio
+
+    async def close(self) -> None:
+        aclose = getattr(self.aio, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 # ---------------------------------------------------------------- one call
@@ -184,6 +377,7 @@ async def _openrouter_once(
     max_tokens: int,
     timeout: float,
     spend: Spend,
+    mark_refusals: bool = False,
 ) -> dict[str, Any] | None:
     extra_body: dict[str, Any] = {
         "usage": {"include": True},
@@ -203,15 +397,270 @@ async def _openrouter_once(
         extra_body=extra_body,
         **kwargs,
     )
+    return _chat_result(
+        resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+    )
+
+
+class _WifClient:
+    """The ``openai`` route's client: ``ati_remote.Clients("openai-wif")`` (one ``AsyncOpenAI``
+    per access token) behind the ``close()`` the batch calls at the end."""
+
+    def __init__(self, clients: Any) -> None:
+        self.clients = clients
+        self._built: list[Any] = []
+
+    async def get(self) -> Any:
+        c = await self.clients.get()
+        if not any(c is b for b in self._built):
+            self._built.append(c)
+        return c
+
+    def auth_failed(self, client: Any) -> None:
+        self.clients.auth_failed(client)
+
+    async def close(self) -> None:
+        for c in self._built:
+            close = getattr(c, "close", None)
+            if close is not None:
+                await close()
+
+
+async def _openai_once(
+    wif: Any,
+    system: str,
+    user: str,
+    *,
+    schema: dict[str, Any],
+    model: str,
+    reasoning: dict[str, Any] | None,
+    max_tokens: int,
+    timeout: float,
+    spend: Spend,
+    mark_refusals: bool = False,
+) -> dict[str, Any] | None:
+    """One OpenAI chat completion through WIF (plan 0059 addendum A). A 401 drops the access
+    token and re-exchanges, up to ``ati_remote.AUTH_REFRESHES`` times; the last 401 propagates
+    (fatal in :func:`_one`). A failed token exchange is fatal (key / identity problem) or, on a
+    429 / 5xx from the token endpoint, a retried transient failure."""
+    from wsbench.baselines import ati_remote
+
+    kwargs: dict[str, Any] = {
+        "timeout": timeout,
+        "model": ati_remote.route_model(model, "openai-wif"),
+        "max_completion_tokens": max_tokens,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "response_format": {"type": "json_schema", "json_schema": schema},
+    }
+    effort = (reasoning or {}).get("effort")
+    if effort:
+        kwargs["reasoning_effort"] = str(effort)
+    for auth in range(ati_remote.AUTH_REFRESHES + 1):
+        try:
+            client = await wif.get()
+        except ati_remote.AbortError as e:
+            raise JudgeConfigError(str(e)) from e
+        try:
+            resp = await client.chat.completions.create(**kwargs)
+        except Exception as e:
+            if getattr(e, "status_code", None) == 401 and auth < ati_remote.AUTH_REFRESHES:
+                wif.auth_failed(client)  # the short-lived token may have expired mid-run
+                continue
+            raise
+        return _chat_result(
+            resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+        )
+    raise AssertionError("unreachable: the last 401 propagates")
+
+
+def _chat_result(
+    resp: Any, *, model: str, max_tokens: int, spend: Spend, mark_refusals: bool
+) -> dict[str, Any] | None:
+    """A chat-completions response (OpenRouter or OpenAI) -> the parsed object, a refusal or
+    ``None``; tallies cost and tokens."""
     spend.calls += 1
     if not getattr(resp, "choices", None):  # an error delivered in a 200 body
-        raise ValueError("response has no choices")
+        raise _body_error(resp)
     usage = getattr(resp, "usage", None)
     cost = getattr(usage, "cost", None) if usage is not None else None
     if cost is None and usage is not None:
         cost = (getattr(usage, "model_extra", None) or {}).get("cost")
     spend.usd += float(cost or 0.0)
-    return _parse_object(resp.choices[0].message.content or "")
+    if usage is not None:  # getattr defaults: the test fakes carry only ``cost``
+        spend.input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+        spend.output_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+    choice = resp.choices[0]
+    message = getattr(choice, "message", None)
+    finish = getattr(choice, "finish_reason", None)
+    content = getattr(message, "content", None) or ""
+    if getattr(message, "refusal", None) or finish == "content_filter":
+        spend.refusals += 1  # non-transient: a refusal is never retried
+        print(f"  llm refusal: {model} finish_reason={finish}")
+        return REFUSED_JSON if mark_refusals else None
+    try:
+        return _parse_object(content)
+    except (ValueError, json.JSONDecodeError):
+        if finish != "length":
+            raise  # a garbled body: retried
+        # cut off at the output cap: a retry would be cut off again (and paid again)
+        spend.errors += 1
+        _tally(spend.failed, "length")
+        print(f"  llm error: {model} finish_reason=length (max_tokens={max_tokens})")
+        return None
+
+
+def _genai_types() -> Any:
+    """``google.genai.types`` (lazily: the route is opt-in; tests patch this seam)."""
+    from google.genai import types
+
+    return types
+
+
+def _enum_name(v: Any) -> str | None:
+    """A google-genai enum (or its string) -> its upper-case name; ``None`` when unset."""
+    if v is None:
+        return None
+    return str(getattr(v, "value", v)).upper()
+
+
+async def _gemini_once(
+    client: Any,
+    system: str,
+    user: str,
+    *,
+    schema: dict[str, Any],
+    model: str,
+    reasoning: dict[str, Any] | None,
+    temperature: float | None,
+    max_tokens: int,
+    timeout: float,
+    spend: Spend,
+    mark_refusals: bool = False,
+) -> dict[str, Any] | None:
+    """One Vertex AI ``generate_content`` call (plan 0059 addendum B)."""
+    types = _genai_types()
+    cfg: dict[str, Any] = {
+        "system_instruction": system,
+        "response_mime_type": "application/json",
+        "response_json_schema": schema["schema"],
+        "max_output_tokens": max_tokens,
+        "http_options": types.HttpOptions(timeout=int(timeout * 1000)),  # milliseconds
+    }
+    effort = (reasoning or {}).get("effort")
+    if effort:
+        cfg["thinking_config"] = types.ThinkingConfig(thinking_level=str(effort))
+    if temperature is not None:
+        cfg["temperature"] = temperature
+    resp = await client.aio.models.generate_content(
+        model=gemini_model(model), contents=user, config=types.GenerateContentConfig(**cfg)
+    )
+    return _gemini_result(
+        resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
+    )
+
+
+def _gemini_result(
+    resp: Any, *, model: str, max_tokens: int, spend: Spend, mark_refusals: bool
+) -> dict[str, Any] | None:
+    """A ``GenerateContentResponse`` -> the parsed object, a refusal or ``None``; tallies tokens.
+    ``prompt_token_count`` includes cached tokens, so ``input_tokens`` gets the uncached part and
+    ``cache_read_tokens`` the cached one (as on the Anthropic route); output = candidates +
+    thoughts."""
+    spend.calls += 1
+    um = getattr(resp, "usage_metadata", None)
+    if um is not None:
+        cached = int(getattr(um, "cached_content_token_count", 0) or 0)
+        prompt = int(getattr(um, "prompt_token_count", 0) or 0)
+        spend.input_tokens += max(0, prompt - cached)
+        spend.cache_read_tokens += cached
+        spend.output_tokens += int(getattr(um, "candidates_token_count", 0) or 0)
+        spend.output_tokens += int(getattr(um, "thoughts_token_count", 0) or 0)
+    feedback = getattr(resp, "prompt_feedback", None)
+    block = _enum_name(getattr(feedback, "block_reason", None))
+    candidates = getattr(resp, "candidates", None) or []
+    finish = _enum_name(getattr(candidates[0], "finish_reason", None)) if candidates else None
+    if (block and block != "BLOCKED_REASON_UNSPECIFIED") or finish in GEMINI_REFUSALS:
+        spend.refusals += 1  # non-transient: a refusal is never retried
+        print(f"  llm refusal: {model} finish_reason={finish} block_reason={block}")
+        return REFUSED_JSON if mark_refusals else None
+    if not candidates:
+        raise ValueError("response has no candidates")
+    try:
+        return _parse_object(getattr(resp, "text", None) or "")
+    except (ValueError, json.JSONDecodeError):
+        if finish != "MAX_TOKENS":
+            raise  # a garbled body: retried
+        spend.errors += 1  # cut off at the output cap: a retry would be cut off again
+        _tally(spend.failed, "length")
+        print(f"  llm error: {model} finish_reason=MAX_TOKENS (max_output_tokens={max_tokens})")
+        return None
+
+
+def _gemini_status(e: Exception) -> int | None:
+    """``google.genai.errors.APIError.code`` (the HTTP status) of a gemini-route failure."""
+    code = getattr(e, "code", None)
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
+class _BodyError(Exception):
+    """An error OpenRouter delivered in a 200 body, classified by ``status_code`` = its
+    ``error.code`` (an int when numeric, else the code string, e.g. ``"quota"``)."""
+
+    def __init__(self, message: str, status_code: int | str | None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _body_error(resp: Any) -> Exception:
+    """The exception for a 200 body with no choices: a :class:`_BodyError` carrying
+    ``error.code`` (a code-less rate-limit / quota message counts as 429), else the old
+    ``ValueError`` parse retry."""
+    err = getattr(resp, "error", None)
+    if err is None:
+        err = (getattr(resp, "model_extra", None) or {}).get("error")
+    if not isinstance(err, dict):
+        err = {"code": getattr(err, "code", None), "message": getattr(err, "message", "")}
+    code: Any = err.get("code")
+    msg = str(err.get("message") or "")
+    if isinstance(code, str) and code.strip().isdigit():
+        code = int(code.strip())
+    if code is None and any(w in msg.lower() for w in ("rate limit", "rate-limit", "quota")):
+        code = 429
+    if code is None or isinstance(code, bool) or not isinstance(code, int | str):
+        return ValueError("response has no choices")
+    return _BodyError(f"200-body error {code}: {msg[:300]}", code)
+
+
+def _moderated(e: Exception) -> bool:
+    """An OpenRouter 403 that is a moderation flag (``error.metadata.reasons``, or a message
+    saying the input was flagged), not an auth / access problem."""
+    body = getattr(e, "body", None)
+    err = body.get("error", body) if isinstance(body, dict) else None
+    meta = err.get("metadata") if isinstance(err, dict) else None
+    if isinstance(meta, dict) and "reasons" in meta:
+        return True
+    msg = str(err.get("message") or "") if isinstance(err, dict) else ""
+    return "flagged" in (msg + " " + str(e)).lower()
+
+
+def _status_kind(e: Exception, status: Any) -> str | None:
+    """The ``Spend.transient`` / ``Spend.failed`` key of a failure: its status, or ``timeout`` /
+    ``connection`` by exception name; ``None`` for a parse failure."""
+    if status is not None:
+        return str(status)
+    name = type(e).__name__
+    if name == "TransientExchangeError":
+        return "token_exchange"
+    if "Timeout" in name or "Deadline" in name:
+        return "timeout"
+    if "Connection" in name:
+        return "connection"
+    return None
+
+
+def _tally(d: dict[str, int], kind: str | None) -> None:
+    if kind is not None:
+        d[kind] = d.get(kind, 0) + 1
 
 
 # What a free-text call returns for a model refusal when the caller passes mark_refusals=True
@@ -306,12 +755,16 @@ async def _anthropic_once(
         spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
         spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
     stop = getattr(resp, "stop_reason", None)
+    if usage is not None:  # getattr defaults: older fakes carry no cache fields
+        spend.cache_read_tokens += int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+        spend.cache_write_tokens += int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
     if stop == "refusal":
         spend.refusals += 1
         print(f"  llm refusal: {model}")
         return REFUSED_JSON if mark_refusals else None
     if stop in ("max_tokens", "model_context_window_exceeded"):
         spend.errors += 1
+        _tally(spend.failed, "max_tokens" if stop == "max_tokens" else "context_window")
         print(f"  llm error: {model} stop_reason={stop}")
         if mark_refusals and stop == "model_context_window_exceeded":
             return TOO_LONG_JSON
@@ -379,6 +832,33 @@ async def _one(
                     mark_refusals=mark_refusals,
                     fallbacks=fallbacks,
                 )
+            if route_ == "openai":
+                return await _openai_once(
+                    client,
+                    system,
+                    user,
+                    schema=schema,
+                    model=model,
+                    reasoning=reasoning,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    spend=spend,
+                    mark_refusals=mark_refusals,
+                )
+            if route_ == "gemini":
+                return await _gemini_once(
+                    client,
+                    system,
+                    user,
+                    schema=schema,
+                    model=model,
+                    reasoning=reasoning,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    spend=spend,
+                    mark_refusals=mark_refusals,
+                )
             return await _openrouter_once(
                 client,
                 system,
@@ -390,29 +870,83 @@ async def _one(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 spend=spend,
+                mark_refusals=mark_refusals,
             )
         except Exception as e:
+            if isinstance(e, JudgeConfigError):  # the openai route's failed token exchange
+                raise
             name = type(e).__name__
             status = getattr(e, "status_code", None)
-            if name in _FATAL or status in (401, 402, 403):  # bad key, no credits, no access
+            if route_ == "gemini" and status is None:
+                status = _gemini_status(e)  # google-genai's APIError carries ``code``
+            if route_ == "openrouter" and status == 403 and _moderated(e):
+                spend.refusals += 1  # a moderation flag: this input, not the key (plan 0059)
+                print(f"  llm refusal: {model} (moderation 403)")
+                return REFUSED_JSON if mark_refusals else None
+            # bad key, no credits, no access: HTTP errors only — a 200-body error with such a code
+            # is an upstream provider's and keeps the old retry (review of #217)
+            if not isinstance(e, _BodyError) and (name in _FATAL or status in (401, 402, 403)):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
+            if route_ == "gemini" and status == 404:  # no such model / no access on Vertex
+                raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
+            kind = _status_kind(e, status)
+            gemini_conn = route_ == "gemini" and status is None and name in _HTTPX_CONNECTION
+            if gemini_conn:
+                kind = "connection"
             transient = (
-                status in _TRANSIENT
+                gemini_conn
+                or status in _TRANSIENT
                 or "Timeout" in name
                 or "Connection" in name
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
+                or name == "TransientExchangeError"  # openai route: token endpoint 429 / 5xx
+                # a 200-body error keeps the old retry unless it is a too-long input (the
+                # fatal 401-404 codes raised above)
+                or (isinstance(e, _BodyError) and not (status == 400 and _too_long(route_, str(e))))
             )
             if transient and attempt < n_attempts - 1:
                 spend.retries += 1
-                await _sleep(_backoff(attempt, status))
+                if not isinstance(e, json.JSONDecodeError | ValueError):  # parse retries: no
+                    _tally(spend.transient, kind)
+                await _sleep(_backoff(attempt, status if isinstance(status, int) else None))
                 continue
             spend.errors += 1
+            _tally(spend.failed, kind)
             print(f"  llm error: {name}: {str(e)[:200]}")
-            if mark_refusals and status == 400 and "prompt is too long" in str(e).lower():
+            if mark_refusals and status == 400 and _too_long(route_, str(e)):
                 return TOO_LONG_JSON
             return None
     return None
+
+
+def _too_long(route_: Route, message: str) -> bool:
+    """A 400 that is a too-long input: "prompt is too long"; on OpenRouter (and the ``openai``
+    route) with ``WSBENCH_OPENROUTER_MAX_OUT`` set, any :data:`OPENROUTER_TOO_LONG` phrase (sound
+    only under that output cap, plan 0059: without it a "maximum context length" 400 can be the
+    output request); on the ``gemini`` route, under the same cap, any :data:`GEMINI_TOO_LONG`
+    phrase."""
+    msg = message.lower()
+    if route_ == "anthropic" or openrouter_max_out() is None:  # the broad list needs the cap
+        return "prompt is too long" in msg
+    if route_ == "gemini":
+        return any(p in msg for p in GEMINI_TOO_LONG)
+    return any(p in msg for p in OPENROUTER_TOO_LONG)
+
+
+def openrouter_max_out() -> int | None:
+    """``WSBENCH_OPENROUTER_MAX_OUT`` as a positive int (``None`` when unset); a bad value is a
+    :class:`JudgeConfigError`."""
+    raw = os.environ.get(MAX_OUT_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        cap = int(raw)
+    except ValueError:
+        cap = 0
+    if cap <= 0:
+        raise JudgeConfigError(f"{MAX_OUT_ENV}={raw!r}: expected a positive integer")
+    return cap
 
 
 # ---------------------------------------------------------------- the primitive
@@ -439,7 +973,8 @@ async def stream_json_async(
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
     a config problem. Builds no client when there is nothing to call. ``temperature`` is sent on
     the OpenRouter route only: newer Claude models reject the field (400), so the Anthropic route
-    drops it with one printed warning per batch."""
+    drops it with one printed warning per batch (as does the ``openai`` route; the ``gemini`` route
+    sends it)."""
     spend = spend or Spend()
     if not prompts:
         return spend
@@ -450,8 +985,15 @@ async def stream_json_async(
     if temperature is not None and route_ == "anthropic":
         print(f"  llm: dropping temperature={temperature} for {model} (Anthropic route rejects it)")
         temperature = None
+    if temperature is not None and route_ == "openai":
+        print(f"  llm: dropping temperature={temperature} for {model} (OpenAI reasoning models)")
+        temperature = None
     if max_tokens is None:
         max_tokens = _DEFAULT_MAX_TOKENS[route_]
+    if route_ != "anthropic" and (cap := openrouter_max_out()) is not None:
+        # the sweep's per-model output budget, up AND down: a reasoning judge at the default
+        # 8 000 is cut off mid-JSON (smoke, 2026-11-01); only tokens used are billed
+        max_tokens = cap
     client = _make_client(route_, key)
     sem = asyncio.Semaphore(concurrency)
 
@@ -647,6 +1189,8 @@ async def _anthropic_text_once(
         if usage is not None:
             spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
             spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
+            spend.cache_read_tokens += int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+            spend.cache_write_tokens += int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
         stop = getattr(resp, "stop_reason", None)
         if stop == "refusal":
             spend.refusals += 1
@@ -700,9 +1244,12 @@ async def _one_text(
             )
             if transient and attempt < _ATTEMPTS - 1:
                 spend.retries += 1
+                if not isinstance(e, json.JSONDecodeError | ValueError):
+                    _tally(spend.transient, _status_kind(e, status))
                 await _sleep(_backoff(attempt, status))
                 continue
             spend.errors += 1
+            _tally(spend.failed, _status_kind(e, status))
             print(f"  llm error: {name}: {str(e)[:200]}")
             return None
     return None

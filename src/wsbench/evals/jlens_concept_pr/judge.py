@@ -509,6 +509,8 @@ def run(args: JudgeArgs) -> FamilyResult:
         "n_empty_cells": rep.n_empty,
         "skipped_rows": sum(rep.skipped.values()),
         "spend_usd": spend.usd,
+        "input_tokens": spend.input_tokens,
+        "output_tokens": spend.output_tokens,
     }
     config = base_config(
         args,
