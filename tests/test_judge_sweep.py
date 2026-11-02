@@ -1456,3 +1456,9 @@ def test_feasibility_report_from_sweep_records(tmp_path):
     # the default out path of one sweep is <out-root>/<sweep>/feasibility.md
     assert js.main(["feasibility", "--sweeps", "f1", "--out-root", str(root)]) == 0
     assert (sw / "feasibility.md").exists() and (sw / "feasibility.json").exists()
+
+
+def test_parse_statuses_survives_unicode_line_separators_in_the_payload():
+    payload = {"statuses": {"a": {"status": "ok"}}, "rows": ["judge text\u2028more\x85end"]}
+    out = "progress\n" + json.dumps(payload, ensure_ascii=False) + "\n"
+    assert js.parse_statuses(out, ["a"], 0) == {"a": "ok"}

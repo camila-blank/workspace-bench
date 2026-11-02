@@ -666,3 +666,20 @@ def test_name_rule_matches_the_gate():
     native, summ = _render_both()
     assert rule in native and rule in summ
     assert _gate("she", "female", [_tok(["she", "her"])]) == ""
+
+
+def test_cannot_tell_with_inferred_basis_does_not_crash(tmp_path, fake_llm, mk_args):
+    # a judge may pick the escape ("cannot tell") yet label its basis inferred: the stem-echo
+    # check has no value forms for the escape and used to raise KeyError, failing every family
+    # of the run (judge sweep, deepseek-v4.1-flash). It now applies only to a picked value.
+    escape = len(GOLDEN[C]["options"]) + 1  # C: an age group (stem-echo checked; A/B are Country)
+
+    def escape_inferred(system, user):
+        if user.startswith("Return"):
+            return {"a": 1}
+        return _verdict(escape, "inferred_characterization", "ev")
+
+    fake_llm(escape_inferred)
+    res = judge.run(mk_args(_scripted(tmp_path), items=[C]))
+    assert res.value == 0.0 and {r["pick"] for r in res.rows} == {"cannot_tell"}
+    assert not any(r["stem_echo"] for r in res.rows)

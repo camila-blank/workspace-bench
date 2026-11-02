@@ -1183,7 +1183,10 @@ def parse_statuses(stdout: str, families: Sequence[str], rc: int) -> dict[str, s
     payload (an abort before any family started: preflight / config, exit 3) every family is
     ``failed: exit <rc>``."""
     payload = None
-    for line in reversed(stdout.splitlines()):
+    # "\n" only: str.splitlines also splits on U+2028 / U+0085 / \x1c-\x1e, which a judge's own
+    # text inside the (ensure_ascii=False) payload can carry, cutting the payload line in two
+    # (gpt-oss-20b, f64-L16: every family "no status" after an all-ok pass)
+    for line in reversed(stdout.split("\n")):
         s = line.strip()
         if not s.startswith("{"):
             continue
