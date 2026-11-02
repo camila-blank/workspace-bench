@@ -564,6 +564,26 @@ def test_chain_gate_counts_any_named_intermediate(tmp_path):
     assert ti.draw_verdicts(p) == {"a": True, "b": False, "c": None}
 
 
+def test_pair_headline_drift_guard_uses_the_item_rate(tmp_path):
+    """role_bound_association's headline is the pair rule (oa-v3): the gate decides each item on
+    its own rows and checks them against the per-item rate in extras; a wrong per-item rate still
+    trips the guard."""
+    rows = [
+        {"id": i, "pass": v}
+        for i, v in [("a-ab", True), ("a-ba", False), ("b-ab", True), ("b-ba", True)]
+    ]
+    p = _results(tmp_path / "r", "role_bound_association", rows, value=0.5)
+    raw = json.loads(p.read_text())
+    raw["n_items"] = 4
+    raw["numbers"]["extras"] = {"item_rule": "pair-v1", "item_pass_rate": 0.75}
+    p.write_text(json.dumps(raw))
+    assert ti.draw_verdicts(p) == {"a-ab": True, "a-ba": False, "b-ab": True, "b-ba": True}
+    raw["numbers"]["extras"]["item_pass_rate"] = 0.5
+    p.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="item adapter rate"):
+        ti.draw_verdicts(p)
+
+
 def test_directed_modulation_adapter_is_the_headline_rule(tmp_path):
     # the adapter follows the family headline: plan 0035 `expressed` (gold picked, any basis;
     # plan 0028's `present` did not count an incidental pick)
