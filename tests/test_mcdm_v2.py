@@ -668,7 +668,7 @@ def test_readplan_mcdm_lite_row():
     assert row.layers == readplan.GRID and len(readplan.plan(NAME)) == 116
 
 
-def test_mcdm_lite_matches_full(tmp_path, monkeypatch):
+def test_mcdm_lite_matches_full(tmp_path, monkeypatch, capsys):
     """Plan 0061: reads=lite judges the 12 sentence cells, with write compliance, as full does."""
     path = write_jsonl(
         tmp_path / "r.jsonl",
@@ -697,6 +697,7 @@ def test_mcdm_lite_matches_full(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as e:
         judge.run(_args(bad, tmp_path / "b", items=["d-lion"], extra={"reads": "lite"}))
     assert e.value.code == 2
+    assert "lite rule is `same`" in capsys.readouterr().err
 
 
 def test_mcdm_prompt_only_skips_compliance(tmp_path, monkeypatch):

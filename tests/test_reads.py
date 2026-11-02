@@ -376,7 +376,7 @@ def test_lite_is_full_gets_the_full_span_check(tmp_path):
     assert rep.partial_ids == [a] and reads.incomplete(args) and len(cells) == 79
 
 
-def test_lite_is_full_refuses_a_superseded_lite_file(tmp_path):
+def test_lite_is_full_refuses_a_superseded_lite_file(tmp_path, capsys):
     """Plan 0061: a declared-lite file with one position per cell (the superseded final-token
     site) for a `same` family exits 2 instead of being judged as the `same` instrument."""
     a = readplan.plan(UM)[0].id
@@ -385,6 +385,7 @@ def test_lite_is_full_refuses_a_superseded_lite_file(tmp_path):
     with pytest.raises(SystemExit) as e:
         reads.load(_args(path, tmp_path, layers=[20], extra={"reads": "lite"}), UM, ids=[a])
     assert e.value.code == 2
+    assert "lite rule is `same`" in capsys.readouterr().err
 
 
 def test_lite_without_same_rule_has_no_span_check(tmp_path):

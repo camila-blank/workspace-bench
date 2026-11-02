@@ -449,6 +449,9 @@ def test_lite_same_families_read_full_positions(family):
     lite = readplan.plan(family, layers=None, reads="lite")
     assert all(s.lite_positions == {"kind": "same"} and s.lite_layers is None for s in full)
     assert [(s.id, s.layers) for s in lite] == [(s.id, s.layers) for s in full]
+    for s in full[:5]:  # the rule keeps every full position (absolute and from-end coordinates)
+        for ps in (list(range(3, 40)), list(range(-37, 0))):
+            assert readplan.lite_select(ps, s.lite_positions) == ps
     assert reads.plan_sha(family) == PLAN0061_SHA[family]
 
 

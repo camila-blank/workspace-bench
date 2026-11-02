@@ -343,8 +343,8 @@ def load(
         # check_full's own 1-position message would say "use reads=lite" to a lite run)
         fail(
             f"{path}: reads=lite with 1 position per cell, but this family's lite rule is `same` "
-            "(lite = the full positions, plan 0061); the file was produced under a superseded "
-            "lite rule — re-produce it, or judge the full file with reads=lite"
+            "(lite = the full positions); a lite-site file (a superseded lite rule) or a "
+            "truncated read — re-produce it, or judge the full file with reads=lite"
         )
     before = cells
     cells = select(cells, sp, m, reader=reader, declared=declared)
