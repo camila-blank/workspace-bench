@@ -19,15 +19,20 @@ Entry points (run with the project venv's ``modal`` and ``PYTHONPATH=src`` — t
     modal run scripts/judge_sweep_modal.py::upload --name s3d --readouts DIR --ref-dir R4 \\
         [--ref-dirs map.json] [--exclude-nocot]
     modal run scripts/judge_sweep_modal.py::preflight --sweep S --name s3d \\
-        --ref-opts ref_opts.json [--models a,b|tier:cheap+mid] [--arms A,B]
+        --ref-opts ref_opts.json [--models a,b|tier:cheap+mid] [--arms A,B[,C]]
     modal run scripts/judge_sweep_modal.py::sweep --sweep S --name s3d --ref-dir R4 \\
-        --ref-opts ref_opts.json [--models ...] [--arms A,B] [--retry-errors]
+        --ref-opts ref_opts.json [--models ...] [--arms A,B[,C]] [--retry-errors]
     modal run scripts/judge_sweep_modal.py::pull --sweep S
 
 ``sweep`` drives the resume loop of ``judge_sweep.drive``: one container per (arm, model, job
 group) per pass, each returning its pass record; the job state lives on the client under
 ``outputs/judge_sweep/<sweep>/jobs/``. ``pull`` copies the volume runs to
 ``outputs/judge_sweep/<sweep>/`` for ``judge_sweep.py analyze``.
+
+Arm C (plan 0059 addendum D) = Arm B at ``summ_effort=low`` for reasoning models: its own jobs
+and ``/vol/runs/<sweep>/C/<model-slug>/`` dirs; an over-context ``arm_b_exception`` excludes it
+like Arm B, and a failed Arm C preflight group drops Arm C only (``dropped_arms``), never the
+model's Arm A / B.
 """
 
 import fcntl
@@ -427,8 +432,8 @@ def preflight(
     """Per OpenRouter model and arm: one preflight per JOB GROUP (same partition as
     ``run_job``) with ``items=`` = that group's first-item-with-readouts union, plus one
     over-context probe per model. Writes ``outputs/judge_sweep/<sweep>/preflight.json``
-    (models that fail are dropped, reason kept; a 404 drops Arm B, an unmapped overflow only
-    warns)."""
+    (models that fail are dropped, reason kept; a failed Arm C group drops Arm C only, under
+    ``dropped_arms``; a 404 drops Arm B and C, an unmapped overflow only warns)."""
     js, jobs, notes, ros = _plan(
         sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH), families
     )
@@ -455,11 +460,14 @@ def preflight(
         if isinstance(r, BaseException):
             r = {"group": j.group_id, "arm": j.arm, "ok": False, "error": repr(r)[:500]}
         d["groups"].append(r)
-        if not r.get("ok") and d["dropped"] is None:
-            d["dropped"] = (
-                f"preflight failed ({j.arm}/{j.group_id}): {r.get('outcomes') or r.get('error')}"
-                f"{' — ' + ' | '.join(r['log_tail']) if r.get('log_tail') else ''}"
-            )
+        why = (
+            f"preflight failed ({j.arm}/{j.group_id}): {r.get('outcomes') or r.get('error')}"
+            f"{' — ' + ' | '.join(r['log_tail']) if r.get('log_tail') else ''}"
+        )
+        if not r.get("ok") and j.arm in js.ARM_SCOPED_DROP:  # Arm C: that arm only
+            d.setdefault("dropped_arms", {}).setdefault(j.arm, why)
+        elif not r.get("ok") and d["dropped"] is None:
+            d["dropped"] = why
     for m, r in zip(models_seen, oc, strict=True):
         d = report["models"][m]
         d["overcontext"] = r if not isinstance(r, BaseException) else {"error": repr(r)[:500]}
@@ -470,14 +478,10 @@ def preflight(
     out = js.OUT_ROOT / sweep / "preflight.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     # merged under a lock: per-model preflights of one sweep run in parallel (modal_chain), each
-    # replacing only its own models' entries
+    # replacing only its own models' entries (an arm it did not preflight keeps its old groups)
     with open(out.with_suffix(".lock"), "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
-        old = js._read_json(out) or {}
-        merged = {
-            "notes": sorted(set(old.get("notes") or []) | set(notes)),
-            "models": {**(old.get("models") or {}), **report["models"]},
-        }
+        merged = js.merge_preflight(js._read_json(out), report)
         tmp = out.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(merged, indent=1, default=str), encoding="utf-8")
         tmp.replace(out)
@@ -485,6 +489,7 @@ def preflight(
         print(
             f"{m}: {'DROPPED ' + d['dropped'] if d['dropped'] else 'ok'}"
             f"{' | Arm B exception' if d.get('arm_b_exception') else ''}"
+            f"{''.join(f' | Arm {a} DROPPED' for a in sorted(d.get('dropped_arms') or {}))}"
         )
     print(f"wrote {out}")
 
@@ -505,8 +510,9 @@ def sweep(
     roster: str = "",
     families: str = "",
 ) -> None:
-    """The resume loop for the OpenRouter models (Arm A / Arm B), minus the models
-    ``preflight.json`` dropped (and their Arm B jobs when it lists an Arm B exception)."""
+    """The resume loop for the OpenRouter models (Arm A / B / C), minus the models
+    ``preflight.json`` dropped (and their Arm B and C jobs when it lists an Arm B exception, their
+    Arm C jobs when a failed Arm C group dropped that arm: ``judge_sweep.preflight_skip``)."""
     js, jobs, notes, _ros = _plan(
         sweep, models, arms, ref_opts, exclude_nocot, roster or str(_js().ROSTER_PATH), families
     )
@@ -519,7 +525,7 @@ def sweep(
         d = pm.get(j.model)
         if d is None:
             raise SystemExit(f"{j.model}: not preflighted")
-        if d.get("dropped") or (j.arm == "B" and d.get("arm_b_exception")):
+        if js.preflight_skip(d, j.arm):
             continue
         keep.append(j)
     for n in notes:

@@ -6,10 +6,13 @@ A dev script, not part of the package. Subcommands:
         # (re)build evals/judge_sweep/models.json + the committed catalog copy from a snapshot
     python scripts/judge_sweep.py run --backend local --sweep NAME --readouts DIR \\
         --ref-dir R4_OUT --ref-opts ref_opts.json [--models claude-haiku-5-5,...] \\
-        [--draws A1,A2,A3,A4,B1,B2,B3] [--arms A,B] [--run-args "concurrency=16"]
+        [--draws A1,A2,A3,A4,B1,B2,B3] [--arms A,B[,C]] [--run-args "concurrency=16"]
         # Claude models and the Opus draws on the dev box (ant token behind a flock)
     python scripts/judge_sweep.py analyze --sweep NAME --ref-dir R4_OUT [--ref-dirs map.json]
         # analysis.json / analysis.md / cost_vs_agreement.svg under outputs/judge_sweep/NAME/
+    python scripts/judge_sweep.py feasibility --sweeps NAME[,NAME2,...] [--out feasibility.md]
+        # per (model, arm, sweep): preflight, job state, calls, length failures, cost, wall time
+        # and a viable / degraded / infeasible / pending verdict (+ a JSON twin)
 
 OpenRouter models run on Modal only (``scripts/judge_sweep_modal.py``: upload / preflight /
 sweep / pull), never from a dev box; ``run --backend local`` refuses a non-Claude id.
@@ -17,7 +20,10 @@ sweep / pull), never from a dev box; ``run --backend local`` refuses a non-Claud
 Layout: ``outputs/judge_sweep/<sweep>/<arm>/<model-slug>/<family>/`` (``results.json``,
 ``cells.jsonl``, ``spend.jsonl``); the Opus draws are the slugs ``claude-opus-5-5@A1`` ... ``@A4``
 (Arm A dir, cache-only judge draws on the seeded R4 digests) and ``@B1`` ... ``@B3`` (Arm B dir,
-fresh digest + judge). Job state (one file per job group) under ``<sweep>/jobs/``.
+fresh digest + judge). Arm C (plan 0059 addendum D: Arm B at ``summ_effort=low``, reasoning
+models only) has its own ``<sweep>/C/<model-slug>/`` dirs and no Opus draws of its own (it is
+scored against A'1 with Arm B's B' draws). Job state (one file per job group) under
+``<sweep>/jobs/``.
 
 Every function above the CLI is pure (or touches only the paths it is given) so the tests can
 drive it on hand-built fixtures; nothing here calls an API.
@@ -69,7 +75,10 @@ jsw = _load_script("judge_swap")  # cohen_kappa
 # ---------------------------------------------------------------- identities and constants
 
 OPUS = "claude-opus-5-5"
-ARMS = ("A", "B")
+# A = judge swap, B = matched (summarizer = judge), C = Arm B at summ_effort=low (addendum D)
+ARMS = ("A", "B", "C")
+SUMMARIZER_ARMS = ("B", "C")  # the swept model writes the digest (summ_model=<m>)
+ARM_LABELS = {"C": "Arm B at low summarizer effort"}
 A_DRAWS = ("A1", "A2", "A3", "A4")  # Opus judging the seeded digests, cache-only (Arm A dir)
 B_DRAWS = ("B1", "B2", "B3")  # fresh Opus digest + judge runs (Arm B dir)
 REF_DRAW = "A1"  # the reference of BOTH arms
@@ -120,20 +129,28 @@ FALLBACK_NOTE = (
     "default refusal fallback (agentic, jailbreak, introspection, moral_rationale, user_modeling, "
     "model_specific_directed_modulation) run Arm B without their refusal rescue"
 )
+ARM_C_NOTE = (
+    "Arm C = Arm B at low summarizer effort (summ_effort=low, the only difference; reasoning "
+    "models only): no Opus draws of its own, scored against A'1 with Arm B's Opus draws "
+    "(B'1-B'3) as its noise floor and calibration; its own jobs, out dirs, ledgers and table"
+)
 
 # Models measured unusable and removed by Camila: excluded from the roster with the reason.
-DROPPED: dict[str, str] = {
-    "inclusionai/ling-3.1-flash": (
-        "dropped 2026-11-02 (Camila): as summarizer its reasoning runs to the 32k output budget "
-        "and every digest fails on length (f64-L16 preflight, 15-60 min per call)"
-    ),
-}
+# (inclusionai/ling-3.1-flash, dropped 2026-11-02, was re-admitted for feasibility by plan 0059
+# addendum D and moved to ARM_B_DROPPED.)
+DROPPED: dict[str, str] = {}
 
-# Models kept in Arm A but measured unusable as Arm B summarizers (Camila): their Arm B is skipped.
+# Models kept in Arm A but measured unusable as Arm B summarizers at the DEFAULT summarizer
+# effort (Camila): their Arm B is skipped; Arm C (low summarizer effort) still runs (addendum D).
 ARM_B_DROPPED: dict[str, str] = {
     "qwen/qwen3.8-flash": (
         "Arm B dropped 2026-11-02 (Camila): as summarizer its reasoning runs to the 32k output "
         "budget and the digest fails on length (f64-L16/L32 preflight)"
+    ),
+    "inclusionai/ling-3.1-flash": (
+        "Arm B dropped 2026-11-02 (Camila; roster drop superseded by plan 0059 addendum D): as "
+        "summarizer its reasoning runs to the 32k output budget and every digest fails on length "
+        "(f64-L16 preflight, 15-60 min per call)"
     ),
 }
 
@@ -551,11 +568,12 @@ def effort_families(infos: Iterable[FamilyInfo]) -> set[str]:
 
 
 def run_families(infos: Sequence[FamilyInfo], arm: str, model: str, *, draw: bool) -> list[str]:
-    """The families a job set runs: Arm A swept models the judge-dependent set; Arm B and every
-    Opus draw also the deterministic-scorer families (A'1 is then a reference for every Arm B
-    table). agentic_misalignment for ``claude-*`` only (outside N_f for everything else)."""
+    """The families a job set runs: Arm A swept models the judge-dependent set; Arm B, Arm C and
+    every Opus draw also the deterministic-scorer families (A'1 is then a reference for every
+    Arm B / C table). agentic_misalignment for ``claude-*`` only (outside N_f for everything
+    else)."""
     fams = judge_dependent(infos)
-    if arm == "B" or draw:
+    if arm in SUMMARIZER_ARMS or draw:
         fams = fams + deterministic(infos)
     if not is_claude(model):
         fams = [f for f in fams if f != AGENTIC]
@@ -614,6 +632,8 @@ def job_opts(ref: str, kind: str, model: str, row: Mapping[str, Any] | None) -> 
     - ``A`` (Arm A swept) and ``A'`` (Opus draws A1-A4): + ``summ_cache_only=1``;
     - ``B`` (Arm B swept): ``summ_model=<m>``, ``summ_fallback=none`` (REPLACING any reference
       ``summ_fallback=``), ``summ_effort=default``, ``summ_context=<roster context>``;
+    - ``C`` (Arm C swept, plan 0059 addendum D): exactly ``B`` but ``summ_effort=low`` (the ONLY
+      difference);
     - ``B'`` (Opus draws B1-B3): the reference opts unchanged (its family fallback defaults on).
 
     ``summ_store=`` is always dropped: the reference's shared per-layer store (#219) changes no
@@ -623,12 +643,12 @@ def job_opts(ref: str, kind: str, model: str, row: Mapping[str, Any] | None) -> 
     pairs = [(k, v) for k, v in parse_opts(ref) if k != "summ_store"]
     if kind in ("A", "A'"):
         return render_opts(set_opt(pairs, "summ_cache_only", "1"))
-    if kind == "B":
+    if kind in ("B", "C"):
         if row is None:
-            raise SystemExit(f"{model}: Arm B needs a roster row (context)")
+            raise SystemExit(f"{model}: Arm {kind} needs a roster row (context)")
         pairs = set_opt(pairs, "summ_model", model)
         pairs = set_opt(pairs, "summ_fallback", "none")
-        pairs = set_opt(pairs, "summ_effort", "default")
+        pairs = set_opt(pairs, "summ_effort", "default" if kind == "B" else "low")
         pairs = set_opt(pairs, "summ_context", str(int(row["context"])))
         return render_opts(pairs)
     if kind == "B'":
@@ -661,7 +681,7 @@ class Job:
     arm: str
     model: str
     slug: str
-    kind: str  # A | B | A' | B'
+    kind: str  # A | B | C | A' | B'
     families: tuple[str, ...]
     opts: str
     judge_effort: str | None
@@ -1030,6 +1050,57 @@ def preflight_job_of(job: Job, probe: Mapping[str, str]) -> Job:
     if not ids:
         raise SystemExit(f"{job.arm}/{job.slug}/{job.group_id}: no probe item with readouts")
     return dataclasses.replace(job, items=ids)
+
+
+# preflight.json entry keys of the per-model over-context probe (re-measured by every preflight)
+PREFLIGHT_PROBE_KEYS = ("overcontext", "arm_b_exception", "warning")
+ARM_SCOPED_DROP = ("C",)  # a failed preflight group of these arms drops only that arm
+
+
+def preflight_skip(entry: Mapping[str, Any] | None, arm: str) -> str | None:
+    """Why ``preflight.json``'s model ``entry`` keeps the model's ``arm`` jobs from running (None =
+    they run): the model-level ``dropped`` (any A / B group failed: every arm), an
+    ``arm_b_exception`` (over-context probe 404: Arm B and Arm C), or an arm-scoped drop
+    (``dropped_arms``: a failed Arm C group drops Arm C only, addendum D)."""
+    if not entry:
+        return None
+    if entry.get("dropped"):
+        return f"dropped: {entry['dropped']}"
+    if arm in SUMMARIZER_ARMS and entry.get("arm_b_exception"):
+        return f"Arm B exception: {entry['arm_b_exception']}"
+    why = (entry.get("dropped_arms") or {}).get(arm)
+    return f"dropped (Arm {arm}): {why}" if why else None
+
+
+def merge_preflight(old: Mapping[str, Any] | None, new: Mapping[str, Any]) -> dict[str, Any]:
+    """``preflight.json`` after one preflight run: notes unioned; per model the new entry
+    replaces the old one whole, unless the old entry holds arms the new run did not preflight
+    (e.g. an Arm C preflight after A, B): then the old groups / arm-scoped drops of those arms
+    are kept, the model-level ``dropped`` is kept unless the new run preflighted Arm A or B, and
+    the over-context probe keys are the new run's (it re-ran the probe)."""
+    old = old or {}
+    models: dict[str, Any] = dict(old.get("models") or {})
+    for m, d in (new.get("models") or {}).items():
+        prev = models.get(m) or {}
+        new_arms = {g.get("arm") for g in d.get("groups") or []}
+        kept = [g for g in prev.get("groups") or [] if g.get("arm") not in new_arms]
+        old_da = {k: v for k, v in (prev.get("dropped_arms") or {}).items() if k not in new_arms}
+        if not kept and not old_da:
+            models[m] = d
+            continue
+        e = {k: v for k, v in prev.items() if k not in PREFLIGHT_PROBE_KEYS}
+        e.update(d)
+        e["groups"] = kept + list(d.get("groups") or [])
+        if not new_arms & {"A", "B"}:
+            e["dropped"] = prev.get("dropped")
+        da = {**old_da, **(d.get("dropped_arms") or {})}
+        if da:
+            e["dropped_arms"] = da
+        else:
+            e.pop("dropped_arms", None)
+        models[m] = e
+    notes = sorted(set(old.get("notes") or []) | set(new.get("notes") or []))
+    return {"notes": notes, "models": models}
 
 
 # ---------------------------------------------------------------- one pass of a job
@@ -2231,7 +2302,7 @@ def analyze_arm(
     for f in all_fams:
         if f in a1:
             dropped[f] = sorted(r4_not_a1(r4.get(f), a1[f]))
-    if arm_name == "B":  # every Arm B comparison drops the R4-but-not-A'1 items
+    if arm_name in SUMMARIZER_ARMS:  # every Arm B / C comparison drops the R4-but-not-A'1 items
         for name in verdicts:
             for f, ids in dropped.items():
                 if f in verdicts[name]:
@@ -2446,7 +2517,10 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
     for arm in analysis["arms"]:
         a = arm["arm"]
         cal = arm["calibration"]
-        out.append(f"## Arm {a} (reference {arm['reference']}; draws {', '.join(arm['draws'])})")
+        lab = f" — {ARM_LABELS[a]}" if a in ARM_LABELS else ""
+        out.append(
+            f"## Arm {a}{lab} (reference {arm['reference']}; draws {', '.join(arm['draws'])})"
+        )
         out.append("")
         out.append(
             f"Calibration: {cal.get('status')} — p̂={_f(cal.get('p_hat'))}, "
@@ -2488,6 +2562,12 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
                 f"{' at $' + format(best['cost_usd'], '.2f') if best else ''} — judge only; Arm A "
                 f"still requires an Opus digest (Opus digest cost: {dc})."
             )
+        elif a == "C":
+            out.append(
+                f"Cheapest Arm C match ({ARM_LABELS['C']}; scored against A'1 with Arm B's Opus "
+                f"draws as its noise floor): {best['model'] if best else 'none'}"
+                f"{' at $' + format(best['cost_usd'], '.2f') if best else ''}."
+            )
         else:
             out.append(
                 f"Cheapest Arm B match (the candidate fast instrument): "
@@ -2522,10 +2602,11 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
                 )
         out.append("")
         if any(arm["dropped_r4_not_a1"].values()):
+            drop_note = f"; dropped from every Arm {a} comparison" if a in SUMMARIZER_ARMS else ""
             out.append(
                 "Summarized in R4 but not in A'1 (approximated as \"R4 has a row, A'1 has none\" "
                 "for a reference predating `summary_unsummarized_ids`; a lower bound on replay "
-                f"differences{'; dropped from every Arm B comparison' if a == 'B' else ''}):"
+                f"differences{drop_note}):"
             )
             for f, ids in arm["dropped_r4_not_a1"].items():
                 if ids:
@@ -2544,6 +2625,333 @@ def markdown(analysis: Mapping[str, Any], rule: MatchRule = MATCH) -> str:
                 + ", ".join(f"{f} {_f(s['agreement'])} (n={s['n']})" for f, s in fams.items())
             )
         out.append("")
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------- feasibility (addendum D)
+
+
+@dataclass(frozen=True)
+class FeasibilityRule:
+    """The thresholds of the feasibility verdict (plan 0059 addendum D), in one place."""
+
+    viable_max_length: float = 0.05  # viable: terminal and length-failure rate <= this
+    degraded_max_undecided: float = 0.20  # terminal but more undecided items than this: degraded
+    infeasible_min_length: float = 0.50  # length-failure rate above this: infeasible
+
+
+FEASIBILITY = FeasibilityRule()
+# Spend.failed keys of a call that ran out of output budget: "length" (OpenRouter / OpenAI /
+# Vertex: unparseable JSON after finish_reason=length / MAX_TOKENS), "max_tokens" (Anthropic)
+LENGTH_KEYS = ("length", "max_tokens")
+VERDICT_ORDER = ("infeasible", "degraded", "pending", "viable")  # the worst sweep decides
+
+
+def ledger_counts(paths: Iterable[Path]) -> dict[str, Any]:
+    """Call counters over ``spend.jsonl`` ledgers (last snapshot per run_id, summed): calls,
+    retries, errors, refusals, output tokens and the ``transient`` / ``failed`` tallies."""
+    tot: dict[str, Any] = {
+        "calls": 0,
+        "retries": 0,
+        "errors": 0,
+        "refusals": 0,
+        "output_tokens": 0,
+        "transient": {},
+        "failed": {},
+    }
+    for p in paths:
+        for _rid, snap in ledger_runs(p):
+            for k in ("calls", "retries", "errors", "refusals", "output_tokens"):
+                tot[k] += int(snap.get(k) or 0)
+            for k in ("transient", "failed"):
+                for status, n in (snap.get(k) or {}).items():
+                    tot[k][status] = tot[k].get(status, 0) + int(n or 0)
+    return tot
+
+
+def job_records(sweep_dir: Path) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """``{(arm, slug): [job state file contents]}`` under ``<sweep>/jobs/`` (unreadable skipped)."""
+    out: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for p in sorted((Path(sweep_dir) / "jobs").glob("*/*/*.json")):
+        st = _read_json(p)
+        if not st or "job" not in st:
+            continue
+        job = Job.from_json(st["job"])
+        out.setdefault((job.arm, job.slug), []).append({"job": job, "passes": st.get("passes", [])})
+    return out
+
+
+def combined_state(recs: Sequence[Mapping[str, Any]], now: float) -> dict[str, Any]:
+    """The state of one (arm, model) over its job groups (``classify``): blocked if any group
+    is, else error, pending, wait (first found in that order), terminal only when all are; plus
+    the wall time, first pass start to last pass finish, over every pass of every group."""
+    states = [classify(r["passes"], free=r["job"].free, now=now) for r in recs]  # per group
+    passes = [p for r in recs for p in r["passes"]]
+    state, detail = "no job", "no job state"
+    if states:
+        state, detail = ("terminal", "every job group terminal")
+        for want in ("wait", "pending", "error", "blocked"):  # the last found wins
+            hit = next(((s, d) for s, d in states if s == want), None)
+            if hit is not None:
+                state, detail = hit
+    started = min((float(p["started"]) for p in passes if "started" in p), default=None)
+    finished = max((float(p["finished"]) for p in passes if "finished" in p), default=None)
+    return {
+        "state": state,
+        "state_detail": detail,
+        "n_groups": len(recs),
+        "n_passes": len(passes),
+        "started": started,
+        "finished": finished,
+        "wall_s": finished - started if started is not None and finished is not None else None,
+    }
+
+
+def undecided_of(results: Mapping[str, Mapping[str, Any]]) -> tuple[int, int]:
+    """``(items, undecided items)`` over a run's per-family ``results.json`` (the sweep item
+    wrapper; failed rows count as undecided; a family whose verdicts cannot be read is skipped)."""
+    n = und = 0
+    for f, res in results.items():
+        uni = None
+        if f not in PAIR_FAMILIES:  # pair families: verdicts on pair members only
+            uni = {str(r["id"]) for r in res.get("rows") or [] if isinstance(r, dict) and "id" in r}
+        try:
+            v, _s = sweep_item_verdicts(f, res, uni)
+        except (KeyError, ValueError, TypeError, smc.ExtractorError):
+            continue
+        n += len(v)
+        und += sum(1 for x in v.values() if x is None)
+    return n, und
+
+
+def preflight_status(entry: Mapping[str, Any] | None, arm: str, model: str) -> tuple[str, bool]:
+    """``(the preflight column, dropped)`` of one (model, arm): ``ARM_B_DROPPED`` (Arm B),
+    the ``preflight_skip`` reasons, ``ok``, or that it was not preflighted (Claude runs on the dev
+    box, which has no preflight)."""
+    if arm == "B" and model in ARM_B_DROPPED:
+        return f"Arm B dropped (ARM_B_DROPPED): {ARM_B_DROPPED[model]}", True
+    if entry is None:
+        return (
+            "n/a (dev-box backend: no preflight)" if is_claude(model) else "not preflighted"
+        ), False
+    skip = preflight_skip(entry, arm)
+    if skip:
+        return skip, True
+    groups = [g for g in entry.get("groups") or [] if g.get("arm") == arm]
+    if not groups:
+        return "not preflighted for this arm", False
+    return ("ok" if all(g.get("ok") for g in groups) else "failed (not dropped)"), False
+
+
+def feasibility_verdict(
+    rec: Mapping[str, Any], rule: FeasibilityRule = FEASIBILITY
+) -> tuple[str, str]:
+    """``(verdict, why)`` of one (model, arm, sweep) record: ``infeasible`` (dropped at
+    preflight, blocked, or length-failure rate > 50%), ``viable`` (terminal, length failures
+    <= 5% and undecided <= 20%), ``degraded`` (terminal, more of either), else ``pending``."""
+    lr, ur = rec.get("length_rate"), rec.get("undecided_rate")
+    if rec.get("preflight_dropped"):
+        return "infeasible", f"preflight: {rec.get('preflight')}"
+    if rec.get("state") == "blocked":
+        return "infeasible", f"blocked: {rec.get('state_detail')}"
+    if lr is not None and lr > rule.infeasible_min_length:
+        return "infeasible", f"length failures {lr:.0%} > {rule.infeasible_min_length:.0%}"
+    if rec.get("state") != "terminal":
+        return "pending", f"job {rec.get('state')}: {rec.get('state_detail')}"
+    why = []
+    if lr is not None and lr > rule.viable_max_length:
+        why.append(f"length failures {lr:.0%} > {rule.viable_max_length:.0%}")
+    if ur is not None and ur > rule.degraded_max_undecided:
+        why.append(f"undecided {ur:.0%} > {rule.degraded_max_undecided:.0%}")
+    if why:
+        return "degraded", "; ".join(why)
+    return "viable", "terminal, length failures and undecided within bounds"
+
+
+def combine_verdicts(verdicts: Iterable[str]) -> str:
+    """A (model, arm)'s verdict over sweeps: the worst one (``VERDICT_ORDER``)."""
+    vs = set(verdicts)
+    return next((v for v in VERDICT_ORDER if v in vs), "pending")
+
+
+def feasibility_rows(
+    sweep_dir: Path,
+    sweep: str,
+    roster: Mapping[str, Mapping[str, Any]],
+    *,
+    now: float,
+    rule: FeasibilityRule = FEASIBILITY,
+) -> list[dict[str, Any]]:
+    """One record per (swept model, arm) of a sweep dir, from ``preflight.json``, the job pass
+    records (``jobs/``), the per-family ``spend.jsonl`` ledgers and ``results.json`` (Opus draws
+    excluded). Rows exist for every arm with any evidence (a preflight group, a job, an out
+    dir), plus Arm B of an ``ARM_B_DROPPED`` model seen in the sweep."""
+    sweep_dir = Path(sweep_dir)
+    pm = (_read_json(sweep_dir / "preflight.json") or {}).get("models") or {}
+    model_of = {slug(m): m for m in roster}
+    recs = job_records(sweep_dir)
+    keys: set[tuple[str, str]] = set()
+    for m, e in pm.items():
+        keys |= {(m, g["arm"]) for g in e.get("groups") or [] if g.get("arm") in ARMS}
+    by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for (arm, _sl), rs in recs.items():
+        job = rs[0]["job"]
+        if job.kind not in ARMS:  # an Opus draw
+            continue
+        keys.add((job.model, arm))
+        by_key[(job.model, arm)] = rs
+    for arm in ARMS:
+        for d in sorted((sweep_dir / arm).glob("*")):
+            if d.is_dir() and "@" not in d.name:
+                keys.add((model_of.get(d.name, d.name), arm))
+    keys |= {(m, "B") for m in ARM_B_DROPPED if any(k[0] == m for k in keys)}
+    rows: list[dict[str, Any]] = []
+    for m, arm in sorted(keys):
+        row = roster.get(m)
+        out = sweep_dir / arm / slug(m)
+        results = {
+            p.parent.name: res
+            for p in sorted(out.glob("*/results.json"))
+            if (res := _read_json(p)) is not None
+        }
+        paths = sorted(out.glob("*/spend.jsonl"))
+        cnt = ledger_counts(paths)
+        calls = int(cnt["calls"])
+        n_len = sum(int(cnt["failed"].get(k, 0)) for k in LENGTH_KEYS)
+        dig = [x for res in results.values() if (x := extra_num(res, "n_digest_calls")) is not None]
+        n_items, n_und = undecided_of(results)
+        pre, dropped = preflight_status(pm.get(m), arm, m)
+        rec: dict[str, Any] = {
+            "sweep": sweep,
+            "model": m,
+            "arm": arm,
+            "tier": (row or {}).get("tier", ""),
+            "preflight": pre,
+            "preflight_dropped": dropped,
+            **combined_state(by_key.get((m, arm), []), now),
+            "n_families": len(results),
+            "calls": calls,
+            "digest_calls_last_pass": sum(dig) if dig else None,
+            "length_failures": n_len,
+            "length_rate": n_len / calls if calls else None,
+            "mean_output_tokens": cnt["output_tokens"] / calls if calls else None,
+            "refusals": cnt["refusals"],
+            "errors": cnt["errors"],
+            "retries": cnt["retries"],
+            "transient": cnt["transient"],
+            "failed": cnt["failed"],
+            "cost_usd": cost_usd(row, m, ledger_total(paths)) if paths else None,
+            "cost_estimated": token_priced(row, m),
+            "n_items": n_items,
+            "n_undecided": n_und,
+            "undecided_rate": n_und / n_items if n_items else None,
+        }
+        rec["verdict"], rec["why"] = feasibility_verdict(rec, rule)
+        rows.append(rec)
+    return rows
+
+
+def feasibility_report(
+    out_root: Path,
+    sweeps: Sequence[str],
+    roster: Mapping[str, Mapping[str, Any]],
+    *,
+    now: float,
+    rule: FeasibilityRule = FEASIBILITY,
+) -> dict[str, Any]:
+    """Every sweep's rows, the per-(model, arm) verdict over sweeps (the worst) and notes."""
+    rows = [
+        r
+        for sw in sweeps
+        for r in feasibility_rows(Path(out_root) / sw, sw, roster, now=now, rule=rule)
+    ]
+    summary: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        s = summary.setdefault(f"{r['model']}|{r['arm']}", {"model": r["model"], "arm": r["arm"]})
+        s.setdefault("per_sweep", {})[r["sweep"]] = r["verdict"]
+    for s in summary.values():
+        s["verdict"] = combine_verdicts(s["per_sweep"].values())
+    seen = {r["model"] for r in rows}
+    notes = [
+        f"{m}: no Arm C (no reasoning support: low == default summarizer effort)"
+        for m in sorted(seen)
+        if m in roster and not roster[m].get("supports_reasoning")
+    ]
+    notes += [f"{m}: Arm B not run ({why}); Arm A + C run" for m, why in ARM_B_DROPPED.items()]
+    return {
+        "sweeps": list(sweeps),
+        "generated": datetime.fromtimestamp(now, UTC).isoformat(),
+        "thresholds": dataclasses.asdict(rule),
+        "length_keys": list(LENGTH_KEYS),
+        "notes": notes,
+        "rows": rows,
+        "summary": sorted(summary.values(), key=lambda s: (s["model"], s["arm"])),
+    }
+
+
+def _hours(s: float | None) -> str:
+    return "—" if s is None else f"{s / 3600:.1f} h"
+
+
+def _pct(v: float | None) -> str:
+    return "—" if v is None else f"{v:.0%}"
+
+
+def _tally(d: Mapping[str, Any]) -> str:
+    return ", ".join(f"{k}:{v}" for k, v in sorted(d.items())) or "—"
+
+
+def feasibility_markdown(rep: Mapping[str, Any]) -> str:
+    """``feasibility.md``: thresholds, the per-(model, arm) verdicts over sweeps, then one table
+    per sweep."""
+    t = rep["thresholds"]
+    keys = "|".join(rep["length_keys"])
+    out = [f"# Judge sweep feasibility ({', '.join(rep['sweeps'])}; plan 0059 addendum D)", ""]
+    out.append(
+        f"Verdicts: **viable** = terminal, length-failure rate ≤ {t['viable_max_length']:.0%} "
+        f"and undecided ≤ {t['degraded_max_undecided']:.0%}; **degraded** = terminal, more of "
+        f"either; **infeasible** = dropped at preflight, blocked, or > "
+        f"{t['infeasible_min_length']:.0%} length failures; **pending** = otherwise. Length "
+        f"failure = a call that ended failed on its output budget (`failed[{keys}]`) "
+        "over the ledger's calls (digest + judge, all passes). Arm C = "
+        f"{ARM_LABELS['C']}. Over sweeps a (model, arm) takes its worst verdict."
+    )
+    out.append("")
+    for n in rep.get("notes", []):
+        out.append(f"- {n}")
+    out.append("")
+    sweeps = list(rep["sweeps"])
+    out.append("| model | arm | verdict | " + " | ".join(sweeps) + " |")
+    out.append("|---|---|---|" + "---|" * len(sweeps))
+    for s in rep["summary"]:
+        per = [s["per_sweep"].get(sw, "—") for sw in sweeps]
+        out.append(f"| {s['model']} | {s['arm']} | **{s['verdict']}** | " + " | ".join(per) + " |")
+    out.append("")
+    for sw in sweeps:
+        out.append(f"## {sw}")
+        out.append("")
+        out.append(
+            "| model | tier | arm | preflight | state | calls | digest calls (last pass) | "
+            "length fail | mean out tok/call | refusals | transient | failed | cost $ | wall | "
+            "undecided | verdict |"
+        )
+        out.append("|" + "---|" * 16)
+        for r in (x for x in rep["rows"] if x["sweep"] == sw):
+            est = "≈" if r["cost_estimated"] and r["cost_usd"] is not None else ""
+            mot = r["mean_output_tokens"]
+            out.append(
+                f"| {r['model']} | {r['tier']} | {r['arm']} | {str(r['preflight'])[:160]} | "
+                f"{r['state']} | {r['calls']} | {_f(r['digest_calls_last_pass'])} | "
+                f"{r['length_failures']} ({_pct(r['length_rate'])}) | "
+                f"{'—' if mot is None else f'{mot:.0f}'} | {r['refusals']} | "
+                f"{_tally(r['transient'])} | {_tally(r['failed'])} | {est}{_f(r['cost_usd'], 2)} | "
+                f"{_hours(r['wall_s'])} | {r['n_undecided']}/{r['n_items']} "
+                f"({_pct(r['undecided_rate'])}) | **{r['verdict']}** — {r['why']} |"
+            )
+        out.append("")
+    out.append(
+        "≈ = estimated cost (tokens x roster list price: Claude, openai-wif, gemini-vertex)."
+    )
     return "\n".join(out) + "\n"
 
 
@@ -2573,7 +2981,12 @@ def plan_jobs(
     kc_items: Sequence[str] | None = None,
 ) -> tuple[list[Job], list[str]]:
     """Every job of the requested swept models (per arm) and Opus draws; plus notes (models run
-    in Arm A only)."""
+    in Arm A only; models without Arm C). Arm C (addendum D) runs wherever Arm B could (context
+    >= 128k), ``ARM_B_DROPPED`` models included, and only for ``supports_reasoning`` rows (for
+    the others low == default effort)."""
+    bad = [a for a in arms if a not in ARMS]
+    if bad:
+        raise SystemExit(f"--arms: unknown arm(s) {bad} (expected a subset of {list(ARMS)})")
     eff = effort_families(infos)
     jobs: list[Job] = []
     notes: list[str] = []
@@ -2582,11 +2995,18 @@ def plan_jobs(
         if row is None:
             raise SystemExit(f"{m}: not an admitted roster model")
         for arm in arms:
+            if arm == "C" and not arm_b_allowed(row):
+                notes.append(f"{m}: context {row['context']} < {ARM_B_MIN_CONTEXT}: no Arm C")
+                continue
+            if arm == "C" and not row.get("supports_reasoning"):
+                notes.append(f"{m}: no Arm C (no reasoning support: low == default effort)")
+                continue
             if arm == "B" and not arm_b_allowed(row):
                 notes.append(f"{m}: context {row['context']} < {ARM_B_MIN_CONTEXT}: Arm A only")
                 continue
             if arm == "B" and m in ARM_B_DROPPED:
-                notes.append(f"{m}: Arm A only ({ARM_B_DROPPED[m]})")
+                runs = "Arm A + C" if "C" in arms else "Arm A only"  # C runs it (addendum D)
+                notes.append(f"{m}: {runs} ({ARM_B_DROPPED[m]})")
                 continue
             fams = run_families(infos, arm, m, draw=False)
             jobs += job_groups(
@@ -2831,15 +3251,26 @@ def cmd_analyze(a: argparse.Namespace) -> int:
     a1 = slug(OPUS, REF_DRAW)
     if a1 in runs_a and runs_b:  # A'1 is Arm B's reference too
         runs_b = {a1: runs_a[a1], **runs_b}
+    runs_c = collect_runs(sweep_dir, "C")
+    if runs_c:  # Arm C has no Opus draws of its own: A'1 + Arm B's B' draws (addendum D)
+        pool = {**runs_b, **({a1: runs_a[a1]} if a1 in runs_a else {})}
+        runs_c = {**{n: pool[n] for n in order_b if n in pool}, **runs_c}
     dirs = {**{n: sweep_dir / "B" / n for n in runs_b}, **{n: sweep_dir / "A" / n for n in runs_a}}
     for order in (order_a, order_b):
         present = [n for n in order if n in dirs]
         check_noise_pairs(dirs, jd, list(itertools.combinations(present, 2)))
     arms = []
-    for arm_name, runs, order in (("A", runs_a, order_a), ("B", runs_b, order_b)):
+    for arm_name, runs, order in (
+        ("A", runs_a, order_a),
+        ("B", runs_b, order_b),
+        ("C", runs_c, order_b),  # scored like Arm B: A'1 reference, B' noise + calibration
+    ):
         if not runs:
             continue
-        base = {n: sweep_dir / ("A" if n == a1 else arm_name) / n for n in runs}
+        # a draw lives in its own arm's dir (A'1 in A, B' in B), a swept model in its arm's
+        base = {
+            n: sweep_dir / ("A" if n == a1 else "B" if n in order_b else arm_name) / n for n in runs
+        }
         ledgers = {n: ledger_total(base[n].glob("*/spend.jsonl")) for n in runs}
         fam_led = {
             n: {p.parent.name: ledger_total([p]) for p in base[n].glob("*/spend.jsonl")}
@@ -2855,7 +3286,7 @@ def cmd_analyze(a: argparse.Namespace) -> int:
                 runs,
                 order,
                 jd,
-                det if arm_name == "B" else [],
+                det if arm_name in SUMMARIZER_ARMS else [],
                 r4=r4,
                 states=st,
                 roster=roster,
@@ -2886,6 +3317,7 @@ def cmd_analyze(a: argparse.Namespace) -> int:
             "`complete` is never used as a filter (an items= run is a subset)",
             "failures count as disagreements (None-as-disagreement on A'1's decided items)",
             "LOO κ: the per-item majority of the arm's OTHER swept models (Opus draws excluded)",
+            *([ARM_C_NOTE] if runs_c else []),
         ],
         "arms": arms,
     }
@@ -2903,6 +3335,22 @@ def cmd_analyze(a: argparse.Namespace) -> int:
     }
     (out / "cost_vs_agreement.svg").write_text(scatter_svg(panels), encoding="utf-8")
     print(f"wrote {out}/analysis.json, analysis.md, cost_vs_agreement.svg")
+    return 0
+
+
+def cmd_feasibility(a: argparse.Namespace) -> int:
+    sweeps = [x for x in a.sweeps.split(",") if x]
+    if not sweeps:
+        raise SystemExit("--sweeps: at least one sweep name")
+    rep = feasibility_report(Path(a.out_root), sweeps, load_roster(Path(a.roster)), now=time.time())
+    default = Path(a.out_root) / (sweeps[0] if len(sweeps) == 1 else "") / "feasibility.md"
+    out = Path(a.out) if a.out else default
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(feasibility_markdown(rep), encoding="utf-8")
+    out.with_suffix(".json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
+    print(f"wrote {out} and {out.with_suffix('.json')}: {len(rep['rows'])} rows")
+    for srow in rep["summary"]:
+        print(f"{srow['verdict']:10s} {srow['model']} Arm {srow['arm']}")
     return 0
 
 
@@ -2936,7 +3384,7 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--ref-opts", required=True, help="JSON {family: opts string} of R4")
             s.add_argument("--models", default="", help="comma list or tier:cheap+anchor")
             s.add_argument("--draws", default="", help="Opus draws, e.g. A1,A2,A3,A4,B1,B2,B3")
-            s.add_argument("--arms", default="A,B")
+            s.add_argument("--arms", default="A,B", help="A,B and/or C (Arm B at low effort)")
             s.add_argument("--layers", default="")
             s.add_argument("--run-args", default="", help="extra wsbench run key=value pairs")
             s.add_argument("--parallel", type=int, default=4)
@@ -2944,12 +3392,24 @@ def build_parser() -> argparse.ArgumentParser:
         else:
             s.add_argument("--out", default="")
             s.add_argument("--assume-terminal", action="store_true", help="no job state: score all")
+    f = sub.add_parser(
+        "feasibility", help="per (model, arm, sweep) feasibility report (addendum D)"
+    )
+    f.add_argument("--sweeps", required=True, help="comma list of sweep names")
+    f.add_argument("--out", default="", help="markdown path (JSON twin beside it)")
+    f.add_argument("--out-root", default=str(OUT_ROOT))
+    f.add_argument("--roster", default=str(ROSTER_PATH))
     return p
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
-    return {"roster": cmd_roster, "run": cmd_run, "analyze": cmd_analyze}[a.cmd](a)
+    return {
+        "roster": cmd_roster,
+        "run": cmd_run,
+        "analyze": cmd_analyze,
+        "feasibility": cmd_feasibility,
+    }[a.cmd](a)
 
 
 if __name__ == "__main__":

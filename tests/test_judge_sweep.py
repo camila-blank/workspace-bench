@@ -1161,3 +1161,296 @@ def test_arm_b_dropped_models_run_arm_a_only():
         ref_opts={"association": "aggregate=summary"},
     )
     assert {j.arm for j in jobs} == {"A"} and any("Arm A only" in n for n in notes)
+
+
+# ---------------------------------------------------------------- addendum D: Arm C, feasibility
+
+
+def test_job_opts_kind_c_is_arm_b_at_low_summarizer_effort():
+    ref = "aggregate=summary,summ_fallback=default+claude-sonnet-5,summ_store=/x,summ_variant=task"
+    b = js.parse_opts(js.job_opts(ref, "B", "openai/x", ROW_R))
+    c = js.parse_opts(js.job_opts(ref, "C", "openai/x", ROW_R))
+    assert dict(c)["summ_effort"] == "low" and dict(b)["summ_effort"] == "default"
+    assert [p for p in c if p[0] != "summ_effort"] == [p for p in b if p[0] != "summ_effort"]
+    assert [k for k, _ in c] == [k for k, _ in b]  # same keys, same order
+    with pytest.raises(SystemExit, match="Arm C needs a roster row"):
+        js.job_opts(ref, "C", "openai/x", None)
+    # judge_effort and the family scope as in Arm B
+    assert js.run_families(INFOS, "C", "openai/x", draw=False) == js.run_families(
+        INFOS, "B", "openai/x", draw=False
+    )
+    gb, gc = _groups("openai/x", ROW_R, kind="B"), _groups("openai/x", ROW_R, kind="C")
+    assert [(j.families, j.judge_effort, j.max_out) for j in gc] == [
+        (j.families, j.judge_effort, j.max_out) for j in gb
+    ]
+    assert all(j.arm == "C" and j.kind == "C" for j in gc)
+    assert js.state_path(Path("S"), gc[0]).parts[:3] == ("S", "jobs", "C")
+
+
+def test_plan_jobs_arm_c_reasoning_models_and_arm_b_dropped_only():
+    roster = {
+        "openai/x": {**ROW_R, "id": "openai/x"},
+        "mistralai/nr": {**ROW_NR, "id": "mistralai/nr"},
+        "small/x": {**ROW_R, "id": "small/x", "context": 120_000, "max_out": 8000},
+        **{m: {**ROW_R, "id": m} for m in js.ARM_B_DROPPED},
+    }
+    ref = {f.name: "aggregate=summary" for f in INFOS}
+    kw = {"sweep": "s", "draws": ["A1", "B1"], "roster": roster, "infos": INFOS, "ref_opts": ref}
+    models = list(roster)
+    ab, _n = js.plan_jobs(models=models, arms=["A", "B"], **kw)
+    abc, notes = js.plan_jobs(models=models, arms=["A", "B", "C"], **kw)
+    # arms A / B (and the draws) are unchanged by asking for C too
+    assert [j for j in abc if j.arm != "C"] == ab
+    arms = {m: {j.arm for j in abc if j.model == m} for m in models}
+    assert arms["openai/x"] == {"A", "B", "C"}
+    assert arms["mistralai/nr"] == {"A", "B"}
+    assert arms["small/x"] == {"A"}
+    for m in js.ARM_B_DROPPED:
+        assert arms[m] == {"A", "C"}
+    assert any("mistralai/nr" in n and "no Arm C" in n for n in notes)
+    assert any("small/x" in n and "no Arm C" in n for n in notes)
+    for j in (j for j in abc if j.arm == "C"):
+        assert dict(js.parse_opts(j.opts))["summ_effort"] == "low" and j.kind == "C"
+        assert j.slug == js.slug(j.model)
+    with pytest.raises(SystemExit, match="unknown arm"):
+        js.plan_jobs(models=models, arms=["D"], **kw)
+
+
+def test_roster_readmits_ling_for_arm_a_and_c():
+    ling = "inclusionai/ling-3.1-flash"
+    committed = json.loads(js.ROSTER_PATH.read_text(encoding="utf-8"))
+    assert ling in {m["id"] for m in committed["models"]}
+    assert ling not in {e["id"] for e in committed["excluded"]} and ling not in js.DROPPED
+    assert ling in js.ARM_B_DROPPED and "qwen/qwen3.8-flash" in js.ARM_B_DROPPED
+    roster = js.load_roster(js.ROSTER_PATH)
+    assert ling in js._models_arg("tier:cheap", roster, claude=False)
+    jobs, notes = js.plan_jobs(
+        sweep="t",
+        models=[ling],
+        draws=[],
+        arms=["A", "B", "C"],
+        roster=roster,
+        infos=js.registry_families("association"),
+        ref_opts={"association": "aggregate=summary"},
+    )
+    assert {j.arm for j in jobs} == {"A", "C"} and any("Arm A + C" in n for n in notes)
+
+
+def test_preflight_skip_arm_b_exception_excludes_c_and_arm_scoped_drop():
+    ok = {"groups": [{"arm": "A", "ok": True}], "dropped": None}
+    assert all(js.preflight_skip(ok, a) is None for a in js.ARMS)
+    exc = {**ok, "arm_b_exception": "over-context probe: 404"}
+    assert js.preflight_skip(exc, "A") is None
+    assert "Arm B exception" in js.preflight_skip(exc, "B")
+    assert "Arm B exception" in js.preflight_skip(exc, "C")
+    dc = {**ok, "dropped_arms": {"C": "preflight failed (C/g1): length"}}
+    assert js.preflight_skip(dc, "A") is None and js.preflight_skip(dc, "B") is None
+    assert "dropped (Arm C)" in js.preflight_skip(dc, "C")
+    dr = {**ok, "dropped": "preflight failed (B/g2)"}
+    assert all(js.preflight_skip(dr, a) for a in js.ARMS)
+    assert js.preflight_skip(None, "A") is None
+
+
+def test_merge_preflight_keeps_arms_not_preflighted_again():
+    ga, gb, gc = ({"group": f"g{a}", "arm": a, "ok": a != "C"} for a in "ABC")
+    old = {
+        "notes": ["n1"],
+        "models": {
+            "m": {"groups": [ga, gb], "dropped": None, "overcontext": {"x": 1}},
+            "o": {"groups": [ga], "dropped": "bad"},
+        },
+    }
+    # an A,B re-preflight: the entry is replaced whole, exactly as before addendum D
+    new_ab = {"notes": ["n2"], "models": {"m": {"groups": [ga, gb], "dropped": "x"}}}
+    got = js.merge_preflight(old, new_ab)
+    assert got == {
+        "notes": ["n1", "n2"],
+        "models": {**old["models"], **new_ab["models"]},
+    }
+    assert list(got["models"]) == ["m", "o"]
+    # a C-only preflight keeps the A/B groups and dropped; probe keys are the new run's
+    new_c = {
+        "notes": [],
+        "models": {
+            "m": {"groups": [gc], "dropped": None, "dropped_arms": {"C": "len"}, "warning": "w"}
+        },
+    }
+    got = js.merge_preflight(old, new_c)["models"]["m"]
+    assert got["groups"] == [ga, gb, gc] and got["dropped_arms"] == {"C": "len"}
+    assert "overcontext" not in got and got["warning"] == "w" and got["dropped"] is None
+    got = js.merge_preflight(old, {"models": {"o": {"groups": [gc], "dropped": None}}})["models"]
+    assert got["o"]["dropped"] == "bad"  # a model-level drop of Arm A survives a C preflight
+    # then an A,B re-preflight keeps the C groups and C drop
+    again = js.merge_preflight(js.merge_preflight(old, new_c), new_ab)["models"]["m"]
+    assert again["groups"] == [gc, ga, gb] and again["dropped_arms"] == {"C": "len"}
+    assert again["dropped"] == "x"
+    assert js.merge_preflight(None, new_ab) == {"notes": ["n2"], "models": new_ab["models"]}
+
+
+def test_cmd_analyze_arm_c_table_uses_arm_b_draws(tmp_path):
+    arm, base, _rng = _arm(7, n_fam=1, n_items=30)
+    sweep = tmp_path / "out" / "t"
+    names = dict(zip(arm.draws, ("A1", "A2", "A3", "A4", "B1", "B2", "B3"), strict=True))
+    for d, fams in arm.draws.items():
+        res = _res("association", _pass_rows(fams["f0"]))
+        dest = sweep / js.draw_arm(names[d]) / js.slug(js.OPUS, names[d]) / "association"
+        dest.mkdir(parents=True)
+        (dest / "results.json").write_text(json.dumps(res))
+        _jsonl(dest / "cells.jsonl", [{"key": "judge:x", "fp": d, "ts": 1.0, "result": {}}])
+        _jsonl(dest / "spend.jsonl", [{"run_id": "r", "input_tokens": 1000, "output_tokens": 10}])
+    for arm_name, usd in (("B", 0.02), ("C", 0.01)):
+        m = sweep / arm_name / js.slug("deepseek/deepseek-v4-flash") / "association"
+        m.mkdir(parents=True)
+        (m / "results.json").write_text(json.dumps(_res("association", _pass_rows(base["f0"]))))
+        _jsonl(m / "spend.jsonl", [{"run_id": "r", "usd": usd}])
+    ref = tmp_path / "r4" / "association"
+    ref.mkdir(parents=True)
+    (ref / "results.json").write_text(json.dumps(_res("association", _pass_rows(base["f0"]))))
+    argv = ["analyze", "--sweep", "t", "--ref-dir", str(tmp_path / "r4")]
+    rc = js.main([*argv, "--out-root", str(tmp_path / "out"), "--assume-terminal"])
+    assert rc == 0
+    a = json.loads((sweep / "analysis.json").read_text())
+    by = {x["arm"]: x for x in a["arms"]}
+    assert set(by) == {"A", "B", "C"}
+    want = [js.slug(js.OPUS, d) for d in ("A1", "B1", "B2", "B3")]
+    assert by["C"]["draws"] == by["B"]["draws"] == want  # A'1 reference + the B' noise floor
+    assert by["C"]["calibration"] == by["B"]["calibration"]
+    assert by["C"]["opus_pairs"] == by["B"]["opus_pairs"]
+    (row_c,) = by["C"]["models"]
+    (row_b,) = by["B"]["models"]
+    assert row_c["cost_usd"] == 0.01 and row_b["cost_usd"] == 0.02  # own ledgers
+    assert js.ARM_C_NOTE in a["notes"]
+    md = (sweep / "analysis.md").read_text()
+    assert "## Arm C — Arm B at low summarizer effort" in md and "Cheapest Arm C match" in md
+    assert "Arm C" in (sweep / "cost_vs_agreement.svg").read_text()
+
+
+def test_feasibility_constants_and_verdict_rules():
+    assert dataclasses.asdict(js.FEASIBILITY) == {
+        "viable_max_length": 0.05,
+        "degraded_max_undecided": 0.20,
+        "infeasible_min_length": 0.50,
+    }
+    v = lambda **k: js.feasibility_verdict(  # noqa: E731
+        {"state": "terminal", "length_rate": 0.0, "undecided_rate": 0.0, **k}
+    )[0]
+    assert v() == "viable"
+    assert v(length_rate=0.05, undecided_rate=0.20) == "viable"  # bounds inclusive
+    assert v(length_rate=0.06) == "degraded"
+    assert v(undecided_rate=0.21) == "degraded"
+    assert v(length_rate=0.51) == "infeasible"
+    assert v(length_rate=0.51, state="pending") == "infeasible"  # > 50% decides before terminal
+    assert v(preflight_dropped=True, preflight="dropped: x") == "infeasible"
+    assert v(state="blocked") == "infeasible"
+    assert v(state="pending") == "pending" and v(state="error") == "pending"
+    assert v(state="wait", length_rate=None, undecided_rate=None) == "pending"
+    assert v(length_rate=None, undecided_rate=None) == "viable"  # no calls: nothing failed
+    assert js.combine_verdicts(["viable", "degraded"]) == "degraded"
+    assert js.combine_verdicts(["viable", "pending"]) == "pending"
+    assert js.combine_verdicts(["degraded", "infeasible", "pending"]) == "infeasible"
+    assert js.combine_verdicts(["viable", "viable"]) == "viable"
+
+
+def test_feasibility_report_from_sweep_records(tmp_path):
+    root = tmp_path / "out"
+    sw = root / "f1"
+    ds, ling, haiku = (
+        "deepseek/deepseek-v4-flash",
+        "inclusionai/ling-3.1-flash",
+        "claude-haiku-5-5",
+    )
+    roster = js.load_roster(js.ROSTER_PATH)
+    pf = {
+        "notes": [],
+        "models": {
+            ds: {
+                "groups": [{"group": "g1", "arm": "A", "ok": True}, {"arm": "C", "ok": True}],
+                "dropped": None,
+            },
+            ling: {
+                "groups": [{"arm": "A", "ok": True}, {"arm": "C", "ok": False}],
+                "dropped": None,
+                "dropped_arms": {"C": "preflight failed (C/g9): length"},
+            },
+        },
+    }
+    sw.mkdir(parents=True)
+    (sw / "preflight.json").write_text(json.dumps(pf))
+    fam = ["association"]
+
+    def job(model, arm, passes):
+        j = js.job_groups(
+            sweep="f1",
+            arm=arm,
+            model=model,
+            kind=arm,
+            families=fam,
+            ref_opts={"association": "aggregate=summary"},
+            effort_fams=set(),
+            row=roster[model],
+        )[0]
+        js.save_state(sw, j, {"job": j.to_json(), "passes": passes})
+        return j
+
+    t0 = 1_000_000.0
+    done = [_p(t0, before=None, after=3), _p(t0 + 3600, before=3, after=3)]
+    for p in done:
+        p["outcomes"] = {"association": "ok"}
+    job(ds, "A", done)
+    job(ds, "C", done)
+    job(haiku, "A", [])
+    led = sw / "C" / js.slug(ds) / "association"
+    _jsonl(
+        led / "spend.jsonl",
+        [
+            {"run_id": "r1", "usd": 0.1, "calls": 5, "output_tokens": 100, "failed": {}},
+            {
+                "run_id": "r1",
+                "usd": 0.2,
+                "calls": 10,
+                "output_tokens": 2000,
+                "failed": {"length": 1},
+            },
+            {"run_id": "r2", "usd": 0.1, "calls": 10, "output_tokens": 0, "transient": {"429": 2}},
+        ],
+    )
+    rows = [
+        {"id": "a", "pass": True},
+        {"id": "b", "pass": False},
+        {"id": "c", "status": "api_fail"},
+    ]
+    (led / "results.json").write_text(json.dumps(_res("association", rows, n_digest_calls=7)))
+    out = tmp_path / "rep" / "feas.md"
+    assert (
+        js.main(["feasibility", "--sweeps", "f1", "--out-root", str(root), "--out", str(out)]) == 0
+    )
+    rep = json.loads(out.with_suffix(".json").read_text())
+    by = {(r["model"], r["arm"]): r for r in rep["rows"]}
+    assert set(by) == {
+        (ds, "A"),
+        (ds, "C"),
+        (ling, "A"),
+        (ling, "B"),
+        (ling, "C"),
+        (haiku, "A"),
+    }
+    c = by[(ds, "C")]
+    assert (c["calls"], c["length_failures"], c["length_rate"]) == (20, 1, 0.05)
+    assert c["mean_output_tokens"] == 100.0 and c["transient"] == {"429": 2}
+    assert c["cost_usd"] == pytest.approx(0.3) and c["digest_calls_last_pass"] == 7
+    assert (c["n_items"], c["n_undecided"]) == (3, 1) and c["state"] == "terminal"
+    assert c["wall_s"] == 3610.0 and c["preflight"] == "ok"
+    assert c["verdict"] == "degraded"  # 1/3 undecided > 20%
+    assert by[(ling, "C")]["verdict"] == "infeasible" and "Arm C" in by[(ling, "C")]["preflight"]
+    assert by[(ling, "B")]["verdict"] == "infeasible"  # ARM_B_DROPPED
+    assert by[(ling, "A")]["verdict"] == "pending" and by[(ling, "A")]["state"] == "no job"
+    assert (
+        by[(haiku, "A")]["preflight"].startswith("n/a") and by[(haiku, "A")]["state"] == "pending"
+    )
+    summ = {(s["model"], s["arm"]): s["verdict"] for s in rep["summary"]}
+    assert summ[(ds, "C")] == "degraded" and summ[(ling, "B")] == "infeasible"
+    md = out.read_text()
+    assert "| inclusionai/ling-3.1-flash | C | **infeasible** |" in md and "## f1" in md
+    # the default out path of one sweep is <out-root>/<sweep>/feasibility.md
+    assert js.main(["feasibility", "--sweeps", "f1", "--out-root", str(root)]) == 0
+    assert (sw / "feasibility.md").exists() and (sw / "feasibility.json").exists()

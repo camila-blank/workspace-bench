@@ -271,6 +271,21 @@
    "rpm": 240.0
   },
   {
+   "id": "inclusionai/ling-3.1-flash",
+   "catalog_id": "inclusionai/ling-3.1-flash",
+   "tier": "cheap",
+   "route": "openrouter",
+   "price_in": 0.075,
+   "price_out": 0.225,
+   "price_cache_read": 0.015,
+   "price_cache_write": null,
+   "context": 1000000,
+   "max_out": 262144,
+   "supports_reasoning": true,
+   "structured_outputs": true,
+   "rpm": 240.0
+  },
+  {
    "id": "bytedance-seed/seed-2.0-mini",
    "catalog_id": "bytedance-seed/seed-2.0-mini",
    "tier": "cheap",
@@ -669,22 +684,6 @@
    "rpm": 240.0,
    "price_note": "catalog has a long-prompt price override ([{\"completion\": \"0.0000004\", \"input_cache_read\": \"0.00000002\", \"input_cache_write\": \"0.000000125\", \"min_prompt_tokens\": 32000, \"prompt\": \"0.0000001\"}, {\"completion\": \"0.0000008\", \"input_cache_read\": \"0.00000004\", \"input_cache_write\": \"0.00000025\", \"min_prompt_tokens\": 256000, \"prompt\": \"0.0000002\"}]); cost uses the base prices (a lower bound for calls above the override's min_prompt_tokens)",
    "reason": "no structured_outputs on OpenRouter (a JSON-mode fallback is out of scope)"
-  },
-  {
-   "id": "inclusionai/ling-3.1-flash",
-   "catalog_id": "inclusionai/ling-3.1-flash",
-   "tier": "cheap",
-   "route": "openrouter",
-   "price_in": 0.075,
-   "price_out": 0.225,
-   "price_cache_read": 0.015,
-   "price_cache_write": null,
-   "context": 1000000,
-   "max_out": 262144,
-   "supports_reasoning": true,
-   "structured_outputs": true,
-   "rpm": 240.0,
-   "reason": "dropped 2026-11-02 (Camila): as summarizer its reasoning runs to the 32k output budget and every digest fails on length (f64-L16 preflight, 15-60 min per call)"
   },
   {
    "id": "google/gemma-4-31b-it:free",
