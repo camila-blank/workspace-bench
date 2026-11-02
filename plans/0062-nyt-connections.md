@@ -1,6 +1,6 @@
 # Plan 0062: nyt_connections — can a lens read the connection Qwen will choose?
 
-Status: rev 6 (2026-11-02; critique rounds 1–4 applied; targets v1.1.0 / #233). Family `nyt_connections`, group
+Status: rev 7 (2026-11-02; critique rounds 1–5 applied; targets v1.1.0 / #233). Family `nyt_connections`, group
 `model_specific`. Pilot of record: global-workspace branch `camila/connections-feas`,
 `docs/project/experiments/connections/README.md` (follow-ups 5–6) and its fresh-context `AUDIT.md`.
 
@@ -126,7 +126,7 @@ jlens_concept_pr only; no summary-only mechanism is introduced, so `tests/test_l
 and `tests/test_summary_mode_compare.py`, which run every family with a toy file in both modes, need
 no edit): per stable slot, the same MC prompt with the item's raw readout lines (every read cell,
 `[L<layer> pos <i>]` headers like the digest bundle) as the evidence instead of a digest, one call
-per slot, quote-gated on `digest.native_lines(cells)` (the `quote_ok` contract, `digest.py:973-978`);
+per slot, quote-gated on `digest.native_lines(cells)` (the `quote_ok` contract, `digest.py:1028-1033`);
 its own prompt (`NATIVE_MC`, asking for a quote "from the readouts") in `PROMPTS` and verbatim in the
 README; rows (incl. redaction) and denominators as in summary mode. It is a diagnostic, never the
 headline (the README says so). **Version pinning** (`scripts/summary_mode_compare.py:647-668`,
@@ -141,7 +141,7 @@ args, NAME)`; both use the same judge model, reasoning and `SAME_KEYS` config, e
 2. Per stable slot, one MC call (`mcjudge.Call`): digest + the slot's labels shuffled by
    `mc.seeded_shuffle(f"{id}-{slot}")` + `mc.CANNOT` last (`mc.options_with_cannot`). The model
    must also return a `quote` from the digest supporting its pick; a pick whose quote fails
-   `digest.quote_ok(quote, col.evidence[puzzle_id])` (`digest.py:972`; `Line` objects, as chain does
+   `digest.quote_ok(quote, col.evidence[puzzle_id])` (`digest.py:1027`; `Line` objects, as chain does
    at `chain_intermediates/judge.py:864,878-880`) is scored as cannot-tell. The gate is verbatim-only
    (it does not check that the quoted line relates to the picked label; the prompt-only floor runs
    the same gate, and the README says so). Prompts tool-free
@@ -156,9 +156,11 @@ args, NAME)`; both use the same judge model, reasoning and `SAME_KEYS` config, e
    field is ignored); extra `continuation_rate`. Reported, not gating (§0).
 5. **Word-masked ablation (extra):** the digest with every puzzle word blanked (case-insensitive,
    word-bounded), same MC; the quote gate checks against `col.evidence` lines blanked IDENTICALLY
-   (`Line` is frozen, `digest.py:657`: blank with `dataclasses.replace` over both `text` and
+   (`Line` is frozen, `digest.py:712`: blank with `dataclasses.replace` over both `text` and
    `pieces`), so a quote spanning a blank is not failed spuriously; extra `masked_rate` (pilot audit must-fix 2).
-6. Rows: **headline rows = stable slots only**, one row per slot with `id = "cNNNN|sK"` (the puzzle
+6. Rows: **headline rows = stable slots only; non-stable slots write NO result rows** (their picks go
+   only into the extras: `pass_rate_result` sets `n_items = len(rows)`, `family.py:157`, and
+   `results.decided_outcomes` needs one row per id, `results.py:217-219`), one row per slot with `id = "cNNNN|sK"` (the puzzle
    id in a separate `puzzle` field; the same ids as the lucky `Item`s, §5), `pass` True/False/`None`
    when undecided, so `results.decided_outcomes` (one row per id, `results.py:201-221`), the frozen
    floor's `decided` map and `shared_floor_text` all join per slot, and the 20% undecided rule
@@ -170,7 +172,9 @@ args, NAME)`; both use the same judge model, reasoning and `SAME_KEYS` config, e
    (`runner.refusals_only`, `runner.py:191-208`, requires `n_unjudged_cells == n_digest_refused +
    n_digest_too_long + n_items_partial_undecided` and `extras.n_items_undecided >= refused`): the
    family overwrites those three `extras.summary` counts with the number of **stable slots of
-   headline puzzles** whose digest was refused / too long / partial, and keeps the puzzle-level and
+   headline puzzles** whose digest was refused / too long / partial (a v1.1.0 stage-2 failure,
+   reason `layered_failed`, is unsummarized like a refusal and is counted in the same unit — the
+   implementer checks how `runner.refusals_only` classifies it and states it in a test), and keeps the puzzle-level and
    all-puzzle counts under separate keys (`n_puzzles_digest_refused`, …). A test: one refused
    headline puzzle with 2 stable slots plus one refused non-headline puzzle → the run is
    refusals-only complete. `extras.n_items_without_readouts` likewise counts stable slots. Extras (`_columns`): all slots, model-specific, slot 0
@@ -203,14 +207,24 @@ args, NAME)`; both use the same judge model, reasoning and `SAME_KEYS` config, e
   slot's labels, picks Qwen's. One `Item` per stable slot (id `cNNNN|sK`), since `score_draw`
   passes an item only if every list is right. Plus the default blind/options-only variants; an
   options-only guesser > 5 points above uniform is reported in the README, not hidden.
-- The lucky floors (blind / options-only / question) are frozen into
+- The lucky floors (`blind` = options-only, `described`, `topic` — the `LEAKAGE_GUESSERS` — and
+  `question` = the direct guess) are frozen into
   `evals/baselines/lucky_guessing.json` (the per-item lucky cell beside summary rows needs them).
 - `tests/test_mc_cannot_tell.py`: a `_last_option` branch for the family; `DESCRIPTIONS` entry; the
   round4/round5 fixtures that import every builder's SPEC get the family.
 - `capable/questions.py`: `NO_QUESTION` (the gate is Qwen's own behaviour).
 - `text_inversion.NOT_GATED` + the `_not_gated` reason in `anti_text_inversion.json`.
 
-**Bar (pre-declared, §0):** headline pass rate (all-layer union, `final-olens-rl600-x4`) vs the
+**Floor pairing under v1.1.0.** The headline row is `layered` (instrument
+`<PV>+digest-v5-task-extractive-layered-v1+sj-v10`); the prompt-only floor is one prose cell, so it
+is necessarily a single-layer (`union`) instrument, and `prompt_only.summary_floor_matches`
+(stamps differ) never draws it beside the layered row automatically — true of every family's
+all-layer row since #233. The bar is therefore computed by a family script,
+`scripts/nyt_connections_bar.py <headline results dir> <prompt-only floor results dir>`, which joins
+the two per slot on `cNNNN|sK` and reports the paired difference; its output is recorded in the
+family README.
+
+**Bar (pre-declared, §0):** headline pass rate (all-layer `layered`, `final-olens-rl600-x4`) vs the
 frozen prompt-only floor, with a bootstrap 95% CI on the per-slot difference (headline − floor,
 floor per slot from the frozen prompt-only cells) excluding 0; reported, not gating: exact
 McNemar vs the direct guess. Not met → `not_in_macro` with the reason; registered either way.
@@ -226,7 +240,10 @@ never equal to a committed label (`test_lucky_guessing.py:34-35` checks option u
 on a small fixture `connections.json` (like `tests/test_knowledge_cutoff_nocot.py`'s fixture zip);
 the exact PROMPT_MEMBERS pin and `", ".join(words)` fill; label resolution incl. cross-puzzle
 references; row ids / denominators; redaction; the quote gate; the null-partner disjointness;
-the native diagnostic path (one row per stable slot, `config.aggregate == "native"`, same `n_items`
+the native diagnostic path (one row per stable slot; the family stamps `config.aggregate = "native"`
+explicitly, since `mcjudge.base_config` never sets it and `runner` stamps it only for `NATIVE_ONLY`;
+the MC answer field is named `choice` and the Call meta carries `gold_pos`, so
+`tests/test_summary_mode_compare.py`'s fake-LLM oracle yields real passes; same `n_items`
 and denominators as summary mode, `prompt_version` pinning as in §4), the refusals-only
 completeness case (§4.6) (monkeypatch `run_calls`). The real no-NYT-text check over the committed
 bank runs in the builder and in a test that is SKIPPED unless the cached pinned mirror exists
@@ -260,8 +277,10 @@ CI: `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`.
 
 ## 9. Risks and follow-ups
 
-- The capped bench digest (≤10 + ≤15 claims per layer) may drop groupings; the smoke checks it and a
-  `FAMILY_DEFAULTS` `summ_max`/`summ_rare` entry is the remedy (recorded in the README).
+- The capped bench digest may drop groupings: ≤10 + ≤15 claims per layer digest, and under `layered`
+  one stage-2 digest per puzzle of ≤20 prominent + ≤30 rare entries across all layers. The smoke
+  checks it; remedies are a `FAMILY_DEFAULTS` `summ_max`/`summ_rare` entry or `summ_layered_x`
+  (stamped `-layered-v1x<k>`), recorded in the README and decided BEFORE the floors are frozen.
 - Small n (89 stable, 25 model-specific): wide CIs, said in the README.
 - Shared idiolect: Qwen writes the labels and the lens shares Qwen's wording; the quote gate and the
   continuation/masked extras bound it but do not remove it.
