@@ -70,7 +70,18 @@ def test_summary_judge_receives_the_spec_token_note(family, tmp_path, monkeypatc
     # every call fails (the fake answers None): the prompts are what count
     with contextlib.suppress(Exception):
         spec.run(summary_args(path, tmp_path / "o", "pv", allow_missing=True))
-    users = [u for name, _s, u in fake.calls if name != "digest"]
+    calls = [(s, u) for name, s, u in fake.calls if name != "digest"]
+    if family == "poetry":
+        # round 5: poetry's HEADLINE judge is free-response (no options, no targets); it gets the
+        # spec's targets-variant note made target-free; its MC diagnostic gets ``want``
+        from wsbench.evals.poetry import prompts as pp
+
+        free = [u for s, u in calls if s == pp.SYSTEM]
+        want_free = pp.free_token_note(mc.token_note(FLAT, targets=True))
+        assert free and all(want_free in u for u in free), family
+        assert not any(want in u for u in free), family
+        calls = [(s, u) for s, u in calls if s != pp.SYSTEM]
+    users = [u for _s, u in calls]
     assert users, f"{family}: no judge call"
     assert all(want in u for u in users), family
     assert not any(mc.TOKEN_NOTE in u for u in users), family
