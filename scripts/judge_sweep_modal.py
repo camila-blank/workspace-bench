@@ -33,6 +33,7 @@ group) per pass, each returning its pass record; the job state lives on the clie
 import importlib.util
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -130,6 +131,13 @@ def _seed_job(js: Any, job: Any, out: Path, name: str, drop: list[str]) -> None:
             js.seed_family_dir(out / f, Path(VOL) / "seeds" / name / rel / "cells.jsonl", drop)
 
 
+def _readouts_root(name: str) -> Path:
+    """``/vol/readouts/<name>``, or the shared readouts another upload named (``upload
+    --readouts-name``: several layer configs' seeds over ONE readouts copy)."""
+    alias = Path(VOL) / "seeds" / name / "readouts_name.txt"
+    return Path(VOL) / "readouts" / (alias.read_text().strip() if alias.exists() else name)
+
+
 @app.function(image=image, volumes={VOL: vol}, secrets=SECRETS, timeout=24 * 3600)
 def run_job(job_json: dict, name: str, layers: list[int] | None, run_args: list[str]) -> dict:
     """One pass of one job group; returns its pass record (``judge_sweep.execute_pass``)."""
@@ -148,7 +156,7 @@ def run_job(job_json: dict, name: str, layers: list[int] | None, run_args: list[
             js.execute_pass(
                 job,
                 out_dir=out,
-                readouts_root=Path(VOL) / "readouts" / name,
+                readouts_root=_readouts_root(name),
                 env=_container_env(name, job.model),
                 layers=layers,
                 run_args=run_args,
@@ -175,7 +183,7 @@ def preflight_job(job_json: dict, name: str, layers: list[int] | None, run_args:
         rec = js.execute_pass(
             job,
             out_dir=out,
-            readouts_root=Path(VOL) / "readouts" / name,
+            readouts_root=_readouts_root(name),
             env=_container_env(name, job.model),
             layers=layers,
             run_args=run_args,
@@ -336,12 +344,14 @@ def upload(
     ref_dir: str,
     ref_dirs: str = "",
     exclude_nocot: bool = False,
+    readouts_name: str = "",
 ) -> None:
-    """Readouts (with sidecars) -> ``/vol/readouts/<name>/``; every ``cells.jsonl`` of the
-    reference run dir -> ``/vol/seeds/<name>/`` (layout as written, incl. ``layers=each``
-    ``<family>/<tag>/``), keeping every digest-path row in file order, failed rows included;
-    plus ``index.json`` (family -> its seed dir) and ``env.json`` (``WSB_*`` path overrides
-    rewritten to volume paths). ``--exclude-nocot`` strips the nocot rows from both."""
+    """Readouts (with sidecars) -> ``/vol/readouts/<name>/`` (``--readouts-name X``: upload them
+    as ``X`` only if ``/vol/readouts/X`` is absent, and point this name's jobs at it); every
+    ``cells.jsonl`` of the reference run dir -> ``/vol/seeds/<name>/`` (layout as written, incl.
+    ``layers=each`` ``<family>/<tag>/``), keeping every digest-path row in file order, failed rows
+    included; plus ``index.json`` (family -> its seed dir) and ``env.json`` (``WSB_*`` path
+    overrides rewritten to volume paths). ``--exclude-nocot`` strips the nocot rows from both."""
     js = _js()
     if os.environ.get("WSB_NO_NOCOT"):
         raise SystemExit("WSB_NO_NOCOT is set: unset it (it changes plan_sha vs the sidecars)")
@@ -349,7 +359,12 @@ def upload(
     rd = js._ref_dirs(ref_dirs or None)
     with tempfile.TemporaryDirectory() as tmp:
         stage = Path(tmp)
-        for p in sorted(Path(readouts).iterdir()):
+        rname = readouts_name or name
+        try:
+            have = bool(readouts_name) and bool(vol.listdir(f"/readouts/{rname}"))
+        except Exception:  # absent on the volume (NotFoundError): upload it
+            have = False
+        for p in [] if have else sorted(Path(readouts).iterdir()):
             if not p.is_file():
                 continue
             dst = stage / "readouts" / p.name
@@ -358,7 +373,7 @@ def upload(
                 lines = js.strip_readouts(js._read_lines(p), drop)
                 dst.write_text("".join(x + "\n" for x in lines), encoding="utf-8")
             else:
-                dst.write_bytes(p.read_bytes())
+                shutil.copyfile(p, dst)  # multi-GB readouts: never read whole into memory
         seeds = stage / "seeds"
         n_rows = 0
         for cells in sorted(Path(ref_dir).rglob("cells.jsonl")):
@@ -385,8 +400,11 @@ def upload(
             elif k.startswith("WSB_"):
                 env[k] = v  # repo-relative values resolve against REPO_ROOT in the container
         (seeds / "env.json").write_text(json.dumps(env, indent=1), encoding="utf-8")
+        if readouts_name:
+            (seeds / "readouts_name.txt").write_text(rname, encoding="utf-8")
         with vol.batch_upload(force=True) as up:
-            up.put_directory(str(stage / "readouts"), f"/readouts/{name}")
+            if not have:
+                up.put_directory(str(stage / "readouts"), f"/readouts/{rname}")
             up.put_directory(str(seeds), f"/seeds/{name}")
     print(f"uploaded readouts + {n_rows} seed rows ({len(index)} families) as {name!r}")
 
