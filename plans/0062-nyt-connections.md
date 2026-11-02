@@ -1,140 +1,198 @@
 # Plan 0062: nyt_connections — can a lens read the connection Qwen will choose?
 
-Status: draft (2026-11-02). Family: `nyt_connections` (group `model_specific`). Pilot of record:
-global-workspace branch `camila/connections-feas`, `docs/project/experiments/connections/README.md`
-(follow-ups 5–6 and the fresh-context `AUDIT.md`).
+Status: rev 2 (2026-11-02; rev 1 critique applied). Family `nyt_connections`, group
+`model_specific`. Pilot of record: global-workspace branch `camila/connections-feas`,
+`docs/project/experiments/connections/README.md` (follow-ups 5–6) and its fresh-context `AUDIT.md`.
+
+## 0. Decisions (Camila, 2026-11-02)
+
+- **Bar = beat the prompt-only baseline.** Camila: "we just want to beat a prompt only baseline, i
+  don't care whether the qwen option is picked more than nyt answer". The continuation floor and
+  the slot-0 (next-text) concentration are therefore **reported, not gating**: the family is
+  registered whatever they show, with both numbers beside the headline. This overrides the general
+  "low continuation floor too" guidance for this family; the README says so in one line.
+- **Per-category scoring, labels only** ("let's just keep the old way"), all four of Qwen's groups,
+  same-connection distractors removed, headline on groups stable under 16 samples.
+- **NYT text is never committed** (public repo, unlicensed mirror; the ids-only pattern of plan
+  0018). Text exists only at plan time and in the user's local cache.
+- **Summary step = the bench's** (`digest.collapse`, `summ_layers=union`), not the pilot's custom
+  extractor: the pilot numbers are re-measured, not ported.
 
 ## 1. Construct
 
-Qwen3.6-27B sees an NYT Connections puzzle (16 words, sort into 4 groups of 4) and answers with
-**member words only** ("Do not name or explain the connections"). In a follow-up turn it names the
-connection it had in mind for each group; that name is the label. The lens reads the **last 12
-tokens of the prompt**, before Qwen writes anything. The question per Qwen group ("slot"): does the
-summary of the readouts point to **Qwen's** connection label, among labels for competing groupings
-of the same words (the NYT label, red-herring labels) and an unrelated label?
+Qwen3.6-27B sees an NYT Connections puzzle and answers with **member words only** ("Do not name or
+explain the connections"); a follow-up turn names the connection it had in mind for each group (the
+label). The lens reads the **last 12 tokens of the prompt**, before Qwen writes anything. Per Qwen
+group (a *slot*): does the digest of the readouts point to **Qwen's** label, among labels of competing
+groupings of the same words (the NYT label, red-herring labels) and an unrelated label?
 
-The label is never written in the read prefix, and Qwen is often wrong (31% of its groups match
-NYT), so text-only readers that solve the puzzle bet on the NYT label where Qwen chose another.
+Pilot (bank v1, 335 puzzles / 905 slots, custom uncapped extractor + union over L0–63, "none of these"
+escape; **not comparable** to the bench's capped digest over GRID = 11 layers and `mc.CANNOT`; the
+closest pilot analogue is s3d over L20–60:4):
+- stable slots (n=89): unions 0.64–0.70 vs pilot prompt-only summary 0.47, forced direct guess 0.58,
+  continuation floor 0.69; single layers rarely beat 0.47; slot 0 (51/89) carries it.
+- model-specific slots (stable, Qwen wrong, label ≠ NYT connection; n=25): 0.32–0.36 vs 0.08/0.12,
+  continuation 0.40.
 
-Pilot evidence (bank v1, 335 puzzles, 905 slots, custom strict summarizer + union of per-layer
-groupings; NOT the bench digest — numbers here must be re-measured with it):
-- stable slots (n=89): all-layer union of final O-lens 0.69 / whitened 0.70 / ML-NLA 0.66 / s3d 0.64
-  vs prompt-only summary 0.47 (p ≤ .014), forced direct guess 0.58 (whitened p=.04), continuation
-  floor 0.69 (= Qwen's own 4 member words for the slot). Single layers almost never beat the
-  prompt-only floor. The effect sits on Qwen's first group (the words it writes next); groups 2–4 beat
-  no floor.
-- model-specific slots (stable, Qwen wrong, label ≠ the NYT connection; n=25): 0.32–0.36 vs
-  0.08/0.12 prompt-only (ML-NLA union p=.016), at the continuation floor 0.40.
-
-So the family measures "the lens carries the connection behind the upcoming words, before they
-are written", with a known ceiling (the continuation floor). That ceiling is reported, not hidden.
+The headline subset (stable) was chosen after the pilot on these same puzzles, so the bench run on
+bank v1 is a **port check**, not a confirmation. A confirmation batch is possible on the ~333 older
+puzzles in the mirror (2023-06..2024-05) that no pilot step touched; out of scope for this PR,
+named in §9.
 
 ## 2. Bank v1 (`evals/nyt_connections/items.json`), ids-only
 
-NYT puzzle text (the 16 words, the NYT group names and members) is **never committed** (same rule
-as knowledge_cutoff's nocot items, plan 0018: no text, no readouts, no `cells.jsonl` of these
-items in git). It is fetched at plan/judge time by a new module `src/wsbench/nyt.py` from the
-public mirror `github.com/Eyefyre/NYT-Connections-Answers` `connections.json` **pinned to commit
-`0c42b26054d4d9e2b1d8fc7b1599925a97fb1ec7`** (2026-10-31; 1233 puzzles; the exact file the pilot
-used, sha256 `1bd17c9161c665dbdf2ea8011123a574b7e831cc6442fc7a73fd144d0371f534`; the mirror carries
-no license, one more reason not to commit its text), sha256-checked, cached as that one file under `$WSB_CACHE/nyt/` (default
-`~/.cache/wsbench/nyt/`). A fetch or hash failure raises with the URL and both hashes.
+### 2.1 Source
+`src/wsbench/nyt.py` fetches `connections.json` from `github.com/Eyefyre/NYT-Connections-Answers`
+pinned to commit `0c42b26054d4d9e2b1d8fc7b1599925a97fb1ec7` (2026-10-31, 1233 puzzles, the exact
+file the pilot used), sha256 `1bd17c9161c665dbdf2ea8011123a574b7e831cc6442fc7a73fd144d0371f534`,
+cached as that one file under `$WSB_CACHE/nyt/` (default `~/.cache/wsbench/nyt/`). Fetch or hash
+failure raises with the URL and both hashes. `WSB_NO_NYT=1` (like `NO_NOCOT_ENV`, `readplan.py`)
+makes `readplan` return no rows for the family and is part of `reads._env_key`, so an offline box
+can still plan every other family. **Retained invariant (plan 0018):** text only at plan time; no
+NYT text in git, in result rows, in bundles or on the site; judging needs the cached file (the
+judge resolves NYT labels and re-renders plan rows for `plan_sha`), which is fetched once.
 
-Committed per item (puzzle): `id` (`c<NYT number, 4 digits>`), `nyt_id` (int), `date`, the seeded
-word order is recomputed (see below), and per slot:
-- `slot` (Qwen output order 0–3), `members` as **indices into the shuffled 16-word list** (never the
-  words), `qwen_label` (Qwen's follow-up name: model output, committed), `stability`, `stable`
-  (≥ 12/16 samples), `correct`, `gold_same`, `model_specific`, `overlap_with_nyt`;
-- `options`: ordered list of `{role, label}` for roles `qwen`, `alt` (Opus-written red-herring
-  labels, committed), `foil` (another puzzle's Qwen label, committed), and `{role: "gold",
-  nyt_group: k}` for the NYT label (resolved from the fetched JSON at load time: `answers[k].group`).
-  The same-connection filter has already been applied (frozen; the judge never re-runs it).
+Word order: the 16 words in NYT order (`[w.strip() for g in answers for w in g.members]`) shuffled
+by `random.Random(f"conn-{nyt_id}")` (the pilot's `make_puzzles.py`); `nyt.words(nyt_id)` reproduces
+it. User turn: `PROMPT_MEMBERS` (verbatim from the pilot, pinned by a test) with `{words}` filled by
+`str.replace`, so the rendered text is byte-identical to the pilot's `.format`.
 
-Word order: the pilot shuffles each puzzle's 16 words with `random.Random(f"conn-{nyt_id}")` over
-the NYT order `[w for g in answers for w in g.members]`, words stripped. `nyt.py` reproduces it;
-the build script asserts the reconstruction equals the pilot bank's `words` for every item.
+### 2.2 Committed fields
+Header: `family`, `version: 1`, `frozen`, `source` (URL, commit, sha256), `subject_model`,
+`answer_format`, `stability` (16 samples, T 0.7, top-p 0.95; stable iff ≥ 12/16), `options` (rule
+below), `read_positions`, `excluded` (non-partition / unlabelled answers; herring collisions; and,
+recorded as a selection made on a baseline, the 30 puzzles whose pilot prompt-only summary Opus
+refused), `pilot` (global-workspace commit, pilot bank sha256 7621e197…), `contract: {native_langs:
+["en"]}`, `counts`.
 
-Header: `family`, `version: 1`, `frozen`, `source` (mirror URL + pinned commit + sha256),
-`subject_model`, `answer_format`, `stability`, `options` (construction + filter prompt id),
-`read_positions`, `excluded`, `pilot` (global-workspace commit + bank v1 sha256 7621e197…),
-`contract: {native_langs: ["en"]}`, `counts` (335 puzzles / 905 slots / 89 stable / 25
-model-specific).
+Per item: `id` (`c<NYT number, 4 digits>`), `nyt_id`, `date`, and `mc`: one entry per slot with
+`slot` (Qwen output order 0–3), `members` (**indices** into the shuffled 16), `stability`, `stable`,
+`correct`, `gold_same`, `model_specific`, `overlap_with_nyt`, and `options` — an ordered list where
+each option is either `{role, label}` (committed text) or `{role, nyt_group: k}` (resolved at load
+from the fetched JSON).
 
-Builder: `scripts/build_nyt_connections_bank.py --pilot-bank <gw outputs/.../bank/items_v1.json>`
-converts the pilot bank (which holds the text, off-repo) into the ids-only bank and verifies the
-round trip (words, members-as-words, NYT labels) through `nyt.py`. It is run once by the author;
-the pilot bank is not needed afterwards.
+**Label rule (fixes the leak):** the builder folds every candidate label (`mc.fold` plus quote and
+whitespace folding) and compares it with the puzzle's four NYT group names:
+- a label equal to an NYT name is replaced by `{role, nyt_group: k}` (for `qwen`, `alt` and `foil`
+  alike; a `foil` matching an NYT name of *its own* puzzle references that puzzle);
+- an `alt` equal to the slot's `gold` is dropped (12 pilot slots offered the gold label twice);
+- an `alt` that is another NYT group of the same puzzle keeps role `alt` but becomes a reference;
+- `qwen` and `foil` labels are model output (Qwen's follow-up names) and are committed even when they
+  quote a puzzle word (112 do; single common English words are not the puzzle);
+- the builder asserts no committed string equals (after folding) any NYT group name in the
+  mirror, and that every reference resolves.
 
-## 3. Read plan (`readplan._plan` branch)
+This makes bank v1 differ from the pilot bank in the all-slot extras (option sets shrink where
+duplicates are dropped); stable/model-specific membership is unchanged (asserted).
 
-`ReadSpec(family, id, "chat", {"kind": "last_n", "n": 12}, GRID, text=<PROMPT_MEMBERS with the
-words>, lite_positions=dict(SAME))` — lite = the same 12 positions (cheap already). `text` is
-rendered from `nyt.py` at plan time. `PROMPT_MEMBERS` is copied verbatim from the pilot
-(`conn_common.PROMPT_MEMBERS`) into `src/wsbench/evals/nyt_connections/prompts.py` and pinned by a
-test (the exact string; a change invalidates every readout). `tests/test_readplan.py` family count
-+1. The pilot's custom read (`fanout_custom`, render chat, last_n 12) produced identical positions
-and tokens for all 367 puzzles (pilot parity check), so the plan matches the pilot reads.
+Builder: `scripts/build_nyt_connections_bank.py --pilot-bank <off-repo items_v1.json>`; round-trips
+words, members-as-words and NYT labels through `nyt.py` and asserts equality with the pilot bank.
 
-## 4. Scoring (summary mode = the bench default; chain_intermediates pattern)
+## 3. Read plan
 
-1. `digest.collapse` per puzzle (the bench digest, `summ_layers=union`, hierarchical overflow,
-   default budgets unless the smoke shows the cap drops groupings, then a `FAMILY_DEFAULTS`
-   entry). `DIGEST_TASK_NOTE` (no gold; `tests/test_task_notes.py`): the model is reading a
-   16-word grouping puzzle and has not answered yet; note the groupings and connections the
-   readouts state.
-2. One MC call per slot (`mcjudge.Call`): the digest + the slot's labels (shuffled with
-   `mc.seeded_shuffle(f"{id}-{slot}")`) + the escape `mc.CANNOT` appended last
-   (`mc.options_with_cannot`). Question: which connection the readouts specifically support for
-   a group the model formed. Pass = Qwen's label. Prompts tool-free (`mc.READOUT_PHRASE`), verbatim
-   in `evals/nyt_connections/README.md`.
-3. Partner null (chain's `null_shuffled`): the same MC with the digest of another puzzle (fixed
-   derangement `ids[(i + 7) % n]`), reported as `null_rate`.
-4. Rows: one per (puzzle, slot) with `pass` = picked Qwen; `pass_rate_result(rows, n_items=…)`
-   over **stable** slots is the headline (pre-declared). Extras (`_columns`): all slots,
-   model-specific slots, slot 0 vs slots 1–3, null rate, cannot-tell rate, picks by role.
+`readplan._plan` branch: `ReadSpec(family, id, "chat", {"kind": "last_n", "n": 12}, GRID,
+text=<rendered user turn>, note=..., lite_positions=dict(SAME))`. **Retained invariant (plan 0061):**
+lite = `SAME`, so a lite run differs from full only by its `+reads-lite` stamp. `EvalSpec`
+`min_full_positions=12`, `full_contiguous=True`. `tests/test_readplan.py` family count +1.
+
+Readouts: the pilot's bench-producer readouts (same render, positions and tokens for all 367
+puzzles; layers 0–63 include GRID) may be cut to GRID and given a sidecar with this branch's
+`plan_sha` **only if** `readplan.plan("nyt_connections")` rows equal the pilot specs field by field
+(asserted by a one-off script, recorded in the README); otherwise re-produce
+`final-olens-rl600-x4` at GRID (~6 GPU-h).
+
+## 4. Scoring (summary mode, the bench default; chain_intermediates pattern)
+
+**Retained invariants (plan 0024, digest audit F1):** summary mode never changes the denominator;
+the family stamps `config.aggregate="summary"`; `summ_layers=union` digests layer by layer and
+merges (`merge_grounded`); `summ_numbers=0`; an unsummarized puzzle makes all its slots undecided
+(`pass=None`). `opts=aggregate=native` exits 2 with "nyt_connections is summary-only" (no native
+path; not added to `NATIVE_ONLY`, which stays jlens_concept_pr only).
+
+1. `digest.collapse` per puzzle. `EvalSpec.task_note = DIGEST_TASK_NOTE` (no gold, non-empty):
+   the model is reading a 16-word grouping puzzle and has not answered yet; note the groupings and
+   connections the readouts state.
+2. Per stable slot, one MC call (`mcjudge.Call`): digest + the slot's labels shuffled by
+   `mc.seeded_shuffle(f"{id}-{slot}")` + `mc.CANNOT` last (`mc.options_with_cannot`). The model
+   must also return a `quote` from the digest supporting its pick; a pick whose quote fails
+   `digest.quote_ok` on `digest.gate_texts` is scored as cannot-tell (chain's
+   `summary_verdict_mc`, `chain_intermediates/judge.py:703-748`). Prompts tool-free
+   (`mc.READOUT_PHRASE`), verbatim in the family README.
+3. Partner null (chain's `null_shuffled`): the same MC on another puzzle's digest (`ids[(i+7)%n]`),
+   extra `null_rate`.
+4. **Continuation floor (measured, extra):** the same MC prompt with the slot's 4 member words (from
+   `nyt.py`) as the only evidence, no readouts; extra `continuation_rate`. Reported, not gating (§0).
+5. **Word-masked ablation (extra):** the digest with every puzzle word blanked, same MC; extra
+   `masked_rate` (pilot audit must-fix 2).
+6. Rows: **headline rows = stable slots only** (`pass` True/False, `None` when undecided), so the
+   20% undecided rule (`results.py:178-197`) sees only them; `pass_rate_result(rows,
+   n_items=<puzzles with ≥1 stable slot>)`. Extras (`_columns`): all slots, model-specific, slot 0
+   vs slots 1–3 (each with its n), null, continuation, masked, cannot-tell rate, picks by role.
+7. Result rows record picks **by role and slot**, never label text; digests and quotes are
+   redacted from rows unless `opts=keep_nyt_text` (copy knowledge_cutoff's `_redact` /
+   `REDACTED` / `keep_*_text`, `knowledge_cutoff/judge.py:68-70,422-447`), and
+   `scripts/check_nocot_redaction.py` (or a sibling) checks bundles/site for this family.
 
 ## 5. Floors and gates
 
-- Prompt-only (`baselines/prompt_only_opus.py`, `po-opus-v1`): Opus answers once per plan row with
-  the puzzle prompt (what groupings it expects the model to be considering) → one prose cell →
-  the same instrument. Frozen into `evals/baselines/prompt_only_summary.json` via `wsbench freeze`.
-  Add whatever per-family hook `prompt_only_opus` needs (find the precedent families).
-- Lucky guessing (`baselines/lucky_guessing.py`): an Item builder over the slots (options only, no
-  readouts) + `DESCRIPTIONS`. If an options-only guesser is > 5 points above uniform, report it
-  (Qwen's labels may be more "answer-like"); do not silently pass.
-- Continuation floor: not a bench mechanism. Report the pilot number in the family README
-  (0.69 stable) as the known ceiling; do not add a mechanism in this PR.
-- `capable/questions.py`: `NO_QUESTION` (the gate is Qwen's own behaviour, like unverbalized_hint).
-- `text_inversion.NOT_GATED` with the reason.
+- **Prompt-only:** `po-opus-v1` unchanged (the generic open-model question; no per-family hook
+  exists, `text_inversion.py:34-49`, and `tests/test_po_floors_r3.py:234-239` pins the protocol). It
+  is not the pilot's Qwen-aware prompt summary (0.47); the README says so. It must be frozen into
+  `evals/baselines/prompt_only_summary.json` before merge (test coverage of `poo.families()`); if
+  any nyt id is refused and the Sonnet fallback serves it, the protocol test would fail — then stop
+  and ask Camila (do not edit that test).
+- **Direct guess (the stronger text floor, pilot 0.58):** the lucky-guessing `question` variant
+  (`GUESS_QUESTION` hook, `lucky_guessing.py:358`) with an nyt-specific system prompt (the
+  default `SYSTEM_QUESTION` is moral-worded): sees the 16 words (rendered at run time) + the
+  slot's labels, picks Qwen's. One `Item` per stable slot (id `cNNNN|sK`), since `score_draw`
+  passes an item only if every list is right. Plus the default blind/options-only variants; an
+  options-only guesser > 5 points above uniform is reported in the README, not hidden.
+- `tests/test_mc_cannot_tell.py`: a `_last_option` branch for the family; `DESCRIPTIONS` entry; the
+  round4/round5 fixtures that import every builder's SPEC get the family.
+- `capable/questions.py`: `NO_QUESTION` (the gate is Qwen's own behaviour).
+- `text_inversion.NOT_GATED` + the `_not_gated` reason in `anti_text_inversion.json`.
 
-## 6. Validation run (after the code is in, before merge)
+**Bar (pre-declared, §0):** headline pass rate (all-layer union, `final-olens-rl600-x4`) vs the
+frozen prompt-only floor, with a bootstrap 95% CI on the per-slot difference (headline − floor,
+floor per slot from the frozen prompt-only cells) excluding 0; secondary: exact McNemar vs the
+direct guess. Not met → `not_in_macro` with the reason; registered either way.
 
-Readouts for `final-olens-rl600-x4` at GRID via the in-house producer against this branch's bench
-SHA (plan_sha must match), `wsbench judge family=nyt_connections limit=3` live smoke, then the full
-judge on the union and on single layers L44 and L52, plus the prompt-only floor. Record the
-numbers in the family README with the pilot numbers beside them. Bar for keeping the family in the
-macro: stable-slot pass rate above the prompt-only floor with a non-overlapping bootstrap CI; if
-not met, register it with `not_in_macro` and the reason.
+## 6. Tests (all offline)
 
-## 7. Files
+Autouse `tests/conftest.py` stub `_offline_nyt` (like `_offline_nocot`, `conftest.py:30-41`) giving
+synthetic words and NYT labels for every bank id, so `test_readplan` (plans every family), the
+`test_summary_default` dry run, the lucky builders and `test_mc_cannot_tell` never touch the network.
+`tests/test_nyt_connections.py`: render pin (exact PROMPT_MEMBERS, word order for a known id under
+the stub), label resolution, the no-NYT-text assertion over the committed bank, row/denominator
+rules, redaction, the quote gate, `aggregate=native` exit 2 (monkeypatch `run_calls`).
+`examples/readouts/nyt_connections.jsonl`: synthetic puzzle words only. README *Example:* line: a
+synthetic puzzle.
 
-- New: `src/wsbench/nyt.py`; `src/wsbench/evals/nyt_connections/{__init__,prompts,judge}.py`;
-  `evals/nyt_connections/{items.json,README.md}`; `scripts/build_nyt_connections_bank.py`;
-  `examples/readouts/nyt_connections.jsonl` (toy rows, no NYT text: synthetic words);
-  `tests/test_nyt_connections.py` (offline: monkeypatch `run_calls` and the `nyt.py` fetch with a
-  synthetic 2-puzzle fixture).
-- Edited: `readplan.py` (branch), `tests/test_readplan.py` (count), `capable/questions.py`,
-  `baselines/text_inversion.py`, `baselines/lucky_guessing.py`, `baselines/prompt_only_opus.py` if
-  needed, `README.md` (entry with *What it is* / *Example* / *Judged by*, Judges row, Credits),
-  `NOTICE.md` (NYT / mirror credit), `plans/README.md` table, `CLAUDE.md` family bullet.
-- CI: `uv run ruff check . && uv run ruff format --check . && uv run pytest -q` (no network in
-  tests).
+## 7. Validation (before merge)
 
-## 8. Risks
+1. Readouts per §3. 2. `wsbench judge family=nyt_connections items=<3 ids with stable slots>` live
+smoke; read the digests and picks. 3. Full judge (union) + single layers L44 and L52; prompt-only
+floor; direct guess; continuation, masked and null extras. 4. Record numbers in the family README
+beside the pilot's, with the port-check caveat (§1). `wsbench list` shows 335 items; the README
+states the headline n (89 stable slots over the puzzles that have them).
 
-- The bench digest (≤10 + ≤15 claims per layer) may drop the groupings the pilot's uncapped
-  extractor kept; the pilot showed the cap changes results. Smoke checks it; a family default
-  raises `summ_max` / `summ_rare` if needed.
-- Small n: 89 stable slots, 25 model-specific. Bootstrap CIs will be wide; the family README says so.
-- The upstream mirror could disappear: the pinned file is cached; document the hash so any copy
-  can be verified.
+## 8. Files
+
+New: `src/wsbench/nyt.py`; `src/wsbench/evals/nyt_connections/{__init__,prompts,judge}.py`;
+`evals/nyt_connections/{items.json,README.md}`; `scripts/build_nyt_connections_bank.py`;
+`examples/readouts/nyt_connections.jsonl`; `tests/test_nyt_connections.py`. Edited: `readplan.py`,
+`reads.py` (`_env_key`), `tests/conftest.py`, `tests/test_readplan.py`,
+`tests/test_mc_cannot_tell.py` (+ round4/5 fixtures as needed), `capable/questions.py`,
+`baselines/{text_inversion,lucky_guessing}.py`, `evals/baselines/anti_text_inversion.json`,
+`evals/baselines/prompt_only_summary.json` (frozen floor), `scripts/check_nocot_redaction.py` (or
+sibling), `README.md` (entry, Judges row, Credits), `NOTICE.md`, `plans/README.md`, `CLAUDE.md`.
+CI: `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`.
+
+## 9. Risks and follow-ups
+
+- The capped bench digest (≤10 + ≤15 claims per layer) may drop groupings; the smoke checks it and a
+  `FAMILY_DEFAULTS` `summ_max`/`summ_rare` entry is the remedy (recorded in the README).
+- Small n (89 stable, 25 model-specific): wide CIs, said in the README.
+- Shared idiolect: Qwen writes the labels and the lens shares Qwen's wording; the quote gate and the
+  continuation/masked extras bound it but do not remove it.
+- Follow-up (not this PR): bank v2 confirmation batch on the ~333 untouched older puzzles.
