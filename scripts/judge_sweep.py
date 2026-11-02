@@ -121,6 +121,14 @@ FALLBACK_NOTE = (
     "model_specific_directed_modulation) run Arm B without their refusal rescue"
 )
 
+# Models measured unusable and removed by Camila: excluded from the roster with the reason.
+DROPPED: dict[str, str] = {
+    "inclusionai/ling-3.1-flash": (
+        "dropped 2026-11-02 (Camila): as summarizer its reasoning runs to the 32k output budget "
+        "and every digest fails on length (f64-L16 preflight, 15-60 min per call)"
+    ),
+}
+
 # The tiers of the roster (Camila, 2026-10-30 / issue #216). Claude ids are ours; their prices
 # come from the catalog's anthropic/* rows (CLAUDE_CATALOG).
 ROSTER_TIERS: dict[str, tuple[str, ...]] = {
@@ -414,7 +422,7 @@ def build_roster(
                 continue
             used[cid] = cat
             row = roster_row(cat, model_id=mid, tier=tier)
-            why = admission(row)
+            why = DROPPED.get(mid) or admission(row)
             if why:
                 excluded.append({**row, "reason": why})
             else:
