@@ -819,7 +819,7 @@ def _full_file(tmp_path, ids=(QA,), sampling="prose1"):
     return path
 
 
-def test_reads_lite_keeps_final_position(tmp_path, monkeypatch):
+def _lite_positions(tmp_path, monkeypatch, out: str) -> list[str]:
     path = _full_file(tmp_path)
     seen: list[str] = []
     FakeLLM.install(
@@ -829,12 +829,30 @@ def test_reads_lite_keeps_final_position(tmp_path, monkeypatch):
     )
     judge.run(
         summary_args(
-            path, tmp_path / "o", "pv", items=[QA], layers=[20, 44], extra={"reads": "lite"}
+            path, tmp_path / out, "pv", items=[QA], layers=[20, 44], extra={"reads": "lite"}
         )
     )
     every = "\n".join(seen)  # audit F1: one digest per read layer
-    assert sorted(set(re.findall(r"\[L\d+ pos (\d+)\]", every))) == ["49"]
     assert set(re.findall(r"\[L(\d+) pos \d+\]", every)) == {"20", "44"}
+    return sorted(set(re.findall(r"\[L\d+ pos (\d+)\]", every)))
+
+
+def test_reads_lite_reads_every_full_position(tmp_path, monkeypatch):
+    # Camila r3 (2026-11-01): lite reads the same 19 positions as full (lite_rule.json `same`)
+    assert readplan.frozen_lite_rule("conjunctive_association") == {"kind": "same"}
+    assert _lite_positions(tmp_path, monkeypatch, "o") == [str(p) for p in range(31, 50)]
+
+
+def test_reads_lite_without_the_frozen_rule_keeps_the_final_position(tmp_path, monkeypatch):
+    # the other direction: the pre-r3 default (no lite_rule.json -> final_token) keeps one site
+    from wsbench import reads as reads_mod
+
+    monkeypatch.setattr(readplan, "frozen_lite_rule", lambda family: dict(readplan.FINAL))
+    reads_mod._specs.cache_clear()  # the judge's plan is cached per bank environment
+    try:
+        assert _lite_positions(tmp_path, monkeypatch, "o") == ["49"]
+    finally:
+        reads_mod._specs.cache_clear()
 
 
 def test_reads_lite_stamp(tmp_path, monkeypatch):
@@ -848,9 +866,7 @@ def test_reads_lite_stamp(tmp_path, monkeypatch):
         prompts.PROMPT_VERSION + prompts.RULE_VERSION, args, "conjunctive_association"
     )
     assert r.config["prompt_version"] == reads.stamp(pv, "lite") == pv + reads.LITE_STAMP
-    assert json.loads(r.config["lite_rule"]) == [
-        {"layers": None, "positions": {"kind": "final_token"}}
-    ]
+    assert json.loads(r.config["lite_rule"]) == [{"layers": None, "positions": {"kind": "same"}}]
     full = summary_args(path, tmp_path / "f", "pv", items=[QA], layers=[20, 44])
     assert judge.run(full).config["prompt_version"] == pv
 
