@@ -2724,6 +2724,31 @@ def undecided_of(results: Mapping[str, Mapping[str, Any]]) -> tuple[int, int]:
     return n, und
 
 
+def undecided_vs_reference(
+    results: Mapping[str, Mapping[str, Any]], ref: Mapping[str, Mapping[str, Any]]
+) -> tuple[int, int]:
+    """``(items the reference decided, of those the run left undecided or missing)`` per family
+    present in both: the analysis' own rule (failures count against the model on A'1's decided
+    items). A raw undecided share misreads families whose rows are not item verdicts
+    (introspection trials, role_bound non-item rows: ~45% "undecided" for Opus itself)."""
+    n = und = 0
+    for f, res in results.items():
+        if f not in ref:
+            continue
+        uni = None
+        if f not in PAIR_FAMILIES:
+            uni = {str(r["id"]) for r in res.get("rows") or [] if isinstance(r, dict) and "id" in r}
+        try:
+            v, _s = sweep_item_verdicts(f, res, uni)
+            rv, _rs = sweep_item_verdicts(f, ref[f], None)
+        except (KeyError, ValueError, TypeError, smc.ExtractorError):
+            continue
+        decided = [i for i, x in rv.items() if x is not None]
+        n += len(decided)
+        und += sum(1 for i in decided if v.get(i) is None)
+    return n, und
+
+
 def preflight_status(entry: Mapping[str, Any] | None, arm: str, model: str) -> tuple[str, bool]:
     """``(the preflight column, dropped)`` of one (model, arm): ``ARM_B_DROPPED`` (Arm B),
     the ``preflight_skip`` reasons, ``ok``, or that it was not preflighted (Claude runs on the dev
@@ -2758,6 +2783,8 @@ def feasibility_verdict(
         return "infeasible", f"length failures {lr:.0%} > {rule.infeasible_min_length:.0%}"
     if rec.get("state") != "terminal":
         return "pending", f"job {rec.get('state')}: {rec.get('state_detail')}"
+    if not rec.get("calls") and not rec.get("n_families"):  # terminal per the job records only
+        return "pending", "terminal, but no local results / ledgers (pull the sweep)"
     why = []
     if lr is not None and lr > rule.viable_max_length:
         why.append(f"length failures {lr:.0%} > {rule.viable_max_length:.0%}")
@@ -2819,7 +2846,15 @@ def feasibility_rows(
         calls = int(cnt["calls"])
         n_len = sum(int(cnt["failed"].get(k, 0)) for k in LENGTH_KEYS)
         dig = [x for res in results.values() if (x := extra_num(res, "n_digest_calls")) is not None]
-        n_items, n_und = undecided_of(results)
+        ref_dir = sweep_dir / "A" / slug(OPUS, "A1")
+        ref_res = {
+            p.parent.name: r
+            for p in sorted(ref_dir.glob("*/results.json"))
+            if (r := _read_json(p)) is not None
+        }
+        n_items, n_und = (
+            undecided_vs_reference(results, ref_res) if ref_res else undecided_of(results)
+        )
         pre, dropped = preflight_status(pm.get(m), arm, m)
         rec: dict[str, Any] = {
             "sweep": sweep,

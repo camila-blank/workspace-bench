@@ -1332,7 +1332,7 @@ def test_feasibility_constants_and_verdict_rules():
         "infeasible_min_length": 0.50,
     }
     v = lambda **k: js.feasibility_verdict(  # noqa: E731
-        {"state": "terminal", "length_rate": 0.0, "undecided_rate": 0.0, **k}
+        {"state": "terminal", "length_rate": 0.0, "undecided_rate": 0.0, "calls": 10, **k}
     )[0]
     assert v() == "viable"
     assert v(length_rate=0.05, undecided_rate=0.20) == "viable"  # bounds inclusive
@@ -1344,7 +1344,9 @@ def test_feasibility_constants_and_verdict_rules():
     assert v(state="blocked") == "infeasible"
     assert v(state="pending") == "pending" and v(state="error") == "pending"
     assert v(state="wait", length_rate=None, undecided_rate=None) == "pending"
-    assert v(length_rate=None, undecided_rate=None) == "viable"  # no calls: nothing failed
+    assert v(length_rate=None, undecided_rate=None) == "viable"  # rates unknown, data present
+    # terminal per the job records but nothing local (not pulled): never "viable"
+    assert v(calls=0, n_families=0) == "pending"
     assert js.combine_verdicts(["viable", "degraded"]) == "degraded"
     assert js.combine_verdicts(["viable", "pending"]) == "pending"
     assert js.combine_verdicts(["degraded", "infeasible", "pending"]) == "infeasible"
