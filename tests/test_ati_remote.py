@@ -287,3 +287,215 @@ def test_reader_routes_counts_usable_current_answers(tmp_path: Path):
         af.write_text("".join(json.dumps(r) + "\n" for r in rows if r["draw"] == d))
     got = ti.reader_routes([out], "astra", "fam", ["a", "b", "c"], 2)
     assert got == {"openai-wif": 2, "openrouter": 1}
+
+
+# ---------------------------------------------------------------- gemini-wif (argon)
+
+GENV = {"MODAL_IDENTITY_TOKEN": "jwt-identity"}
+GREQ = REQ | {"answerer": "argon"}
+
+
+def test_gemini_route_sends_the_openrouter_question_and_ceiling():
+    """Same single user turn and 16000-token ceiling as the OpenRouter argon call; only the
+    model prefix and the ceiling's name differ. No thinking / sampling / safety overrides."""
+    model = ti.PANEL["argon"]
+    o = ar.completion_kwargs("openrouter", model, GREQ["content"])
+    g = ar.completion_kwargs("gemini-wif", model, GREQ["content"])
+    assert o == {
+        "model": "google/gemini-4-argon",
+        "max_tokens": 16000,
+        "messages": [{"role": "user", "content": GREQ["content"]}],
+    }
+    assert g == {
+        "model": "gemini-4-argon",
+        "contents": [{"role": "user", "parts": [{"text": GREQ["content"]}]}],
+        "config": {"max_output_tokens": 16000},
+    }
+    assert set(g["config"]) == {"max_output_tokens"}
+    with pytest.raises(ValueError, match="Gemini models only"):
+        ar.route_model(ti.PANEL["astra"], "gemini-wif")
+    assert {"openai-wif": {"astra"}, "gemini-wif": {"argon"}} == ar.ROUTE_ANSWERERS
+
+
+def test_gemini_credentials_follow_the_recipe(monkeypatch: pytest.MonkeyPatch):
+    """identity_pool.Credentials with the Modal identity token as the subject token; the genai
+    client is Vertex, project camila-blank, location global."""
+    import sys
+
+    made: dict[str, Any] = {}
+
+    class Supplier:
+        pass
+
+    def credentials(**kw: Any) -> Any:
+        made["creds"] = kw
+        return "CREDS"
+
+    identity_pool = SimpleNamespace(SubjectTokenSupplier=Supplier, Credentials=credentials)
+    genai = SimpleNamespace(Client=lambda **kw: made.setdefault("client", kw) and "CLIENT")
+    monkeypatch.setitem(sys.modules, "google", SimpleNamespace(genai=genai))
+    monkeypatch.setitem(sys.modules, "google.auth", SimpleNamespace(identity_pool=identity_pool))
+    monkeypatch.setitem(sys.modules, "google.auth.identity_pool", identity_pool)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    assert ar.gemini_client(GENV) == "CLIENT"
+    kw = made["creds"]
+    supplier = kw.pop("subject_token_supplier")
+    assert supplier.get_subject_token(None, None) == "jwt-identity"
+    assert kw == {
+        "audience": "//iam.googleapis.com/projects/514946254119/locations/global/"
+        "workloadIdentityPools/modal/providers/modal-oidc",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "scopes": ["https://www.googleapis.com/auth/cloud-platform"],
+    }
+    assert made["client"] == {
+        "vertexai": True,
+        "project": "camila-blank",
+        "location": "global",
+        "credentials": "CREDS",
+    }
+
+
+class _GenaiError(Exception):
+    def __init__(self, code: int, details: Any = None):
+        super().__init__(f"{code}")
+        self.code, self.details = code, details or {"error": {"code": code}}
+
+
+class _AuthError(Exception):
+    pass
+
+
+def _gresp(
+    text: str = "",
+    finish: str = "STOP",
+    thought: str = "",
+    block: str | None = None,
+    model: str = "gemini-4-argon-001",
+) -> Any:
+    parts = []
+    if thought:
+        parts.append(SimpleNamespace(text=thought, thought=True))
+    if text:
+        parts.append(SimpleNamespace(text=text, thought=None))
+    cands = (
+        []
+        if block
+        else [
+            SimpleNamespace(
+                content=SimpleNamespace(parts=parts), finish_reason=SimpleNamespace(name=finish)
+            )
+        ]
+    )
+    usage = SimpleNamespace(
+        prompt_token_count=120, candidates_token_count=20, thoughts_token_count=300
+    )
+    feedback = SimpleNamespace(block_reason=SimpleNamespace(name=block)) if block else None
+    return SimpleNamespace(
+        candidates=cands, prompt_feedback=feedback, usage_metadata=usage, model_version=model
+    )
+
+
+class _Gemini:
+    """A fake google.genai.Client: ``client.aio.models.generate_content``."""
+
+    def __init__(self, log: list, outcomes: list):
+        self.log, self.outcomes = log, outcomes
+        self.aio = SimpleNamespace(models=SimpleNamespace(generate_content=self._gen))
+
+    async def _gen(self, **kw: Any) -> Any:
+        self.log.append(kw)
+        o = self.outcomes.pop(0)
+        if isinstance(o, BaseException):
+            raise o
+        return o
+
+
+def _gemini(outcomes: list, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ar, "gemini_error_types", lambda: ((_GenaiError,), (_AuthError,)))
+    calls: list[dict] = []
+    envs: list[dict] = []
+
+    def factory(env: dict) -> _Gemini:
+        envs.append(env)
+        return _Gemini(calls, outcomes)
+
+    return ar.Clients("gemini-wif", env=GENV, gemini_factory=factory), calls, envs
+
+
+def _ganswer(clients: ar.Clients) -> dict:
+    return asyncio.run(
+        ar.answer_one(clients, asyncio.Semaphore(1), ti.PANEL["argon"], GREQ, sleep=_nosleep)
+    )
+
+
+def test_gemini_answer_records_the_route_and_drops_thoughts(monkeypatch: pytest.MonkeyPatch):
+    clients, calls, envs = _gemini(
+        [_gresp("Wayne Gretzky's sport, ice hockey.", thought="hmm")], monkeypatch
+    )
+    row = _ganswer(clients)
+    assert calls == [ar.completion_kwargs("gemini-wif", ti.PANEL["argon"], GREQ["content"])]
+    assert len(envs) == 1
+    assert row["route"] == "gemini-wif" and row["error"] == ""
+    assert row["answer"] == "Wayne Gretzky's sport, ice hockey."  # the thought part is not text
+    assert row["stop_reason"] == "stop" and row["model"] == "gemini-4-argon-001"
+    assert (row["in_tokens"], row["out_tokens"], row["reasoning_tokens"]) == (120, 320, 300)
+    assert {k: row[k] for k in ("family", "id", "draw", "prompt_sha", "answerer")} == {
+        k: GREQ[k] for k in ("family", "id", "draw", "prompt_sha", "answerer")
+    }
+    assert "jwt-identity" not in json.dumps(row)
+
+
+def test_gemini_client_is_built_once(monkeypatch: pytest.MonkeyPatch):
+    clients, calls, envs = _gemini([_gresp("a"), _gresp("b")], monkeypatch)
+    assert _ganswer(clients)["answer"] == "a" and _ganswer(clients)["answer"] == "b"
+    assert len(envs) == 1 and len(calls) == 2
+
+
+def test_gemini_429_waits_then_answers_and_5xx_retries(monkeypatch: pytest.MonkeyPatch):
+    clients, calls, _ = _gemini(
+        [_GenaiError(429), _GenaiError(429), _GenaiError(503), _gresp("ok")], monkeypatch
+    )
+    assert _ganswer(clients)["answer"] == "ok" and len(calls) == 4
+
+
+def test_gemini_403_and_credential_failure_abort(monkeypatch: pytest.MonkeyPatch):
+    clients, _, _ = _gemini([_GenaiError(403)], monkeypatch)
+    with pytest.raises(ar.AbortError, match="403"):
+        _ganswer(clients)
+    clients, _, _ = _gemini([_AuthError("sts said no: jwt-identity")], monkeypatch)
+    with pytest.raises(ar.AbortError) as exc:
+        _ganswer(clients)
+    assert "jwt-identity" not in str(exc.value)  # the subject token is never echoed
+    assert ar.classify_error(401, {}, "gemini-wif") == "abort"
+
+
+def test_gemini_refusals_are_final_and_empty_text_is_retried(monkeypatch: pytest.MonkeyPatch):
+    clients, calls, _ = _gemini([_gresp(finish="SAFETY")], monkeypatch)
+    row = _ganswer(clients)
+    assert row["refused"] is True and row["why"] == "SAFETY" and len(calls) == 1
+    clients, _, _ = _gemini([_gresp(block="PROHIBITED_CONTENT")], monkeypatch)
+    assert _ganswer(clients)["why"] == "prompt blocked: PROHIBITED_CONTENT"
+    clients, calls, _ = _gemini(
+        [_gresp(finish="MAX_TOKENS", thought="long"), _gresp("z")], monkeypatch
+    )
+    assert _ganswer(clients)["answer"] == "z" and len(calls) == 2
+
+
+def test_gemini_route_needs_the_modal_identity_token():
+    with pytest.raises(ar.AbortError, match="MODAL_IDENTITY_TOKEN"):
+        ar.Clients("gemini-wif", env={})
+
+
+def test_reader_routes_counts_gemini_rows(tmp_path: Path):
+    out = tmp_path / "o"
+    out.mkdir()
+    prompt = {"family": "fam", "prefix": "p", "variant": ti.DEFAULT_VARIANT}
+    (out / "prompts.jsonl").write_text(json.dumps(prompt | {"id": "a"}) + "\n")
+    sha = ti.prompt_sha(ti.panel_prompt(prompt | {"id": "a"}))
+    row = {"family": "fam", "id": "a", "draw": 0, "answer": "t", "error": "", "prompt_sha": sha}
+    af = ti.answers_file(out, "argon", 0)
+    af.parent.mkdir(parents=True)
+    af.write_text(json.dumps(row | {"route": "gemini-wif"}) + "\n")
+    assert ti.reader_routes([out], "argon", "fam", ["a"], 1) == {"gemini-wif": 1}
+    assert ti.answer_route({"route": "gemini-wif", "model": "gemini-4-argon"}) == "gemini-wif"
