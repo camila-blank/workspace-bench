@@ -288,7 +288,7 @@ def _picks(*letters: str) -> dict:
 
 
 def test_f10_three_concept_item_passes_beside_a_distractor():
-    assert "at most three" not in mcdmp.SYSTEM and mcdmp.JUDGE_PROMPT_VERSION.endswith("31d")
+    assert "at most three" not in mcdmp.SYSTEM and mcdmp.JUDGE_PROMPT_VERSION >= "mcdm-2026-10-31d"
     v = mcdm.verdict(_picks("A", "B", "C", "D"), OPTIONS, [0, 1, 2], READOUT)
     assert v["kind"] == "hit" and sorted(v["own"]) == ["banana", "samurai", "waterfall"]
     assert v["false"] == ["squirrel"]

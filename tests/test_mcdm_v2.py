@@ -598,8 +598,8 @@ def test_bank_v2_is_rebuilt_by_the_builder():
 
 def test_system_accepts_close_relatives_text():
     assert (
-        "a synonym, or a close relative or near equivalent of it (tuxedo for bow tie, "
-        "merry-go-round for carousel, iceberg for glacier, dry earth for dry ground)"
+        "a synonym, or a close relative or near equivalent of it (tuxedo for dinner jacket, "
+        "seesaw for teeter-totter, ice floe for pack ice, damp soil for wet earth)"
     ) in prompts.SYSTEM
     readme = (DIR / "README.md").read_text("utf-8")
     assert prompts.SYSTEM in readme
