@@ -1145,3 +1145,19 @@ def test_first_with_readouts_stops_at_the_bank_lead():
     # a dropped lead is skipped: the next bank item with readouts wins after a full read
     rows = [json.dumps({"id": i, "samples": ["s"]}) for i in ("c", "b")]
     assert js.first_with_readouts(rows, ["a", "b", "c"], drop=["a"]) == "b"
+
+
+def test_arm_b_dropped_models_run_arm_a_only():
+    infos = js.registry_families("association")
+    row = js.load_roster(js.ROSTER_PATH)["qwen/qwen3.8-flash"]
+    m = next(iter(js.ARM_B_DROPPED))
+    jobs, notes = js.plan_jobs(
+        sweep="t",
+        models=[m],
+        draws=[],
+        arms=["A", "B"],
+        roster={m: row},
+        infos=infos,
+        ref_opts={"association": "aggregate=summary"},
+    )
+    assert {j.arm for j in jobs} == {"A"} and any("Arm A only" in n for n in notes)

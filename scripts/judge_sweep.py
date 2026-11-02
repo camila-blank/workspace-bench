@@ -129,6 +129,14 @@ DROPPED: dict[str, str] = {
     ),
 }
 
+# Models kept in Arm A but measured unusable as Arm B summarizers (Camila): their Arm B is skipped.
+ARM_B_DROPPED: dict[str, str] = {
+    "qwen/qwen3.8-flash": (
+        "Arm B dropped 2026-11-02 (Camila): as summarizer its reasoning runs to the 32k output "
+        "budget and the digest fails on length (f64-L16/L32 preflight)"
+    ),
+}
+
 # The tiers of the roster (Camila, 2026-10-30 / issue #216). Claude ids are ours; their prices
 # come from the catalog's anthropic/* rows (CLAUDE_CATALOG).
 ROSTER_TIERS: dict[str, tuple[str, ...]] = {
@@ -2576,6 +2584,9 @@ def plan_jobs(
         for arm in arms:
             if arm == "B" and not arm_b_allowed(row):
                 notes.append(f"{m}: context {row['context']} < {ARM_B_MIN_CONTEXT}: Arm A only")
+                continue
+            if arm == "B" and m in ARM_B_DROPPED:
+                notes.append(f"{m}: Arm A only ({ARM_B_DROPPED[m]})")
                 continue
             fams = run_families(infos, arm, m, draw=False)
             jobs += job_groups(
