@@ -106,7 +106,12 @@ def judge_family(
         ati = text_inversion.subset_entry(spec.name)
         items, scope = list(ati["ids"]), text_inversion.SCOPE
     # v1.1.0: a multi-layer summary run of a non-numbers family defaults to summ_layers=layered
-    opts = digest.resolve_layer_mode(spec.name, opts, run_layer_count(readouts, args.layers))
+    if (
+        "summ_layers" not in opts
+        and spec.name not in digest.NATIVE_ONLY
+        and opts.get("aggregate") == "summary"
+    ):  # (the layer count may load the file: only when it can matter)
+        opts = digest.resolve_layer_mode(spec.name, opts, run_layer_count(readouts, args.layers))
     jargs = JudgeArgs(
         readouts=readouts,
         out=out,
@@ -225,7 +230,7 @@ def readouts_path(root: Path, name: str) -> Path | None:
 def run_layer_count(path: Path, layers: Sequence[int] | None) -> int:
     """How many layers a run reads: ``layers=`` when given, else the sidecar's declared
     ``layers``, else the layers present in the file (one load)."""
-    if layers:
+    if layers is not None:
         return len(set(layers))
     from wsbench.readouts import read_sidecar
 

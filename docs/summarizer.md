@@ -198,9 +198,12 @@ and this goes to the judge." The default for a multi-layer config since bench v1
 - **Grounding (code):** `digest.layered_ground` runs `ground` over the layer digests' own samples:
   an entry whose evidence is not a verbatim span of one of them (or whose statement is empty) is
   dropped (`extras.summary.n_layered_dropped_entries`); the key must lie inside the evidence.
-  Its support is recomputed: the layer-digest entries holding its key (or quoting the same
-  sample) are its members, the count is the answer's own count capped at the members' summed
-  counts, the layers are their union.
+  Its support is recomputed (`digest.layered_member`): its members are the layer-digest entries
+  that quote the same sample, share its claim key, or whose key and its key each occur in the
+  other's sample (a one-way key-word hit is other content); at most ONE member per layer (its
+  best-supported) counts. The count is the answer's own count capped at the members' summed
+  counts and floored at their number of layers; the layers are their union. A stage 2 for an
+  item `undecide_partial` would drop (refused layers > 20%) is never asked.
 - **Budget:** `summ_layered_x` (default 2) times the single-layer `summ_max` / `summ_rare`, i.e.
   20 prominent + 30 rare entries under the defaults (50 + 50 for agentic_misalignment /
   knowledge_cutoff). A non-default multiple is stamped (`-layered-v1x3`).

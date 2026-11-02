@@ -2553,36 +2553,51 @@ def render_layered(groups: Sequence[tuple[Sequence[int], Sequence[Grounded]]]) -
     return LAYERED_USER.replace("{digests}", "\n".join(out))
 
 
+def layered_member(g: Grounded, e: Grounded) -> bool:
+    """A layer-digest entry ``e`` states the same content as the stage-2 entry ``g``: it quotes
+    the same sample, has the same claim key (:func:`claim_key`), or each one's key occurs in the
+    other's sample (a bare one-way key hit is NOT enough: "Paris" inside "France and Paris
+    region" is other content)."""
+    if e.line is g.line or e.line.text == g.line.text or claim_key(e) == claim_key(g):
+        return True
+    return bool(e.key) and _key_hits(g.key, e.line) and _key_hits(e.key, g.line)
+
+
 def layered_ground(
     result: object, entries: Sequence[Grounded], s: Settings, dup: list[int] | None = None
 ) -> tuple[list[Grounded], int]:
     """A stage-2 answer grounded on the layer digests' own samples (``ground`` over their
     lines: the evidence must be a verbatim span of one of them, the key inside it), then each
-    entry's cross-layer support recomputed: the layer-digest entries holding its key (or the
-    entry whose sample it quotes) are its members; the count is the answer's count capped at
-    the members' summed counts, the layers their union."""
+    entry's cross-layer support recomputed from its members (:func:`layered_member`), taking at
+    most ONE member per layer (or layer range: its best-supported one, so overlapping entries of
+    one layer are never summed): the count is the answer's own count capped at the members'
+    summed counts and floored at the number of their layers, the layers their union."""
     seen: dict[int, Line] = {}
     for g in entries:
         seen.setdefault(id(g.line), g.line)
     lines = list(seen.values())
     mi, mr = layered_caps(s)
-    raw: dict[str, object] = {}
+    raw: dict[tuple[str, str], object] = {}
+    by_ev: dict[str, object] = {}
     if isinstance(result, dict):
         for it in [*(result.get("items") or []), *(result.get("rare") or [])]:
             if isinstance(it, dict) and isinstance(it.get("evidence"), str):
-                raw.setdefault(_one_line(it["evidence"]), it.get("count"))
+                k = it.get("key") if isinstance(it.get("key"), str) else ""
+                ev = _one_line(it["evidence"])
+                raw.setdefault((ev, _one_line(k).strip()), it.get("count"))
+                by_ev.setdefault(ev, it.get("count"))
     kept, dropped = ground(result, lines, mi, dup, max_rare=mr)
     out: list[Grounded] = []
     for g in kept:
-        members = [
-            e
-            for e in entries
-            if e.line is g.line or e.line.text == g.line.text or _key_hits(g.key, e.line)
-        ]
-        cap = max(1, sum(e.count for e in members))
-        r = raw.get(g.evidence)
-        n = cap if isinstance(r, bool) or not isinstance(r, int) else max(1, min(r, cap))
-        layers = tuple(sorted({x for e in members for x in e.layers} | set(g.layers)))
+        best: dict[tuple[int, ...], int] = {}
+        for e in entries:
+            if layered_member(g, e):
+                best[e.layers] = max(best.get(e.layers, 0), e.count)
+        layers = tuple(sorted({x for lys in best for x in lys} | set(g.layers)))
+        cap = max(1, sum(best.values()), len(layers))
+        r = raw.get((g.evidence, g.key.strip()), by_ev.get(g.evidence))
+        n = cap if isinstance(r, bool) or not isinstance(r, int) else min(max(1, r), cap)
+        n = max(n, len(layers))
         out.append(
             dataclasses.replace(g, count=n, layers=layers, support=support_text(n, len(layers)))
         )
@@ -2618,12 +2633,28 @@ def _layered_pass(
         if layer is None or pid not in part.summaries:
             continue
         by_item.setdefault(item_id, []).append((layer, list(part.grounded.get(pid, ()))))
+    read_layers: dict[str, set[int]] = {}
+    for pid, item_id in owner.items():
+        if layer_of.get(pid) is not None:
+            read_layers.setdefault(item_id, set()).add(int(layer_of[pid]))  # type: ignore[arg-type]
+
+    def undecided(i: str) -> bool:  # undecide_partial would drop it: no stage 2 is paid for it
+        ls = read_layers.get(i, set())
+        miss = set(col.refused_layers.get(i, ())) & ls
+        return bool(ls) and len(miss) / len(ls) > PARTIAL_UNDECIDED_SHARE
+
     todo = {
         i: sorted(v)
         for i, v in by_item.items()
-        if len(v) > 1 and i in col.summaries and i not in col.unsummarized
+        if len(v) > 1 and i in col.summaries and i not in col.unsummarized and not undecided(i)
     }
-    for k in ("n_layered_items", "n_layered_calls", "n_layered_chunked", "n_layered_failed"):
+    for k in (
+        "n_layered_items",
+        "n_layered_calls",
+        "n_layered_chunked",
+        "n_layered_failed",
+        "n_layered_depth_capped",
+    ):
         col.diag.setdefault(k, 0)
     col.diag.setdefault("n_layered_dropped_entries", 0)
     if not todo:
@@ -2760,6 +2791,7 @@ def _layered_pass(
             parts_ = chunks(groups)
             if len(parts_) == 1 or depth > MAX_LAYERED_DEPTH or all(len(p) == 1 for p in parts_):
                 # one call over everything (an input still over the cap comes back too_long)
+                col.diag["n_layered_depth_capped"] += len(parts_) > 1
                 jobs[f"layered:{i}|{layers_tag}|d{depth}"] = (i, list(groups))
                 continue
             col.diag["n_layered_chunked"] += depth == 1
@@ -2798,6 +2830,8 @@ def _layered_pass(
             for attr in ("summaries", "evidence", "statements", "grounded", "layer_hist"):
                 getattr(col, attr).pop(i, None)
             col.cells[i] = dataclasses.replace(col.cells[i], samples=("",))
+            for d in (col.partial, col.refused_layers, col.chunks, col.served_by):
+                d.pop(i, None)  # as _merge_parts leaves an unsummarized item
             col.reasons[i] = failed[i]
             col.diag["n_layered_failed"] += 1
             continue
@@ -2807,6 +2841,12 @@ def _layered_pass(
         if i in served:
             prev = col.served_by.get(i)
             col.served_by[i] = ",".join(sorted({*(prev.split(",") if prev else []), served[i]}))
+    # the item-level reason counts of _merge_parts, recounted with the stage-2 failures
+    col.diag["n_items_all_dropped"] = sum(1 for r in col.reasons.values() if r == "all_dropped")
+    col.diag["n_digest_refused"] = sum(1 for r in col.reasons.values() if r == "refused")
+    col.diag["n_digest_too_long"] = sum(1 for r in col.reasons.values() if r == "too_long")
+    col.diag["n_hierarchical_items"] = len(col.chunks)
+    col.diag["n_fallback_served_items"] = len(col.served_by)
     toks = sorted(in_tokens.values())
     col.diag["layered_input_tokens_max"] = toks[-1]
     col.diag["layered_input_tokens_median"] = toks[len(toks) // 2]
