@@ -496,3 +496,38 @@ gemini-2.5-flash-lite is 404 on Vertex for this project and drops at preflight),
 Claude (`claude-haiku-5-5`) on the local backend and the rest on Modal. No mid, frontier or
 anchor-tier model is swept; Opus 5.5 stays the reference and the A′/B′ draws. The roster rows stay
 (the analysis can still show them as context if ever run); only the launch selection changes.
+
+## Addendum D (2026-11-02): feasibility — Arm C (Arm B at low summarizer effort) + a feasibility report
+
+Camila, 2026-11-02: "another purpose of your job here is to determine what is even feasible so if
+some models don't work for arm b or need low effort this is a necessary thing to test/document.
+the goal here is to just run as many models as possible and get the cheapest viable judge".
+Measured in the f64 preflights: at `summ_effort=default` some reasoning models' digests run to the
+32k output budget and fail on length (ling-3.1-flash, qwen3.8-flash) or take 7-24k output
+tokens per call (nemotron-3.5-super-vl).
+
+- **Arm C** = Arm B with `summ_effort=low` (the ONLY difference; `summ_model=<m>`,
+  `summ_fallback=none`, `summ_context=<roster context>` as in B; `judge_effort` as in B). Only for
+  roster rows with `supports_reasoning` true (for the others low == default: skipped with a
+  note). Opus has no C draws: C is scored against the same reference (A′1) and uses Arm B's Opus
+  draws (B′) for its noise floor and calibration, exactly as Arm B does (the reference instrument is
+  identical; only the swept model's summarizer effort differs). Arm B and Arm C are separate jobs,
+  out dirs, ledgers and analysis tables (`<sweep>/C/<model>/…`); the analysis labels C "Arm B at
+  low summarizer effort". Arm C runs wherever Arm B runs (single-layer configs, full and lite).
+  `arm_b_exception` (over-context probe 404) also excludes C. Job kind `C`; `--arms` accepts C.
+- **Re-admitted for feasibility:** `inclusionai/ling-3.1-flash` leaves `DROPPED` and joins
+  `qwen/qwen3.8-flash` in `ARM_B_DROPPED` (default-effort Arm B infeasible): both run Arm A and
+  Arm C. (Supersedes the Ling roster drop of 2026-11-02; reason kept in `ARM_B_DROPPED`.)
+- **Feasibility report:** `judge_sweep.py feasibility --sweeps <a,b,…> [--out <md>]` writes, per
+  (model, arm, sweep): preflight result (ok / dropped + reason / Arm B exception), job state
+  (`classify`: terminal / blocked / error / pending / wait), digest + judge calls, the length-failure
+  rate (`failed["length"]` / calls), mean output tokens per call, refusals, the transient and failed
+  tallies, cost ($, estimated for token-priced routes), and wall time (first pass start → last pass
+  finish); plus a per-(model, arm) verdict: `viable` (terminal, length-failure rate ≤ 5%),
+  `degraded` (terminal, > 5% length failures or > 20% undecided), `infeasible` (dropped at
+  preflight, blocked, or > 50% length failures), `pending`. Sources: `preflight.json`, the job pass
+  records, the per-family `spend.jsonl` ledgers, `results.json` counts. Also a JSON twin.
+- **Tests:** job_opts kind C (summ_effort=low, everything else as B); plan_jobs emits C only for
+  reasoning models and for ARM_B_DROPPED models; arm_b_exception excludes C; the roster rebuild
+  re-admits Ling (and lists it in ARM_B_DROPPED); the analysis renders an Arm C table using B′
+  calibration; the feasibility verdict rules on synthetic records.
