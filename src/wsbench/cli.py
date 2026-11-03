@@ -341,7 +341,7 @@ class RunFamilies(JudgeOptions):
                     sub,
                     readouts_root=self.readouts_root,
                     out=self.out,
-                    out_of=lambda name, tag=tag: self.out / name / tag,
+                    out_of=lambda name, tag=tag: registry.family_dir(self.out, name) / tag,
                 )
                 code = max(code, c)
                 for o in outcomes:
