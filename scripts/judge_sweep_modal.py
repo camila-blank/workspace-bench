@@ -561,7 +561,8 @@ def sweep(
 def pull(sweep: str, out: str = "", light: bool = False) -> None:
     """``/vol/runs/<sweep>/`` -> ``outputs/judge_sweep/<sweep>/`` (results, caches, ledgers).
     Incremental: a file already local at the same size is skipped. ``--light`` also skips the
-    ``cells.jsonl`` call caches (GBs per sweep; ``analyze`` / ``feasibility`` never read them)."""
+    ``cells.jsonl`` call caches and the pass logs (GBs per sweep; ``analyze`` / ``feasibility``
+    never read them)."""
     js = _js()
     dest = Path(out) if out else js.OUT_ROOT / sweep
     n = skipped = 0
@@ -570,7 +571,7 @@ def pull(sweep: str, out: str = "", light: bool = False) -> None:
             continue
         rel = Path(entry.path.lstrip("/")).relative_to(f"runs/{sweep}")
         target = dest / rel
-        if (light and rel.name == "cells.jsonl") or (
+        if (light and (rel.name == "cells.jsonl" or "logs" in rel.parts)) or (
             target.exists() and target.stat().st_size == entry.size
         ):
             skipped += 1
