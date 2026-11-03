@@ -316,8 +316,9 @@ Tests: new tests in `tests/test_adapt.py` only. A changed pre-existing assertion
   - The upgrade derives `twin` for authored pairs from `-au-` / `-au-clean-`.
   - The 14 new original clean twins are profiled.
   - This adapts twins, which plan 0030 left out of its own scope (0030:60).
-- **agentic:** no change in this plan (D5). Plan 0031 also left twins out of its scope
-  (0031:275).
+- **agentic (D5, decided):** clean twins are adapted for every subject: rolled out and gated on
+  the subject with plan 0031 §2.1 gate 4 (commitment + generic classifiers, `object` twins gated
+  on the generic one only); pairs atomic.
 - **Gate render for association, conjunctive and role_bound:** they are read in `chat_summarize`
   but the adapt gate asks in plain render, against the skill's "gate in the exact read render"
   rule. Fixing it (regate all three in the read render) or shipping the deviation knowingly is D10.
