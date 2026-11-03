@@ -25,7 +25,7 @@ from typing import Any
 from wsbench import readplan
 from wsbench.readouts import Cell, LoadReport, load_readouts, normalize, read_sidecar
 from wsbench.readplan import FINAL, ReadSpec, lite_select
-from wsbench.registry import BANK_FILE_ENV_PREFIX, BANK_ROOT_ENV, JudgeArgs
+from wsbench.registry import BANK_FILE_ENV_PREFIX, BANK_ROOT_ENV, REPO_ROOT, JudgeArgs
 
 READS = ("full", "lite")
 LITE_STAMP = "+reads-lite"
@@ -245,6 +245,25 @@ def plan_layers_missing(
 # ---------------------------------------------------------------- load
 
 
+def min_full_positions(family: str, default: int) -> int:
+    """The family's ``reads=full`` minimum span, lowered (never raised) by an ADAPTED bank's
+    ``adapt.min_grid_positions``: a subject whose template gives a render fewer read positions
+    than the 27B's (introspection's neutral grid, ``wsbench.adapt.introspection``). Consulted
+    only under ``$WSB_BANK_ROOT``; the registered banks are never read here."""
+    root = os.environ.get(BANK_ROOT_ENV)
+    if not root:
+        return default
+    base = Path(root) if Path(root).is_absolute() else REPO_ROOT / root
+    path = base / f"{family}.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+    adapt = raw.get("adapt") if isinstance(raw, dict) else None
+    n = adapt.get("min_grid_positions") if isinstance(adapt, dict) else None
+    return min(default, int(n)) if isinstance(n, int) and n >= 1 else default
+
+
 def _spec_of(family: str) -> Any:
     from wsbench import registry
 
@@ -306,6 +325,7 @@ def load(
             rep.layers_missing = miss
     spec = _spec_of(family)
     min_pos = int(getattr(spec, "min_full_positions", 2)) if spec is not None else 2
+    min_pos = min_full_positions(family, min_pos)
     contiguous = bool(getattr(spec, "full_contiguous", True)) if spec is not None else True
     if prompt_only:
         rep.reads_checked = "prompt_only"
