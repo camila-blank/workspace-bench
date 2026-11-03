@@ -458,8 +458,10 @@ def test_default_budget_is_x4_and_x2_is_the_v110_instrument(tmp_path, monkeypatc
 
 
 def test_explicit_x4_equals_the_default(tmp_path, monkeypatch):
-    """A v1.1.0 run with opts=summ_layered_x=4 sent the same requests and stamp as the v1.1.1
-    default, so its results are v1.1.1 results (final64 all.v110x4)."""
+    """Under v1.1.1 code an explicit summ_layered_x=4 equals the default (same calls, stamp,
+    config). Parity with a v1.1.0 explicit-x4 run additionally rests on digest.py changing only the
+    default and the stamp base in v1.1.1, so the literals v1.1.0 produced are pinned here too:
+    stamp "-layered-v1x4", scale 4, budget 40 / 60."""
     _items, path = _setup(tmp_path, monkeypatch)
     fa = FakeLLM.install(monkeypatch, _quiet)
     ra = jb.run(summary_args(path, tmp_path / "a", jbp.PROMPT_VERSION, extra=LAYERED))
@@ -470,5 +472,8 @@ def test_explicit_x4_equals_the_default(tmp_path, monkeypatch):
         )
     )
     assert fa.calls == fb.calls
-    assert ra.config["prompt_version"] == rb.config["prompt_version"]
+    assert ra.config["prompt_version"] == rb.config["prompt_version"] == jbp.PROMPT_VERSION + V111
+    assert ra.config["summarizer"]["layered"] == {"version": "layered-v1", "scale": 4}
+    sysa = next(s for n, s, _u in fa.calls if n == "layered")
+    assert "up to 40 entries" in sysa and "up to 60 entries" in sysa
     assert ra.config["summarizer"] == rb.config["summarizer"]
