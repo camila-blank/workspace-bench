@@ -567,6 +567,18 @@ def test_br_freeze_refuses_unmarked_implicit_and_strips_working_fields():
     assert all(fams.SUBJECT_MARKER not in it and "spares" not in it["mc"] for it in shipped)
 
 
+def test_br_freeze_checks_the_marker_on_non_originals_only():
+    # originals: A1's row-level `_subject_fields_missing` enforces the marker before freeze_step
+    _h, items = _bank(BR_V5)
+    imp = copy.deepcopy(_by_name(items, "br-imp-instrument"))
+    imp.pop(fams.SUBJECT_MARKER, None)
+    imp["adapt"] = {"origin": "authored"}
+    with pytest.raises(SystemExit, match="stage=subject"):
+        rebuild.freeze_step("demo", "basic_readout", {}, [copy.deepcopy(imp)])
+    imp["adapt"] = {"origin": "original"}
+    rebuild.freeze_step("demo", "basic_readout", {}, [imp])
+
+
 def test_brmt_exonyms_follow_the_registered_rule():
     it = {
         "name": "brh-au-x", "adapt": {"origin": "authored"},

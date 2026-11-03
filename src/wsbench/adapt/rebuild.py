@@ -246,7 +246,16 @@ def br_subject_check(items: list[dict], model: str) -> list[str]:
     original, the authored typical member for a new item). The marker and the authored
     ``mc.spares`` are working fields, never shipped."""
     imp = [it for it in items if it.get("subfamily") == "implicit"]
-    bad = [_iid(it) for it in imp if it.get(fams.SUBJECT_MARKER) != model]
+    # originals are rebuilt from the registered item (``run.build_original``), which does not
+    # carry the marker: their marker on ``model`` is already enforced row by row by A1's
+    # ``run._subject_fields_missing`` (SUBJECT_FIELDS["basic_readout"]), so only the items
+    # shipped as their gate-log copy (new / authored, ``adapt.origin != "original"``) are checked
+    bad = [
+        _iid(it)
+        for it in imp
+        if (it.get("adapt") or {}).get("origin") != "original"
+        and it.get(fams.SUBJECT_MARKER) != model
+    ]
     if bad:
         raise SystemExit(
             f"{BR}: {len(bad)} implicit items lack subject options built on {model} "
