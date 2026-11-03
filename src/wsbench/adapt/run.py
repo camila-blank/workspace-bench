@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Any
 
 from . import families as fams
-from . import store
+from . import rebuild, store
 from .gate import DEFAULT_DRAWS, DEFAULT_TEMPERATURE, run_gate
 from .generate import describe
 from .subjects import get as get_subject
@@ -43,6 +43,10 @@ def restamp(family: str, item: dict, record: dict) -> dict:
         "surface:fewshot": "plain_fewshot",
         "surface:prefill": "chat_prefill",
     }.get(record.get("render") or "surface", record.get("render"))
+    if family == "poetry":  # v5: the subject's commitments and free leg (poetry.finalize)
+        from .poetry import restamp_fields
+
+        restamp_fields(item, record)
     if not own:
         return item
     if family == "poetry":
@@ -75,13 +79,20 @@ def _gate_rows(model: str, family: str, items: list[dict], runner, draws, temper
     if temperature is None:
         temp = fam.temperature if fam.temperature is not None else DEFAULT_TEMPERATURE
         top_p = fam.top_p if fam.top_p is not None else 1.0
+        top_k = fam.top_k
     else:
-        temp, top_p = temperature, 1.0
+        temp, top_p, top_k = temperature, 1.0, None
     sampling = {"draws": draws, "temperature": temp, "top_p": top_p, "threshold": fam.threshold}
+    if top_k is not None:  # recorded only when the family's gate fixes one (basic_readout_mt)
+        sampling["top_k"] = top_k
+    if fam.gate_render:  # plan 0060 D10: legs asked in the read render
+        sampling["gate_render"] = fam.gate_render
     if llm is None and any(a.grade == "llm" for a in asks):  # never fail llm legs for want of a
         print(f"{family}: llm-graded legs and no llm= -> {DEFAULT_LLM}")  # grader (audit #14)
         llm = _llm(DEFAULT_LLM)
-    records = run_gate(runner, asks, draws, temp, fam.threshold, llm, top_p=top_p)
+    records = run_gate(runner, asks, draws, temp, fam.threshold, llm, top_p=top_p, top_k=top_k)
+    if fam.finalize is not None:
+        records = {iid: fam.finalize(rec) for iid, rec in records.items()}
     rows = []
     for it in items:
         iid = store.item_id(it)
@@ -621,6 +632,7 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
     root = store.model_dir(model)
     refused: dict[str, str] = {}
     banks: dict[str, Any] = {}
+    extra: dict[str, dict[str, Any]] = {}  # family -> {rel path: obj} (freeze_step)
     removed: dict[str, set[str]] = defaultdict(set)  # keys freeze took out of an entry
     for family in families or sorted(fams.FAMILIES):
         rows = live_rows(model, family, report)
@@ -628,6 +640,10 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
             continue
         header, originals = store.original_bank(family)
         header = copy.deepcopy(header)
+        if family == "poetry":  # the subject's opus_gate / qwen_regate records (plan 0060 A2)
+            from .poetry import header_overlay
+
+            header_overlay(model, header)
         reg = {store.item_id(it): it for it in originals}
         rows = registered_rows(rows, set(reg))
         target = len(originals)
@@ -689,6 +705,15 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
                 print(f"{family}: blocked ({e})")
                 continue
             notes += more
+        try:  # plan 0060 A2 set-level steps over the shipped items (gold slots, overlays)
+            more, extra_files = rebuild.freeze_step(model, family, header, items)
+        except SystemExit as e:
+            fam_reports.setdefault(family, {}).update(
+                status="blocked", n_items=0, target=target, note=str(e)
+            )
+            print(f"{family}: blocked ({e})")
+            continue
+        notes += more
         if missing := missing_required(family, items):
             refused[family] = f"items lack {missing} (REQUIRED_ITEM_FIELDS; plan 0060 §1 / A2)"
             continue
@@ -700,6 +725,7 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
                 "items": items,
             }
         banks[family] = bank
+        extra[family] = extra_files  # the set's judge overlays (A2), written with the banks
         n_orig_pass = sum(r["gate"]["pass"] for r in rows if r["origin"] == "original")
         entry = fam_reports.setdefault(family, {})
         if entry.get("status") == "absent":  # built now (the rest: store.clear_built_absent)
@@ -733,6 +759,8 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
         raise SystemExit(f"freeze refused:\n{lines}")
     for family, bank in banks.items():
         store.write_json(root / f"{family}.json", bank)
+        for rel, obj in extra.get(family, {}).items():  # the set's judge overlays (A2)
+            store.write_json(root / rel, obj)
     absent = [f for f in registered_families() if not _present(root, f)]
 
     def _merge(fresh: dict) -> None:  # computed entries into a fresh read: drops / patches /
@@ -854,11 +882,39 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
     return status
 
 
+def _regrade_asks(family: str, row: dict) -> dict | None:
+    """The row's asks by leg, follow-up legs given back the reply they were sampled after; None
+    when a leg's stored question is not the current one (a record gated before plan 0060 D10 moved
+    the family into its read render: its answers are to another prompt, so only a regate fixes
+    it)."""
+    from dataclasses import replace
+
+    fam = fams.get(family)
+    asks = {a.leg: a for a in fam.asks(row["item"])}
+    if not fam.gate_render:
+        return asks
+    for name, old in row["gate"]["legs"].items():
+        if (ask := asks.get(name)) is None:
+            continue
+        if ask.followup:
+            if old.get("reply") is None:
+                return None
+            meta = {**ask.meta, "followup": old.get("followup") or {}}
+            ask = asks[name] = replace(ask, reply=old["reply"], meta=meta)
+        if old.get("question") != ask.question():
+            return None
+    return asks
+
+
 def _regrade_row(family: str, row: dict, grade) -> dict:
     from .gate import Leg, gate_record, grade_leg
 
     fam = fams.get(family)
-    asks = {a.leg: a for a in fam.asks(row["item"])}
+    if row.get("built_by"):  # a row a later stage built (moral adopt, poetry opus_gate): its
+        return row  # evidence is not the gate legs alone, so a re-grade keeps it as it is
+    asks = _regrade_asks(family, row)
+    if asks is None:
+        raise ValueError(f"{family}/{row['id']}: gated in another render; regate, not regrade")
     legs: dict[str, Leg] = {}
     for name, old in row["gate"]["legs"].items():
         if (ask := asks.get(name)) is None:
@@ -867,6 +923,8 @@ def _regrade_row(family: str, row: dict, grade) -> dict:
         thr = row.get("sampling", {}).get("threshold", fam.threshold)
         legs[name] = grade_leg(ask, old["greedy"]["text"], texts, thr, grade)
     rec = gate_record(legs)
+    if fam.finalize is not None:
+        rec = fam.finalize(rec)
     if (moral := row["gate"].get("moral")) is not None:
         # moral_rationale after `adapt moral`: the regrade may only update the consistency check;
         # the side / alignment / reason checks and the distilled reasons stay (skill audit)
@@ -887,6 +945,11 @@ def regrade(model: str, families: list[str], llm: str, workers: int = 16) -> Non
     for family in families:
         # lint rejects were never sampled: nothing to re-grade
         rows = [r for r in store.gated(model, family).values() if not r["gate"].get("lint")]
+        stale = [r["id"] for r in rows if _regrade_asks(family, r) is None]
+        if stale:  # plan 0060 D10: answers to the old plain / system-turn prompts
+            print(f"{family}: {len(stale)} rows gated before the read-render gate are left as "
+                  f"they are (regate them): {stale[:5]}")  # fmt: skip
+            rows = [r for r in rows if r["id"] not in set(stale)]
         with ThreadPoolExecutor(workers) as pool:
             new = list(pool.map(partial(_regrade_row, family, grade=grade), rows))
         for r in new:
