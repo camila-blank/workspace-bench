@@ -13,9 +13,18 @@ The measurement itself (plan 0054 R6 on the subject, a GPU job) is not implement
 
 Exception to copy-verbatim: when the subject's languages differ from the registered header's,
 the ORIGINALS' native units are rebuilt per ``native_langs`` (plan 0054 §B) by the multilingual
-upgraders (A2), which mark the gate-row item with ``native_units_for: [langs]`` (``MARKER``);
-``freeze`` then overlays those units (``NATIVE_ROLES``) on the registered item, and refuses a
-family whose passing originals were not rebuilt for the subject's languages."""
+upgraders (A2). Contract for an A2 multilingual upgrader, per original it rebuilds:
+
+- set ``item[MARKER] = <the subject's native_langs>`` (``native_units_for``);
+- rebuild EVERY unit (``units``: the native-role units AND the ``language`` unit, whose forms are
+  keyed by native code) and ``probe_token_lens``;
+- rebuild every native-dependent key the registered item has (``NATIVE_KEYS``: ``mc`` and
+  ``mc_roles``, i.e. the native / language option blocks such as ``mc.correction_native``, and
+  ``l2_equals_native`` / ``bridge_l2_creditable``);
+- drop (never ship) an item whose L2 becomes native or stops being native, with that reason.
+
+``freeze`` refuses a family whose passing originals are not marked for the subject's languages or
+lack one of those keys (``unbuilt``), and otherwise takes them from the row (``overlay``)."""
 
 import datetime as dt
 import json
@@ -34,15 +43,21 @@ FAMILIES = (
     "basic_readout_mt",
     "typo_mt",
 )
-# per family, the unit roles holding forms in the native languages (rebuilt per native_langs)
+# per family, the unit roles holding forms in the native languages (documentation of what the
+# rebuild touches; freeze takes EVERY unit from a rebuilt row, ``language`` included)
 NATIVE_ROLES: dict[str, tuple[str, ...]] = {
-    "multilingual": ("concept_native",),
-    "multilingual_mt": ("concept",),
-    "multilingual_typo": ("correction_native",),
-    "multilingual_multihop": ("bridge_native",),
-    "basic_readout_mt": ("readout",),
+    "multilingual": ("concept_native", "language"),
+    "multilingual_mt": ("concept", "language"),
+    "multilingual_typo": ("correction_native", "language"),
+    "multilingual_multihop": ("bridge_native", "language"),
+    "basic_readout_mt": ("readout", "language"),
     "typo_mt": ("correction",),
 }
+# item keys whose value depends on the native languages; with ``units`` and
+# ``probe_token_lens``, a rebuilt original ships the row's value of every one the registered item
+# has
+NATIVE_KEYS = ("units", "probe_token_lens", "mc", "mc_roles", "l2_equals_native",
+               "bridge_l2_creditable")  # fmt: skip
 THINKING = ("off", "on")
 
 
@@ -104,15 +119,22 @@ def measure(model: str, thinking: str = "off") -> dict[str, Any]:
     )
 
 
+def unbuilt(family: str, row_item: dict, reg_item: dict, langs: list[str]) -> bool:
+    """True when ``row_item`` is not a rebuild of ``reg_item`` for ``langs``: unmarked, marked
+    for other languages, or missing a native-dependent key the registered item has."""
+    if row_item.get(MARKER) != list(langs):
+        return True
+    return any(k in reg_item and k not in row_item for k in NATIVE_KEYS)
+
+
 def overlay_native_units(family: str, item: dict, row_item: dict) -> dict:
-    """``item`` (a copy of the registered original) with its native-language units replaced by
-    the row's rebuilt ones (same role)."""
-    roles = NATIVE_ROLES.get(family, ())
-    rebuilt = {u.get("role"): u for u in row_item.get("units") or [] if u.get("role") in roles}
-    units = []
-    for u in item.get("units") or []:
-        units.append(rebuilt.get(u.get("role"), u))
-    item["units"] = units
-    if "probe_token_lens" in row_item:  # the counts of the rebuilt forms (freeze re-counts them
-        item["probe_token_lens"] = row_item["probe_token_lens"]  # on a non-Qwen tokenizer)
+    """``item`` (a copy of the registered original) with every native-dependent key
+    (``NATIVE_KEYS``: all units, the language unit included, the token counts, the option blocks,
+    the L2-is-native flags) taken from the rebuilt row (freeze re-counts tokens on a non-Qwen
+    tokenizer)."""
+    import copy
+
+    for k in NATIVE_KEYS:
+        if k in item and k in row_item:
+            item[k] = copy.deepcopy(row_item[k])
     return item

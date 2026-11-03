@@ -123,12 +123,37 @@ def code_stamp() -> dict[str, str]:
     return {"git": git + ("+dirty" if dirty else ""), "adapt_sha256": h.hexdigest()[:16]}
 
 
+# freeze's automatic note for a registered family the set lacks (plan 0060 A1.6)
+ABSENT_NOTE = "absent: this set has no bank for the family (plan 0060 A1.6)"
+
+
+def clear_built_absent(model: str, report: dict[str, Any]) -> list[str]:
+    """Families whose bank is now on disk but whose entry still carries freeze's AUTOMATIC
+    absence (note == ``ABSENT_NOTE``): the absence goes (note, ``exclude_from_macro``, and an
+    ``absent`` status). A family built by any writer (freeze, carry, agentic, introspection)
+    rejoins the macro; a hand-written note or exclusion is never touched. Returns them."""
+    root, out = model_dir(model), []
+    for fam, e in (report.get("families") or {}).items():
+        if e.get("note") != ABSENT_NOTE:
+            continue
+        if not ((root / f"{fam}.json").exists() or (root / fam / "manifest.json").exists()):
+            continue
+        e.pop("note", None)
+        e.pop("exclude_from_macro", None)
+        if e.get("status") == "absent":
+            e.pop("status")
+        out.append(fam)
+    return out
+
+
 def update_report(model: str, mutate: Callable[[dict[str, Any]], Any]) -> dict[str, Any]:
-    """Locked read -> ``mutate(report)`` in place -> atomic write (stamped with ``code_stamp``).
-    Returns the new report."""
+    """Locked read -> ``mutate(report)`` in place -> stale automatic absences cleared
+    (``clear_built_absent``) -> atomic write (stamped with ``code_stamp``). Returns the new
+    report."""
     with report_lock(model):
         report = read_report(model)
         mutate(report)
+        clear_built_absent(model, report)
         report["code"] = code_stamp()
         write_json(model_dir(model) / "report.json", report)
         return report

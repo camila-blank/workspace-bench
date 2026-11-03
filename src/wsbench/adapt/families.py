@@ -363,12 +363,9 @@ REQUIRED_ITEM_FIELDS: dict[str, tuple[str, ...]] = {
 
 
 def required_item_fields(family: str) -> tuple[str, ...]:
-    """The floor above plus, once it exists, the A2.0 judge-input audit's table
-    (``wsbench.adapt.judge_inputs.REQUIRED_ITEM_FIELDS``: ``{family: iterable of dotted keys}``)."""
-    out = list(REQUIRED_ITEM_FIELDS.get(family, ()))
-    try:
-        from . import judge_inputs  # type: ignore[attr-defined]
-    except ImportError:
-        return tuple(out)
-    extra = getattr(judge_inputs, "REQUIRED_ITEM_FIELDS", {}).get(family, ())
-    return tuple(dict.fromkeys([*out, *extra]))
+    """The floor above plus the A2.0 judge-input audit's dotted required paths
+    (``judge_inputs.REQUIRED_ITEM_PATHS``)."""
+    from . import judge_inputs
+
+    extra = judge_inputs.REQUIRED_ITEM_PATHS.get(family, ())
+    return tuple(dict.fromkeys([*REQUIRED_ITEM_FIELDS.get(family, ()), *extra]))

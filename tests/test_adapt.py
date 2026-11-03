@@ -872,16 +872,17 @@ def test_freeze_refuses_missing_subject_or_required_fields(tmp_path, monkeypatch
     assert not (d / "association.json").exists() and not (d / "report.json").exists()
 
 
-def test_required_item_fields_merge_the_judge_input_audit(monkeypatch):
-    """The A2.0 hook: wsbench.adapt.judge_inputs.REQUIRED_ITEM_FIELDS extends the floor."""
-    import sys
-    import types
+def test_required_item_fields_merge_the_judge_input_audit():
+    """The A2.0 audit's dotted required paths are merged into the freeze floor, and every
+    registered bank satisfies the merged table (freeze never refuses the registered items)."""
+    from wsbench.adapt import judge_inputs
+    from wsbench.adapt.run import missing_required
 
-    mod = types.ModuleType("wsbench.adapt.judge_inputs")
-    mod.REQUIRED_ITEM_FIELDS = {"association": ("mc.topic",), "user_modeling": ("attr",)}
-    monkeypatch.setitem(sys.modules, "wsbench.adapt.judge_inputs", mod)
-    assert fams.required_item_fields("association")[-1] == "mc.topic"
-    assert fams.required_item_fields("user_modeling") == ("attr",)
+    for family, paths in judge_inputs.REQUIRED_ITEM_PATHS.items():
+        assert set(paths) <= set(fams.required_item_fields(family)), family
+    for family in sorted(set(fams.FAMILIES) | set(fams.REQUIRED_ITEM_FIELDS)):
+        _h, items = original_bank(family)
+        assert missing_required(family, items) == [], family
 
 
 def test_native_langs_file_and_freeze_refusal(tmp_path, monkeypatch):
@@ -911,6 +912,10 @@ def test_native_langs_file_and_freeze_refusal(tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="not rebuilt"):
         run.freeze("qwen3.5-4b", ["typo_mt"])
     rebuilt = copy.deepcopy(items[0])
+    rebuilt[nl.MARKER] = ["en", "ko"]  # rebuilt, but for other languages
+    _gate_log(d, "typo_mt", [_row(rebuilt)])
+    with pytest.raises(SystemExit, match="not rebuilt"):
+        run.freeze("qwen3.5-4b", ["typo_mt"])
     rebuilt[nl.MARKER] = ["en", "ja"]
     rebuilt["units"] = [{**rebuilt["units"][0], "match": ["ja-form"]}]
     _gate_log(d, "typo_mt", [_row(rebuilt)])
@@ -1021,3 +1026,58 @@ def test_prompt_only_opus_uses_the_subject_tokenizer(tmp_path, monkeypatch):
     monkeypatch.setenv(registry.BANK_ROOT_ENV, str(tmp_path))
     monkeypatch.setattr(author, "tokenizer", lambda model: f"tok:{model}")
     assert poo.subject_tokenizer() == "tok:olmo-3-7b"
+
+
+def test_absence_clears_when_another_writer_builds_the_family(tmp_path, monkeypatch):
+    """A1.6: a family freeze marked absent and later built by carry / agentic / introspection
+    (any report writer) rejoins the macro; a hand-written note is kept."""
+    import json as _json
+
+    from wsbench.adapt import run, store
+
+    d = _set(tmp_path, monkeypatch)
+    _h, items = original_bank("association")
+    _gate_log(d, "association", [_row(items[0])])
+    store.write_json(d / "report.json", {"families": {"wrong_bridge": {"note": "by hand"}}})
+    run.freeze("qwen3.5-4b", ["association"])
+    rep = _json.loads((d / "report.json").read_text())
+    assert rep["families"]["knowledge_cutoff"]["note"] == run.ABSENT_NOTE
+    for fam in ("knowledge_cutoff", "wrong_bridge"):  # e.g. a per-subject builder writes it
+        (d / f"{fam}.json").write_text("[]")
+    store.update_report("qwen3.5-4b", lambda r: r["families"]["knowledge_cutoff"].update(
+        status="full", n_items=0))  # fmt: skip
+    kc = _json.loads((d / "report.json").read_text())["families"]["knowledge_cutoff"]
+    assert kc["status"] == "full" and "exclude_from_macro" not in kc and "note" not in kc
+    run.freeze("qwen3.5-4b", ["association"])
+    fam = _json.loads((d / "report.json").read_text())["families"]
+    assert fam["knowledge_cutoff"].get("status") != "absent"
+    assert "exclude_from_macro" not in fam["knowledge_cutoff"]
+    assert fam["wrong_bridge"]["note"] == "by hand"  # never an automatic note: untouched
+    assert fam["wrong_bridge"]["exclude_from_macro"] is True
+
+
+def test_freeze_writes_nothing_when_any_family_is_refused(tmp_path, monkeypatch):
+    """One refused family (typo_mt: no native_langs.json) stops a freeze that would have
+    written another (association)."""
+    from wsbench.adapt import run
+
+    d = _set(tmp_path, monkeypatch)
+    _h, assoc = original_bank("association")
+    _h, typo = original_bank("typo_mt")
+    _gate_log(d, "association", [_row(assoc[0])])
+    _gate_log(d, "typo_mt", [_row(typo[0])])
+    with pytest.raises(SystemExit, match="typo_mt"):
+        run.freeze("qwen3.5-4b", ["association", "typo_mt"])
+    assert not (d / "association.json").exists() and not (d / "report.json").exists()
+
+
+def test_floor_record_protocol_falls_back_to_the_frozen_file(tmp_path):
+    """Two unstamped prompt-only freezes (native / summary) keep separate floors.json records."""
+    from wsbench import cli
+
+    e = {"rate": 0.1, "instrument": "pv", "judge_model": "claude-opus-5-5"}
+    a = cli._floor_record("prompt_only", {"poetry": e}, tmp_path / "prompt_only.json")
+    b = cli._floor_record("prompt_only", {"poetry": e}, tmp_path / "prompt_only_summary.json")
+    assert a["protocol"] != b["protocol"]
+    src = {"poetry": e, "_source": {"protocol": "po-opus-v1"}}
+    assert cli._floor_record("prompt_only", src, tmp_path / "x.json")["protocol"] == "po-opus-v1"

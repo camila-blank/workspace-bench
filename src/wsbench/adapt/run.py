@@ -482,7 +482,7 @@ def live_rows(model: str, family: str, report: dict | None = None) -> list[dict]
     return rows
 
 
-ABSENT_NOTE = "absent: this set has no bank for the family (plan 0060 A1.6)"
+ABSENT_NOTE = store.ABSENT_NOTE
 _OPTIONAL_OVERLAY = ("gate_variant", "needs_reasons")  # subject-side, overlaid when present
 
 
@@ -650,7 +650,7 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
                 native = langs
                 if unbuilt := [r["id"] for r in rows if r["origin"] == "original"
                                and r["gate"]["pass"]
-                               and r["item"].get(nl.MARKER) != langs]:  # fmt: skip
+                               and nl.unbuilt(family, r["item"], reg[r["id"]], langs)]:  # fmt: skip
                     refused[family] = (
                         f"{len(unbuilt)} originals' native units not rebuilt for {langs} "
                         f"(item `{nl.MARKER}`; plan 0060 A1.10, the A2 multilingual upgrader)"
