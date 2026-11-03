@@ -156,9 +156,13 @@ class JsonCache:
         self._lock = threading.Lock()
         if path.exists():
             for line in path.read_text(encoding="utf-8").split("\n"):
-                if line.strip():
+                if not line.strip():
+                    continue
+                try:  # a run killed mid-append leaves a partial line: skip it (re-asked later)
                     rec = json.loads(line)
                     self.d[rec["k"]] = rec["v"]
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    continue
 
     def put(self, k: str, v: Any) -> None:
         with self._lock:

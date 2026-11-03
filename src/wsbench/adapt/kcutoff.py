@@ -62,7 +62,7 @@ NULL_LABELS = frozenset({
 })  # fmt: skip
 QWEN_FIELDS = (
     "qwen", "g1", "context", "audit_flags", "panel_status", "g3_leak", "panel", "refill",
-    "options_named_in_prompt",
+    "options_named_in_prompt", "g3_note",
 )  # fmt: skip
 QWEN_TRUTH_FIELDS = ("verify", "incorrect_basis")  # Qwen's verdicts inside the item's `truth`
 
@@ -394,6 +394,12 @@ def build_options(item: Mapping[str, Any], gold: str, truth: str | None,
     if truth and ok(truth):
         opts.append(truth)
         sources[truth] = ["truth"]
+    t = item.get("truth") or {}
+    truth_forms = {norm(str(t.get(k) or "")) for k in ("authored", "canonical")} - {""}
+    if truth:
+        truth_forms.add(norm(truth))
+    if verify_truth and norm(verify_truth) in truth_forms:
+        verify_truth = None  # VERIFY restated the author truth in another form: no duplicate
     if verify_truth and ok(verify_truth):  # VERIFY's answer: an option, never the author truth
         opts.append(verify_truth)
         sources[verify_truth] = ["verify_truth"]

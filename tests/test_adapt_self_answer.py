@@ -464,3 +464,14 @@ def test_qwen_era_metadata_is_stripped(tmp_model):
             assert not {"refill", "options_named_in_prompt"} & set(it)
             assert "old_options" not in (it.get("repair") or {})
     assert "refill" in msdm.QWEN_FIELDS
+
+
+def test_json_cache_skips_a_partial_final_line(tmp_path):
+    from wsbench.adapt.selfans import JsonCache
+
+    p = tmp_path / "c.jsonl"
+    p.write_text('{"k": "a", "v": 1}\n{"k": "b", "v"', encoding="utf-8")
+    c = JsonCache(p)
+    assert c.d == {"a": 1}
+    c.put("b", 2)
+    assert JsonCache(p).d["b"] == 2
