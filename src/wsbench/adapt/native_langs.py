@@ -113,7 +113,8 @@ def record(model: str, langs: list[str], evidence: str, thinking: str = "off",
 # --- the measurement (plan 0054 R6 = plan 0032 §2.10, with thinking OFF per plan 0060 D7) ------
 # 30 prompts of the multilingual families (5 per family, in each family's own gate render) plus 20
 # neutral English prompts, K=4 draws at T=1.0 through the subject runner (its own template,
-# thinking off); a language is native when it holds >= 10% of the response letters. Letters are
+# thinking off); a non-English language is native when it holds >= 10% of the response letters of
+# the FAMILY prompts (``measure``). Letters are
 # classified by Unicode script (``unicodedata`` name); Han letters count as ``ja`` in a response
 # that also writes kana, else ``zh`` (the procedure's langid split, without the dependency).
 # Thinking off has no trace, so the RESPONSE letters are measured; a family prompt's own scripts
@@ -181,9 +182,26 @@ def family_prompts(n_per_family: int = N_PER_FAMILY) -> list[tuple[str, Any]]:
     return out
 
 
-def measure(model: str, thinking: str = "off", runner: Any = None) -> dict[str, Any]:
+CALIBRATION_REFERENCE = ("Qwen/Qwen3.6-27B", ["en", "zh"])  # plan 0032 §2.10's measured result
+
+
+def _shares(tally: Any) -> dict[str, float]:
+    total = sum(tally.values()) or 1
+    return {c: round(n / total, 4) for c, n in tally.most_common()}
+
+
+def measure(model: str, thinking: str = "off", runner: Any = None,
+            card_langs: list[str] | None = None) -> dict[str, Any]:  # fmt: skip
     """Plan 0054 R6 on the subject, thinking OFF (plan 0060 D7), through the subject runner;
-    writes and returns the ``native_langs.json`` record (``shares`` = the letter shares)."""
+    writes and returns the ``native_langs.json`` record.
+
+    A non-English language is native at >= ``SHARE`` of the response letters of the FAMILY
+    prompts (``shares_family``; the neutral English pool is left out of that denominator, where it
+    would only dilute it: an English prompt answered in English says nothing about a second
+    language). ``shares_neutral`` / ``shares_all`` are recorded beside it, and so are the model
+    card's stated languages (``card_langs``; the measurement decides). ``calibration``: this
+    thinking-off variant is unvalidated until the first GPU run measures Qwen3.6-27B and gets
+    ``["en", "zh"]`` (plan 0032 §2.10's thinking-on result); trust other subjects only after."""
     from collections import Counter
 
     from .gate import Ask
@@ -200,31 +218,52 @@ def measure(model: str, thinking: str = "off", runner: Any = None) -> dict[str, 
 
         runner = _runner(model)
     outs = runner.sample(asks, K, TEMPERATURE)
-    tally: Counter[str] = Counter()
+    fam_tally: Counter[str] = Counter()
+    neu_tally: Counter[str] = Counter()
     for ask, (_greedy, samples) in zip(asks, outs, strict=True):
-        own = set()  # a family prompt's own scripts (its L2), Latin apart
-        if ask.item_id.startswith("family:"):
-            own = set(letter_codes(ask.question())) - {"en"}
+        is_fam = ask.item_id.startswith("family:")
+        # a family prompt's own scripts (its L2), Latin apart
+        own = set(letter_codes(ask.question())) - {"en"} if is_fam else set()
+        tally = fam_tally if is_fam else neu_tally
         for text in samples:  # the K draws (the greedy reply is not part of the procedure)
             for code, n in letter_codes(text).items():
                 if code not in own:
                     tally[code] += n
-    total = sum(tally.values()) or 1
-    shares = {c: round(n / total, 4) for c, n in tally.most_common()}
+    shares = _shares(fam_tally)
     native = ["en"] + [c for c, sh in shares.items()
                        if c != "en" and sh >= SHARE and not c.startswith("script:")]  # fmt: skip
     unmapped = {c: sh for c, sh in shares.items() if c.startswith("script:") and sh >= SHARE}
+    try:
+        from .subjects import get as get_subject
+
+        hf_id = get_subject(model).hf_id
+    except (SystemExit, KeyError):
+        hf_id = None
+    ref_id, ref_langs = CALIBRATION_REFERENCE
+    if hf_id == ref_id:
+        calibration = {"status": "pass" if native == ref_langs else "FAIL", "expected": ref_langs}
+    else:
+        check = ("the first GPU run measures the reference with this procedure; trust this "
+                 "subject's result only once that gives the expected list")  # fmt: skip
+        calibration = {"status": "unverified", "reference": ref_id, "expected": ref_langs,
+                       "check": check}  # fmt: skip
     evidence = (
         f"plan 0054 R6 with thinking OFF (plan 0060 D7): {len(fam_asks)} family + "
         f"{len(NEUTRAL_PROMPTS)} neutral prompts x K={K} at T={TEMPERATURE}, {MAX_TOKENS} tokens, "
-        f"through the subject runner; response-letter shares {shares}; native >= {SHARE:.0%}"
+        f"through the subject runner; family-prompt response-letter shares {shares}; native >= "
+        f"{SHARE:.0%}; model card: {card_langs or 'not recorded'}; calibration "
+        f"{calibration['status']}"
         + (f"; UNMAPPED scripts >= {SHARE:.0%}: {unmapped}" if unmapped else "")
     )
     rec = {"model": model, "native_langs": native, "thinking": "off", "method": "plan 0054 R6",
-           "measured": str(dt.date.today()), "evidence": evidence, "shares": shares,
+           "measured": str(dt.date.today()), "evidence": evidence, "shares_family": shares,
+           "shares_neutral": _shares(neu_tally), "shares_all": _shares(fam_tally + neu_tally),
+           "model_card_langs": list(card_langs) if card_langs else None,
+           "calibration": calibration,
            "protocol": {"n_family": len(fam_asks), "n_neutral": len(NEUTRAL_PROMPTS), "k": K,
                         "temperature": TEMPERATURE, "max_tokens": MAX_TOKENS, "share": SHARE,
-                        "unit": "response letters (no trace with thinking off)"}}  # fmt: skip
+                        "unit": "response letters of the family prompts (no trace with thinking "
+                        "off)"}}  # fmt: skip
     validate(rec)
     store.write_json(path(model), rec)
     return rec
