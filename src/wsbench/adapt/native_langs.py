@@ -14,7 +14,10 @@ the file; ``record`` writes a measurement made elsewhere, with its evidence. R6 
 thinking mode (``Subject.thinking_mode``) and falls back to the thinking-OFF response measure
 (plan 0060 D7's variant) for one without; the record says which ran. The thinking-off variant
 gave Qwen3.6-27B ['en'] (en .911, zh .037: it measures the ANSWER language), not R6's
-['en', 'zh'].
+['en', 'zh']. The second criterion (§2.10's "readouts", Camila 2026-11-03: the subject's
+J-LENS, a token lens) is ``readout_criterion``: share of J-lens top-10 tokens per language at 10
+read sites. native = English + both criteria (``combine``; ``native_by`` says which). On
+Qwen3.6-27B: trace ['en'] (zh .0001), J-lens ['en', 'zh'] (zh .249) -> ['en', 'zh'].
 
 Exception to copy-verbatim: when the subject's languages differ from the registered header's,
 the ORIGINALS' native units are rebuilt per ``native_langs`` (plan 0054 §B) by the multilingual
@@ -294,15 +297,20 @@ def _trace_stop(markers: dict[str, Any], tok: Any) -> list[int] | None:
 
 
 def measure(model: str, thinking: str | None = None, runner: Any = None,
-            card_langs: list[str] | None = None,
-            markers: dict[str, Any] | None = None) -> dict[str, Any]:  # fmt: skip
+            card_langs: list[str] | None = None, markers: dict[str, Any] | None = None,
+            readouts: str | None = None, tok: Any = None) -> dict[str, Any]:  # fmt: skip
     """Plan 0054 R6 on the subject through the subject runner; writes and returns the
     ``native_langs.json`` record (``thinking`` says which mode ran, and the evidence says why).
 
     ``thinking``: None = ``default_thinking`` (on for a subject with a thinking mode, the R6
     trace measure ``_measure_trace``; off otherwise, the response measure ``_measure_off``).
     ``on`` for a subject without a thinking mode is refused. ``markers`` (tests): the trace
-    delimiters, else ``template.think_markers(runner.tok)``."""
+    delimiters, else ``template.think_markers(runner.tok)``.
+
+    ``readouts``: the subject's J-lens (token lens) readouts dir, for the second criterion
+    (``readout_criterion``, Camila 2026-11-03); None = the subject has none, recorded as such.
+    ``tok`` decodes its tokens (default: the runner's, else the subject's tokenizer).
+    native = English + trace(or response)-native + readout-native (``combine``)."""
     if thinking is None:
         thinking = default_thinking(model)
         why = ("default: the subject has a thinking mode" if thinking == "on" else
@@ -315,8 +323,180 @@ def measure(model: str, thinking: str | None = None, runner: Any = None,
         if default_thinking(model) != "on":
             raise SystemExit(f"native_langs: {model} has no thinking mode (Subject."
                              "thinking_mode=False); measure it with thinking=off")  # fmt: skip
-        return _measure_trace(model, why, runner, card_langs, markers)
-    return _measure_off(model, why, runner, card_langs)
+        rec = _measure_trace(model, why, runner, card_langs, markers)
+    else:
+        rec = _measure_off(model, why, runner, card_langs)
+    ro = None
+    if readouts:
+        ro = readout_criterion(readouts, tok or getattr(runner, "tok", None) or _tokenizer(model))
+    return finalize(model, rec, ro)
+
+
+# --- the readout criterion (plan 0032 §2.10, reader = the subject's J-lens; Camila 2026-11-03) --
+# §2.10: "if a prose reader exists, take 10 read sites of its readouts ... a language is native
+# if ... at least 10% of readout samples are in it". Camila's decision of 2026-11-03: the reader is
+# the subject's J-LENS (a token lens, ``tokens10``: its top-10 tokens per cell are the samples),
+# not an O-lens / NLA prose reader (the 27B's O-lens rl-onchat-x4 readouts hold ~0 Chinese; its
+# J-lens top-10 hold 11-36% Chinese per family, the observation behind "qwen thinks in chinese").
+READ_SITES = 10
+TOKEN_SAMPLING = "tokens10"
+
+
+def read_sites(n: int = READ_SITES) -> list[tuple[str, Any]]:
+    """The ``n`` read sites: the trace's family prompts (``family_prompts``) taken round-robin
+    over ``FAMILIES`` (each family's first item, then each one's second, ...), so the sites span
+    the families. A site is that item's read position(s) at every layer its readouts hold."""
+    by: dict[str, list[Any]] = {}
+    for fam, ask in family_prompts():
+        by.setdefault(fam, []).append(ask)
+    out: list[tuple[str, Any]] = []
+    for i in range(max((len(v) for v in by.values()), default=0)):
+        out += [(f, by[f][i]) for f in FAMILIES if i < len(by.get(f, []))]
+    return out[:n]
+
+
+def decode_token(tok: Any, t: str) -> str:
+    """A readout token as text: the files spell byte-level BPE tokens as the tokenizer's token
+    strings (``Ġ`` / ``▁`` shown as a space, ``produce.render.display_tokens``; cached files may
+    keep raw byte strings such as ``åķ¥``), so the token id is recovered and decoded; a string
+    that is no token is taken as it is."""
+    for cand in (t, t.replace(" ", "Ġ"), t.replace(" ", "▁")):
+        try:
+            i = tok.convert_tokens_to_ids(cand)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if isinstance(i, int) and i >= 0 and i != getattr(tok, "unk_token_id", None):
+            return tok.decode([i])
+    return t
+
+
+def token_lang(text: str) -> str | None:
+    """The language of one token: the code holding most of its letters (``letter_codes``); None
+    for a token without letters (digits, punctuation, whitespace), left out of the shares."""
+    codes = letter_codes(text, han="run")
+    return max(codes, key=lambda c: (codes[c], c)) if codes else None
+
+
+def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | None = None,
+                      sampling: str = TOKEN_SAMPLING) -> dict[str, Any]:  # fmt: skip
+    """Shares of the J-lens's top-10 tokens per language at the read sites (``read_sites``):
+    every cell (layer x position) of each site's item in ``<readouts>/<family>.jsonl``, tokens
+    decoded with the subject's tokenizer (``decode_token``) and assigned by script
+    (``token_lang``). A token in the item's OWN non-Latin script(s) (its passage's L2, read off
+    the question) is left out: it echoes the passage, not a language the model thinks in (the
+    27B's shares barely move: zh .245 -> .249). Native at >= ``SHARE`` of the letter-bearing
+    tokens; ``shares_incl_own`` is recorded beside. Only a token lens (``tokens10``) is accepted;
+    a sidecar declaring another sampling is refused."""
+    from collections import Counter
+    from pathlib import Path
+
+    if sampling != TOKEN_SAMPLING:
+        raise SystemExit(f"native_langs: the readout criterion reads a token lens "
+                         f"({TOKEN_SAMPLING}), not {sampling!r}")  # fmt: skip
+    root = Path(readouts)
+    sites = read_sites() if sites is None else sites
+    tally: Counter[str] = Counter()
+    incl: Counter[str] = Counter()
+    n_cells = n_noletter = 0
+    missing = []
+    for fam, ask in sites:
+        f = root / f"{fam}.jsonl"
+        meta = root / f"{fam}.jsonl.meta.json"
+        if meta.exists():
+            declared = json.loads(meta.read_text()).get("sampling")
+            if declared and declared != TOKEN_SAMPLING:
+                raise SystemExit(f"native_langs: {meta} declares sampling={declared!r}, not a "
+                                 f"token lens ({TOKEN_SAMPLING})")  # fmt: skip
+        rows = []
+        if f.exists():
+            with f.open(encoding="utf-8") as fh:
+                rows = [r for r in map(json.loads, fh) if r.get("id") == ask.item_id]
+        if not rows:
+            missing.append(f"{fam}/{ask.item_id}")
+            continue
+        own = set(letter_codes(ask.question())) - {"en"}
+        for r in rows:
+            n_cells += 1
+            for t in (r.get("tokens") or [])[:10]:
+                lang = token_lang(decode_token(tok, t))
+                if lang is None:
+                    n_noletter += 1
+                    continue
+                incl[lang] += 1
+                if lang not in own:
+                    tally[lang] += 1
+    if missing:
+        raise SystemExit(f"native_langs: no readouts in {root} for read sites {missing}")
+    shares = _shares(tally)
+    native = ["en"] + [c for c, sh in shares.items()
+                       if c != "en" and sh >= SHARE and not c.startswith("script:")]  # fmt: skip
+    return {"status": "measured", "reader": "J-lens (token lens)", "readouts": str(root),
+            "sampling": TOKEN_SAMPLING, "native": native, "shares": shares,
+            "shares_incl_own": _shares(incl),
+            "sites": [f"{fam}/{a.item_id}" for fam, a in sites], "n_cells": n_cells,
+            "n_tokens": sum(tally.values()), "n_tokens_without_letters": n_noletter,
+            "unit": "J-lens top-10 tokens with letters at the read sites, the item's own "
+                    "non-Latin L2 script left out"}  # fmt: skip
+
+
+def combine(criteria: dict[str, list[str] | None]) -> tuple[list[str], dict[str, list[str]]]:
+    """native = English (always) + every language some criterion makes native, in criterion
+    order; ``by[lang]`` = the criteria that made it native (``always`` for English)."""
+    native, by = ["en"], {"en": ["always"]}
+    for name, langs in criteria.items():
+        for c in langs or []:
+            if c == "en":
+                continue
+            if c not in by:
+                native.append(c)
+                by[c] = []
+            by[c].append(name)
+    return native, by
+
+
+def finalize(model: str, rec: dict[str, Any], readout: dict[str, Any] | None) -> dict[str, Any]:
+    """Combine the first criterion (``trace`` with thinking on, ``response`` with it off) with
+    the readout criterion, set ``native_langs`` / ``native_by`` / ``criteria`` / calibration,
+    then validate and write the record."""
+    first = "trace" if rec["thinking"] == "on" else "response"
+    key = "shares_all" if first == "trace" else "shares_family"
+    first_native = rec.get("criteria", {}).get(first, {}).get("native", rec["native_langs"])
+    if readout is None:
+        readout = {"status": "none", "reason": "no J-lens readouts for this subject: the "
+                   f"{first} criterion alone decides"}  # fmt: skip
+    native, by = combine({first: first_native, "readout": readout.get("native")})
+    rec["criteria"] = {first: {"native": first_native, "shares": rec[key]}, "readout": readout}
+    rec["native_langs"], rec["native_by"] = native, by
+    rec["calibration"] = _calibration(model, native)
+    rec["evidence"] = rec["evidence"].split("; READOUT criterion")[0].split("; calibration ")[0]
+    ro = (
+        f"; READOUT criterion (J-lens top-10 at {len(readout['sites'])} read sites, "
+        f"{readout['readouts']}): shares {readout['shares']} -> {readout['native']}"
+        if readout.get("status") == "measured"
+        else f"; READOUT criterion: {readout['reason']}"
+    )
+    rec["evidence"] += f"{ro}; native {native} by {by}; calibration {rec['calibration']['status']}"
+    validate(rec)
+    store.write_json(path(model), rec)
+    return rec
+
+
+def add_readouts(model: str, readouts: str, tok: Any = None) -> dict[str, Any]:
+    """The readout criterion added to an already measured record (``measure`` ran without
+    readouts, e.g. before the subject's J-lens readouts existed)."""
+    rec = load(model)
+    if rec is None:
+        raise SystemExit(f"{model}: not measured ({path(model)}); run stage=measure first")
+    return finalize(model, rec, readout_criterion(readouts, tok or _tokenizer(model)))
+
+
+def _tokenizer(model: str) -> Any:
+    from .subjects import get as get_subject
+    from .subjects import load_tokenizer
+
+    s = get_subject(model)
+    return load_tokenizer(s.hf_id, s.revision, s.tokenizer_dir, s.chat_template,
+                          s.trust_remote_code)  # fmt: skip
 
 
 def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | None,
@@ -324,11 +504,15 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
     """R6 as written (plan 0032 §2.10, gating.md §0): the 30 family + 20 neutral prompts, thinking
     ON, K draws at T, and a language is native at >= ``SHARE`` of the THOUGHT letters of all
     ``(30 + 20) * K`` traces (``shares_all``; English always counts). Letters by Unicode script,
-    Han split zh / ja per run (``letter_codes(han="run")``). Family prompts go as their gate
-    render's messages without the answer prefill (a stem there would sit inside the trace); a raw
-    family prompt becomes the user turn. Recorded beside the decision: the family / neutral
-    split, the family share with each prompt's own L2 scripts left out (diagnostic), traces
-    missing and cut at ``THINK_MAX_TOKENS``."""
+    Han split zh / ja per run (``letter_codes(han="run")``). A family trace's letters in its
+    prompt's OWN non-Latin script (the passage's L2, which the trace quotes) are left out of the
+    decision, as in the readout criterion and the thinking-off variant (R6's text does not say;
+    Qwen3.5-0.8B's traces hold 7.5% Arabic, all of it the Arabic passages quoted);
+    ``shares_all_incl_own_scripts`` records the count without that rule. Family prompts go as
+    their gate render's messages without the answer prefill (a stem there would sit inside the
+    trace); a raw family prompt becomes the user turn. Recorded beside the decision: the
+    family / neutral split, the family share with each prompt's own L2 scripts left out,
+    traces missing and cut at ``THINK_MAX_TOKENS``."""
     from collections import Counter
 
     from .gate import Ask
@@ -352,7 +536,9 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
         markers = think_markers(runner.tok)
     stop = _trace_stop(markers, getattr(runner, "tok", None))
     outs = runner.sample(asks, K, TEMPERATURE, stop_token_ids=stop)
-    tally: dict[str, Counter[str]] = {k: Counter() for k in ("all", "family", "neutral", "own")}
+    tally: dict[str, Counter[str]] = {
+        k: Counter() for k in ("all", "incl_own", "family", "neutral", "own")
+    }
     n_missing = n_cut = 0
     tok = getattr(runner, "tok", None)
     for ask, (_greedy, samples) in zip(asks, outs, strict=True):
@@ -368,39 +554,39 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
             ):
                 n_cut += 1
             codes = letter_codes(trace, han="run")
-            tally["all"].update(codes)
+            kept = {c: n for c, n in codes.items() if c not in own}
+            tally["all"].update(kept)  # the decision: a family prompt's own L2 script left out
+            tally["incl_own"].update(codes)
             tally["family" if is_fam else "neutral"].update(codes)
             if is_fam:
-                tally["own"].update({c: n for c, n in codes.items() if c not in own})
+                tally["own"].update(kept)
     shares = _shares(tally["all"])
     native = ["en"] + [c for c, sh in shares.items()
                        if c != "en" and sh >= SHARE and not c.startswith("script:")]  # fmt: skip
     unmapped = {c: sh for c, sh in shares.items() if c.startswith("script:") and sh >= SHARE}
-    calibration = _calibration(model, native)
     n = len(asks) * K
     evidence = (
         f"plan 0054 R6 with thinking ON ({why}): {len(fam_asks)} family + "
         f"{len(NEUTRAL_PROMPTS)} neutral prompts x K={K} at T={TEMPERATURE}, <= "
         f"{THINK_MAX_TOKENS} trace tokens, through the subject runner; thought-letter shares of "
-        f"all traces {shares}; native >= {SHARE:.0%}; traces missing {n_missing}/{n}, cut at "
-        f"max_tokens {n_cut}/{n}; model card: {card_langs or 'not recorded'}; calibration "
-        f"{calibration['status']}"
+        f"all traces (own L2 script left out) {shares}; native >= {SHARE:.0%}; traces missing "
+        f"{n_missing}/{n}, cut at "
+        f"max_tokens {n_cut}/{n}; model card: {card_langs or 'not recorded'}"
         + (f"; UNMAPPED scripts >= {SHARE:.0%}: {unmapped}" if unmapped else "")
     )
     rec = {"model": model, "native_langs": native, "thinking": "on", "method": "plan 0054 R6",
            "measured": str(dt.date.today()), "evidence": evidence, "shares_all": shares,
+           "shares_all_incl_own_scripts": _shares(tally["incl_own"]),
            "shares_family": _shares(tally["family"]), "shares_neutral": _shares(tally["neutral"]),
            "shares_family_excl_own_scripts": _shares(tally["own"]),
            "model_card_langs": list(card_langs) if card_langs else None,
-           "calibration": calibration,
            "traces": {"n": n, "missing": n_missing, "cut_at_max_tokens": n_cut,
                       "markers": {k: markers.get(k) for k in ("open", "close", "stop_id")}},
            "protocol": {"n_family": len(fam_asks), "n_neutral": len(NEUTRAL_PROMPTS), "k": K,
                         "temperature": TEMPERATURE, "max_tokens": THINK_MAX_TOKENS,
                         "share": SHARE, "unit": "thought letters of all traces (family + "
-                        "neutral), Han split zh/ja per run"}}  # fmt: skip
-    validate(rec)
-    store.write_json(path(model), rec)
+                        "neutral), a family prompt's own non-Latin L2 script left out, Han split "
+                        "zh/ja per run"}}  # fmt: skip
     return rec
 
 
@@ -445,26 +631,21 @@ def _measure_off(model: str, why: str, runner: Any,
     native = ["en"] + [c for c, sh in shares.items()
                        if c != "en" and sh >= SHARE and not c.startswith("script:")]  # fmt: skip
     unmapped = {c: sh for c, sh in shares.items() if c.startswith("script:") and sh >= SHARE}
-    calibration = _calibration(model, native)
     evidence = (
         f"plan 0054 R6 with thinking OFF ({why}; plan 0060 D7's variant): {len(fam_asks)} family + "
         f"{len(NEUTRAL_PROMPTS)} neutral prompts x K={K} at T={TEMPERATURE}, {MAX_TOKENS} tokens, "
         f"through the subject runner; family-prompt response-letter shares {shares}; native >= "
-        f"{SHARE:.0%}; model card: {card_langs or 'not recorded'}; calibration "
-        f"{calibration['status']}"
+        f"{SHARE:.0%}; model card: {card_langs or 'not recorded'}"
         + (f"; UNMAPPED scripts >= {SHARE:.0%}: {unmapped}" if unmapped else "")
     )
     rec = {"model": model, "native_langs": native, "thinking": "off", "method": "plan 0054 R6",
            "measured": str(dt.date.today()), "evidence": evidence, "shares_family": shares,
            "shares_neutral": _shares(neu_tally), "shares_all": _shares(fam_tally + neu_tally),
            "model_card_langs": list(card_langs) if card_langs else None,
-           "calibration": calibration,
            "protocol": {"n_family": len(fam_asks), "n_neutral": len(NEUTRAL_PROMPTS), "k": K,
                         "temperature": TEMPERATURE, "max_tokens": MAX_TOKENS, "share": SHARE,
                         "unit": "response letters of the family prompts (no trace with thinking "
                         "off)"}}  # fmt: skip
-    validate(rec)
-    store.write_json(path(model), rec)
     return rec
 
 

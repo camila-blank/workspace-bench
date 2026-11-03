@@ -5,6 +5,7 @@ thinking off, and the gate's template check unchanged. Offline: fake tokenizers 
 
 import re
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -283,3 +284,140 @@ def test_measure_falls_back_to_off_without_a_thinking_mode(tmp_model, monkeypatc
         nl.measure(MODEL, thinking="on", runner=TraceRunner())
     rec = nl.measure(MODEL, thinking="off", runner=OffRunner())  # explicit off is honoured
     assert "thinking=off requested" in rec["evidence"]
+
+
+# ------------------------------------------------------------------ readout criterion (J-lens)
+
+
+class ByteTok:
+    """Token strings -> ids for decode_token: two byte-level tokens (raw spelling) and plain
+    pieces; ``decode`` returns their text."""
+
+    unk_token_id = None
+    TOKENS: ClassVar[dict[str, str]] = {"åķ¥": "啥", "Ġred": " red", "Ġ42": " 42",
+                                        "ĠاØŃ": " اح"}  # fmt: skip
+
+    def __init__(self):
+        self.ids = {t: i for i, t in enumerate(self.TOKENS)}
+
+    def convert_tokens_to_ids(self, t):
+        return self.ids.get(t)
+
+    def decode(self, ids):
+        inv = {i: t for t, i in self.ids.items()}
+        return self.TOKENS[inv[ids[0]]]
+
+
+def test_decode_token_and_token_lang():
+    tok = ByteTok()
+    assert nl.decode_token(tok, "åķ¥") == "啥"  # a raw byte-level spelling
+    assert nl.decode_token(tok, " red") == " red"  # display spelling (Ġ shown as a space)
+    assert nl.decode_token(tok, "unknown") == "unknown"
+    assert nl.token_lang("啥") == "zh" and nl.token_lang(" red") == "en"
+    assert nl.token_lang(" 42") is None  # no letters: out of the shares
+
+
+def _write_readouts(root, sites, tokens_for):
+    import json as _json
+
+    root.mkdir(parents=True, exist_ok=True)
+    rows: dict[str, list] = {}
+    for fam, ask in sites:
+        for layer in (20, 40):
+            rows.setdefault(fam, []).append(
+                {
+                    "id": ask.item_id,
+                    "layer": layer,
+                    "pos": 3,
+                    "tokens": tokens_for(fam, ask),
+                    "scores": [0] * 10,
+                }
+            )
+    for fam, rs in rows.items():
+        (root / f"{fam}.jsonl").write_text("\n".join(_json.dumps(r) for r in rs))
+
+
+def test_read_sites_round_robin_over_families():
+    sites = nl.read_sites()
+    assert len(sites) == nl.READ_SITES
+    assert [f for f, _a in sites[: len(nl.FAMILIES)]] == list(nl.FAMILIES)
+
+
+def test_readout_criterion_shares_and_own_script(tmp_path):
+    sites = nl.read_sites()
+    # 6 English + 3 Chinese + 1 digit token per cell; Arabic items add their own script
+    toks = [" red"] * 6 + ["åķ¥"] * 3 + [" 42"]
+    _write_readouts(tmp_path / "jl", sites, lambda f, a: toks)
+    ro = nl.readout_criterion(str(tmp_path / "jl"), ByteTok())
+    assert ro["native"] == ["en", "zh"] and ro["shares"] == {"en": 0.6667, "zh": 0.3333}
+    assert ro["n_cells"] == 2 * nl.READ_SITES and ro["n_tokens_without_letters"] == 20
+
+    # a token in the item's own L2 script is left out (recorded in shares_incl_own)
+    def arabic_echo(f, a):  # the Arabic items' readouts echo their passage's script
+        return [" red"] * 5 + (["ĠاØŃ"] * 5 if "ar" in nl.letter_codes(a.question()) else [])
+
+    _write_readouts(tmp_path / "ar", sites, arabic_echo)
+    ro = nl.readout_criterion(str(tmp_path / "ar"), ByteTok())
+    assert ro["shares_incl_own"]["ar"] >= nl.SHARE and ro["native"] == ["en"]
+    with pytest.raises(SystemExit, match="token lens"):
+        nl.readout_criterion(str(tmp_path / "jl"), ByteTok(), sampling="bullet4")
+    with pytest.raises(SystemExit, match="no readouts"):
+        nl.readout_criterion(str(tmp_path / "empty"), ByteTok())
+
+
+def test_readout_sidecar_must_declare_a_token_lens(tmp_path):
+    import json as _json
+
+    sites = nl.read_sites()
+    _write_readouts(tmp_path, sites, lambda f, a: [" red"] * 10)
+    (tmp_path / f"{sites[0][0]}.jsonl.meta.json").write_text(_json.dumps({"sampling": "bullet4"}))
+    with pytest.raises(SystemExit, match="declares sampling"):
+        nl.readout_criterion(str(tmp_path), ByteTok())
+
+
+def test_combine_records_which_criterion():
+    native, by = nl.combine({"trace": ["en", "ja"], "readout": ["en", "zh", "ja"]})
+    assert native == ["en", "ja", "zh"]
+    assert by == {"en": ["always"], "ja": ["trace", "readout"], "zh": ["readout"]}
+    assert nl.combine({"trace": ["en"], "readout": None}) == (["en"], {"en": ["always"]})
+
+
+def test_measure_trace_plus_readouts(tmp_model, tmp_path, monkeypatch):
+    """The 27B shape: English traces, Chinese in the J-lens -> ['en', 'zh'] by the readout."""
+    tm = template.think_markers(FakeTok("prompt"))
+    ref = SimpleNamespace(hf_id=nl.CALIBRATION_REFERENCE[0], thinking_mode=True)
+    monkeypatch.setattr(subjects, "get", lambda key: ref)
+    _write_readouts(tmp_path / "jl", nl.read_sites(), lambda f, a: [" red"] * 7 + ["åķ¥"] * 3)
+    english = TraceRunner("Let me think about the word.")
+    rec = nl.measure(MODEL, runner=english, markers=tm, readouts=str(tmp_path / "jl"),
+                     tok=ByteTok())  # fmt: skip
+    assert rec["native_langs"] == ["en", "zh"] and rec["native_by"]["zh"] == ["readout"]
+    assert rec["criteria"]["trace"]["native"] == ["en"]
+    assert rec["criteria"]["readout"]["status"] == "measured"
+    assert rec["calibration"]["status"] == "pass"
+    assert "READOUT criterion" in rec["evidence"] and "calibration pass" in rec["evidence"]
+    # no readouts: the trace alone decides, and the record says so
+    rec = nl.measure(MODEL, runner=english, markers=tm)
+    assert rec["native_langs"] == ["en"] and rec["criteria"]["readout"]["status"] == "none"
+    assert rec["calibration"]["status"] == "FAIL"
+    # added later to the measured record
+    rec = nl.add_readouts(MODEL, str(tmp_path / "jl"), tok=ByteTok())
+    assert rec["native_langs"] == ["en", "zh"] and rec["evidence"].count("calibration") == 1
+
+
+def test_trace_leaves_out_the_prompts_own_script(tmp_model, monkeypatch):
+    """A family trace quoting its Arabic passage does not make Arabic native."""
+    tm = template.think_markers(FakeTok("prompt"))
+    monkeypatch.setattr(subjects, "get", lambda key: SimpleNamespace(hf_id="h", thinking_mode=True))
+
+    class Quoting(TraceRunner):
+        def sample(self, asks, draws, temperature, top_p=1.0, stop_token_ids=None):
+            out = []
+            for a in asks:
+                q = "الدم لونه أحمر اللون " * 3 if "ar" in nl.letter_codes(a.question()) else ""
+                out.append(("g", [f"The user writes {q} and wants a word.</think>x"] * draws))
+            return out
+
+    rec = nl.measure(MODEL, runner=Quoting(), markers=tm)
+    assert rec["shares_all_incl_own_scripts"]["ar"] >= nl.SHARE
+    assert "ar" not in rec["shares_all"] and rec["native_langs"] == ["en"]
