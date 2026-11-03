@@ -78,7 +78,12 @@ def check(paths: list[Path]) -> dict[str, list[str]]:
             # "<id>|L<layer>" or "digest:<id>|...": never publishable for a nocot id
             for o in docs:
                 key = str(o.get("key", "")) if isinstance(o, dict) else ""
-                kid = key.removeprefix("digest:").removeprefix("layered:").split("|", 1)[0]
+                kid = (
+                    key.removeprefix("digest:")
+                    .removeprefix("layered:")
+                    .removeprefix("ntok:")
+                    .split("|", 1)[0]
+                )
                 if kid in ids or kid in nyt_ids:
                     hit.append(kid)
             if hit:
