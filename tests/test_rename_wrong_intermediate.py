@@ -143,3 +143,26 @@ def test_adapted_bank_under_the_old_name(tmp_path, monkeypatch):
     monkeypatch.delenv(registry.BANK_ROOT_ENV)
     monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + "WRONG_BRIDGE", str(bank))
     assert registry.bank_path("wrong_intermediate") == bank
+
+
+def test_gate_seeds_and_old_gate_rows_keep_the_old_key(tmp_path):
+    from wsbench import gate_sampling
+
+    def pre(blob):
+        return int.from_bytes(hashlib.sha256(blob.encode()).digest()[:4], "big")
+
+    assert ti.qwen_seed("wrong_intermediate", "x") == pre("wrong_bridge|x")
+    assert gate_sampling.seed("wrong_intermediate", "x", 1) == pre("wrong_bridge|x|1")
+    assert ti.qwen_seed("poetry", "x") == pre("poetry|x")
+    row = {"family": "wrong_bridge", "id": "x"}
+    (tmp_path / "prompts.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    assert [r["family"] for r in ti._prompts(tmp_path, {"wrong_intermediate"})] == [
+        "wrong_intermediate"
+    ]
+
+
+def test_judge_default_out_dir_reuses_the_old_one(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    old = Path("outputs") / "arm" / "wrong_bridge"
+    old.mkdir(parents=True)
+    assert registry.family_dir(Path("outputs") / "arm", "wrong_intermediate") == old

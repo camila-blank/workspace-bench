@@ -222,7 +222,7 @@ class JudgeFamily(JudgeOptions):
         if self.family not in registry.FAMILIES:
             return _unknown(self.family)
         spec = registry.get(self.family)
-        out = self.out or Path("outputs") / self.readouts.stem / spec.name
+        out = self.out or registry.family_dir(Path("outputs") / self.readouts.stem, spec.name)
         try:
             opts = parse_opts(self.opt)
             judge = resolve(spec.judge, flag=self.judge_model, env=os.environ)
