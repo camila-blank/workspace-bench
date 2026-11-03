@@ -540,7 +540,10 @@ def build_original(family: str, reg_item: dict, row: dict, native: list[str] | N
 
     it = copy.deepcopy(reg_item)
     src = row["item"]
-    own = fams.get(family).own or (family == "basic_readout" and it.get("subfamily") == "implicit")
+    fam = fams.FAMILIES.get(family)
+    own = (fam is not None and fam.own) or (
+        family == "basic_readout" and it.get("subfamily") == "implicit"
+    )
     if own and row["gate"].get("legs"):
         it = restamp(family, it, row["gate"])
     for key in _OPTIONAL_OVERLAY:
@@ -661,7 +664,11 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
         items = []
         patches = (report.get("patches") or {}).get(family, {})
         for r in chosen:
-            if r["origin"] == "original":  # copy-verbatim: the registered item + subject overlays
+            # copy-verbatim (the registered item + subject overlays) only for the families gated
+            # item by item here; a family with its own subject stage (knowledge_cutoff, msdm,
+            # wrong_bridge, multihop_mt_v2, ...: fams.REGENERATE) writes `original` rows whose
+            # item is ALREADY rebuilt on the subject (its gold, options, relabels), shipped as is
+            if r["origin"] == "original" and family in fams.FAMILIES:
                 it = build_original(family, reg[r["id"]], r, native)
             else:
                 it = copy.deepcopy(r["item"])
@@ -695,12 +702,9 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
         banks[family] = bank
         n_orig_pass = sum(r["gate"]["pass"] for r in rows if r["origin"] == "original")
         entry = fam_reports.setdefault(family, {})
-        if entry.get("status") == "absent":  # built now: the automatic absence goes
-            gone = {"status"} | ({"note", "exclude_from_macro"}
-                                 if entry.get("note") == ABSENT_NOTE else set())  # fmt: skip
-            for k in gone:
-                entry.pop(k, None)
-            removed[family] |= gone
+        if entry.get("status") == "absent":  # built now (the rest: store.clear_built_absent)
+            entry.pop("status")
+            removed[family].add("status")
         entry.update(
             {
                 "target": target,
@@ -740,12 +744,12 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
             for k in removed.get(fam, ()):
                 if k not in e:
                     fams_out[fam].pop(k, None)
-        for fam in absent:  # A1.6: explicit, out of the macro; an existing note is never replaced
+        for fam in absent:  # A1.6: explicit and out of the macro, unless a hand note says why
             e = fams_out.setdefault(fam, {})
             if e.get("status") in (None, "absent"):
                 e["status"] = "absent"
-            e["exclude_from_macro"] = True
-            e.setdefault("note", ABSENT_NOTE)
+            if "note" not in e:  # automatic: marked so it is cleared once the family is built
+                e.update(note=ABSENT_NOTE, exclude_from_macro=True, absent_auto=True)
 
     return store.update_report(model, _merge)
 
