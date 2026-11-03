@@ -899,7 +899,8 @@ def _regrade_asks(family: str, row: dict) -> dict | None:
         if ask.followup:
             if old.get("reply") is None:
                 return None
-            ask = asks[name] = replace(ask, reply=old["reply"])
+            meta = {**ask.meta, "followup": old.get("followup") or {}}
+            ask = asks[name] = replace(ask, reply=old["reply"], meta=meta)
         if old.get("question") != ask.question():
             return None
     return asks
