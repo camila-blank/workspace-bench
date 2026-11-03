@@ -519,3 +519,4 @@ def test_naming_copied_template_is_never_a_label(line):
 def test_naming_lead_drops_list_markup():
     assert _names("CONNECTION: 1. Audacity, TOP, NERVE, CHEEK, GALL")[0] == "Audacity"
     assert _names("CONNECTION: [Audacity], TOP, NERVE, CHEEK, GALL")[0] == "Audacity"
+    assert _names("CONNECTION: [BLANK] ___, TOP, NERVE, CHEEK, GALL")[0] == "[BLANK] ___"

@@ -134,7 +134,10 @@ def template_junk(name: str) -> bool:
 def _clean_lead(lead: str) -> str:
     """C's label without list markup ("1. Audacity", "[Audacity]", "**Audacity**")."""
     lead = re.sub(r"^\s*(?:\d+[.)]|[-*])\s+", "", lead.strip())
-    return lead.strip().strip("*[]").strip()
+    lead = lead.strip().strip("*").strip()
+    if m := re.fullmatch(r"\[([^\[\]]*)\]", lead):  # only a wrapping pair: "[LETTER] (IS) ..."
+        lead = m.group(1).strip()
+    return lead
 
 
 def fset(ws: Sequence[str]) -> frozenset[str]:
