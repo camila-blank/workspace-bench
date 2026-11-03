@@ -140,6 +140,22 @@ def test_two_consecutive_mc_builds(mdir, monkeypatch):
     assert cands["brh-au-b"]["adapt"]["mc_build"]["work"].startswith("build-")
 
 
+def test_mc_build_skips_already_built_pending_rows(mdir, monkeypatch):
+    """A rerun after the gate crashed (built rows still pending) rebuilds nothing: no second
+    Opus spend, and basic_readout_mt keeps the first build's hidden_rivals."""
+    f = "basic_readout_mt"
+    seen: list = []
+    monkeypatch.setattr(mcstage, "run_builder", _brmt_runner(monkeypatch, seen))
+    store.add_candidates("demo", f, [_brmt_cand("brh-au-a")])
+    assert mcstage.build("demo", f) == {"built": 1, "dropped": 0}
+    first = store.pending("demo", f)[0]
+    n = len(seen)
+    assert mcstage._todo("demo", f) == []
+    mcstage.build("demo", f)
+    assert len(seen) == n  # no builder ran
+    assert store.pending("demo", f)[0] == first
+
+
 def test_mc_build_work_dir_is_keyed_by_the_pending_set(mdir):
     a, b = _brmt_cand("brh-au-a"), _brmt_cand("brh-au-b")
     w1 = mcstage.work_dir("demo", "basic_readout_mt", [a, b])

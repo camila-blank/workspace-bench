@@ -123,6 +123,9 @@ def _todo(model: str, family: str) -> list[dict]:
             continue
         if family == "basic_readout" and c.get("subfamily") == "implicit":
             continue
+        built = (c.get("adapt") or {}).get("mc_build")
+        if built and not built.get("dropped"):  # already built (a rerun after the gate crashed):
+            continue  # rebuilding would re-spend Opus and overwrite brmt's hidden_rivals
         out.append(c)
     return out
 
