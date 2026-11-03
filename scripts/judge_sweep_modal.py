@@ -382,7 +382,15 @@ def upload(
                 shutil.copyfile(p, dst)  # multi-GB readouts: never read whole into memory
         seeds = stage / "seeds"
         n_rows = 0
-        for cells in sorted(Path(ref_dir).rglob("cells.jsonl")):
+        # os.walk(followlinks=True): a reference dir may be per-family symlinks (a union mixing
+        # all.v110 and all/ dirs), which Path.rglob does not descend into
+        found = [
+            Path(dp) / "cells.jsonl"
+            for dp, _dn, fn in os.walk(ref_dir, followlinks=True)
+            if "cells.jsonl" in fn
+        ]
+        seeds.mkdir(parents=True, exist_ok=True)
+        for cells in sorted(found):
             rel = cells.relative_to(ref_dir)
             n_rows += js.write_seed(cells, seeds / rel, drop)
         index: dict[str, str] = {}
