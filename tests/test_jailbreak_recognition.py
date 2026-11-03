@@ -1411,3 +1411,11 @@ def test_run_calls_forwards_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             timeout=t,
         )
     assert seen[0].get("timeout") == 900.0 and "timeout" not in seen[1]
+
+
+def test_align_drops_non_object_verdicts_with_a_flag():
+    # a judge listing bare strings in "verdicts" used to raise AttributeError (gpt-oss-20b)
+    flags: list[str] = []
+    out = judge._align({"verdicts": ["yes", {"index": 1, "x": 1}]}, ["r1"], flags)
+    assert [n for n, _v in out] == [0]  # 1-based index 1 -> readout position 0
+    assert any(f.startswith("non_object_verdict:") for f in flags)

@@ -18,7 +18,15 @@ _COUNT_KEYS = (
     "n_empty_cells",
     "skipped_rows",
     "spend_usd",
+    # plan 0059: the family's Spend tokens (digest + judge; Anthropic input excludes cached
+    # prompt tokens, OpenRouter's includes them)
+    "input_tokens",
+    "output_tokens",
 )
+# counts added after results were already written by hand-built producers: ``to_json`` writes
+# them (``None`` when a producer did not set them) and ``from_json`` drops a ``None`` one again,
+# so a result without them round-trips unchanged
+_LATE_COUNT_KEYS = ("input_tokens", "output_tokens")
 
 
 @dataclass
@@ -79,7 +87,11 @@ class FamilyResult:
             complete=d["complete"],
             pinned_instrument=d["pinned_instrument"],
             config=d.get("config", {}),
-            counts=d.get("counts", {}),
+            counts={
+                k: v
+                for k, v in (d.get("counts", {}) or {}).items()
+                if not (k in _LATE_COUNT_KEYS and v is None)
+            },
             extras=num.get("extras", {}) or {},
             rows=d.get("rows", []) or [],
         )

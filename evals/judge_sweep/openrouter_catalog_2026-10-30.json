@@ -1,0 +1,5234 @@
+{
+ "fetched": "2026-10-30",
+ "data": [
+  {
+   "id": "anthropic/claude-fable-5.1",
+   "canonical_slug": "anthropic/claude-fable-5.1-20260831",
+   "hugging_face_id": null,
+   "name": "Anthropic: Claude Fable 5.1",
+   "created": 1788285838,
+   "description": "Claude Fable 5.1 improves on Claude Fable 5 across the board, with the biggest gains in agentic coding, long-running agentic workflows, and knowledge work: long code refactors, front-end and visual...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Claude",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00001",
+    "completion": "0.00005",
+    "web_search": "0.01",
+    "input_cache_read": "0.00000025",
+    "input_cache_write": "0.0000125",
+    "input_cache_write_1h": "0.00002"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/anthropic/claude-fable-5.1-20260831/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1326,
+      "win_rate": 57.2,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1327,
+      "win_rate": 60.7,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "htmlslides",
+      "elo": 1394,
+      "win_rate": 56.5,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1265,
+      "win_rate": 56.3,
+      "rank": 5
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1318,
+      "win_rate": 60.8,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1416,
+      "win_rate": 70.4,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1298,
+      "win_rate": 54.9,
+      "rank": 2
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1403,
+      "win_rate": 63.4,
+      "rank": 5
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1321,
+      "win_rate": 65,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1333,
+      "win_rate": 57.4,
+      "rank": 8
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1344,
+      "win_rate": 61.8,
+      "rank": 5
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1373,
+      "win_rate": 60.1,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1296,
+      "win_rate": 56.4,
+      "rank": 9
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1333,
+      "win_rate": 59.6,
+      "rank": 12
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1308,
+      "win_rate": 55.1,
+      "rank": 11
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 49.7,
+     "coding_index": 80.7,
+     "agentic_index": 57.2
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "anthropic/claude-haiku-5.5",
+   "canonical_slug": "anthropic/claude-haiku-5.5-20261007",
+   "hugging_face_id": null,
+   "name": "Anthropic: Claude Haiku 5.5",
+   "created": 1791397883,
+   "description": "Claude Haiku 5.5 is Anthropic's small, fast model for high-volume, cost-sensitive work such as summarization, subagents, and browser use. It succeeds Claude Haiku 4.5 with stronger coding, computer use, and...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Claude",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.0000005",
+    "web_search": "0.01",
+    "input_cache_read": "0.00000001",
+    "input_cache_write": "0.000000125",
+    "input_cache_write_1h": "0.0000002",
+    "overrides": [
+     {
+      "min_prompt_tokens": 100000,
+      "prompt": "0.0000005",
+      "completion": "0.0000025",
+      "input_cache_read": "0.00000005",
+      "input_cache_write": "0.000000625",
+      "input_cache_write_1h": "0.000001"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/anthropic/claude-haiku-5.5-20261007/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1342,
+      "win_rate": 57.9,
+      "rank": 11
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1280,
+      "win_rate": 50.7,
+      "rank": 24
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1281,
+      "win_rate": 51.8,
+      "rank": 20
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1323,
+      "win_rate": 55.1,
+      "rank": 12
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1203,
+      "win_rate": 44.2,
+      "rank": 28
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1278,
+      "win_rate": 51,
+      "rank": 26
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1262,
+      "win_rate": 48.7,
+      "rank": 36
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 36.2,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-5.5",
+   "canonical_slug": "anthropic/claude-opus-5.5-20260921",
+   "hugging_face_id": null,
+   "name": "Anthropic: Claude Opus 5.5",
+   "created": 1790094732,
+   "description": "Claude Opus 5.5 is Anthropic's flagship model for demanding reasoning, coding, and long-horizon agentic work, succeeding Claude Opus 5. It is particularly strong at multi-step changes in large codebases, code...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Claude",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000004",
+    "completion": "0.00002",
+    "web_search": "0.01",
+    "input_cache_read": "0.0000002",
+    "input_cache_write": "0.000005",
+    "input_cache_write_1h": "0.000008"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/anthropic/claude-opus-5.5-20260921/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1224,
+      "win_rate": 58.5,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1310,
+      "win_rate": 62.7,
+      "rank": 2
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 1343,
+      "win_rate": 70.3,
+      "rank": 1
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1395,
+      "win_rate": 69.3,
+      "rank": 2
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1310,
+      "win_rate": 61.4,
+      "rank": 1
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1471,
+      "win_rate": 64.4,
+      "rank": 1
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1351,
+      "win_rate": 65,
+      "rank": 2
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1385,
+      "win_rate": 60.5,
+      "rank": 2
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1394,
+      "win_rate": 64.4,
+      "rank": 1
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1433,
+      "win_rate": 63.8,
+      "rank": 1
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1323,
+      "win_rate": 52.4,
+      "rank": 3
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1378,
+      "win_rate": 63.5,
+      "rank": 3
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1325,
+      "win_rate": 55,
+      "rank": 4
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 58.4,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "anthropic/claude-sonnet-5.5",
+   "canonical_slug": "anthropic/claude-sonnet-5.5-20260928",
+   "hugging_face_id": null,
+   "name": "Anthropic: Claude Sonnet 5.5",
+   "created": 1790618686,
+   "description": "Claude Sonnet 5.5 is Anthropic's Sonnet-class model for well-scoped everyday work, succeeding Claude Sonnet 5 as a direct upgrade. It is especially strong at building features, fixing bugs, and producing...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Claude",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000002",
+    "completion": "0.00001",
+    "web_search": "0.01",
+    "input_cache_read": "0.0000001",
+    "input_cache_write": "0.0000025",
+    "input_cache_write_1h": "0.000004"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/anthropic/claude-sonnet-5.5-20260928/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1248,
+      "win_rate": 63.5,
+      "rank": 3
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1282,
+      "win_rate": 59.5,
+      "rank": 3
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 1253,
+      "win_rate": 58.8,
+      "rank": 6
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1292,
+      "win_rate": 53.7,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1296,
+      "win_rate": 60.4,
+      "rank": 3
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1399,
+      "win_rate": 51.5,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1351,
+      "win_rate": 56.5,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1361,
+      "win_rate": 64.1,
+      "rank": 3
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1412,
+      "win_rate": 62.3,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1375,
+      "win_rate": 63.3,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1321,
+      "win_rate": 54.8,
+      "rank": 6
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 54.2,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "bytedance-seed/seed-2.0-mini",
+   "canonical_slug": "bytedance-seed/seed-2.0-mini-20260224",
+   "hugging_face_id": "",
+   "name": "ByteDance Seed: Seed-2.0-Mini",
+   "created": 1772131107,
+   "description": "Seed-2.0-mini targets latency-sensitive, high-concurrency, and cost-sensitive scenarios, emphasizing fast response and flexible inference deployment. It delivers performance comparable to ByteDance-Seed-1.6, supports 256k context, four reasoning effort modes (minimal/low/medium/high), multimodal understanding,...",
+   "context_length": 262144,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.0000004",
+    "overrides": [
+     {
+      "min_prompt_tokens": 128000,
+      "prompt": "0.0000002",
+      "completion": "0.0000008"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "frequency_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/bytedance-seed/seed-2.0-mini-20260224/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "minimal",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "deepseek/deepseek-v4-flash",
+   "canonical_slug": "deepseek/deepseek-v4-flash-20260423",
+   "hugging_face_id": "deepseek-ai/DeepSeek-V4-Flash",
+   "name": "DeepSeek: DeepSeek V4 Flash 0423",
+   "created": 1777000666,
+   "description": "DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters, supporting a 1M-token context window. It is designed for fast inference and...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "DeepSeek",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000091",
+    "completion": "0.000000182",
+    "input_cache_read": "0.0000000182"
+   },
+   "top_provider": {
+    "context_length": 1048575,
+    "max_completion_tokens": 943717,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_completion_tokens",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_a",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/deepseek/deepseek-v4-flash-20260423/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1186,
+      "win_rate": 49.3,
+      "rank": 56
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1107,
+      "win_rate": 42.7,
+      "rank": 59
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1204,
+      "win_rate": 48.9,
+      "rank": 63
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1127,
+      "win_rate": 40.7,
+      "rank": 93
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1197,
+      "win_rate": 50.2,
+      "rank": 58
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1152,
+      "win_rate": 48.4,
+      "rank": 47
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1159,
+      "win_rate": 44.7,
+      "rank": 76
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1206,
+      "win_rate": 49.1,
+      "rank": 63
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 56.2,
+     "agentic_index": 22.2
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "supported_efforts": [
+     "xhigh",
+     "high",
+     "none"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "deepseek/deepseek-v4-pro-0813",
+   "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
+   "hugging_face_id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+   "name": "DeepSeek: DeepSeek V4 Pro 0813",
+   "created": 1786549364,
+   "description": "DeepSeek V4 Pro 0813 is a large-scale mixture-of-experts model from DeepSeek. This is the GA release of DeepSeek V4 Pro.",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "DeepSeek",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000066",
+    "completion": "0.00000198",
+    "input_cache_read": "0.000000022",
+    "overrides": [
+     {
+      "utc_days": [
+       "saturday",
+       "sunday"
+      ],
+      "prompt": "0.00000066",
+      "completion": "0.00000198",
+      "input_cache_read": "0.000000022"
+     },
+     {
+      "utc_days": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday"
+      ],
+      "utc_start": 0,
+      "utc_end": 100,
+      "prompt": "0.00000066",
+      "completion": "0.00000198",
+      "input_cache_read": "0.000000022"
+     },
+     {
+      "utc_days": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday"
+      ],
+      "utc_start": 100,
+      "utc_end": 400,
+      "prompt": "0.00000132",
+      "completion": "0.00000396",
+      "input_cache_read": "0.000000044"
+     },
+     {
+      "utc_days": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday"
+      ],
+      "utc_start": 400,
+      "utc_end": 600,
+      "prompt": "0.00000066",
+      "completion": "0.00000198",
+      "input_cache_read": "0.000000022"
+     },
+     {
+      "utc_days": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday"
+      ],
+      "utc_start": 600,
+      "utc_end": 1000,
+      "prompt": "0.00000132",
+      "completion": "0.00000396",
+      "input_cache_read": "0.000000044"
+     },
+     {
+      "utc_days": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday"
+      ],
+      "utc_start": 1000,
+      "utc_end": 0,
+      "prompt": "0.00000066",
+      "completion": "0.00000198",
+      "input_cache_read": "0.000000022"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 393216,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 1
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/deepseek/deepseek-v4-pro-20260813/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 23.1,
+     "coding_index": 68.8,
+     "agentic_index": 41.3
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "supported_efforts": [
+     "max",
+     "high",
+     "low",
+     "none"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "deepseek/deepseek-v4.1-flash",
+   "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+   "hugging_face_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "name": "DeepSeek: DeepSeek V4.1 Flash",
+   "created": 1789021285,
+   "description": "DeepSeek V4.1 Flash is a sparse mixture-of-experts model from DeepSeek, and the first built on the company's Causal Encoder-Decoder (CED) architecture. It activates 8B parameters on input and 16B on...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "DeepSeek",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000045",
+    "completion": "0.0000005",
+    "input_cache_read": "0.000000006"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 943718,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_a",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/deepseek/deepseek-v4.1-flash-20260910/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "high",
+     "low",
+     "none"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "dots-studio/dots-3-note-preview:free",
+   "canonical_slug": "dots-studio/dots-3-note-preview-20260813",
+   "hugging_face_id": null,
+   "name": "Dots Studio: Dots3-Note Preview (free)",
+   "created": 1786680361,
+   "description": "Dots3-Note Preview is an open-weight mixture-of-experts model from Dots Studio, with 16B active parameters out of 280B total. It is the lightest model in the Dots 3 family and is...",
+   "context_length": 512000,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 512000,
+    "max_completion_tokens": 460800,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "response_format",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": "2026-12-31",
+   "links": {
+    "details": "/api/v1/models/dots-studio/dots-3-note-preview-20260813/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "google/gemini-2.5-flash-lite",
+   "canonical_slug": "google/gemini-2.5-flash-lite",
+   "hugging_face_id": "",
+   "name": "Google: Gemini 2.5 Flash Lite",
+   "created": 1753200276,
+   "description": "Gemini 2.5 Flash-Lite is a lightweight reasoning model in the Gemini 2.5 family, optimized for ultra-low latency and cost efficiency. It offers improved throughput, faster token generation, and better performance...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file",
+     "audio",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemini",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.0000004",
+    "image": "0.0000001",
+    "audio": "0.0000003",
+    "input_audio_cache": "0.00000003",
+    "web_search": "0.014",
+    "internal_reasoning": "0.0000004",
+    "input_cache_read": "0.00000001",
+    "input_cache_write": "0.0000000833333333333333"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 65535,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "frequency_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": "2025-01-31",
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemini-2.5-flash-lite/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "google/gemini-3-flash-preview",
+   "canonical_slug": "google/gemini-3-flash-preview-20251217",
+   "hugging_face_id": "",
+   "name": "Google: Gemini 3 Flash Preview",
+   "created": 1765987078,
+   "description": "Gemini 3 Flash Preview is a high speed, high value thinking model designed for agentic workflows, multi turn chat, and coding assistance. It delivers near Pro level reasoning and tool...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file",
+     "audio",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemini",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000005",
+    "completion": "0.000003",
+    "image": "0.0000005",
+    "audio": "0.000001",
+    "input_audio_cache": "0.0000001",
+    "web_search": "0.014",
+    "internal_reasoning": "0.000003",
+    "input_cache_read": "0.00000005",
+    "input_cache_write": "0.0000000833333333333333"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemini-3-flash-preview-20251217/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "agenticslides",
+      "elo": 1073,
+      "win_rate": 39.3,
+      "rank": 8
+     },
+     {
+      "arena": "agents",
+      "category": "agenticslides(python-pptx)",
+      "elo": 1075,
+      "win_rate": 39.3,
+      "rank": 8
+     },
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 1047,
+      "win_rate": 48.1,
+      "rank": 34
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1063,
+      "win_rate": 47.4,
+      "rank": 33
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1161,
+      "win_rate": 50.6,
+      "rank": 19
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1090,
+      "win_rate": 46.6,
+      "rank": 41
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1036,
+      "win_rate": 38.3,
+      "rank": 28
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1099,
+      "win_rate": 48.5,
+      "rank": 37
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1181,
+      "win_rate": 62.7,
+      "rank": 57
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1187,
+      "win_rate": 57.6,
+      "rank": 65
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1166,
+      "win_rate": 58.3,
+      "rank": 71
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1194,
+      "win_rate": 57,
+      "rank": 66
+     }
+    ]
+   },
+   "reasoning": {
+    "mandatory": false,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "minimal",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "google/gemini-3.1-flash-lite",
+   "canonical_slug": "google/gemini-3.1-flash-lite-20260507",
+   "hugging_face_id": null,
+   "name": "Google: Gemini 3.1 Flash Lite",
+   "created": 1778168828,
+   "description": "Gemini 3.1 Flash Lite is Google’s GA high-efficiency multimodal model optimized for low-latency, high-volume workloads. It supports text, image, video, audio, and PDF inputs, and is designed for lightweight agentic...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "file",
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemini",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000025",
+    "completion": "0.0000015",
+    "image": "0.00000025",
+    "audio": "0.0000005",
+    "input_audio_cache": "0.00000005",
+    "web_search": "0.014",
+    "internal_reasoning": "0.0000015",
+    "input_cache_read": "0.000000025",
+    "input_cache_write": "0.0000000833333333333333"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemini-3.1-flash-lite-20260507/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "minimal",
+     "none"
+    ],
+    "default_effort": "minimal"
+   }
+  },
+  {
+   "id": "google/gemini-3.5-flash-lite",
+   "canonical_slug": "google/gemini-3.5-flash-lite-20260721",
+   "hugging_face_id": null,
+   "name": "Google: Gemini 3.5 Flash Lite",
+   "created": 1784646726,
+   "description": "Gemini 3.5 Flash Lite is a high-efficiency model from Google with upgraded agentic capabilities. It is suited for subagents that execute focused tasks within complex, multi-agent workflows.",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "file",
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemini",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000003",
+    "completion": "0.0000025",
+    "image": "0.0000003",
+    "audio": "0.0000003",
+    "input_audio_cache": "0.00000003",
+    "web_search": "0.014",
+    "internal_reasoning": "0.0000025",
+    "input_cache_read": "0.00000003",
+    "input_cache_write": "0.0000000833333333333333"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemini-3.5-flash-lite-20260721/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 11.7,
+     "coding_index": 49.3,
+     "agentic_index": 14.3
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "minimal"
+    ],
+    "default_effort": "minimal"
+   }
+  },
+  {
+   "id": "google/gemini-3.8-flash",
+   "canonical_slug": "google/gemini-3.8-flash-20260902",
+   "hugging_face_id": null,
+   "name": "Google: Gemini 3.8 Flash",
+   "created": 1788362056,
+   "description": "Gemini 3.8 Flash is Google's most intelligent Flash model with significant gains from 3.7 Flash across software engineering, agentic tasks, and multi-step reasoning.",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "file",
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemini",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000825",
+    "completion": "0.000004125",
+    "image": "0.000000825",
+    "audio": "0.000000825",
+    "input_audio_cache": "0.0000000825",
+    "web_search": "0.014",
+    "internal_reasoning": "0.000004125",
+    "input_cache_read": "0.0000000825",
+    "input_cache_write": "0.0000000416666666666667"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemini-3.8-flash-20260902/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 1083,
+      "win_rate": 33.8,
+      "rank": 31
+     },
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1194,
+      "win_rate": 55,
+      "rank": 5
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1244,
+      "win_rate": 48.1,
+      "rank": 11
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1273,
+      "win_rate": 53,
+      "rank": 5
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1236,
+      "win_rate": 54.6,
+      "rank": 8
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 1232,
+      "win_rate": 57.1,
+      "rank": 11
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1138,
+      "win_rate": 40.3,
+      "rank": 21
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1057,
+      "win_rate": 41.6,
+      "rank": 22
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1229,
+      "win_rate": 46.9,
+      "rank": 14
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1293,
+      "win_rate": 49.9,
+      "rank": 21
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1274,
+      "win_rate": 52.6,
+      "rank": 10
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1302,
+      "win_rate": 50.5,
+      "rank": 16
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1276,
+      "win_rate": 51.9,
+      "rank": 24
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1304,
+      "win_rate": 51.1,
+      "rank": 18
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1294,
+      "win_rate": 54.8,
+      "rank": 10
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1315,
+      "win_rate": 53.9,
+      "rank": 14
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1299,
+      "win_rate": 50.1,
+      "rank": 17
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 30.5,
+     "coding_index": 76.3,
+     "agentic_index": 40.2
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "google/gemma-4-31b-it:free",
+   "canonical_slug": "google/gemma-4-31b-it-20260402",
+   "hugging_face_id": "google/gemma-4-31B-it",
+   "name": "Google: Gemma 4 31B (free)",
+   "created": 1775148486,
+   "description": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image input with text output. Features a 256K token context window, configurable thinking/reasoning mode, native function...",
+   "context_length": 262144,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "image",
+     "text",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Gemma",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 32768,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "response_format",
+    "seed",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95,
+    "top_k": 64,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/google/gemma-4-31b-it-20260402/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 43.4,
+     "agentic_index": 4.2
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": false
+   }
+  },
+  {
+   "id": "inception/mercury-3",
+   "canonical_slug": "inception/mercury-3-20261019",
+   "hugging_face_id": null,
+   "name": "Inception: Mercury 3",
+   "created": 1792158337,
+   "description": "Mercury 3 is a diffusion-based language model from Inception, and the lab's most capable model to date. It is suited for agentic workflows and real-time applications where latency compounds, such...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.00000035",
+    "input_cache_read": "0.00000001"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/inception/mercury-3-20261019/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1227,
+      "win_rate": 45.2,
+      "rank": 53
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1203,
+      "win_rate": 45.1,
+      "rank": 59
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1221,
+      "win_rate": 44.7,
+      "rank": 47
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1178,
+      "win_rate": 43.2,
+      "rank": 40
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1232,
+      "win_rate": 45.5,
+      "rank": 48
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1226,
+      "win_rate": 45.3,
+      "rank": 55
+     }
+    ]
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "inclusionai/ling-3.1-flash",
+   "canonical_slug": "inclusionai/ling-3.1-flash-20261002",
+   "hugging_face_id": null,
+   "name": "inclusionAI: Ling 3.1 Flash",
+   "created": 1790950024,
+   "description": "Ling 3.1 Flash is a hybrid reasoning mixture-of-experts model from inclusionAI, with 25B active parameters out of 560B total.",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000075",
+    "completion": "0.000000225",
+    "input_cache_read": "0.000000015"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 262144,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/inclusionai/ling-3.1-flash-20261002/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true
+   }
+  },
+  {
+   "id": "meta/muse-spark-1.3",
+   "canonical_slug": "meta/muse-spark-1.3-20260902",
+   "hugging_face_id": null,
+   "name": "Meta: Muse Spark 1.3",
+   "created": 1788378359,
+   "description": "Muse Spark 1.3 is a multimodal reasoning model from Meta for long-running agentic, multi-agent, and coding workflows. It is designed to keep track of information across extended tasks, work through...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000125",
+    "completion": "0.00000425",
+    "web_search": "0.0025",
+    "input_cache_read": "0.00000015"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 943718,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/meta/muse-spark-1.3-20260902/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1149,
+      "win_rate": 57.6,
+      "rank": 10
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1312,
+      "win_rate": 60.8,
+      "rank": 3
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1223,
+      "win_rate": 50.5,
+      "rank": 11
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1201,
+      "win_rate": 51.4,
+      "rank": 10
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1094,
+      "win_rate": 29.9,
+      "rank": 16
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1284,
+      "win_rate": 56.5,
+      "rank": 7
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1393,
+      "win_rate": 63.5,
+      "rank": 7
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1288,
+      "win_rate": 54.4,
+      "rank": 5
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1351,
+      "win_rate": 57,
+      "rank": 7
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1344,
+      "win_rate": 58.2,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1342,
+      "win_rate": 56,
+      "rank": 9
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1322,
+      "win_rate": 55.2,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1346,
+      "win_rate": 57.8,
+      "rank": 5
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1355,
+      "win_rate": 58.2,
+      "rank": 2
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1241,
+      "win_rate": 45.8,
+      "rank": 7
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 36.4,
+     "coding_index": 75.8,
+     "agentic_index": 55.5
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low",
+     "minimal"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "meta/muse-spark-1.3-contributor",
+   "canonical_slug": "meta/muse-spark-1.3-contributor-20260902",
+   "hugging_face_id": null,
+   "name": "Meta: Muse Spark 1.3 Contributor",
+   "created": 1788381519,
+   "description": "Muse Spark 1.3 Contributor is the cost-efficient contributor tier of Meta’s multimodal reasoning model for experimentation, learning, and early-stage agentic, multi-agent, and coding workflows. It is designed to track information...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+file+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.0000002",
+    "web_search": "0.0025",
+    "input_cache_read": "0.000000002"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 943718,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/meta/muse-spark-1.3-contributor-20260902/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low",
+     "minimal"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "minimax/minimax-m3",
+   "canonical_slug": "minimax/minimax-m3-20260531",
+   "hugging_face_id": "MiniMaxAI/Minimax-M3",
+   "name": "MiniMax: MiniMax M3",
+   "created": 1780245374,
+   "description": "MiniMax-M3 is a multimodal foundation model from MiniMax. It supports text, image, and video inputs with text output, a 1M-token context window, and is suited for long-horizon agentic work, coding,...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000003",
+    "completion": "0.0000012",
+    "input_cache_read": "0.00000006"
+   },
+   "top_provider": {
+    "context_length": 524288,
+    "max_completion_tokens": 512000,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/minimax/minimax-m3-20260531/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "agenticgamedev",
+      "elo": 1112,
+      "win_rate": 44.2,
+      "rank": 18
+     },
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 1160,
+      "win_rate": 44.7,
+      "rank": 22
+     },
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1070,
+      "win_rate": 46,
+      "rank": 15
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1197,
+      "win_rate": 47.2,
+      "rank": 19
+     },
+     {
+      "arena": "agents",
+      "category": "htmlslides",
+      "elo": 1076,
+      "win_rate": 46.7,
+      "rank": 14
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1170,
+      "win_rate": 45.9,
+      "rank": 25
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 1254,
+      "win_rate": 60.2,
+      "rank": 5
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1161,
+      "win_rate": 47.3,
+      "rank": 16
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1069,
+      "win_rate": 46.3,
+      "rank": 20
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1191,
+      "win_rate": 47.1,
+      "rank": 23
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1206,
+      "win_rate": 50.1,
+      "rank": 47
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1158,
+      "win_rate": 46.3,
+      "rank": 39
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1245,
+      "win_rate": 50.6,
+      "rank": 44
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1234,
+      "win_rate": 51.1,
+      "rank": 45
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1210,
+      "win_rate": 45.5,
+      "rank": 51
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1158,
+      "win_rate": 44.7,
+      "rank": 46
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1241,
+      "win_rate": 50.5,
+      "rank": 44
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1256,
+      "win_rate": 51.6,
+      "rank": 41
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 18.7,
+     "coding_index": 58.6,
+     "agentic_index": 29.5
+    }
+   },
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "minimax/minimax-m3.1-flash",
+   "canonical_slug": "minimax/minimax-m3.1-flash-20261019",
+   "hugging_face_id": "MiniMaxAI/MiniMax-M3.1-Flash",
+   "name": "MiniMax: MiniMax M3.1 Flash",
+   "created": 1792379569,
+   "description": "MiniMax-M3.1-Flash is a multimodal model from MiniMax. Compared with M3, it delivers significant improvements across multiple benchmarks, particularly in complex agentic tasks, coding, and cybersecurity. It is built for complex,...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000075",
+    "completion": "0.0000003",
+    "input_cache_read": "0.0000000075",
+    "overrides": [
+     {
+      "utc_start": 1500,
+      "utc_end": 100,
+      "prompt": "0.000000075",
+      "completion": "0.0000003",
+      "input_cache_read": "0.0000000075"
+     },
+     {
+      "utc_start": 100,
+      "utc_end": 1500,
+      "prompt": "0.00000015",
+      "completion": "0.0000006",
+      "input_cache_read": "0.000000015"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 524288,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/minimax/minimax-m3.1-flash-20261019/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 28.9,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "max"
+   }
+  },
+  {
+   "id": "mistralai/mistral-large-4-0",
+   "canonical_slug": "mistralai/mistral-large-4-0-20261006",
+   "hugging_face_id": "mistralai/Mistral-Large-4-1T-A52B",
+   "name": "Mistral: Mistral Large 4",
+   "created": 1791294122,
+   "description": "Mistral Large 4 is a frontier multimodal (text and image input) model from Mistral AI built for reasoning, coding, and agentic workloads. It offers a 1M-token context window with up...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Mistral",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000007",
+    "completion": "0.0000021",
+    "input_cache_read": "0.00000007"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 262144,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logprobs",
+    "max_tokens",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/mistralai/mistral-large-4-0-20261006/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1248,
+      "win_rate": 45,
+      "rank": 33
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1206,
+      "win_rate": 43.5,
+      "rank": 23
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1258,
+      "win_rate": 46.7,
+      "rank": 40
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1275,
+      "win_rate": 51,
+      "rank": 26
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1226,
+      "win_rate": 42.3,
+      "rank": 45
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1231,
+      "win_rate": 45.3,
+      "rank": 20
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1269,
+      "win_rate": 47.6,
+      "rank": 31
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1256,
+      "win_rate": 47.3,
+      "rank": 42
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 26,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "none"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "mistralai/mistral-nemo",
+   "canonical_slug": "mistralai/mistral-nemo",
+   "hugging_face_id": "mistralai/Mistral-Nemo-Instruct-2407",
+   "name": "Mistral: Mistral Nemo",
+   "created": 1721347200,
+   "description": "A 12B parameter model with a 128k token context length built by Mistral in collaboration with NVIDIA. The model is multilingual, supporting English, French, German, Spanish, Italian, Portuguese, Chinese, Japanese,...",
+   "context_length": 131072,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Mistral",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000029",
+    "completion": "0.00000003"
+   },
+   "top_provider": {
+    "context_length": 131072,
+    "max_completion_tokens": 16384,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 0.3
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": "2024-04-30",
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/mistralai/mistral-nemo/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ]
+  },
+  {
+   "id": "mistralai/mistral-small-2603",
+   "canonical_slug": "mistralai/mistral-small-2603",
+   "hugging_face_id": "mistralai/Mistral-Small-4-119B-2603",
+   "name": "Mistral: Mistral Small 4",
+   "created": 1773695685,
+   "description": "Mistral Small 4 is the next major release in the Mistral Small family, unifying the capabilities of several flagship Mistral models into a single system. It combines strong reasoning from...",
+   "context_length": 262144,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Mistral",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000015",
+    "completion": "0.0000006",
+    "input_cache_read": "0.000000015"
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 209715,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "max_tokens",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/mistralai/mistral-small-2603/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 4.3,
+     "coding_index": 26.6,
+     "agentic_index": 0.8
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": false,
+    "supported_efforts": [
+     "high",
+     "none"
+    ],
+    "default_effort": "high"
+   }
+  },
+  {
+   "id": "moonshotai/kimi-k2.5",
+   "canonical_slug": "moonshotai/kimi-k2.5-0127",
+   "hugging_face_id": "moonshotai/Kimi-K2.5",
+   "name": "MoonshotAI: Kimi K2.5",
+   "created": 1769487076,
+   "description": "Kimi K2.5 is Moonshot AI's native multimodal model, delivering state-of-the-art visual coding capability and a self-directed agent swarm paradigm. Built on Kimi K2 with continued pretraining over approximately 15T mixed...",
+   "context_length": 262144,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000005",
+    "completion": "0.0000025",
+    "input_cache_read": "0.00000015"
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 235929,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/moonshotai/kimi-k2.5-0127/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 1116,
+      "win_rate": 57.8,
+      "rank": 28
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1114,
+      "win_rate": 54.5,
+      "rank": 28
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1219,
+      "win_rate": 59.8,
+      "rank": 15
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1147,
+      "win_rate": 54.7,
+      "rank": 30
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1124,
+      "win_rate": 51.6,
+      "rank": 32
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1202,
+      "win_rate": 53.1,
+      "rank": 49
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1163,
+      "win_rate": 46.5,
+      "rank": 34
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1234,
+      "win_rate": 54.1,
+      "rank": 48
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1219,
+      "win_rate": 51.3,
+      "rank": 53
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1205,
+      "win_rate": 53.4,
+      "rank": 55
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1146,
+      "win_rate": 48.4,
+      "rank": 52
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1231,
+      "win_rate": 53.6,
+      "rank": 49
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1248,
+      "win_rate": 55.2,
+      "rank": 45
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 46.8,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true
+   }
+  },
+  {
+   "id": "moonshotai/kimi-k3",
+   "canonical_slug": "moonshotai/kimi-k3-20260715",
+   "hugging_face_id": "moonshotai/Kimi-K3",
+   "name": "MoonshotAI: Kimi K3",
+   "created": 1784215858,
+   "description": "Kimi K3 is a 2.8T parameter open-weight multimodal reasoning model from Moonshot AI. It is suited for complex coding, knowledge work, and long-horizon agentic workflows, and is particularly strong at...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000192",
+    "completion": "0.000015",
+    "input_cache_read": "0.000000182"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 943718,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_completion_tokens",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": 0.95,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/moonshotai/kimi-k3-20260715/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "agenticgamedev",
+      "elo": 1202,
+      "win_rate": 53.9,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 1255,
+      "win_rate": 56.7,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 1176,
+      "win_rate": 44.3,
+      "rank": 7
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1315,
+      "win_rate": 61.8,
+      "rank": 2
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 1223,
+      "win_rate": 48.2,
+      "rank": 14
+     },
+     {
+      "arena": "agents",
+      "category": "htmlslides",
+      "elo": 1153,
+      "win_rate": 55.6,
+      "rank": 5
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1267,
+      "win_rate": 57.4,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 1268,
+      "win_rate": 61.9,
+      "rank": 4
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1219,
+      "win_rate": 54.8,
+      "rank": 6
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 1114,
+      "win_rate": 32.4,
+      "rank": 14
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1284,
+      "win_rate": 59.2,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1382,
+      "win_rate": 64.3,
+      "rank": 8
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1353,
+      "win_rate": 60,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1351,
+      "win_rate": 63.2,
+      "rank": 4
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1347,
+      "win_rate": 53.7,
+      "rank": 8
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1304,
+      "win_rate": 60,
+      "rank": 6
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1338,
+      "win_rate": 59.9,
+      "rank": 10
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1335,
+      "win_rate": 58.7,
+      "rank": 3
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 17.4,
+     "coding_index": 72,
+     "agentic_index": 29.3
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "high",
+     "low",
+     "none"
+    ],
+    "default_effort": "max"
+   }
+  },
+  {
+   "id": "nvidia/nemotron-3.5-super-vl",
+   "canonical_slug": "nvidia/nemotron-3.5-super-vl-20261015",
+   "hugging_face_id": "nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+   "name": "NVIDIA: Nemotron 3.5 Super VL",
+   "created": 1792076662,
+   "description": "NVIDIA Nemotron 3.5 Super VL is an open multimodal mixture-of-experts model from NVIDIA, with 12B active parameters out of 120B total. It takes text, images, documents, GUI screenshots, and video...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000015",
+    "completion": "0.0000005",
+    "input_cache_read": "0.00000002"
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 235929,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/nvidia/nemotron-3.5-super-vl-20261015/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1119,
+      "win_rate": 29.1,
+      "rank": 84
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1151,
+      "win_rate": 33.1,
+      "rank": 86
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1106,
+      "win_rate": 29.4,
+      "rank": 95
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1133,
+      "win_rate": 30.6,
+      "rank": 86
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1168,
+      "win_rate": 35.2,
+      "rank": 83
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 13.6,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "nvidia/nemotron-3.5-super-vl:free",
+   "canonical_slug": "nvidia/nemotron-3.5-super-vl-20261015",
+   "hugging_face_id": "nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+   "name": "NVIDIA: Nemotron 3.5 Super VL (free)",
+   "created": 1792076662,
+   "description": "NVIDIA Nemotron 3.5 Super VL is an open multimodal mixture-of-experts model from NVIDIA, with 12B active parameters out of 120B total. It takes text, images, documents, GUI screenshots, and video...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_tokens",
+    "reasoning",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/nvidia/nemotron-3.5-super-vl-20261015/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1119,
+      "win_rate": 29.1,
+      "rank": 84
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1151,
+      "win_rate": 33.1,
+      "rank": 86
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1106,
+      "win_rate": 29.4,
+      "rank": 95
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1133,
+      "win_rate": 30.6,
+      "rank": 86
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1168,
+      "win_rate": 35.2,
+      "rank": 83
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 13.6,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "openai/gpt-5-nano",
+   "canonical_slug": "openai/gpt-5-nano-2025-08-07",
+   "hugging_face_id": "",
+   "name": "OpenAI: GPT-5 Nano",
+   "created": 1754587402,
+   "description": "GPT-5-Nano is the smallest and fastest variant in the GPT-5 system, optimized for developer tools, rapid interactions, and ultra-low latency environments. While limited in reasoning depth compared to its larger...",
+   "context_length": 400000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000005",
+    "completion": "0.0000004",
+    "web_search": "0.01",
+    "input_cache_read": "0.000000005"
+   },
+   "top_provider": {
+    "context_length": 400000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": "2024-05-31",
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-5-nano-2025-08-07/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 963,
+      "win_rate": 36.3,
+      "rank": 119
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1082,
+      "win_rate": 48,
+      "rank": 111
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1056,
+      "win_rate": 46.2,
+      "rank": 110
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1043,
+      "win_rate": 46.5,
+      "rank": 116
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1061,
+      "win_rate": 51.9,
+      "rank": 108
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1101,
+      "win_rate": 48.9,
+      "rank": 111
+     }
+    ]
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "minimal"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "openai/gpt-6-astra",
+   "canonical_slug": "openai/gpt-6-astra-20260903",
+   "hugging_face_id": null,
+   "name": "OpenAI: GPT-6 Astra",
+   "created": 1788552838,
+   "description": "GPT-6 Astra is OpenAI's flagship model for demanding end-to-end work. It is suited for advanced analysis, software engineering, deep research, scientific work, and document creation, with particular strengths in long-horizon...",
+   "context_length": 1050000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "file",
+     "image",
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00001",
+    "completion": "0.00005",
+    "web_search": "0.01",
+    "input_cache_read": "0.000001",
+    "input_cache_write": "0.0000125",
+    "overrides": [
+     {
+      "min_prompt_tokens": 272000,
+      "prompt": "0.00002",
+      "completion": "0.000075",
+      "input_cache_read": "0.000002",
+      "input_cache_write": "0.000025"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1050000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-6-astra-20260903/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 56.9,
+     "coding_index": 76.9,
+     "agentic_index": 51
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "openai/gpt-6-luna",
+   "canonical_slug": "openai/gpt-6-luna-20260922",
+   "hugging_face_id": null,
+   "name": "OpenAI: GPT-6 Luna",
+   "created": 1790100786,
+   "description": "GPT-6 Luna is the fast, cost-efficient model in OpenAI's GPT-6 series, positioned below GPT-6 Sol. It is suited for high-volume and latency-sensitive workloads such as chat, classification, and lightweight agentic...",
+   "context_length": 1050000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "file",
+     "image",
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000001",
+    "completion": "0.0000005",
+    "web_search": "0.01",
+    "input_cache_read": "0.00000001",
+    "input_cache_write": "0.000000125",
+    "overrides": [
+     {
+      "min_prompt_tokens": 272000,
+      "prompt": "0.0000002",
+      "completion": "0.00000075",
+      "input_cache_read": "0.00000002",
+      "input_cache_write": "0.00000025"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1050000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-6-luna-20260922/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 27.8,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "openai/gpt-6.1-terra",
+   "canonical_slug": "openai/gpt-6.1-terra-20261026",
+   "hugging_face_id": null,
+   "name": "OpenAI: GPT-6.1 Terra",
+   "created": 1793038409,
+   "description": "GPT-6.1 Terra is the mid-tier model in OpenAI's GPT-6.1 series, priced below GPT-6.1 Sol. It is suited for everyday agentic, coding, and writing work, is particularly strong at understanding screenshots...",
+   "context_length": 1050000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "file",
+     "image",
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000001",
+    "completion": "0.000005",
+    "web_search": "0.01",
+    "input_cache_read": "0.00000005",
+    "input_cache_write": "0.00000125",
+    "overrides": [
+     {
+      "min_prompt_tokens": 272000,
+      "prompt": "0.000002",
+      "completion": "0.0000075",
+      "input_cache_read": "0.0000001",
+      "input_cache_write": "0.0000025"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1050000,
+    "max_completion_tokens": 128000,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-6.1-terra-20261026/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 51,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "xhigh",
+     "high",
+     "medium",
+     "low",
+     "none"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "openai/gpt-oss-120b",
+   "canonical_slug": "openai/gpt-oss-120b",
+   "hugging_face_id": "openai/gpt-oss-120b",
+   "name": "OpenAI: gpt-oss-120b",
+   "created": 1754414231,
+   "description": "gpt-oss-120b is an open-weight, 117B-parameter Mixture-of-Experts (MoE) language model from OpenAI designed for high-reasoning, agentic, and general-purpose production use cases. It activates 5.1B parameters per forward pass and is optimized...",
+   "context_length": 131072,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000015",
+    "completion": "0.0000006",
+    "input_cache_read": "0.000000075"
+   },
+   "top_provider": {
+    "context_length": 131072,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_a",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "frequency_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": "2024-06-30",
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-oss-120b/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 898,
+      "win_rate": 29.4,
+      "rank": 122
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 961,
+      "win_rate": 33.4,
+      "rank": 135
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 987,
+      "win_rate": 43.6,
+      "rank": 119
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 992,
+      "win_rate": 40.5,
+      "rank": 124
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 921,
+      "win_rate": 35.7,
+      "rank": 128
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 966,
+      "win_rate": 32.5,
+      "rank": 137
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 30.4,
+     "agentic_index": 3.7
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "openai/gpt-oss-20b",
+   "canonical_slug": "openai/gpt-oss-20b",
+   "hugging_face_id": "openai/gpt-oss-20b",
+   "name": "OpenAI: gpt-oss-20b",
+   "created": 1754414229,
+   "description": "gpt-oss-20b is an open-weight 21B parameter model released by OpenAI under the Apache 2.0 license. It uses a Mixture-of-Experts (MoE) architecture with 3.6B active parameters per forward pass, optimized for...",
+   "context_length": 131072,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "GPT",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.000000018",
+    "completion": "0.00000009",
+    "input_cache_read": "0.000000009"
+   },
+   "top_provider": {
+    "context_length": 131072,
+    "max_completion_tokens": 32768,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "frequency_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": "2024-06-30",
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/openai/gpt-oss-20b/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 933,
+      "win_rate": 39.7,
+      "rank": 125
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 852,
+      "win_rate": 27.9,
+      "rank": 143
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 20.7,
+     "agentic_index": 1.2
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low"
+    ],
+    "default_effort": "medium"
+   }
+  },
+  {
+   "id": "qwen/qwen3.7-flash",
+   "canonical_slug": "qwen/qwen3.7-flash-20260727",
+   "hugging_face_id": null,
+   "name": "Qwen: Qwen3.7 Flash",
+   "created": 1785190561,
+   "description": "Qwen3.7 Flash is a vision-language reasoning model from Alibaba. It is suited for multimodal agents, visual coding, search, and computer interaction, with strengths in object recognition, spatial understanding, and real-world...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Qwen",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000003",
+    "completion": "0.00000013",
+    "input_cache_read": "0.000000006",
+    "input_cache_write": "0.000000038",
+    "overrides": [
+     {
+      "min_prompt_tokens": 32000,
+      "prompt": "0.0000001",
+      "completion": "0.0000004",
+      "input_cache_read": "0.00000002",
+      "input_cache_write": "0.000000125"
+     },
+     {
+      "min_prompt_tokens": 256000,
+      "prompt": "0.0000002",
+      "completion": "0.0000008",
+      "input_cache_read": "0.00000004",
+      "input_cache_write": "0.00000025"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 65536,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "logprobs",
+    "max_tokens",
+    "presence_penalty",
+    "reasoning",
+    "response_format",
+    "seed",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/qwen/qwen3.7-flash-20260727/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supports_max_tokens": true
+   }
+  },
+  {
+   "id": "qwen/qwen3.7-plus",
+   "canonical_slug": "qwen/qwen3.7-plus-20260602",
+   "hugging_face_id": null,
+   "name": "Qwen: Qwen3.7 Plus",
+   "created": 1780491783,
+   "description": "Qwen3.7-Plus is a cost-effective model in Alibaba's Qwen3.7 series. It supports text and image input with text output, building on the series' text capabilities with a comprehensive upgrade to its...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Qwen",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000032",
+    "completion": "0.00000128",
+    "input_cache_read": "0.000000064",
+    "input_cache_write": "0.0000004",
+    "overrides": [
+     {
+      "min_prompt_tokens": 256000,
+      "prompt": "0.00000096",
+      "completion": "0.00000384",
+      "input_cache_read": "0.000000192",
+      "input_cache_write": "0.0000012"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logprobs",
+    "max_tokens",
+    "presence_penalty",
+    "reasoning",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/qwen/qwen3.7-plus-20260602/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1236,
+      "win_rate": 48.4,
+      "rank": 39
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1140,
+      "win_rate": 41.3,
+      "rank": 48
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1267,
+      "win_rate": 50.2,
+      "rank": 34
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1278,
+      "win_rate": 51.2,
+      "rank": 23
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1261,
+      "win_rate": 49.3,
+      "rank": 35
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1205,
+      "win_rate": 46.6,
+      "rank": 27
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1257,
+      "win_rate": 48.9,
+      "rank": 38
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1268,
+      "win_rate": 50.4,
+      "rank": 32
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 55.9,
+     "agentic_index": 17.5
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true
+   }
+  },
+  {
+   "id": "qwen/qwen3.8-flash",
+   "canonical_slug": "qwen/qwen3.8-flash-20260826",
+   "hugging_face_id": "Qwen/Qwen3.8-Flash-Next",
+   "name": "Qwen: Qwen3.8 Flash",
+   "created": 1787773060,
+   "description": "Qwen3.8 Flash is a multimodal reasoning model from Alibaba. It is suited for coding assistance, agentic workflows, visual understanding, document and codebase analysis, desktop interaction, chart analysis, and long-video analysis.",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Qwen",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000015",
+    "completion": "0.00000047",
+    "input_cache_read": "0.000000016"
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logprobs",
+    "max_tokens",
+    "presence_penalty",
+    "reasoning",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/qwen/qwen3.8-flash-20260826/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supports_max_tokens": true
+   }
+  },
+  {
+   "id": "x-ai/grok-4.3",
+   "canonical_slug": "x-ai/grok-4.3-20260430",
+   "hugging_face_id": null,
+   "name": "SpaceXAI: Grok 4.3",
+   "created": 1777591821,
+   "description": "Grok 4.3 is a reasoning model from SpaceXAI. It accepts text and image inputs with text output, and is suited for agentic workflows, instruction-following tasks, and applications requiring high factual...",
+   "context_length": 1000000,
+   "architecture": {
+    "modality": "text+image+file->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "file"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Grok",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000125",
+    "completion": "0.0000025",
+    "web_search": "0.005",
+    "input_cache_read": "0.0000002",
+    "overrides": [
+     {
+      "min_prompt_tokens": 200000,
+      "prompt": "0.0000025",
+      "completion": "0.000005",
+      "input_cache_read": "0.0000004"
+     }
+    ]
+   },
+   "top_provider": {
+    "context_length": 1000000,
+    "max_completion_tokens": 900000,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "include_reasoning",
+    "logprobs",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/x-ai/grok-4.3-20260430/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "agents",
+      "category": "agenticgamedev",
+      "elo": 955,
+      "win_rate": 28.9,
+      "rank": 25
+     },
+     {
+      "arena": "agents",
+      "category": "agentichtmlslides",
+      "elo": 1066,
+      "win_rate": 31.8,
+      "rank": 9
+     },
+     {
+      "arena": "agents",
+      "category": "agenticslides",
+      "elo": 1072,
+      "win_rate": 31.9,
+      "rank": 9
+     },
+     {
+      "arena": "agents",
+      "category": "agenticslides(html)",
+      "elo": 1066,
+      "win_rate": 31.7,
+      "rank": 9
+     },
+     {
+      "arena": "agents",
+      "category": "agenticslides(python-pptx)",
+      "elo": 1068,
+      "win_rate": 32.4,
+      "rank": 9
+     },
+     {
+      "arena": "agents",
+      "category": "androidnative",
+      "elo": 960,
+      "win_rate": 22.7,
+      "rank": 38
+     },
+     {
+      "arena": "agents",
+      "category": "blender3d",
+      "elo": 769,
+      "win_rate": 12.4,
+      "rank": 24
+     },
+     {
+      "arena": "agents",
+      "category": "fullstack",
+      "elo": 1006,
+      "win_rate": 28.1,
+      "rank": 40
+     },
+     {
+      "arena": "agents",
+      "category": "godotgamedev",
+      "elo": 914,
+      "win_rate": 20.7,
+      "rank": 36
+     },
+     {
+      "arena": "agents",
+      "category": "htmlslides",
+      "elo": 905,
+      "win_rate": 28.4,
+      "rank": 25
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1058,
+      "win_rate": 33.4,
+      "rank": 45
+     },
+     {
+      "arena": "agents",
+      "category": "pdf",
+      "elo": 950,
+      "win_rate": 24,
+      "rank": 18
+     },
+     {
+      "arena": "agents",
+      "category": "pptxslides",
+      "elo": 1071,
+      "win_rate": 32.5,
+      "rank": 8
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1072,
+      "win_rate": 30.8,
+      "rank": 27
+     },
+     {
+      "arena": "agents",
+      "category": "spreadsheet",
+      "elo": 927,
+      "win_rate": 34.5,
+      "rank": 26
+     },
+     {
+      "arena": "agents",
+      "category": "webapps",
+      "elo": 1114,
+      "win_rate": 42.8,
+      "rank": 34
+     },
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1122,
+      "win_rate": 40.8,
+      "rank": 82
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1123,
+      "win_rate": 42.4,
+      "rank": 54
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1185,
+      "win_rate": 43.5,
+      "rank": 66
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1180,
+      "win_rate": 45.1,
+      "rank": 67
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1171,
+      "win_rate": 42.7,
+      "rank": 67
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1079,
+      "win_rate": 36.9,
+      "rank": 71
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1188,
+      "win_rate": 44.9,
+      "rank": 65
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1194,
+      "win_rate": 44,
+      "rank": 67
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": null,
+     "coding_index": 42.2,
+     "agentic_index": 15.5
+    }
+   },
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+     "high",
+     "medium",
+     "low",
+     "none"
+    ],
+    "default_effort": "low"
+   }
+  },
+  {
+   "id": "xiaomi/mimo-v2.6-flash",
+   "canonical_slug": "xiaomi/mimo-v2.6-flash-20260921",
+   "hugging_face_id": "XiaomiMiMo/MiMo-V2.6-Flash-RL",
+   "name": "Xiaomi: MiMo-V2.6-Flash",
+   "created": 1790021264,
+   "description": "MiMo-V2.6-Flash is an open-source foundation model developed by Xiaomi. Built on a Mixture-of-Experts architecture with 309B total parameters and 15B activated per token, it employs a hybrid attention mechanism for...",
+   "context_length": 1050000,
+   "architecture": {
+    "modality": "text+image+audio+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000014",
+    "completion": "0.00000028",
+    "input_cache_read": "0.0000000028"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95,
+    "frequency_penalty": 0
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/xiaomi/mimo-v2.6-flash-20260921/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [],
+    "artificial_analysis": {
+     "intelligence_index": 26.7,
+     "coding_index": null,
+     "agentic_index": null
+    }
+   },
+   "reasoning": {
+    "mandatory": false
+   }
+  },
+  {
+   "id": "xingchen-agi/xing4.0-29b-a4b:free",
+   "canonical_slug": "xingchen-agi/xing4.0-29b-a4b-20261015",
+   "hugging_face_id": "XingChen-AGI/Xing4.0-29B-A4B",
+   "name": "XingChen: Xing4.0 29B A4B (free)",
+   "created": 1792177496,
+   "description": "Xing4.0-29B-A4B is an open-weight mixture-of-experts language model from China Telecom's AI team (TeleAI) and the successor to the TeleChat series. It has 29B total parameters with 4B active per token...",
+   "context_length": 262144,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 262144,
+    "max_completion_tokens": 235929,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95,
+    "repetition_penalty": 1.05
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/xingchen-agi/xing4.0-29b-a4b-20261015/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "reasoning": {
+    "mandatory": false,
+    "default_enabled": true
+   }
+  },
+  {
+   "id": "z-ai/glm-5.3",
+   "canonical_slug": "z-ai/glm-5.3-20260816",
+   "hugging_face_id": "zai-org/GLM-5.3",
+   "name": "Z.ai: GLM 5.3",
+   "created": 1787086655,
+   "description": "GLM-5.3 is a large-scale reasoning model from Z.ai, built for complex software engineering and long-horizon agent tasks. It supports text input and output with a 1M-token context window, and improves...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text->text",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.00000008",
+    "completion": "0.0000036",
+    "input_cache_read": "0.000000076"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 943718,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/z-ai/glm-5.3-20260816/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1329,
+      "win_rate": 59.2,
+      "rank": 16
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1208,
+      "win_rate": 47.6,
+      "rank": 21
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1298,
+      "win_rate": 53.6,
+      "rank": 17
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1261,
+      "win_rate": 51.8,
+      "rank": 31
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1305,
+      "win_rate": 52,
+      "rank": 17
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1275,
+      "win_rate": 54.8,
+      "rank": 15
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1295,
+      "win_rate": 54.3,
+      "rank": 19
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1291,
+      "win_rate": 53.6,
+      "rank": 19
+     },
+     {
+      "arena": "agents",
+      "category": "htmlslides",
+      "elo": 1189,
+      "win_rate": 39.1,
+      "rank": 2
+     },
+     {
+      "arena": "agents",
+      "category": "mobileapps",
+      "elo": 1192,
+      "win_rate": 52.2,
+      "rank": 19
+     },
+     {
+      "arena": "agents",
+      "category": "python-pptxslides",
+      "elo": 1214,
+      "win_rate": 51.2,
+      "rank": 9
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 31.7,
+     "coding_index": 74.8,
+     "agentic_index": 53.1
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "high",
+     "low"
+    ],
+    "default_effort": "max"
+   }
+  },
+  {
+   "id": "z-ai/glm-5.3-flash",
+   "canonical_slug": "z-ai/glm-5.3-flash-20260826",
+   "hugging_face_id": "zai-org/GLM-5.3-Flash",
+   "name": "Z.ai: GLM 5.3 Flash",
+   "created": 1787752741,
+   "description": "GLM-5.3-Flash is a native multimodal model from Z.ai. It is suited for efficient coding and long-horizon agent tasks. Its hybrid sparse and linear attention architecture maintains accurate long-context behavior while...",
+   "context_length": 1048576,
+   "architecture": {
+    "modality": "text+image+video->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video"
+    ],
+    "output_modalities": [
+     "text"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0.0000000197",
+    "completion": "0.0000001324",
+    "input_cache_read": "0.0000000197"
+   },
+   "top_provider": {
+    "context_length": 1048576,
+    "max_completion_tokens": 131072,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ],
+   "default_parameters": {
+    "temperature": 1,
+    "top_p": 0.95
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/z-ai/glm-5.3-flash-20260826/endpoints"
+   },
+   "endpoints": [
+    "/api/v1/chat/completions",
+    "/api/v1/completions",
+    "/api/v1/messages",
+    "/api/v1/responses"
+   ],
+   "benchmarks": {
+    "design_arena": [
+     {
+      "arena": "models",
+      "category": "3d",
+      "elo": 1315,
+      "win_rate": 56.3,
+      "rank": 18
+     },
+     {
+      "arena": "models",
+      "category": "asciiart",
+      "elo": 1272,
+      "win_rate": 54.9,
+      "rank": 12
+     },
+     {
+      "arena": "models",
+      "category": "codecategories",
+      "elo": 1279,
+      "win_rate": 49.2,
+      "rank": 25
+     },
+     {
+      "arena": "models",
+      "category": "dataviz",
+      "elo": 1260,
+      "win_rate": 50.1,
+      "rank": 32
+     },
+     {
+      "arena": "models",
+      "category": "gamedev",
+      "elo": 1274,
+      "win_rate": 46.8,
+      "rank": 24
+     },
+     {
+      "arena": "models",
+      "category": "svg",
+      "elo": 1279,
+      "win_rate": 55.8,
+      "rank": 13
+     },
+     {
+      "arena": "models",
+      "category": "uicomponent",
+      "elo": 1305,
+      "win_rate": 53.3,
+      "rank": 16
+     },
+     {
+      "arena": "models",
+      "category": "website",
+      "elo": 1270,
+      "win_rate": 48.4,
+      "rank": 29
+     }
+    ],
+    "artificial_analysis": {
+     "intelligence_index": 27.8,
+     "coding_index": 71.5,
+     "agentic_index": 50.9
+    }
+   },
+   "reasoning": {
+    "mandatory": true,
+    "default_enabled": true,
+    "supported_efforts": [
+     "max",
+     "high",
+     "low"
+    ],
+    "default_effort": "max"
+   }
+  }
+ ]
+}
