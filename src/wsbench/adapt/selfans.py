@@ -155,7 +155,11 @@ class JsonCache:
         self.d: dict[str, Any] = {}
         self._lock = threading.Lock()
         if path.exists():
-            for line in path.read_text(encoding="utf-8").split("\n"):
+            text = path.read_text(encoding="utf-8")
+            if text and not text.endswith("\n"):  # a run killed mid-append: close the torn line
+                with path.open("a", encoding="utf-8") as fh:  # so the next put starts clean
+                    fh.write("\n")
+            for line in text.split("\n"):
                 if not line.strip():
                     continue
                 try:  # a run killed mid-append leaves a partial line: skip it (re-asked later)
