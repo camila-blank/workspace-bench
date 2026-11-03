@@ -563,6 +563,7 @@ class RemoteRunner(Runner):
         if trust_remote_code is None:
             trust_remote_code = s.trust_remote_code
         self.replicas = replicas or s.modal_replicas
+        self.reply_end = s.reply_end  # Kimi-K3: replies are cut at "<|close|>" (``_cut``)
         self.hf_id, self.revision, self.seed = hf_id, revision, seed
         self.tok = subjects.load_tokenizer(hf_id, revision, tokenizer_dir, chat_template,
                                            trust_remote_code)  # fmt: skip
@@ -584,6 +585,12 @@ class RemoteRunner(Runner):
         lead = self._lead
         return ids if not lead or ids[: len(lead)] == lead else lead + ids
 
+    def _cut(self, text: str) -> str:
+        """The reply up to the subject's ``reply_end`` marker (a non-special marker the engine
+        does not stop on and the detokenizer keeps), else unchanged."""
+        end = getattr(self, "reply_end", None)
+        return text.split(end, 1)[0] if end else text
+
     def _calls(self, method: Any, args: list[tuple]) -> list:
         """One remote call per chunk: in order, or fanned over the subject's replicas."""
         if self.replicas > 1 and len(args) > 1:
@@ -599,7 +606,8 @@ class RemoteRunner(Runner):
         extra = (top_k,) if top_k != -1 else ()
         args = [(prompts[i : i + n], [a.max_tokens for a in asks[i : i + n]], draws, temperature,
                  top_p, self.seed + i, *extra) for i in range(0, len(prompts), n)]  # fmt: skip
-        return [r for part in self._calls(self.remote.sample, args) for r in part]
+        return [(self._cut(g), [self._cut(x) for x in ss])
+                for part in self._calls(self.remote.sample, args) for g, ss in part]  # fmt: skip
 
     def generate(
         self,
@@ -614,7 +622,9 @@ class RemoteRunner(Runner):
         n = self.CHUNK
         args = [(ids[i : i + n], temperature, max_tokens, seed + i, top_p, stop_token_ids)
                 for i in range(0, len(ids), n)]  # fmt: skip
-        return [r for part in self._calls(self.remote.generate, args) for r in part]
+        # ``text`` cut at reply_end; ``ids`` stay every generated token
+        return [{**r, "text": self._cut(r["text"])}
+                for part in self._calls(self.remote.generate, args) for r in part]  # fmt: skip
 
     # ---- plan 0060 Phase E (wrong_intermediate logP legs): scored on Modal from local token ids --
     def cont_logprobs(self, prompts: list[str], conts: list[str]) -> list[float]:

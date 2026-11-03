@@ -22,7 +22,7 @@ import json
 from wsbench.registry import frozen_bank_path
 
 from . import store
-from .template import markers
+from .template import XTML_OPEN, markers
 
 CARRY = ("jailbreak_recognition", "multi_concept_directed_modulation")
 
@@ -51,7 +51,8 @@ def restamp_read(tok, messages: list[dict]) -> dict:
     end_id, start_id = mk["turn_end_id"], mk["turn_start_id"]
     turn_end = max(i for i, t in enumerate(ids) if t == end_id)
     head = max(i for i, t in enumerate(ids[:turn_end]) if t == start_id)
-    start = head + 1
+    # Kimi-K3's XTML header (<|open|>message role="user"<|sep|>) is skipped whole: header_len
+    start = head + (mk["header_len"] if mk["turn_start"] == XTML_OPEN else 1)
     while start < turn_end and tok.decode([ids[start]]).strip() in ("user", ""):
         start += 1  # skip the role name and the newline after it
     n = turn_end - start
