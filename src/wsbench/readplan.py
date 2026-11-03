@@ -1170,8 +1170,10 @@ def vector_file(entry: dict[str, Any], bank_file: Path) -> str:
     """A bank ``vectors`` entry's file as the producer resolves it (absolute, or relative to
     REPO_ROOT). Plan 0060 A2: an entry with ``"relative_to": "bank"`` names a path beside the
     bank file (an adapted set's own vectors, ``adapted/<m>/introspection/vectors/...``). Under
-    ``WSB_BANK_ROOT`` any other relative path is an error: it would load the registered
-    (Qwen3.6-27B) vectors into another subject."""
+    ``WSB_BANK_ROOT`` a relative path into the registered ``evals/`` tree is an error: it would
+    load the registered (Qwen3.6-27B) vectors into another subject. A REPO_ROOT-relative path
+    elsewhere (``adapted/<m>/introspection/vectors/…``, what ``wsbench.adapt.introspection``
+    writes) is the subject's own and is kept."""
     path = str(entry["path"])
     if entry.get("relative_to") == "bank":
         p = (bank_file.parent / path).resolve()
@@ -1179,10 +1181,10 @@ def vector_file(entry: dict[str, Any], bank_file: Path) -> str:
             return str(p.relative_to(REPO_ROOT))
         except ValueError:
             return str(p)
-    if os.environ.get(BANK_ROOT_ENV) and not Path(path).is_absolute():
+    if os.environ.get(BANK_ROOT_ENV) and Path(path).parts[:1] == ("evals",):
         raise SystemExit(
-            f"introspection: vectors path {path!r} resolves under REPO_ROOT (the registered "
-            f'vectors) on an adapted bank; set "relative_to": "bank" on the entry'
+            f"introspection: vectors path {path!r} is the registered (Qwen3.6-27B) vectors on "
+            "an adapted bank; name the subject's own vectors"
         )
     return path
 

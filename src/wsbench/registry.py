@@ -152,14 +152,21 @@ def merge_overlay(
         dst = out
         for p in parts[:-1]:
             dst = dst.setdefault(p, {})
+            if not isinstance(dst, dict):
+                raise SystemExit(f"{where}: {path} shape differs from the registered file")
+        reg = dst.get(parts[-1])
+        if not isinstance(src, (list, Mapping)):
+            raise SystemExit(f"{where}: {path!r} must be a map or a list")
+        if reg is not None and isinstance(reg, list) != isinstance(src, list):
+            raise SystemExit(f"{where}: {path} shape differs from the registered file")
+        if reg is not None and not isinstance(reg, (list, Mapping)):
+            raise SystemExit(f"{where}: {path} shape differs from the registered file")
         if isinstance(src, list):
             have_l = list(dst.get(parts[-1]) or [])
             new = [x for x in src if x not in have_l]
             dst[parts[-1]] = have_l + new
             added |= {f"{path}/{x}" for x in new}
             continue
-        if not isinstance(src, Mapping):
-            raise SystemExit(f"{where}: {path!r} must be a map or a list")
         have = dst.setdefault(parts[-1], {})
         for k, v in src.items():
             if k in have:
