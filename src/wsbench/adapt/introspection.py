@@ -259,6 +259,12 @@ def cont_ids(tok: Any, rendered: str, words: Sequence[str]) -> tuple[dict[str, l
     return out, loose
 
 
+def job_sha(job: dict[str, Any]) -> str:
+    """The job's identity (everything but the stamp itself): every downstream file carries it."""
+    body = {k: v for k, v in job.items() if k != "job_sha"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def paper_words(bank: dict[str, Any]) -> list[str]:
     return [c["word"] for c in bank["concepts"] if c.get("source") == "paper"]
 
@@ -310,7 +316,7 @@ def build_job(
         if it["prompt_key"] == f"trial{trial}" and float(it["beta"]) == HEAD_TIER
     }
     partner = {c["word"]: c["cross_partner"] for c in bank["concepts"]}
-    return {
+    job = {
         "model": model,
         "hf_id": s.hf_id,
         "revision": s.revision,
@@ -344,6 +350,8 @@ def build_job(
         "cross_partner": partner,
         "renders": {k: {kk: v for kk, v in r.items() if kk != "_text"} for k, r in renders.items()},
     }
+    job["job_sha"] = job_sha(job)
+    return job
 
 
 # ---------------------------------------------------------------- the GPU side
@@ -497,6 +505,7 @@ def measure(
                             "reply": reply,
                         }
                     )
+    sweep["job_sha"] = job.get("job_sha")  # an external runner's result carries it back too
     return {"concept": concept, "gaussian": gauss, "sweep": sweep}
 
 
@@ -837,7 +846,16 @@ def stage_job(model: str, tok: Any = None) -> dict[str, Any]:
 
         tok = tokenizer(model)
     job = build_job(model, tok)
-    store.write_json(work_dir(model) / "job.json", job)
+    old = work_dir(model) / "job.json"
+    if (
+        old.exists()
+        and json.loads(old.read_text(encoding="utf-8")).get("job_sha") != job["job_sha"]
+    ):
+        w = work_dir(model)
+        stale = [w / "sweep.json", w / "calibration.json", _bank_path(model)]
+        stale += sorted((w / "vectors").glob("*.npy"))
+        _unlink(stale, "the job changed")
+    store.write_json(old, job)
     print(
         f"{FAMILY} job: inject block {job['inject_layer']} of {job['n_layers']}, "
         f"{len(job['renders'])} renders, {job['protocol']['n_loose']} loose continuations"
@@ -845,8 +863,25 @@ def stage_job(model: str, tok: Any = None) -> dict[str, Any]:
     return job
 
 
+def _bank_path(model: str) -> Path:
+    return store.model_dir(model) / f"{FAMILY}.json"
+
+
+def _unlink(paths: Sequence[Path], why: str) -> None:
+    for p in paths:
+        if p.exists():
+            p.unlink()
+            print(f"{FAMILY}: removed {_rel(p)} ({why})")
+
+
 def _write_result(model: str, job: dict[str, Any], res: dict[str, Any]) -> None:
     import numpy as np
+
+    if res["sweep"].get("job_sha") != job.get("job_sha"):
+        raise SystemExit(
+            f"{FAMILY}: the result was measured on job {res['sweep'].get('job_sha')}, not on "
+            f"the current job.json ({job.get('job_sha')}); re-run measure on this job"
+        )
 
     if res["concept"].shape[0] != len(job["words"]):
         raise SystemExit(f"{FAMILY}: result has {res['concept'].shape[0]} concept rows")
@@ -858,10 +893,7 @@ def _write_result(model: str, job: dict[str, Any], res: dict[str, Any]) -> None:
     if list(sw.get("beta0", {}).get("rr", {})) != list(job["protocol"]["paper_words"]):
         raise SystemExit(f"{FAMILY}: result words do not match the job's paper words")
     # new vectors void everything built from the old ones (the bank records their sha256)
-    for stale in (work_dir(model) / "calibration.json", store.model_dir(model) / f"{FAMILY}.json"):
-        if stale.exists():
-            stale.unlink()
-            print(f"{FAMILY} measure: removed stale {_rel(stale)}")
+    _unlink([work_dir(model) / "calibration.json", _bank_path(model)], "new vectors")
     paths = vector_paths(model, int(job["inject_layer"]))
     paths["concept"].parent.mkdir(parents=True, exist_ok=True)
     np.save(paths["concept"], res["concept"].astype(np.float32))
@@ -965,7 +997,9 @@ def stage_calibrate(model: str, use_coherence: bool = True) -> dict[str, Any]:
                 f"{FAMILY}: {n_rated}/{n_total} neutral replies rated; re-run stage=coherence "
                 "(undecided ratings are retried) or coherence=off"
             )
+    _unlink([_bank_path(model)], "a new calibration voids its dose")
     cal = calibrate(sweep, coh)
+    cal["job_sha"] = sweep.get("job_sha")
     cal["coherence_coverage"] = None if coh is None else {"rated": n_total, "total": n_total}
     store.write_json(work_dir(model) / "calibration.json", cal)
     print(
@@ -981,7 +1015,13 @@ def stage_build(model: str) -> dict[str, Any] | None:
     bank = registered_bank()
     job, cal = _read(work_dir(model) / "job.json"), _read(work_dir(model) / "calibration.json")
     target = len(bank["items"])
+    if cal.get("job_sha") != job.get("job_sha"):
+        raise SystemExit(
+            f"{FAMILY}: calibration.json is for job {cal.get('job_sha')}, job.json is "
+            f"{job.get('job_sha')}; re-run measure and calibrate"
+        )
     if not cal["GO"]:
+        _unlink([_bank_path(model)], "NO-GO")
         _report(
             model,
             status="blocked",
