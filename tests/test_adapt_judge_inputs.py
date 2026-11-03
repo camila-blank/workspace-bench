@@ -17,12 +17,6 @@ from wsbench import readplan, registry
 from wsbench.adapt import judge_inputs as ji
 
 ALL = sorted(ji.FAMILIES)
-# registered-bank hazards the table knowingly flags (bank of record, not an adapt problem)
-KNOWN_REGISTERED = {
-    # the 'butter' distractor has an empty option_units list (it never hits); butter and corn
-    # carries its forms
-    ("model_specific_directed_modulation", "s3b1_sapporo_miso_ramen_topping"),
-}
 
 
 def _bank(family):
@@ -141,7 +135,7 @@ def test_every_registered_item_passes(family):
     bad = {}
     for it in items:
         got = ji.check_item(family, it, header, registered=True, adapted_bank=False)
-        if got and (family, ji.item_id(it)) not in KNOWN_REGISTERED:
+        if got:
             bad[ji.item_id(it)] = got
     assert not bad, dict(list(bad.items())[:3])
 
@@ -435,14 +429,19 @@ def test_check_bank_accepts_every_registered_bank(family):
     header, items, _ = _bank(family)
     got = ji.check_bank(family, header, items)
     # check_bank judges a bank as ADAPTED: typo_mt's registered header has no native_langs,
-    # which an adapted header must carry (A1.10); known registered-bank hazards are allowlisted
-    got = {
-        iid: [
-            p
-            for p in ps
-            if not p.startswith("missing: header.contract.native_langs")
-            and not ((family, iid) in KNOWN_REGISTERED and p.startswith("hazard"))
-        ]
-        for iid, ps in got.items()
-    }
+    # which an adapted header must carry (A1.10)
+    if family == "typo_mt":
+        got = {
+            iid: [p for p in ps if not p.startswith("missing: header.contract.native_langs")]
+            for iid, ps in got.items()
+        }
     assert not {k: v for k, v in got.items() if v}, dict(list(got.items())[:3])
+
+
+def test_known_empty_option_units_are_not_flagged():
+    _h, items, _ = _bank("model_specific_directed_modulation")
+    it = next(i for i in items if (i["id"], "butter") in ji.KNOWN_EMPTY_OPTION_UNITS)
+    assert it["option_units"]["butter"] == []
+    assert ji.check_item("model_specific_directed_modulation", it) == []
+    other = _clone("model_specific_directed_modulation", it)  # another id: still flagged
+    assert any("butter" in p for p in ji.check_item("model_specific_directed_modulation", other))
