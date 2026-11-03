@@ -147,6 +147,33 @@ def _fake_opus(lines: dict[str, list[str]]):
     return ask, calls
 
 
+def _assert_a1_overlay_ships_row(family: str, reg: dict, row: dict) -> None:
+    """A1's freeze (``run.build_original``): the REGISTERED item, restamped from the gate record,
+    with ``gate_variant`` / ``needs_reasons`` and ONLY ``families.SUBJECT_FIELDS`` laid over it
+    from the row. It must ship exactly the row's item (minus ``adapt`` and the marker): a field
+    a stage writes that SUBJECT_FIELDS lacks would otherwise ship as Qwen's."""
+    import copy
+
+    it = run.restamp(family, copy.deepcopy(reg), row["gate"])
+    src = row["item"]
+    for k in ("gate_variant", "needs_reasons"):
+        if k in src:
+            it[k] = copy.deepcopy(src[k])
+    for path in fams.SUBJECT_FIELDS[family]:
+        head, *rest = path.split(".")
+        if not rest:
+            it[head] = copy.deepcopy(src[head])
+            continue
+        cur, val = it.setdefault(head, {}), src
+        for part in path.split("."):
+            val = val[part]
+        for part in rest[:-1]:
+            cur = cur.setdefault(part, {})
+        cur[rest[-1]] = copy.deepcopy(val)
+    want = {k: v for k, v in src.items() if k not in ("adapt", fams.SUBJECT_MARKER)}
+    assert {k: v for k, v in it.items() if k != "adapt"} == want
+
+
 @pytest.fixture
 def adapted(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "model_dir", lambda m, root=None: tmp_path / "adapted" / m)
@@ -165,6 +192,10 @@ def test_poetry_stages_end_to_end_with_fakes(adapted, monkeypatch):
     rows = po.subject_rows(MODEL)
     assert [r["id"] for r in rows] == ids[:3]  # the weak item fails the free leg
     assert all(r["item"]["qwen_commits"].get("sure") == 11 for r in rows)  # the subject's words
+    # Qwen's candidates / opus record never ride on a subject row before stage=opus_gate
+    assert all(r["item"]["mc"] == {"candidates": []} for r in rows)
+    assert all("prompt_only_opus" not in r["item"] for r in rows)
+    assert items[0]["mc"]["candidates"] and "prompt_only_opus" in items[0]
 
     # tier A: Opus prompt-only on the subject's read render, cached per draw file
     lines = {it["prompt"].split("\n")[1]: [] for it in items[:3]}
@@ -188,7 +219,7 @@ def test_poetry_stages_end_to_end_with_fakes(adapted, monkeypatch):
             return
         po.run_script(args)
 
-    mcs = po.build_mc(MODEL, script=script)
+    mcs = po.build_mc(MODEL, script=script, tok=FakeTok())
     assert seen == ["vet", "build"] and set(mcs) == set(ids[:3])
     draft = json.loads((adapted / "adapted" / MODEL / "poetry" / "draft.json").read_text())
     assert all("mc" not in it and it["qwen_commits"] for it in draft["items"])
@@ -221,6 +252,7 @@ def test_poetry_stages_end_to_end_with_fakes(adapted, monkeypatch):
         for part in path.split("."):
             cur = cur[part]
     assert it["mc"] == mcs[ids[1]] and it["mc"] != items[1]["mc"]  # never Qwen's candidates
+    _assert_a1_overlay_ships_row("poetry", items[1], ok)
     header = json.loads((adapted / "adapted" / MODEL / "poetry" / "header.json").read_text())
     assert header["opus_gate"]["picked"] == [ids[0]] and header["qwen_regate"]["n_passed"] == 3
 
@@ -296,3 +328,20 @@ def test_judge_draw_scopes_the_bank_override(tmp_path, monkeypatch):
     import os
 
     assert "WSB_BANK_FILE_POETRY" not in os.environ  # the registered bank is the record again
+
+
+def test_opus_cache_is_keyed_on_the_prompt(adapted):
+    ask, calls = _fake_opus({"silver gray": ["stay"]})
+    item = {"id": "p", "prompt": PROMPT, "gate_variant": "plain"}
+    po.ask_draws(MODEL, [item], "tierA", ask=ask, tok=FakeTok())
+    po.ask_draws(MODEL, [item], "tierA", ask=ask, tok=FakeTok())
+    assert len(calls) == 3  # cached for the same prompt
+    few = {**item, "gate_variant": "plain_fewshot"}
+    po.ask_draws(MODEL, [few], "tierA", ask=ask, tok=FakeTok())
+    assert len(calls) == 6 and "The cat lay sleeping" in calls[-1]  # a new render: asked again
+    from wsbench.baselines import text_inversion as ti
+
+    shas = {i: ti.prompt_sha(c) for i, c in po.prompt_contents([item], FakeTok()).items()}
+    path = adapted / "adapted" / MODEL / "poetry" / "answers" / "tierA0.jsonl"
+    assert po._latest(path, shas)["p"]["prompt_sha"] == shas["p"]  # never the fewshot answer
+    assert po._latest(path, {"p": "other"}) == {}

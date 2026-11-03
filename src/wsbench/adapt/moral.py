@@ -960,6 +960,9 @@ _V2_FIELDS = (
     "gate_committed_token", "gate_aligned", "gate_reason_side_ok", "gate_pass",
 )  # fmt: skip
 _BANK_FIELDS = ("options", "reasons", "look_for_reasons", "reason_side_ok", "rekey")
+# the rest adopt writes on every item (families.SUBJECT_FIELDS covers all three tuples, so an
+# A1 freeze that overlays only SUBJECT_FIELDS ships exactly the adopted item)
+ADOPT_FIELDS = ("system", "gate_variant", "bank_version", "needs_reasons", "subject_answer")
 
 
 def adopt(model: str, out: str, bank: str | None = None) -> Counter:
@@ -983,6 +986,10 @@ def adopt(model: str, out: str, bank: str | None = None) -> Counter:
     if wrong := sorted({str(e["rekey"].get("model")) for e in entries} - {model}):
         raise SystemExit(f"moral adopt: {d / 'rekey.json'} was re-keyed on {wrong}, not {model}")
     bpath = subject_bank_path(d, bank)
+    from wsbench.registry import REPO_ROOT
+
+    if (REPO_ROOT / "evals") in bpath.resolve().parents:
+        raise SystemExit(f"moral adopt: bank={bpath} is under evals/ (the bank of record)")
     sb = {}
     if bpath.exists():
         sb = {it["id"]: it for it in json.loads(bpath.read_text(encoding="utf-8"))}
@@ -1005,14 +1012,23 @@ def adopt(model: str, out: str, bank: str | None = None) -> Counter:
             it.update({k: copy.deepcopy(v2[k]) for k in _V2_FIELDS if k in v2})
             it["rekey"] = copy.deepcopy(rk)
             checks = {"rekeyed": True, **v2.get("gate_checks", {})}
-        if sub is not None:
+        # the subject's option bank must be THIS subject's and keyed on THIS re-key's side/class
+        sub_ok = bool(
+            sub
+            and sub.get("options")
+            and (sub.get("rekey") or {}).get("model") == model
+            and sub.get("commit_direction") == v2.get("commit_direction")
+            and sub.get("reason_class") == v2.get("reason_class")
+        )
+        if sub_ok:
             it.update({k: copy.deepcopy(sub[k]) for k in _BANK_FIELDS if k in sub})
-        src = sub or (e or {}).get("v1") or {}
-        if src.get("system"):  # system_one_word: the read conversation's system turn
-            it["system"] = src["system"]
+        src = (sub if sub_ok else None) or (e or {}).get("v1") or {}
+        # system_one_word: the read conversation's system turn; always written (None = none) so
+        # the shipped item never keeps a registered value (SUBJECT_FIELDS overlay)
+        it["system"] = src.get("system") or None
         it["gate_variant"] = src.get("gate_variant") or ("system_one_word" if it.get("system")
                                                         else "chat")  # fmt: skip
-        checks["options"] = bool(sub and sub.get("options"))
+        checks["options"] = sub_ok
         ok = all(checks.values())
         it.update({"bank_version": V3_VERSION, "needs_reasons": False, "gate_pass": ok,
                    "subject_answer": v2.get("commit_answer", "")})  # fmt: skip

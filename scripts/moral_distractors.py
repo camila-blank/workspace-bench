@@ -1548,6 +1548,8 @@ def freeze(rekey: Path, out: Path, bank: Path | None = None) -> None:
                     "v1_look_for": rk["v1_look_for"],
                     "v1_gate_pass": rk["v1_gate_pass"],
                     "changed": rk["changed"],
+                    # an adapted subject's re-key names its model (plan 0060 A2: adopt checks it)
+                    **({"model": rk["model"]} if rk.get("model") else {}),
                 },
             }
         )

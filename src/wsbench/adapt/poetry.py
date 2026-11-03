@@ -240,6 +240,10 @@ def restamp_fields(item: dict, record: dict[str, Any]) -> None:
     pz = record.get("poetry")
     if pz is None:
         return
+    # the registered item's mc / prompt_only_opus are Qwen's: never ride on a subject row (a
+    # freeze before stage=opus_gate ships no candidates, never Qwen's; opus_gate rebuilds both)
+    item.pop("prompt_only_opus", None)
+    item["mc"] = {"candidates": []}
     if item.get("prompt"):
         item["line_one_end"] = line_one_end(item["prompt"])
     item["qwen_commits"] = dict(pz.get("commits") or {})
@@ -389,16 +393,13 @@ def ask_draws(
     ask = ask or opus_text()
     root = _dir(model) / "answers"
     root.mkdir(parents=True, exist_ok=True)
-    contents = {}
-    for it in items:
-        prefix, token = read_prefix(it, tok)
-        contents[str(it.get("id") or it.get("name"))] = ti.FRAMINGS[po.FRAMING].format(
-            prefix=prefix, token=token
-        )
+    contents = prompt_contents(items, tok)
+    shas = {i: ti.prompt_sha(c) for i, c in contents.items()}
     out = {}
     for d, t in enumerate(tags(tag, draws)):
         path = root / f"{t}.jsonl"
-        done = {r["id"] for r in _load_jsonl(path) if _settled(r)}
+        # cached only for the SAME prompt: a changed render (gate_variant) is asked again
+        done = set(_latest(path, shas))
         todo = [i for i in contents if i not in done]
 
         def one(iid: str, d: int = d, t: str = t) -> dict[str, Any]:
@@ -415,10 +416,26 @@ def ask_draws(
     return out
 
 
-def _latest(path: Path) -> dict[str, dict]:
+def prompt_contents(items: list[dict], tok: Any = None) -> dict[str, str]:
+    """id -> the po-opus-v1 question on the item's read render through the read site."""
+    from wsbench.baselines import prompt_only_opus as po
+    from wsbench.baselines import text_inversion as ti
+
+    out = {}
+    for it in items:
+        prefix, token = read_prefix(it, tok)
+        out[str(it.get("id") or it.get("name"))] = ti.FRAMINGS[po.FRAMING].format(
+            prefix=prefix, token=token
+        )
+    return out
+
+
+def _latest(path: Path, shas: dict[str, str]) -> dict[str, dict]:
+    """The settled answer per id whose ``prompt_sha`` is the CURRENT prompt's (``shas``); an
+    answer to an older render of the item is never served."""
     best: dict[str, dict] = {}
     for r in _load_jsonl(path):
-        if r["id"] not in best or _settled(r) or not _settled(best[r["id"]]):
+        if _settled(r) and shas.get(r["id"]) == r.get("prompt_sha"):
             best[r["id"]] = r
     return best
 
@@ -461,7 +478,9 @@ def run_script(args: list[str]) -> None:
     subprocess.run([sys.executable, str(BUILD_MC), *args], check=True, env=env, cwd=REPO)
 
 
-def build_mc(model: str, script: Callable[[list[str]], None] = run_script) -> dict[str, dict]:
+def build_mc(
+    model: str, script: Callable[[list[str]], None] = run_script, tok: Any = None
+) -> dict[str, dict]:
     """``mc.candidates`` for the subject's passing couplets: build_mc.py ``vet`` (Opus vets CMU
     rhymes for items short of candidates, cached) and ``build --draft/--out`` over the tier A
     answers. Returns ``{id: mc}`` (also ``<poetry dir>/draft_mc.json``)."""
@@ -469,14 +488,24 @@ def build_mc(model: str, script: Callable[[list[str]], None] = run_script) -> di
     rows = subject_rows(model)
     if not rows:
         raise SystemExit(f"poetry mc: no subject-gate passes on {model}; run stage=gate first")
-    answers = sorted((d / "answers").glob(f"{TIER_A_TAG}*.jsonl"))
-    if not answers:
-        raise SystemExit("poetry mc: no tier A answers; run stage=tier_a first")
-    draft, vet, out = d / "draft.json", d / "vet.json", d / "draft_mc.json"
+    from wsbench.baselines import text_inversion as ti
+
     from . import store
 
+    tok = tok if tok is not None else _tokenizer(model)
+    shas = {i: ti.prompt_sha(c) for i, c in
+            prompt_contents([r["item"] for r in rows], tok).items()}  # fmt: skip
+    # only answers to the CURRENT prompts feed tier A (an older render's answers are stale)
+    current = [a for t in tags(TIER_A_TAG) for a in
+               _latest(d / "answers" / f"{t}.jsonl", shas).values()]  # fmt: skip
+    if not current:
+        raise SystemExit("poetry mc: no tier A answers; run stage=tier_a first")
+    answers = d / "tier_a_current.jsonl"
+    answers.write_text("".join(json.dumps(a, ensure_ascii=False) + "\n" for a in current),
+                       encoding="utf-8")  # fmt: skip
+    draft, vet, out = d / "draft.json", d / "vet.json", d / "draft_mc.json"
     store.write_json(draft, {"family": FAMILY, "version": 5, "items": draft_items(rows)})
-    ans = [str(p) for p in answers]
+    ans = [str(answers)]
     script(["vet", "--draft", str(draft), "--answers", *ans, "--out", str(vet)])
     script(["build", "--draft", str(draft), "--answers", *ans, "--vet", str(vet),
             "--out", str(out)])  # fmt: skip
@@ -514,7 +543,9 @@ def judge_bank(model: str, rows: list[dict], mcs: dict[str, dict]) -> Path:
     return path
 
 
-def write_readouts(model: str, tag: str, draws: int = DRAWS) -> dict[str, Path]:
+def write_readouts(
+    model: str, tag: str, shas: dict[str, str], draws: int = DRAWS
+) -> dict[str, Path]:
     """``<poetry dir>/opus_gate/readouts/<tag><d>/poetry.jsonl``: one prose cell per answered
     id at layer ``PROMPT_ONLY_LAYER`` with the po-opus-v1 sidecar (opus_gate.write_readouts)."""
     from wsbench.baselines import prompt_only_opus as po
@@ -522,7 +553,7 @@ def write_readouts(model: str, tag: str, draws: int = DRAWS) -> dict[str, Path]:
 
     out = {}
     for t in tags(tag, draws):
-        ans = _latest(_dir(model) / "answers" / f"{t}.jsonl")
+        ans = _latest(_dir(model) / "answers" / f"{t}.jsonl", shas)
         root = _dir(model) / "opus_gate" / "readouts" / t
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"{FAMILY}.jsonl"
@@ -603,9 +634,13 @@ def opus_gate(model: str, ask: AskText | None = None, judge: Callable[..., Any] 
     rec: dict[str, dict] = {}
     if ok_rows:
         tok = tok if tok is not None else _tokenizer(model)
-        ask_draws(model, [r["item"] for r in ok_rows], GATE_TAG, ask=ask, tok=tok)
+        from wsbench.baselines import text_inversion as ti
+
+        items = [r["item"] for r in ok_rows]
+        ask_draws(model, items, GATE_TAG, ask=ask, tok=tok)
+        shas = {i: ti.prompt_sha(c) for i, c in prompt_contents(items, tok).items()}
         bank = judge_bank(model, ok_rows, mcs)
-        roots = write_readouts(model, GATE_TAG)
+        roots = write_readouts(model, GATE_TAG, shas)
         res = [judge(bank, roots[t], _dir(model) / "opus_gate" / "judged" / t) for t in tl]
         rec = record(res, tl, [r["id"] for r in ok_rows])
     now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
