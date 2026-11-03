@@ -317,6 +317,57 @@ def test_engines_split_a_call_and_keep_each_prompts_seed(monkeypatch):
     assert all(a[2][1:] == (0.0, 7, 42, 1.0, [1]) for a in log)
 
 
+def _fake_make(kwargs):
+    """A CPU stand-in for vllm.LLM in a real spawned engine process (module level: pickled)."""
+    return {"pid": os.getpid(), **kwargs}
+
+
+def _fake_run(llm, name, args):
+    if "boom" in args[0]:
+        raise ValueError("bad request")
+    if "die" in args[0]:
+        os._exit(3)
+    return [f"{name}:{p}" for p in args[0]]
+
+
+def test_real_engine_processes_drain_errors_and_never_hang(monkeypatch):
+    """The real _Engine / _engine_worker (spawned, non-daemonic) with a fake LLM: a normal call;
+    an engine raising -> the call fails after every reply is drained, and the next call gets its
+    own answers (no stale replies); a dead engine raises instead of hanging."""
+    pytest.importorskip("modal")
+    monkeypatch.delenv("ADAPT_SUBJECT", raising=False)
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))  # importable by name in the children
+    import adapt_modal as m
+
+    engines = [m._Engine(k, {"k": k}, _fake_make, _fake_run) for k in range(3)]
+    try:
+        for e in engines:
+            e.wait_ready()
+            assert not e.proc.daemon  # vLLM's EngineCore is a child of the worker
+        gen = ("generate", 0.0, 4, 1, 1.0, None)
+
+        def call(prompts):
+            return m.fan_out(engines, gen[0], (prompts, *gen[1:]))
+
+        p6 = ["a", "b", "c", "d", "e", "f"]
+        assert call(p6) == [f"generate:{p}" for p in p6]
+        with pytest.raises(RuntimeError, match="engine 2: engine error: ValueError"):
+            call(["a", "b", "c", "d", "boom", "f"])
+        p6b = ["u", "v", "w", "x", "y", "z"]
+        assert call(p6b) == [f"generate:{p}" for p in p6b]  # nothing stale left in the pipes
+        with pytest.raises(RuntimeError, match="engine 1: engine process died"):
+            call(["a", "b", "die", "d", "e", "f"])
+        assert all(e.proc.is_alive() for k, e in enumerate(engines) if k != 1)
+        engines[0].proc.kill()
+        engines[0].proc.join(30)
+        with pytest.raises(RuntimeError, match="engine 0: engine process"):
+            call(p6)
+    finally:
+        for e in engines:
+            e.close(timeout=30)
+    assert not any(e.proc.is_alive() for e in engines)
+
+
 def test_quant_override_marks_nvfp4_layers_w4a16(monkeypatch, tmp_path):
     m = _load_script(monkeypatch, "")
     q = {"quantization": {"quantized_layers": {"a": {"quant_algo": "NVFP4"},

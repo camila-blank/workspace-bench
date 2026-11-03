@@ -283,7 +283,8 @@ def fan_out(engines: list, name: str, args: tuple) -> list:
     """Run one call over the container's engines: contiguous prompt slices (per-prompt fields
     sliced too), sample's seed shifted to the slice start so every prompt keeps the seed it has
     on one engine; results in prompt order. ``engines`` are ``(name, args) -> future`` callables
-    whose futures have ``.result()``."""
+    whose futures have ``.result()``. EVERY engine's reply is collected before an error is
+    raised, so no reply is left in a pipe to be read as the next call's answer."""
     prompts = args[0]
     calls = []
     for eng, (lo, hi) in zip(engines, split(len(prompts), len(engines)), strict=False):
@@ -292,48 +293,98 @@ def fan_out(engines: list, name: str, args: tuple) -> list:
         else:  # generate: one seed for every prompt, as on one engine
             a = (prompts[lo:hi], *args[1:])
         calls.append(eng(name, a))
-    return [r for c in calls for r in c.result()]
+    out, errors = [], []
+    for k, c in enumerate(calls):
+        try:
+            out += c.result()
+        except Exception as e:
+            errors.append(f"engine {k}: {e}")
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return out
 
 
-def _engine_worker(gpu: int, kwargs: dict, conn) -> None:
-    """One TP=1 engine pinned to one GPU (gen_vllm_modal.py's data-parallel layout)."""
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+def _vllm_engine(kwargs: dict):
     from vllm import LLM
 
-    llm = LLM(**kwargs)
+    return LLM(**kwargs)
+
+
+def _vllm_run(llm, name: str, args: tuple) -> list:
+    return RUN[name](llm, *args)
+
+
+def _engine_worker(gpu: int, kwargs: dict, conn, make=_vllm_engine, run=_vllm_run) -> None:
+    """One TP=1 engine pinned to one GPU (gen_vllm_modal.py's data-parallel layout). ``make`` /
+    ``run`` are module-level callables (tests pass CPU fakes; spawn pickles them by name)."""
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    llm = make(kwargs)
     conn.send("ready")
     while (msg := conn.recv()) is not None:
         name, args = msg
         try:
-            conn.send(("ok", RUN[name](llm, *args)))
-        except Exception as e:  # report, keep serving
+            conn.send(("ok", run(llm, name, args)))
+        except Exception as e:  # reported; the container treats it as fatal (SubjectLLM._run)
             conn.send(("err", repr(e)))
 
 
 class _Engine:
-    """A spawned engine process; calling it sends a request, ``.result()`` waits for it."""
+    """A spawned engine process; calling it sends a request, ``.result()`` waits for the reply
+    (or raises once the process is dead: never hangs on a dead engine). Not daemonic: vLLM's V1
+    EngineCore spawns a child, which a daemonic process may not have."""
 
-    def __init__(self, gpu: int, kwargs: dict) -> None:
+    POLL_S = 2.0
+
+    def __init__(self, gpu: int, kwargs: dict, make=_vllm_engine, run=_vllm_run) -> None:
         import multiprocessing as mp
 
         ctx = mp.get_context("spawn")
         self.conn, child = ctx.Pipe()
-        self.proc = ctx.Process(target=_engine_worker, args=(gpu, kwargs, child), daemon=True)
+        self.proc = ctx.Process(target=_engine_worker, args=(gpu, kwargs, child, make, run))
         self.proc.start()
+        child.close()  # only the worker holds its end: a dead worker reads as EOF here
+        self.error: str | None = None
+
+    def _recv(self):
+        while not self.conn.poll(self.POLL_S):
+            if not self.proc.is_alive():
+                break
+        try:
+            return self.conn.recv()
+        except (EOFError, OSError):
+            raise RuntimeError(f"engine process died (exit code {self.proc.exitcode})") from None
 
     def wait_ready(self) -> None:
-        if self.conn.recv() != "ready":
+        if self._recv() != "ready":
             raise RuntimeError("engine failed to start")
 
     def __call__(self, name: str, args: tuple) -> "_Engine":
-        self.conn.send((name, args))
+        try:
+            self.conn.send((name, args))
+            self.error = None
+        except OSError as e:  # a dead engine: reported by result(), after the others drained
+            self.error = f"engine process unreachable: {e!r}"
         return self
 
     def result(self) -> list:
-        status, out = self.conn.recv()
+        if self.error:
+            raise RuntimeError(self.error)
+        status, out = self._recv()
         if status != "ok":
             raise RuntimeError(f"engine error: {out}")
         return out
+
+    def close(self, timeout: float = 60.0) -> None:
+        """Ask the worker to exit (vLLM shuts its EngineCore down), then terminate a straggler."""
+        import contextlib
+
+        with contextlib.suppress(OSError):  # already dead
+            self.conn.send(None)
+        self.proc.join(timeout)
+        if self.proc.is_alive():
+            self.proc.terminate()
+            self.proc.join(10)
+        self.conn.close()
 
 
 app = modal.App(SPEC["app"])
@@ -373,10 +424,27 @@ class SubjectLLM:
         if not SPEC["weights"]:  # a first load cached the hub weights on the volume
             volume.commit()
 
+    @modal.exit()
+    def stop(self) -> None:
+        for e in getattr(self, "engines", []):
+            e.close()
+
     def _run(self, name: str, args: tuple) -> list:
-        if SPEC["engines"] > 1:
+        if SPEC["engines"] == 1:
+            return RUN[name](self.llm, *args)
+        # any engine failure or death is fatal for the container: a partial engine set must
+        # not keep serving (Modal replaces the container; the client sees this call fail)
+        dead = [k for k, e in enumerate(self.engines) if not e.proc.is_alive()]
+        try:
+            if dead:
+                raise RuntimeError(f"engine(s) {dead} died")
             return fan_out(self.engines, name, args)
-        return RUN[name](self.llm, *args)
+        except Exception as e:
+            print(f"FATAL: {e}; stopping the container", flush=True)
+            for eng in self.engines:
+                if eng.proc.is_alive():
+                    eng.proc.terminate()
+            os._exit(1)
 
     @modal.method()
     def sample(
