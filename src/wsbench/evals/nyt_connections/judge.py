@@ -292,6 +292,8 @@ def _columns(
     return out
 
 
+# NOTE: the per-slot MC runs for EVERY slot in scope, not only the stable ones: the headline rows
+# are the stable slots (plan §4.6), but the all-slot extras need the other picks too (§4.2/§4.6).
 def _run_summary(
     args: JudgeArgs,
     *,
