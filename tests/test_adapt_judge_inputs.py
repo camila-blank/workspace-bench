@@ -409,3 +409,40 @@ def test_introspection_unit_fields_are_required():
         assert key in ji.REQUIRED_ITEM_FIELDS["introspection"]
     bare = {k: v for k, v in items[0].items() if k != "readout_of"}
     assert any(p.startswith("missing: readout_of") for p in ji.check_item("introspection", bare))
+
+
+def test_poetry_too_few_surviving_candidates_exits():
+    _h, items, _ = _bank("poetry")
+    it = copy.deepcopy(items[0])
+    assert ji.check_item("poetry", it) == []
+    it["qwen_commits"] = {**it["qwen_commits"], **dict.fromkeys(it["mc"]["candidates"], 1)}
+    got = ji.check_item("poetry", it)
+    assert any(p.startswith("exit: poetry") for p in got), got
+
+
+def test_check_bank_reports_duplicate_ids():
+    _h, items, _ = _bank("multihop")  # name-keyed: load_bank raises
+    got = ji.check_bank("multihop", _h, [items[0], copy.deepcopy(items[0])])
+    assert any("duplicate item id" in p for p in got[ji.item_id(items[0])])
+    _rh, ritems, _ = _bank("relational_multihop")  # id-keyed: by_id keeps one
+    got = ji.check_bank("relational_multihop", None, [ritems[0], copy.deepcopy(ritems[0])])
+    assert any(p.startswith("hazard: duplicate item id") for p in got[ritems[0]["id"]])
+
+
+@pytest.mark.parametrize("family", ALL)
+def test_check_bank_accepts_every_registered_bank(family):
+    """No false rejects: the whole bank of record passes, bank-level checks included."""
+    header, items, _ = _bank(family)
+    got = ji.check_bank(family, header, items)
+    # check_bank judges a bank as ADAPTED: typo_mt's registered header has no native_langs,
+    # which an adapted header must carry (A1.10); known registered-bank hazards are allowlisted
+    got = {
+        iid: [
+            p
+            for p in ps
+            if not p.startswith("missing: header.contract.native_langs")
+            and not ((family, iid) in KNOWN_REGISTERED and p.startswith("hazard"))
+        ]
+        for iid, ps in got.items()
+    }
+    assert not {k: v for k, v in got.items() if v}, dict(list(got.items())[:3])
