@@ -226,7 +226,7 @@ def main(argv: list[str] | None = None) -> None:
             ml_native.upgrade(model, [f for f in families.split(",") if f] or None)
         elif "langs" in a:
             langs = [x for x in a["langs"].split(",") if x]
-            print(nl.record(model, langs, a.get("evidence", ""), a.get("thinking", "off")))
+            print(nl.record(model, langs, a.get("evidence", ""), a.get("thinking")))
         else:
             print(nl.load(model) or f"{model}: not measured ({nl.path(model)})")
     elif cmd == "freeze":

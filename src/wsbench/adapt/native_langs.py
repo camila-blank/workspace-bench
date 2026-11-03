@@ -91,6 +91,8 @@ def validate(rec: dict[str, Any]) -> None:
         raise SystemExit(f"{FILE}: native_langs must list English first, got {langs}")
     if len(set(langs)) != len(langs):
         raise SystemExit(f"{FILE}: duplicate codes in {langs}")
+    if rec.get("method") == DECISION and "thinking" not in rec:
+        return  # a decision record (Camila's Chinese-lab rule): nothing was sampled
     if rec.get("thinking") not in THINKING:
         raise SystemExit(f"{FILE}: thinking must be one of {THINKING} (plan 0060 D7)")
 
@@ -106,13 +108,24 @@ def langs_for_freeze(model: str) -> list[str]:
     return list(rec["native_langs"])
 
 
-def record(model: str, langs: list[str], evidence: str, thinking: str = "off",
-           method: str = "plan 0054 R6") -> dict[str, Any]:  # fmt: skip
-    """Write a measurement made elsewhere (never a guess: ``evidence`` is required)."""
+DECISION = "decision"  # a record set by decision, not measured (no thinking mode applies)
+
+
+def record(model: str, langs: list[str], evidence: str, thinking: str | None = None,
+           method: str | None = None) -> dict[str, Any]:  # fmt: skip
+    """Write native languages set elsewhere (never a guess: ``evidence`` is required).
+
+    Without ``thinking`` it is a DECISION record (``method: "decision"``, no ``thinking``
+    field): Camila's 2026-11-03 rule that a Chinese-lab model is ``["en", "zh"]`` unmeasured.
+    With ``thinking`` it is a measurement made elsewhere (``method`` default plan 0054 R6)."""
     if not evidence.strip():
-        raise SystemExit("native_langs: evidence= is required (what was measured, where)")
-    rec = {"model": model, "native_langs": list(langs), "thinking": thinking, "method": method,
-           "measured": str(dt.date.today()), "evidence": evidence}  # fmt: skip
+        raise SystemExit("native_langs: evidence= is required (what was measured or decided)")
+    rec: dict[str, Any] = {"model": model, "native_langs": list(langs)}
+    if thinking is None:
+        rec["method"] = method or DECISION
+    else:
+        rec.update(thinking=thinking, method=method or "plan 0054 R6")
+    rec.update(measured=str(dt.date.today()), evidence=evidence)
     validate(rec)
     store.write_json(path(model), rec)
     return rec
@@ -296,6 +309,22 @@ def _trace_stop(markers: dict[str, Any], tok: Any) -> list[int] | None:
     return [sid]
 
 
+def trace_end(text: str, tm: dict[str, Any], stop: list[int] | None, tok: Any) -> str:
+    """How a sampled trace ended: ``closed`` (its closing marker is in the text, or the engine
+    stopped on the closing token, ``stop``), ``cut`` (no closing marker and the sample used the
+    whole ``THINK_MAX_TOKENS`` budget) or ``eos`` (no closing marker, budget not used: the model
+    ended its turn inside the trace). Without a tokenizer the budget is unknown: ``eos`` unless
+    closed."""
+    if any(c and c in text for c in (tm.get("cut"), tm.get("close"))):
+        return "closed"
+    hit = tok is not None and len(tok(text, add_special_tokens=False)["input_ids"]) >= (
+        THINK_MAX_TOKENS - 1
+    )
+    if hit:
+        return "cut"
+    return "closed" if stop else "eos"
+
+
 def measure(model: str, thinking: str | None = None, runner: Any = None,
             card_langs: list[str] | None = None, markers: dict[str, Any] | None = None,
             readouts: str | None = None, tok: Any = None) -> dict[str, Any]:  # fmt: skip
@@ -319,6 +348,8 @@ def measure(model: str, thinking: str | None = None, runner: Any = None,
         why = f"thinking={thinking} requested"
     if thinking not in THINKING:
         raise SystemExit(f"native_langs: thinking must be one of {THINKING}, got {thinking!r}")
+    if readouts:  # a bad readouts dir fails here, before any sampling
+        site_rows(readouts)
     if thinking == "on":
         if default_thinking(model) != "on":
             raise SystemExit(f"native_langs: {model} has no thinking mode (Subject."
@@ -377,17 +408,13 @@ def token_lang(text: str) -> str | None:
     return max(codes, key=lambda c: (codes[c], c)) if codes else None
 
 
-def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | None = None,
-                      sampling: str = TOKEN_SAMPLING) -> dict[str, Any]:  # fmt: skip
-    """Shares of the J-lens's top-10 tokens per language at the read sites (``read_sites``):
-    every cell (layer x position) of each site's item in ``<readouts>/<family>.jsonl``, tokens
-    decoded with the subject's tokenizer (``decode_token``) and assigned by script
-    (``token_lang``). A token in the item's OWN non-Latin script(s) (its passage's L2, read off
-    the question) is left out: it echoes the passage, not a language the model thinks in (the
-    27B's shares barely move: zh .245 -> .249). Native at >= ``SHARE`` of the letter-bearing
-    tokens; ``shares_incl_own`` is recorded beside. Only a token lens (``tokens10``) is accepted;
-    a sidecar declaring another sampling is refused."""
-    from collections import Counter
+def site_rows(readouts: str, sites: list[tuple[str, Any]] | None = None,
+              sampling: str = TOKEN_SAMPLING) -> dict[str, list[dict]]:  # fmt: skip
+    """``{"<family>/<id>": rows}``: each read site's cells in ``<readouts>/<family>.jsonl`` at ONE
+    position, the item's last position in the file (a final-token file holds one per item; a
+    full-position file then counts the final token, not every position), every layer there.
+    Refuses (SystemExit) a non-token-lens sampling, a sidecar declaring one, or any site with no
+    rows; ``measure`` calls it BEFORE sampling, so a bad dir never costs a GPU run."""
     from pathlib import Path
 
     if sampling != TOKEN_SAMPLING:
@@ -395,9 +422,7 @@ def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | No
                          f"({TOKEN_SAMPLING}), not {sampling!r}")  # fmt: skip
     root = Path(readouts)
     sites = read_sites() if sites is None else sites
-    tally: Counter[str] = Counter()
-    incl: Counter[str] = Counter()
-    n_cells = n_noletter = 0
+    out: dict[str, list[dict]] = {}
     missing = []
     for fam, ask in sites:
         f = root / f"{fam}.jsonl"
@@ -414,6 +439,33 @@ def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | No
         if not rows:
             missing.append(f"{fam}/{ask.item_id}")
             continue
+        pos = max(int(r.get("pos", 0)) for r in rows)
+        out[f"{fam}/{ask.item_id}"] = [r for r in rows if int(r.get("pos", 0)) == pos]
+    if missing:
+        raise SystemExit(f"native_langs: no readouts in {root} for read sites {missing}")
+    return out
+
+
+def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | None = None,
+                      sampling: str = TOKEN_SAMPLING) -> dict[str, Any]:  # fmt: skip
+    """Shares of the J-lens's top-10 tokens per language at the read sites (``read_sites``):
+    each site's cells at one position (``site_rows``), every layer, tokens decoded with the
+    subject's tokenizer (``decode_token``) and assigned by script (``token_lang``). A token in
+    the item's OWN non-Latin script(s) (its passage's L2, read off the question) is left out: it
+    echoes the passage, not a language the model thinks in (the 27B's shares barely move: zh
+    .245 -> .249). Native at >= ``SHARE`` of the letter-bearing tokens; ``shares_incl_own`` is
+    recorded beside. Only a token lens (``tokens10``) is accepted."""
+    from collections import Counter
+
+    sites = read_sites() if sites is None else sites
+    by_site = site_rows(readouts, sites, sampling)
+    tally: Counter[str] = Counter()
+    incl: Counter[str] = Counter()
+    n_cells = n_noletter = 0
+    positions = {}
+    for fam, ask in sites:
+        rows = by_site[f"{fam}/{ask.item_id}"]
+        positions[f"{fam}/{ask.item_id}"] = rows[0].get("pos")
         own = set(letter_codes(ask.question())) - {"en"}
         for r in rows:
             n_cells += 1
@@ -425,18 +477,17 @@ def readout_criterion(readouts: str, tok: Any, sites: list[tuple[str, Any]] | No
                 incl[lang] += 1
                 if lang not in own:
                     tally[lang] += 1
-    if missing:
-        raise SystemExit(f"native_langs: no readouts in {root} for read sites {missing}")
     shares = _shares(tally)
     native = ["en"] + [c for c, sh in shares.items()
                        if c != "en" and sh >= SHARE and not c.startswith("script:")]  # fmt: skip
-    return {"status": "measured", "reader": "J-lens (token lens)", "readouts": str(root),
+    return {"status": "measured", "reader": "J-lens (token lens)", "readouts": str(readouts),
             "sampling": TOKEN_SAMPLING, "native": native, "shares": shares,
             "shares_incl_own": _shares(incl),
-            "sites": [f"{fam}/{a.item_id}" for fam, a in sites], "n_cells": n_cells,
-            "n_tokens": sum(tally.values()), "n_tokens_without_letters": n_noletter,
-            "unit": "J-lens top-10 tokens with letters at the read sites, the item's own "
-                    "non-Latin L2 script left out"}  # fmt: skip
+            "sites": [f"{fam}/{a.item_id}" for fam, a in sites], "positions": positions,
+            "n_cells": n_cells, "n_tokens": sum(tally.values()),
+            "n_tokens_without_letters": n_noletter,
+            "unit": "J-lens top-10 tokens with letters at the read sites (one position each, "
+                    "every layer), the item's own non-Latin L2 script left out"}  # fmt: skip
 
 
 def combine(criteria: dict[str, list[str] | None]) -> tuple[list[str], dict[str, list[str]]]:
@@ -458,14 +509,19 @@ def finalize(model: str, rec: dict[str, Any], readout: dict[str, Any] | None) ->
     """Combine the first criterion (``trace`` with thinking on, ``response`` with it off) with
     the readout criterion, set ``native_langs`` / ``native_by`` / ``criteria`` / calibration,
     then validate and write the record."""
-    first = "trace" if rec["thinking"] == "on" else "response"
-    key = "shares_all" if first == "trace" else "shares_family"
+    if rec.get("method") == DECISION:  # set by decision (record()): no shares to carry
+        first, key = DECISION, None
+    else:
+        first = "trace" if rec.get("thinking") == "on" else "response"
+        key = "shares_all" if first == "trace" else "shares_family"
     first_native = rec.get("criteria", {}).get(first, {}).get("native", rec["native_langs"])
     if readout is None:
         readout = {"status": "none", "reason": "no J-lens readouts for this subject: the "
                    f"{first} criterion alone decides"}  # fmt: skip
     native, by = combine({first: first_native, "readout": readout.get("native")})
-    rec["criteria"] = {first: {"native": first_native, "shares": rec[key]}, "readout": readout}
+    # a record() written elsewhere carries no shares: None, never a KeyError
+    shares = rec.get(key) if key else None
+    rec["criteria"] = {first: {"native": first_native, "shares": shares}, "readout": readout}
     rec["native_langs"], rec["native_by"] = native, by
     rec["calibration"] = _calibration(model, native)
     rec["evidence"] = rec["evidence"].split("; READOUT criterion")[0].split("; calibration ")[0]
@@ -539,7 +595,7 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
     tally: dict[str, Counter[str]] = {
         k: Counter() for k in ("all", "incl_own", "family", "neutral", "own")
     }
-    n_missing = n_cut = 0
+    n_missing = n_cut = n_eos = 0
     tok = getattr(runner, "tok", None)
     for ask, (_greedy, samples) in zip(asks, outs, strict=True):
         is_fam = ask.item_id.startswith("family:")
@@ -549,10 +605,9 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
             if trace is None:
                 n_missing += 1
                 continue
-            if tok is not None and len(tok(text, add_special_tokens=False)["input_ids"]) >= (
-                THINK_MAX_TOKENS - 1
-            ):
-                n_cut += 1
+            end = trace_end(text, markers, stop, tok)
+            n_cut += end == "cut"
+            n_eos += end == "eos"
             codes = letter_codes(trace, han="run")
             kept = {c: n for c, n in codes.items() if c not in own}
             tally["all"].update(kept)  # the decision: a family prompt's own L2 script left out
@@ -571,7 +626,8 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
         f"{THINK_MAX_TOKENS} trace tokens, through the subject runner; thought-letter shares of "
         f"all traces (own L2 script left out) {shares}; native >= {SHARE:.0%}; traces missing "
         f"{n_missing}/{n}, cut at "
-        f"max_tokens {n_cut}/{n}; model card: {card_langs or 'not recorded'}"
+        f"max_tokens {n_cut}/{n}, ended without a closing marker {n_eos}/{n}; model card: "
+        f"{card_langs or 'not recorded'}"
         + (f"; UNMAPPED scripts >= {SHARE:.0%}: {unmapped}" if unmapped else "")
     )
     rec = {"model": model, "native_langs": native, "thinking": "on", "method": "plan 0054 R6",
@@ -581,6 +637,7 @@ def _measure_trace(model: str, why: str, runner: Any, card_langs: list[str] | No
            "shares_family_excl_own_scripts": _shares(tally["own"]),
            "model_card_langs": list(card_langs) if card_langs else None,
            "traces": {"n": n, "missing": n_missing, "cut_at_max_tokens": n_cut,
+                      "ended_without_close": n_eos,
                       "markers": {k: markers.get(k) for k in ("open", "close", "stop_id")}},
            "protocol": {"n_family": len(fam_asks), "n_neutral": len(NEUTRAL_PROMPTS), "k": K,
                         "temperature": TEMPERATURE, "max_tokens": THINK_MAX_TOKENS,

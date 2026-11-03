@@ -1,10 +1,13 @@
 """J-lens readouts at the native-language read sites (plan 0054 R6's readout criterion, Camila
 2026-11-03: the subject's J-lens), on one Modal H200, for a subject whose J-lens is a neuronpedia
 artifact. ``native_langs.read_sites()`` = 10 family items; each is read with ``wsbench produce``'s
-own producer and ``JLens`` (cosine readout) at the FINAL token of its read-plan render (the site
-the 27B's cached J-lens readouts hold) and at the 27B's 11 read layers remapped to the subject
-(``subjects.remap_layers``, snapped to ``read_band``). Writes ``<out>/<family>.jsonl`` + a
-``tokens10`` sidecar, the input of ``native_langs stage=readouts readouts=<out>``.
+own producer and ``JLens`` (cosine readout) at the FINAL token of its read-plan render and at
+the 27B's 11 read layers remapped to the subject (``subjects.remap_layers``, snapped to
+``read_band``). The 27B's cached J-lens readouts hold the final token for 9 of the 10 sites;
+brh-ar-ain-jalut is pos 24 there (a token inside the question of its 37-token chat render), so
+this script's 27B re-read differs from the cache at that one site. Writes
+``<out>/<family>.jsonl`` + a ``tokens10`` sidecar, the input of ``native_langs stage=readouts
+readouts=<out>``.
 
     source /workspace/wsb-runs/run_env.sh   # Modal profile / environment
     PYTHONPATH=src modal run scripts/native_jlens_modal.py --model qwen3.5-4b \\

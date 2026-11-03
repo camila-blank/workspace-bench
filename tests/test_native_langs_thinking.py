@@ -421,3 +421,64 @@ def test_trace_leaves_out_the_prompts_own_script(tmp_model, monkeypatch):
     rec = nl.measure(MODEL, runner=Quoting(), markers=tm)
     assert rec["shares_all_incl_own_scripts"]["ar"] >= nl.SHARE
     assert "ar" not in rec["shares_all"] and rec["native_langs"] == ["en"]
+
+
+# ------------------------------------------------------------------ review fixes (#256)
+
+
+def test_bad_readouts_dir_fails_before_sampling(tmp_model, tmp_path, monkeypatch):
+    monkeypatch.setattr(subjects, "get", lambda key: SimpleNamespace(hf_id="h", thinking_mode=True))
+
+    class NeverSample(TraceRunner):
+        def sample(self, *a, **kw):
+            raise AssertionError("sampled before the readouts dir was checked")
+
+    with pytest.raises(SystemExit, match="no readouts"):
+        nl.measure(MODEL, runner=NeverSample(), readouts=str(tmp_path / "empty"),
+                   markers=template.think_markers(FakeTok("prompt")))  # fmt: skip
+
+
+def test_record_is_a_decision_and_takes_readouts(tmp_model, tmp_path):
+    rec = nl.record(MODEL, ["en", "zh"], "Chinese-lab model: en+zh assumed")
+    assert rec["method"] == "decision" and "thinking" not in rec
+    assert nl.load(MODEL)["native_langs"] == ["en", "zh"]
+    _write_readouts(tmp_path / "jl", nl.read_sites(), lambda f, a: [" red"] * 10)
+    rec = nl.add_readouts(MODEL, str(tmp_path / "jl"), tok=ByteTok())  # no KeyError
+    assert rec["native_langs"] == ["en", "zh"] and rec["native_by"]["zh"] == ["decision"]
+    assert rec["criteria"]["decision"]["shares"] is None
+    # a measurement made elsewhere keeps its mode and method
+    rec = nl.record(MODEL, ["en"], "measured on the box", thinking="on")
+    assert (rec["thinking"], rec["method"]) == ("on", "plan 0054 R6")
+    assert nl.add_readouts(MODEL, str(tmp_path / "jl"), tok=ByteTok())["native_langs"] == ["en"]
+
+
+def test_trace_end_counts_on_the_trace():
+    tok = FakeTok("prompt")
+    tm = template.think_markers(tok)
+    assert nl.trace_end("thinking</think>\n\nanswer", tm, None, tok) == "closed"
+    assert nl.trace_end("thinking, then the turn ended", tm, None, tok) == "eos"
+    assert nl.trace_end("stopped on the close token", tm, [1], tok) == "closed"
+    long = "word " * nl.THINK_MAX_TOKENS
+    assert nl.trace_end(long, tm, None, tok) == "cut"
+    assert nl.trace_end(long, tm, [1], tok) == "cut"  # budget hit even with a stop id
+    # a long ANSWER after a closed trace is not a cut trace
+    assert nl.trace_end("t</think>" + long, tm, None, tok) == "closed"
+
+
+def test_read_site_is_one_position(tmp_path):
+    import json as _json
+
+    sites = nl.read_sites()
+    root = tmp_path / "full"
+    root.mkdir()
+    rows: dict[str, list] = {}
+    for fam, ask in sites:
+        for pos, toks in ((3, ["åķ¥"] * 10), (7, [" red"] * 10)):  # a full-position file
+            for layer in (20, 40):
+                rows.setdefault(fam, []).append({"id": ask.item_id, "layer": layer, "pos": pos,
+                                                 "tokens": toks})  # fmt: skip
+    for fam, rs in rows.items():
+        (root / f"{fam}.jsonl").write_text("\n".join(_json.dumps(r) for r in rs))
+    ro = nl.readout_criterion(str(root), ByteTok())
+    assert ro["n_cells"] == 2 * nl.READ_SITES  # one position x 2 layers per site
+    assert set(ro["positions"].values()) == {7} and ro["native"] == ["en"]
