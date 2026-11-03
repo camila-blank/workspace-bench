@@ -292,7 +292,9 @@ def test_prelaunch_summarizer_check():
     from wsbench import digest
 
     opts = "aggregate=summary,summ_cache_only=1"
-    summ = digest.config(js._probe_args({"aggregate": "summary"}), None, "introspection")
+    # no layers= is a multi-layer run: the runner's v1.1.0 layered default applies
+    multi = digest.resolve_layer_mode("introspection", {"aggregate": "summary"}, 2)
+    summ = digest.config(js._probe_args(multi), None, "introspection")
     ref = {
         "config": {"aggregate": "summary", "summarizer": {**summ["summarizer"], "concurrency": 3}}
     }
@@ -302,9 +304,10 @@ def test_prelaunch_summarizer_check():
     assert "fallback" in js.check_instrument(opts, "introspection", bad, None)[0]
     lite = {"config": {**ref["config"], "reads": "lite"}}
     assert "reads" in js.check_instrument(opts, "introspection", lite, None)[0]
-    lay = {"config": {**ref["config"], "layers": [44]}}
+    one = digest.config(js._probe_args({"aggregate": "summary"}), None, "introspection")
+    lay = {"config": {**ref["config"], "summarizer": one["summarizer"], "layers": [44]}}
     assert js.check_instrument(opts, "introspection", lay, [44]) == []
-    assert "layers" in js.check_instrument(opts, "introspection", lay, None)[0]
+    assert any("layers" in p for p in js.check_instrument(opts, "introspection", lay, None))
 
 
 # ---------------------------------------------------------------- seeds, upload, draw marker
@@ -1462,3 +1465,17 @@ def test_parse_statuses_survives_unicode_line_separators_in_the_payload():
     payload = {"statuses": {"a": {"status": "ok"}}, "rows": ["judge text\u2028more\x85end"]}
     out = "progress\n" + json.dumps(payload, ensure_ascii=False) + "\n"
     assert js.parse_statuses(out, ["a"], 0) == {"a": "ok"}
+
+
+def test_check_instrument_applies_the_runner_layered_default():
+    # v1.1.0: a multi-layer summary run without summ_layers= runs layered (runner); the check
+    # must expect that, not union (it refused every s3d union job)
+    from wsbench import digest
+
+    fam = "typo_mt"
+    opts = "summ_store=/x"
+    want = js.summarizer_of(opts, fam, 2)
+    assert want["layer_mode"] == digest.LAYERED_MODE
+    assert js.summarizer_of(opts, fam, 1)["layer_mode"] == "union"  # single layer unchanged
+    ref = {"config": {"aggregate": "summary", "summarizer": want, "layers": None}}
+    assert js.check_instrument(opts, fam, ref, None) == []

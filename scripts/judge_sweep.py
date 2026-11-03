@@ -814,10 +814,14 @@ def _summ_cmp(summ: Mapping[str, Any] | None) -> dict[str, Any]:
     return {k: v for k, v in (summ or {}).items() if k not in ("concurrency", "timeout")}
 
 
-def summarizer_of(opts: str, family: str) -> dict[str, Any]:
+def summarizer_of(opts: str, family: str, n_layers: int = 1) -> dict[str, Any]:
+    """The summarizer config a run of ``opts`` gets, including the runner's v1.1.0 default
+    (``digest.resolve_layer_mode``: a multi-layer run without ``summ_layers`` is layered)."""
     from wsbench import digest
 
-    probe = _probe_args(dict(parse_opts(opts)))
+    ex = dict(parse_opts(opts))
+    ex.setdefault("aggregate", "summary")
+    probe = _probe_args(digest.resolve_layer_mode(family, ex, n_layers))
     return _summ_cmp(digest.config(probe, None, family)["summarizer"])
 
 
@@ -829,7 +833,9 @@ def check_instrument(
     probs: list[str] = []
     cfg = ref.get("config") or {}
     if cfg.get("aggregate") == "summary":
-        mine, theirs = summarizer_of(opts, family), _summ_cmp(cfg.get("summarizer"))
+        n_layers = len(layers) if layers else 2  # no layers=: every layer of the file (multi)
+        mine = summarizer_of(opts, family, n_layers)
+        theirs = _summ_cmp(cfg.get("summarizer"))
         if mine != theirs:
             diff = sorted(k for k in set(mine) | set(theirs) if mine.get(k) != theirs.get(k))
             probs.append(f"{family}: config.summarizer differs from the reference on {diff}")
