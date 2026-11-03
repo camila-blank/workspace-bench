@@ -16,7 +16,7 @@ from wsbench.readplan import SUMMARIZE_SUFFIX
 
 from . import moral as _moral_mod
 from . import poetry as _po
-from .gate import ANNOTATION, Ask, words
+from .gate import ANNOTATION, Ask
 
 OWN_STEM = "My one-word answer is:"
 
