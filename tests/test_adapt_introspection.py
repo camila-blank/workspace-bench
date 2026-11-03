@@ -18,6 +18,8 @@ from wsbench.adapt import introspection as ii
 from wsbench.adapt import store, subjects
 from wsbench.adapt.subjects import Subject
 
+REAL_GAUSSIAN_ROWS = ii.gaussian_rows  # before the autouse stand-in replaces it
+
 TOKEN = re.compile(r"<\|[a-z_]+\|>|</?think>|\s?[A-Za-z]+|\d+|\s+|.", re.S)
 
 
@@ -65,6 +67,13 @@ def bank():
 @pytest.fixture(autouse=True)
 def _cached_bank(bank, monkeypatch):
     monkeypatch.setattr(ii, "registered_bank", lambda: bank)
+
+
+@pytest.fixture(autouse=True)
+def _numpy_gaussians(monkeypatch):
+    """The recipe's gaussian rows need torch (not in the dev env): ingestion re-draws them with
+    the same stand-in the fake results were drawn with."""
+    monkeypatch.setattr(ii, "gaussian_rows", _randn)
 
 
 @pytest.fixture(scope="module")
@@ -679,3 +688,49 @@ def test_reads_load_honours_a_short_grid_adapted_bank(tmp_path, bank, monkeypatc
     assert reads.min_full_positions("introspection", 9) == 4
     monkeypatch.delenv(registry.BANK_FILE_ENV_PREFIX + "INTROSPECTION")
     assert reads.min_full_positions("introspection", 9) == 2
+
+
+# ---------------------------------------------------------------- round 3: result integrity
+
+
+def _ingest(adapted, m, job, res):
+    store.write_json(adapted / m / "introspection" / "job.json", job)
+    f = adapted / "res.npz"
+    f.write_bytes(ii.save_result(res))
+    ii.stage_measure(m, result=str(f))
+
+
+def test_gaussian_rows_off_recipe_refused(adapted, subject, job, result):
+    g = result["gaussian"]
+    unit = g / np.linalg.norm(g, axis=1, keepdims=True)  # e.g. a runner that ships unit rows
+    with pytest.raises(SystemExit, match="gaussian rows are not the recipe"):
+        _ingest(adapted, subject.key, job, {**result, "gaussian": unit})
+    assert not ii.vector_paths(subject.key, 6)["gaussian"].exists()
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, 0.0])
+def test_non_finite_or_zero_concept_rows_refused(adapted, subject, job, result, bad):
+    c = result["concept"].copy()
+    c[3] = 0.0 if bad == 0.0 else c[3]
+    if bad != 0.0:
+        c[3, 1] = bad
+    with pytest.raises(SystemExit, match="non-finite or zero-norm"):
+        _ingest(adapted, subject.key, job, {**result, "concept": c})
+
+
+def test_gaussian_recipe_reproduces_the_shipped_27b_rows(bank):
+    pytest.importorskip("torch")
+    shipped = np.load(registry.REPO_ROOT / bank["vectors"]["gaussian"]["path"], mmap_mode="r")
+    seeds = [it["vector"]["seed"] for it in bank["items"] if it["kind"] == "gaussian"][:3]
+    np.testing.assert_array_equal(REAL_GAUSSIAN_ROWS(seeds, 5120), np.asarray(shipped[:3]))
+
+
+def test_adapted_spec_does_not_describe_the_27b(tmp_path, subject, bank, job, result):
+    out, _cal, _paths = _bank_from_result(tmp_path, subject, bank, job, result)
+    assert "legacy_v1" not in out["spec"]
+    assert out["reference_27b"]["spec_legacy_v1"] == bank["spec"]["legacy_v1"]
+    assert (
+        "subject's width" in out["spec"]["controls"]
+        and "org/Fake-32L" in out["spec"]["subject_note"]
+    )
+    assert "legacy_v1" in bank["spec"]  # the registered bank object is untouched

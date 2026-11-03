@@ -759,6 +759,20 @@ def build_bank(
         f"of 'Tell me about {{word}}' (thinking off) minus the mean over the 100 baseline "
         f"entries, block {layer} (the 27B's L12 remapped by depth), raw then unit-normalized"
     )
+    # the 27B's pre-grid read keys (layers of 64) are provenance, not this subject's spec
+    if "legacy_v1" in spec:
+        out["reference_27b"]["spec_legacy_v1"] = spec.pop("legacy_v1")
+    spec["controls"] = (
+        "gaussian (a random direction from the bank's seed at the subject's width, same dose), "
+        "cross (another cluster's subject vector, same dose; readout reused from that concept's "
+        "inject row since the visible text is identical), beta0 (protocol Trial 1..8 + 4 "
+        "neutral prompts, judged against every cluster, bootstrap unit = activation)"
+    )
+    spec["subject_note"] = (
+        f"adapted to {s.hf_id}: every activation-, token- and dose-dependent field is the "
+        "subject's (renders, inject_layer, betas/dose, vectors, calibration); options, "
+        "clusters, seeds and visible text are the registered bank's (subject-independent)"
+    )
     spec["inject"] = (
         f"h <- h + dose*||h||*v_hat at block {layer} across the protocol trial turn / the neutral "
         "prompt's user content (the subject's own render); adapter disabled"
@@ -892,6 +906,18 @@ def _write_result(model: str, job: dict[str, Any], res: dict[str, Any]) -> None:
         raise SystemExit(f"{FAMILY}: result betas {sorted(sw.get('betas', {}))} != the job's")
     if list(sw.get("beta0", {}).get("rr", {})) != list(job["protocol"]["paper_words"]):
         raise SystemExit(f"{FAMILY}: result words do not match the job's paper words")
+    concept = np.asarray(res["concept"], np.float64)
+    norms = np.linalg.norm(concept, axis=1) if np.isfinite(concept).all() else None
+    if norms is None or not (norms > 0).all():
+        raise SystemExit(f"{FAMILY}: the result has a non-finite or zero-norm concept vector")
+    # the gaussian controls are the bank's recipe, not the runner's: an external runner may draw
+    # them another way (another RNG, fp64, a unit vector), so they are re-drawn here and compared
+    want = gaussian_rows(job["gaussian_seeds"], int(concept.shape[1]))
+    if not np.allclose(np.asarray(res["gaussian"], np.float32), want, rtol=0, atol=1e-6):
+        raise SystemExit(
+            f"{FAMILY}: the result's gaussian rows are not the recipe's (torch.Generator()"
+            ".manual_seed(seed); torch.randn(d_model) on CPU, float32)"
+        )
     # new vectors void everything built from the old ones (the bank records their sha256)
     _unlink([work_dir(model) / "calibration.json", _bank_path(model)], "new vectors")
     paths = vector_paths(model, int(job["inject_layer"]))
