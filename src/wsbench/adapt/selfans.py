@@ -33,7 +33,9 @@ _PREAMBLE = re.compile(
     r"i'd choose|i would choose)\s*:?\s*"
 )
 
-AskJson = Callable[[str], Any]  # prompt -> parsed JSON reply (None when unparsable)
+# ``ask(prompt, valid=None)`` -> parsed JSON reply (None when unparsable or never valid)
+AskJson = Callable[..., Any]
+Valid = Callable[[Any], bool]
 
 
 def norm(s: str) -> str:
@@ -169,7 +171,9 @@ class JsonCache:
 def claude_json(model: str, cache_path: Path | None = None, max_tokens: int = 4000) -> AskJson:
     """``prompt -> parsed JSON`` on ``model`` (a Claude id) via ``auth.Session``; transient errors
     and unparsable replies are retried, then ``None``. A 401 on the newest token stops the run.
-    Parsed replies are cached per (model, prompt) in ``cache_path``; ``None`` is never cached."""
+    Replies are cached per (model, prompt) in ``cache_path`` only when ``valid(reply)`` holds (the
+    caller's completeness check): an invalid reply is retried like an unparsable one, never cached,
+    and a cached reply that fails ``valid`` is ignored and re-asked. ``None`` is never cached."""
     import anthropic
 
     from .auth import PUSH, Session, TokenExpired
@@ -177,9 +181,10 @@ def claude_json(model: str, cache_path: Path | None = None, max_tokens: int = 40
     session = Session()
     cache = JsonCache(cache_path) if cache_path else None
 
-    def ask(prompt: str) -> Any:
+    def ask(prompt: str, valid: Valid | None = None) -> Any:
+        ok = valid or (lambda _js: True)
         key = hashlib.sha256(json.dumps([model, prompt]).encode()).hexdigest()
-        if cache is not None and key in cache.d:
+        if cache is not None and key in cache.d and ok(cache.d[key]):
             return cache.d[key]
         attempt = 0
         while attempt < ATTEMPTS:
@@ -191,7 +196,7 @@ def claude_json(model: str, cache_path: Path | None = None, max_tokens: int = 40
                     messages=[{"role": "user", "content": prompt}],
                 )
                 text = "".join(b.text for b in msg.content if b.type == "text")
-                if (js := first_json(text)) is not None:
+                if (js := first_json(text)) is not None and ok(js):
                     if cache is not None:
                         cache.put(key, js)
                     return js

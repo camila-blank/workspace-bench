@@ -81,7 +81,7 @@ LEGACY_ORDER = ("llama", "gemma", "gptoss", "mistral")
 # the 27B bank's Qwen-specific gate records: never shipped under the subject's gold
 QWEN_FIELDS = (
     "g1_pass1", "g1_pass2", "g1_picks", "g3_leaks", "gated_options", "option_regate",
-    "member_check", "label_qa", "recognisable_strict", "panel_status", "aliases",
+    "member_check", "label_qa", "recognisable_strict", "panel_status", "aliases", "refill",
 )  # fmt: skip
 
 CANON = (
@@ -113,6 +113,30 @@ VERIFY = (
     'generic"}}, ...}}}}  (omit answers with nothing to flag)'
 )
 CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
+
+
+# ------------------------------------------------------------------ reply validators
+# a Claude reply is cached (``selfans.claude_json``) only when its validator passes
+
+
+def valid_canon(strings: Sequence[str]):
+    def ok(js: Any) -> bool:
+        m = js.get("map") if isinstance(js, dict) else None
+        return isinstance(m, dict) and set(strings) <= {norm(str(k)) for k in m}
+
+    return ok
+
+
+def valid_generate(options: Sequence[str]):
+    def ok(js: Any) -> bool:
+        f = js.get("forms") if isinstance(js, dict) else None
+        return isinstance(f, dict) and all(o in f for o in options)
+
+    return ok
+
+
+def valid_flags(js: Any) -> bool:
+    return isinstance(js, dict) and isinstance(js.get("flags", {}), dict)
 
 
 # ------------------------------------------------------------------ bank and prompts
@@ -273,7 +297,7 @@ def canon(model: str, ask: AskJson | None, workers: int = 16) -> dict[str, dict[
         known = sorted(known_labels(it))
         js = ask(CANON.format(topic=it["topic"], noun=it["noun"],
                               known=json.dumps(known, ensure_ascii=False),
-                              lines="\n".join(strings)))  # fmt: skip
+                              lines="\n".join(strings)), valid=valid_canon(strings))  # fmt: skip
         got = js.get("map") if isinstance(js, dict) else None
         if not isinstance(got, dict):
             return it["id"], None  # a failed reply is never persisted: the next run re-asks
@@ -438,7 +462,8 @@ def symmetric_units(item: Mapping[str, Any], options: Sequence[str], ask: AskJso
     reply fails or the generation omits an option."""
     iid = item["id"]
     js = ask(GENERATE.format(noun=item["noun"], opts="\n".join(
-        f"- {o}" for o in seeded_order(options, f"{iid}|units"))))  # fmt: skip
+        f"- {o}" for o in seeded_order(options, f"{iid}|units"))),
+        valid=valid_generate(options))  # fmt: skip
     got = js.get("forms") if isinstance(js, dict) else None
     if not isinstance(got, dict) or not all(o in got for o in options):
         return None
@@ -446,7 +471,7 @@ def symmetric_units(item: Mapping[str, Any], options: Sequence[str], ask: AskJso
     cands = candidate_forms(options, gen)
     block = "\n".join(f"Answer: {o}\n  strings: {json.dumps(cands[o], ensure_ascii=False)}"
                       for o in seeded_order(options, f"{iid}|verify"))  # fmt: skip
-    js = ask(VERIFY.format(noun=item["noun"], block=block))
+    js = ask(VERIFY.format(noun=item["noun"], block=block), valid=valid_flags)
     if not isinstance(js, dict) or not isinstance(js.get("flags", {}), dict):
         return None
     fl = js.get("flags", {})
