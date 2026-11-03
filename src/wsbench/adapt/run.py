@@ -916,6 +916,7 @@ def note(model: str, family: str, status: str | None = None, text: str | None = 
             entry["note"] = text
         if exclude_from_macro is not None:
             entry["exclude_from_macro"] = exclude_from_macro
+            entry.pop("absent_auto", None)  # a deliberate exclusion: never cleared automatically
 
     store.update_report(model, _set)
 
