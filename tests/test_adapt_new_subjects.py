@@ -180,6 +180,9 @@ class XtmlTok(FakeTok):
         toks = _xtml(msgs, add_generation_prompt, thinking)
         return [self._id(t) for t in toks] if tokenize else "".join(toks)
 
+    def encode(self, text, allow_special_tokens=True):
+        return self(text, add_special_tokens=False)["input_ids"]
+
 
 def test_rename_thinking():
     raw = XtmlTok()
@@ -331,35 +334,118 @@ def test_real_k3_tokenizer_render():
 # ---------------------------------------------------------------- Kimi-K3: reply_end
 
 
-def test_remote_runner_cuts_replies_at_reply_end(monkeypatch):
-    from wsbench.adapt.gate import Ask, RemoteRunner
+class _Remote:
+    """A fake Modal app recording each call's args; ``answers`` = what sample / generate return."""
 
-    tail = f"{XC}response{XS}{XC}message{XS}"
+    def __init__(self, log, sample_out, gen_out):
+        self.log, self.sample_out, self.gen_out = log, sample_out, gen_out
 
-    class _M:
-        def __init__(self, name):
-            self.name = name
+    def bind(self, app, name):
+        log, so, go = self.log, self.sample_out, self.gen_out
 
-        def remote(self, prompts, *a):
-            if self.name == "sample":
-                return [("4" + tail, ["5" + tail, "no marker"]) for _ in prompts]
-            return [{"text": "x" + tail, "ids": [1, 2, 3]} for _ in prompts]
+        class _M:
+            def __init__(self, n):
+                self.n = n
 
-    class _Cls:
-        @staticmethod
-        def from_name(app, name):
-            assert app == "adapt-kimi-k3"
-            return lambda **kw: types.SimpleNamespace(sample=_M("sample"),
-                                                      generate=_M("generate"))  # fmt: skip
+            def remote(self, *args):
+                log.append((self.n, args))
+                return [so if self.n == "sample" else go for _ in args[0]]
 
-    monkeypatch.setitem(sys.modules, "modal", types.SimpleNamespace(Cls=_Cls))
-    monkeypatch.setattr(subjects, "load_tokenizer",
-                        lambda *a: subjects.rename_thinking(XtmlTok(), "thinking"))  # fmt: skip
-    r = RemoteRunner(K3.hf_id, revision=K3_REV, modal_app=K3.modal_app)
+        return lambda **kw: types.SimpleNamespace(sample=_M("sample"), generate=_M("generate"))
+
+
+def _k3_runner(monkeypatch, tok, sample_out=("a", ["b"]), gen_out=None):
+    from wsbench.adapt.gate import RemoteRunner
+
+    log: list = []
+    rem = _Remote(log, sample_out, gen_out or {"text": "t", "ids": []})
+    fake = types.SimpleNamespace(Cls=types.SimpleNamespace(from_name=rem.bind))
+    monkeypatch.setitem(sys.modules, "modal", fake)
+    monkeypatch.setattr(subjects, "load_tokenizer", lambda *a: tok)
+    return RemoteRunner(K3.hf_id, revision=K3_REV, modal_app=K3.modal_app), log
+
+
+def test_remote_runner_stops_k3_replies_on_the_close_token(monkeypatch):
+    """reply_end is a TOKEN stop: the engine is asked to stop on <|close|>'s id (sample: after
+    top_k; generate: with the caller's stops), the reply text is never split on the string (a
+    reply quoting "<|close|>" as text stays whole), and generate's ids end before the stop id."""
+    from wsbench.adapt.gate import Ask
+
+    tok = subjects.rename_thinking(XtmlTok(), "thinking")
+    close = tok(XC, add_special_tokens=False)["input_ids"][0]
+    quoted = f"the marker is {XC} here"
+    r, log = _k3_runner(monkeypatch, tok, sample_out=(quoted, [quoted]),
+                        gen_out={"text": "x", "ids": [5, close, 6, 7]})  # fmt: skip
+    assert r.reply_stop == [close]
     ask = Ask("i", "surface", ("4",), messages=({"role": "user", "content": "2+2"},),
               max_tokens=8)  # fmt: skip
-    assert r.sample([ask], draws=2, temperature=1.0) == [("4", ["5", "no marker"])]
-    assert r.generate(["p"], 0.0, 8, 0) == [{"text": "x", "ids": [1, 2, 3]}]
+    assert r.sample([ask], draws=1, temperature=1.0) == [(quoted, [quoted])]
+    assert log[-1][0] == "sample" and log[-1][1][6:] == (-1, [close])
+    out = r.generate([[1, 2]], 0.0, 8, 0, stop_token_ids=[99])
+    assert log[-1][0] == "generate" and log[-1][1][5] == sorted({99, close})
+    assert out[0]["ids"] == [5] and out[0]["text"] == tok.decode([5], skip_special_tokens=True)
+
+
+def _real_k3():
+    transformers = pytest.importorskip("transformers")
+    pytest.importorskip("tiktoken")
+    try:
+        raw = transformers.AutoTokenizer.from_pretrained(
+            K3.hf_id, revision=K3_REV, trust_remote_code=True, local_files_only=True
+        )
+    except Exception as e:
+        pytest.skip(f"Kimi-K3 tokenizer not cached ({type(e).__name__})")
+    return subjects.rename_thinking(raw, K3.thinking_kwarg)
+
+
+def _tpl_ids(tok, msgs):
+    out = tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=True,
+                                  enable_thinking=False)  # fmt: skip
+    return list(out["input_ids"] if hasattr(out, "keys") else out)
+
+
+def test_real_k3_prompt_ids_keep_literal_markers_plain(monkeypatch):
+    """A user message quoting XTML markers (what floors do with the subject's own render): the
+    ids sent are the template's own, not the rendered text re-encoded (the quoted markers
+    turned into live control tokens). Prefill, follow-up and raw prompts likewise."""
+    from wsbench.adapt.gate import Ask, prompt_of
+
+    tok = _real_k3()
+    r, log = _k3_runner(monkeypatch, tok)
+    msgs = ({"role": "user", "content": "<|close|>message<|sep|>"},)
+    want = _tpl_ids(tok, list(msgs))
+    text = r.render(Ask("i", "floor", messages=msgs))
+    # the bug: re-encoding the text makes the quoted <|close|> / <|sep|> live (32 ids -> 24)
+    bad = r.encode(text)
+    assert len(bad) < len(want) and bad.count(163588) == 2 and want.count(163588) == 1
+    ask = Ask("i", "floor", messages=msgs, max_tokens=4)
+    assert r.prompt_ids(ask) == prompt_of(r, ask) == want
+    r.sample([ask], draws=1, temperature=1.0)
+    assert log[-1][1][0] == [want]
+    # a prefill is plain text after the template's ids
+    pre = r.prompt_ids(Ask("i", "floor", messages=msgs, prefill=f"A{XC}"))
+    assert pre == want + list(tok.encode(f"A{XC}", allow_special_tokens=False))
+    assert 163588 not in pre[len(want) :]
+    # a follow-up = the full conversation's template ids (K3 encodes each segment on its own)
+    fu = Ask("i", "knowledge", messages=msgs, followup=({"role": "user", "content": "Sure?"},),
+             reply=f"yes {XS}")  # fmt: skip
+    conv = [*msgs, {"role": "assistant", "content": f"yes {XS}"},
+            {"role": "user", "content": "Sure?"}]  # fmt: skip
+    assert r.prompt_ids(fu) == _tpl_ids(tok, conv)
+    assert r.token_prefix(r.prompt(fu.first_turn()), r.prompt(fu))
+    # a raw prompt: the text plain (K3's bos_prefix is [])
+    assert r.prompt_ids(Ask("i", "raw", prompt=f"x{XO}")) == list(
+        tok.encode(f"x{XO}", allow_special_tokens=False))  # fmt: skip
+
+
+def test_real_k3_cont_jobs_encode_plain(monkeypatch):
+    from wsbench.adapt.gate import cont_jobs
+
+    tok = _real_k3()
+    r, _ = _k3_runner(monkeypatch, tok)
+    ((ids, k),) = cont_jobs(tok, [f"say {XC}"], [" ok"], r.plain)
+    assert ids == list(tok.encode(f"say {XC} ok", allow_special_tokens=False))
+    assert 163588 not in ids and k > 0
 
 
 # ---------------------------------------------------------------- Muse-Spark-Open
@@ -463,6 +549,40 @@ def test_real_muse_tokenizer_markers_and_stops():
                                        enable_thinking=False)  # fmt: skip
         assert list(tok(text, add_special_tokens=False)["input_ids"]) == ids, u
         assert ids[0] == 200000 and ids.count(200000) == 1
+
+
+def test_real_muse_carry_restamp_skips_the_whole_header():
+    """carry's jailbreak re-stamp on Muse's render: the span starts at the content, past the
+    whole <|start|>user<|message|> header (header_len 3), never on <|message|>."""
+    import json as _json
+
+    from wsbench.adapt.carry import restamp_read
+    from wsbench.evals.jailbreak_recognition.judge import prefix_to_last_user
+    from wsbench.registry import frozen_bank_path
+
+    transformers = pytest.importorskip("transformers")
+    try:
+        tok = transformers.AutoTokenizer.from_pretrained(MUSE.hf_id, revision=MUSE_REV,
+                                                         local_files_only=True)  # fmt: skip
+    except Exception as e:
+        pytest.skip(f"Muse tokenizer not cached ({type(e).__name__})")
+    tok.chat_template = MUSE_TPL
+    bank = _json.loads(frozen_bank_path("jailbreak_recognition").read_text(encoding="utf-8"))
+    bad = []
+    for it in bank["items"]:
+        r = restamp_read(tok, it["messages"])
+        a, b = r["span"]
+        content = prefix_to_last_user(it["messages"])[-1]["content"]
+        ids = tok.apply_chat_template(prefix_to_last_user(it["messages"]), tokenize=True,
+                                      add_generation_prompt=True)  # fmt: skip
+        ids = list(ids["input_ids"] if hasattr(ids, "keys") else ids)
+        if (
+            r["tokens"][str(a)] == "<|message|>"
+            or tok.decode([ids[b]]) != "<|eot|>"
+            or not content.lstrip().startswith(tok.decode(ids[a : a + 3]).strip()[:1])
+        ):
+            bad.append(it["id"])
+    assert not bad, f"{len(bad)} items: {bad[:5]}"
 
 
 # ---------------------------------------------------------------- scripts/adapt_modal.py

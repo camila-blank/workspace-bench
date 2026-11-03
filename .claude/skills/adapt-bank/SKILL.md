@@ -137,7 +137,10 @@ starting the next.
   `thinking`) sets `Subject.thinking_kwarg`: `load_tokenizer` renames the kwarg, so every render
   still says `enable_thinking=False`. A reply marker the engine does not stop on and the
   detokenizer keeps (K3's non-special `<|close|>`) goes in `Subject.reply_end`: `RemoteRunner`
-  cuts replies there. Per-subject notes: `references/porting.md`.
+  has the engine stop on that token id. A template that encodes message content with specials
+  disallowed (K3) sets `Subject.template_ids`: prompt ids come from
+  `apply_chat_template(tokenize=True)`, never from re-encoding the rendered text (callers send
+  `runner.prompt(ask)`, `gate.prompt_of`). Per-subject notes: `references/porting.md`.
 - Run the gate where the weights fit. Up to ~9B: the RunPod 4090 with vLLM.
   `scripts/adapt_box.sh <cmd> …` wraps `python -m wsbench.adapt` with:
   - the venv `$ADAPT_ENV` (default `/workspace/agam/envs/adapt`; vLLM needs its `ninja` on PATH);

@@ -259,14 +259,20 @@ def split(n: int, k: int) -> list[tuple[int, int]]:
     return [(lo, min(n, lo + step)) for lo in range(0, n, step)]
 
 
-def run_sample(llm, prompts, max_tokens, draws, temperature, top_p, seed, top_k=-1) -> list:
+def run_sample(
+    llm, prompts, max_tokens, draws, temperature, top_p, seed, top_k=-1, stop_token_ids=None
+) -> list:
     """Greedy + ``draws`` samples per prompt (token ids, or text); prompt i samples with seed+i.
-    ``top_k`` -1 = off (basic_readout_mt v4's gate fixes 20, plan 0060 A2)."""
+    ``top_k`` -1 = off (basic_readout_mt v4's gate fixes 20, plan 0060 A2). ``stop_token_ids``:
+    the subject's reply_end token (Kimi-K3's <|close|>), on both draws."""
     from vllm import SamplingParams
 
+    stop = stop_token_ids or None
     ins = _inputs(prompts)
     g = llm.generate(
-        ins, [SamplingParams(temperature=0.0, max_tokens=m) for m in max_tokens], use_tqdm=False
+        ins,
+        [SamplingParams(temperature=0.0, max_tokens=m, stop_token_ids=stop) for m in max_tokens],
+        use_tqdm=False,
     )
     s = llm.generate(
         ins,
@@ -278,6 +284,7 @@ def run_sample(llm, prompts, max_tokens, draws, temperature, top_p, seed, top_k=
                 top_k=top_k,
                 max_tokens=m,
                 seed=seed + i,
+                stop_token_ids=stop,
             )
             for i, m in enumerate(max_tokens)
         ],
@@ -336,7 +343,8 @@ def fan_out(engines: list, name: str, args: tuple) -> list:
     prompts = args[0]
     calls = []
     for eng, (lo, hi) in zip(engines, split(len(prompts), len(engines)), strict=False):
-        if name == "sample":  # (prompts, max_tokens, draws, temperature, top_p, seed[, top_k])
+        # sample: (prompts, max_tokens, draws, temperature, top_p, seed[, top_k, stop])
+        if name == "sample":
             a = (prompts[lo:hi], args[1][lo:hi], *args[2:5], args[5] + lo, *args[6:])
         elif name == "cont_logprobs":  # (ids, starts): both per prompt (plan 0060 Phase E)
             a = (prompts[lo:hi], args[1][lo:hi])
@@ -542,9 +550,11 @@ class SubjectLLM:
         top_p: float,
         seed: int,
         top_k: int = -1,
+        stop_token_ids: list[int] | None = None,
     ) -> list[tuple[str, list[str]]]:
         """Greedy + ``draws`` samples per prompt (token ids, or text): Runner.sample's contract."""
-        extra = (top_k,) if top_k != -1 else ()
+        extra = ((top_k, stop_token_ids) if stop_token_ids else
+                 (top_k,) if top_k != -1 else ())  # fmt: skip
         return self._run("sample", (prompts, max_tokens, draws, temperature, top_p, seed, *extra))
 
     @modal.method()

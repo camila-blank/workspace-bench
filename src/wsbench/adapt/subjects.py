@@ -31,10 +31,16 @@ class Subject:
     # differently (Kimi-K3's remote-code apply_chat_template takes ``thinking`` and silently
     # ignores enable_thinking, so the render would open a think block at thinking_effort=max)
     thinking_kwarg: str = "enable_thinking"
-    # the text that ends a reply when the engine does not stop on it (a non-special marker the
-    # detokenizer keeps): RemoteRunner cuts every reply there. Kimi-K3: "<|close|>" closes the
-    # response channel; vLLM stops only at <|end_of_msg|>, after "<|close|>response<|sep|>..."
+    # the one-token marker that ends a reply when the engine does not stop on it by itself:
+    # RemoteRunner makes the engine stop on that TOKEN id (a reply that writes the same string as
+    # BPE text is untouched). Kimi-K3: "<|close|>" (163588) closes the response channel; vLLM
+    # stops only at <|end_of_msg|>, after "<|close|>response<|sep|><|close|>message<|sep|>"
     reply_end: str | None = None
+    # RemoteRunner takes prompt ids from apply_chat_template(tokenize=True) instead of
+    # re-encoding the rendered text (``gate.RemoteRunner.prompt_ids``). Kimi-K3: its template
+    # encodes message content with specials disallowed, so re-encoding the text would turn a
+    # literal "<|close|>" in a message into a control token
+    template_ids: bool = False
     # backend="modal": how scripts/adapt_modal.py builds the subject's app (``modal_spec``). The
     # defaults are the shared app's: one H200, the hub cache volume, the stock vLLM image.
     modal_gpu: tuple[str, ...] = ("H200",)  # Modal GPU spec(s); more than one = fallback order
@@ -265,7 +271,8 @@ SUBJECTS: dict[str, Subject] = {
         # <|open|>message role="assistant"<|sep|><|open|>response<|sep|> (no think block to
         # close, no thinking-effort system message). Replies end "<|close|>response<|sep|>
         # <|close|>message<|sep|><|end_of_msg|>"; the XTML markers are not special tokens, so
-        # reply_end cuts at the first <|close|>. Default image (vLLM 0.31.0, tiktoken), TP8 on
+        # reply_end stops the engine on the <|close|> token; template_ids keeps literal markers
+        # in content plain text. Default image (vLLM 0.31.0, tiktoken), TP8 on
         # B300:8; weights on volume kimi-k3 (mounted at /hf: the snapshot is /hf/hf/hub/...).
         Subject(
             "kimi-k3",
@@ -279,6 +286,7 @@ SUBJECTS: dict[str, Subject] = {
             trust_remote_code=True,
             thinking_kwarg="thinking",
             reply_end="<|close|>",
+            template_ids=True,
             modal_gpu=("B300:8",),
             modal_tp=8,
             modal_volume="kimi-k3",
