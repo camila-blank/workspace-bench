@@ -318,7 +318,10 @@ def test_engines_split_a_call_and_keep_each_prompts_seed(monkeypatch):
 
 
 def _fake_make(kwargs):
-    """A CPU stand-in for vllm.LLM in a real spawned engine process (module level: pickled)."""
+    """A CPU stand-in for vllm.LLM in a real spawned engine process (module level: pickled);
+    ``fail_gpu`` = the engine on that GPU fails to start."""
+    if os.environ["CUDA_VISIBLE_DEVICES"] == str(kwargs.get("fail_gpu")):
+        raise RuntimeError("engine load failed")
     return {"pid": os.getpid(), **kwargs}
 
 
@@ -351,21 +354,40 @@ def test_real_engine_processes_drain_errors_and_never_hang(monkeypatch):
 
         p6 = ["a", "b", "c", "d", "e", "f"]
         assert call(p6) == [f"generate:{p}" for p in p6]
-        with pytest.raises(RuntimeError, match="engine 2: engine error: ValueError"):
+        # a per-request error goes to the caller, not EngineDiedError (the container serves on)
+        with pytest.raises(RuntimeError, match="engine 2: engine error: ValueError") as err:
             call(["a", "b", "c", "d", "boom", "f"])
+        assert not isinstance(err.value, m.EngineDiedError)
+        assert all(e.proc.is_alive() for e in engines)
         p6b = ["u", "v", "w", "x", "y", "z"]
         assert call(p6b) == [f"generate:{p}" for p in p6b]  # nothing stale left in the pipes
-        with pytest.raises(RuntimeError, match="engine 1: engine process died"):
+        with pytest.raises(m.EngineDiedError, match="engine 1: engine process died"):
             call(["a", "b", "die", "d", "e", "f"])
         assert all(e.proc.is_alive() for k, e in enumerate(engines) if k != 1)
         engines[0].proc.kill()
         engines[0].proc.join(30)
-        with pytest.raises(RuntimeError, match="engine 0: engine process"):
+        with pytest.raises(m.EngineDiedError, match="engine 0: engine process"):
             call(p6)
     finally:
         for e in engines:
             e.close(timeout=30)
     assert not any(e.proc.is_alive() for e in engines)
+
+
+def test_engine_startup_failure_stops_every_started_engine(monkeypatch):
+    """Engine 1 of 3 fails to load: start_engines raises (no hang), every started engine is in
+    the list and has exited, so nothing blocks multiprocessing's exit join."""
+    pytest.importorskip("modal")
+    monkeypatch.delenv("ADAPT_SUBJECT", raising=False)
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import adapt_modal as m
+
+    engines: list = []
+    with pytest.raises(m.EngineDiedError):
+        m.start_engines(3, {"fail_gpu": 1}, engines, _fake_make, _fake_run)
+    assert len(engines) == 3
+    assert not any(e.proc.is_alive() for e in engines)
+    assert all(e in m._STARTED for e in engines)  # the atexit backstop knows them
 
 
 def test_quant_override_marks_nvfp4_layers_w4a16(monkeypatch, tmp_path):

@@ -51,7 +51,9 @@ The client side needs MODAL_ENVIRONMENT set to the env the app was deployed in. 
 deployed before plan 0060 A3: its methods took text, RemoteRunner now sends token ids.
 """
 
+import atexit
 import json
+import multiprocessing.util  # noqa: F401  (registers its exit join before our backstop)
 import os
 
 import modal
@@ -293,14 +295,15 @@ def fan_out(engines: list, name: str, args: tuple) -> list:
         else:  # generate: one seed for every prompt, as on one engine
             a = (prompts[lo:hi], *args[1:])
         calls.append(eng(name, a))
-    out, errors = [], []
+    out, errors, died = [], [], False
     for k, c in enumerate(calls):
         try:
             out += c.result()
         except Exception as e:
             errors.append(f"engine {k}: {e}")
-    if errors:
-        raise RuntimeError("; ".join(errors))
+            died |= isinstance(e, EngineDiedError)
+    if errors:  # a per-request error leaves the drained workers healthy; a death does not
+        raise (EngineDiedError if died else RuntimeError)("; ".join(errors))
     return out
 
 
@@ -328,6 +331,10 @@ def _engine_worker(gpu: int, kwargs: dict, conn, make=_vllm_engine, run=_vllm_ru
             conn.send(("err", repr(e)))
 
 
+class EngineDiedError(RuntimeError):
+    """An engine process is dead or unreachable: fatal for the container."""
+
+
 class _Engine:
     """A spawned engine process; calling it sends a request, ``.result()`` waits for the reply
     (or raises once the process is dead: never hangs on a dead engine). Not daemonic: vLLM's V1
@@ -352,11 +359,11 @@ class _Engine:
         try:
             return self.conn.recv()
         except (EOFError, OSError):
-            raise RuntimeError(f"engine process died (exit code {self.proc.exitcode})") from None
+            raise EngineDiedError(f"engine process died (exit code {self.proc.exitcode})") from None
 
     def wait_ready(self) -> None:
         if self._recv() != "ready":
-            raise RuntimeError("engine failed to start")
+            raise EngineDiedError("engine failed to start")
 
     def __call__(self, name: str, args: tuple) -> "_Engine":
         try:
@@ -368,7 +375,7 @@ class _Engine:
 
     def result(self) -> list:
         if self.error:
-            raise RuntimeError(self.error)
+            raise EngineDiedError(self.error)
         status, out = self._recv()
         if status != "ok":
             raise RuntimeError(f"engine error: {out}")
@@ -387,6 +394,38 @@ class _Engine:
         self.conn.close()
 
 
+_STARTED: list = []  # every engine process this process started (the atexit backstop)
+
+
+def stop_engines(engines: list, timeout: float = 60.0) -> None:
+    for e in engines:
+        e.close(timeout)
+
+
+@atexit.register  # registered after multiprocessing's own exit hook, so it runs first (LIFO)
+def _close_started() -> None:
+    stop_engines([e for e in _STARTED if e.proc.is_alive()], timeout=10.0)
+
+
+def start_engines(n: int, kwargs: dict, into: list, make=_vllm_engine, run=_vllm_run) -> None:
+    """``n`` engines, one per GPU, appended to ``into`` as each starts. The first warms the JIT
+    caches, then the rest start together. If any fails to come up, every started engine is
+    terminated and joined before the error propagates (a non-daemonic straggler would block
+    multiprocessing's exit join and hang the container)."""
+    try:
+        for gpu in range(n):
+            e = _Engine(gpu, kwargs, make, run)
+            into.append(e)
+            _STARTED.append(e)
+            if gpu == 0:
+                e.wait_ready()  # its JIT kernels are built: the siblings reuse the cache
+        for e in into[1:]:
+            e.wait_ready()
+    except BaseException:
+        stop_engines(into, timeout=5.0)
+        raise
+
+
 app = modal.App(SPEC["app"])
 volume = modal.Volume.from_name(SPEC["volume"], create_if_missing=SPEC["image"] == "default")
 _cls_options = dict(RECIPE["resources"])
@@ -397,7 +436,8 @@ if SPEC["replicas"] > 1:  # the containers RemoteRunner fans out over
 @app.cls(
     image=_image(SPEC["image"]),
     gpu=SPEC["gpu"][0] if len(SPEC["gpu"]) == 1 else SPEC["gpu"],
-    volumes={RECIPE["mount"]: volume},
+    # the weights volumes (glm53-weights, v4-flash) are read-only here; the hub cache is written
+    volumes={RECIPE["mount"]: volume if SPEC["image"] == "default" else volume.read_only()},
     timeout=6 * 3600,
     scaledown_window=600,
     **_cls_options,
@@ -411,12 +451,8 @@ class SubjectLLM:
     def load(self) -> None:
         kwargs = engine_kwargs(SPEC, self.model_id, self.revision, self.max_model_len)
         if SPEC["engines"] > 1:  # one TP=1 engine per GPU of the container, data parallel
-            first = _Engine(0, kwargs)
-            first.wait_ready()  # its JIT kernels are built: the siblings reuse the cache
-            rest = [_Engine(g, kwargs) for g in range(1, SPEC["engines"])]
-            for e in rest:
-                e.wait_ready()
-            self.engines = [first, *rest]
+            self.engines: list = []
+            start_engines(SPEC["engines"], kwargs, self.engines)
         else:
             from vllm import LLM
 
@@ -426,20 +462,21 @@ class SubjectLLM:
 
     @modal.exit()
     def stop(self) -> None:
-        for e in getattr(self, "engines", []):
-            e.close()
+        stop_engines(getattr(self, "engines", []))
 
     def _run(self, name: str, args: tuple) -> list:
         if SPEC["engines"] == 1:
             return RUN[name](self.llm, *args)
-        # any engine failure or death is fatal for the container: a partial engine set must
-        # not keep serving (Modal replaces the container; the client sees this call fail)
+        # a dead engine is fatal for the container: a partial engine set must not keep serving
+        # (Modal replaces the container; the client sees this call fail). A per-request error
+        # (e.g. a prompt over max_model_len) is raised to the caller: fan_out drained every
+        # reply, so the workers stay healthy and in sync.
         dead = [k for k, e in enumerate(self.engines) if not e.proc.is_alive()]
         try:
             if dead:
-                raise RuntimeError(f"engine(s) {dead} died")
+                raise EngineDiedError(f"engine(s) {dead} died")
             return fan_out(self.engines, name, args)
-        except Exception as e:
+        except EngineDiedError as e:
             print(f"FATAL: {e}; stopping the container", flush=True)
             for eng in self.engines:
                 if eng.proc.is_alive():
