@@ -9,7 +9,6 @@ import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any
 
 DEFAULT_DRAWS = 10
@@ -339,6 +338,10 @@ class Runner:
         self.tok = self.llm.get_tokenizer()
 
     def render(self, ask: Ask) -> str:
+        # NB: the box Runner hands vLLM this TEXT (vLLM tokenizes it, adding the tokenizer's own
+        # specials), while RemoteRunner sends token ids (``RemoteRunner.encode``: no added
+        # specials, an auto-BOS only when the render lacks it). For a tokenizer that auto-adds a
+        # BOS the chat render already carries, the two backends can diverge by that one token.
         if ask.messages:
             text = self.tok.apply_chat_template(
                 list(ask.messages),
@@ -396,6 +399,25 @@ class Runner:
         outs = self.llm.generate(ins, sp, use_tqdm=False)
         return [{"text": o.outputs[0].text, "ids": list(o.outputs[0].token_ids)} for o in outs]
 
+    # ---- plan 0060 Phase E (wrong_bridge logP legs): teacher-forced continuation scores ----
+    def cont_logprobs(self, prompts: list[str], conts: list[str]) -> list[float]:
+        """log P(cont | prompt) per pair, raw render (the subject's BOS + text, no template), as
+        global-workspace ``wrong_bridge/qwen_modal.py`` scores it: ``prompt + cont`` teacher-
+        forced, summed from the first token where it diverges from the prompt's own ids."""
+        from vllm import SamplingParams
+        from vllm.inputs import TokensPrompt
+
+        jobs = cont_jobs(self.tok, prompts, conts)
+        sp = SamplingParams(temperature=0.0, max_tokens=1, prompt_logprobs=0)
+        outs = self.llm.generate([TokensPrompt(prompt_token_ids=ids) for ids, _k in jobs], sp,
+                                 use_tqdm=False)  # fmt: skip
+        return [
+            sum_cont_logprob(o.prompt_logprobs, ids, k)
+            for (ids, k), o in zip(jobs, outs, strict=True)
+        ]
+
+    # ---- end plan 0060 Phase E ----
+
     def gen_eos(self) -> list[int]:
         """The model config's and the generation config's eos ids (Qwen3.5's generation config
         adds <|im_end|>; Gemma's adds <turn|>)."""
@@ -414,8 +436,13 @@ class Runner:
 
 
 class RemoteRunner(Runner):
-    """``Runner`` with generation on Modal (scripts/adapt_modal.py, app ``adapt-subject-llm``) for
-    subjects too big for the box: the template, rendering and grading stay local and identical."""
+    """``Runner`` with generation on Modal (scripts/adapt_modal.py: the subject's own app,
+    ``Subject.modal_app``) for subjects too big for the box: the template, rendering and grading
+    stay local and identical. Prompts go to Modal as TOKEN IDS (the local render, tokenized
+    without adding specials), so a BOS the render already carries (Gemma's ``<bos>``, GLM's
+    ``[gMASK]<sop>``) is never doubled by the engine's own tokenization."""
+
+    CHUNK = 512  # prompts per remote call (bounded payloads; the seed offset is the chunk start)
 
     def __init__(
         self,
@@ -426,41 +453,63 @@ class RemoteRunner(Runner):
         modal_app: str = "adapt-subject-llm",
         tokenizer_dir: str | None = None,
         chat_template: str | None = None,
+        trust_remote_code: bool | None = None,
+        replicas: int | None = None,
         **_: Any,
     ) -> None:
         import modal
-        from transformers import AutoTokenizer
 
+        from . import subjects
+
+        s = subjects.subject_for(hf_id, revision)  # its registered modal settings
+        if s is None or not s.modal_built:
+            why = ("is not a registered Subject" if s is None else
+                   f"({s.key}) uses {s.modal_app!r}, an app scripts/adapt_modal.py does not build "
+                   "(modal_built=False)")  # fmt: skip
+            raise SystemExit(
+                f"RemoteRunner: {hf_id}@{revision} {why}. RemoteRunner sends token ids, which only "
+                "the apps built by scripts/adapt_modal.py accept: register the subject in "
+                "subjects.py and deploy its app (ADAPT_SUBJECT=<key> modal deploy "
+                "scripts/adapt_modal.py)."
+            )
+        if trust_remote_code is None:
+            trust_remote_code = s.trust_remote_code
+        self.replicas = replicas or s.modal_replicas
         self.hf_id, self.revision, self.seed = hf_id, revision, seed
-        if tokenizer_dir:
-            try:
-                self.tok = AutoTokenizer.from_pretrained(tokenizer_dir)
-            except ValueError:  # Kimi: a converted tokenizer.json beside a remote-code config
-                from transformers import PreTrainedTokenizerFast
-
-                self.tok = PreTrainedTokenizerFast.from_pretrained(tokenizer_dir)
-        else:
-            self.tok = AutoTokenizer.from_pretrained(hf_id, revision=revision)
-        if chat_template:
-            self.tok.chat_template = Path(chat_template).read_text()
+        self.tok = subjects.load_tokenizer(hf_id, revision, tokenizer_dir, chat_template,
+                                           trust_remote_code)  # fmt: skip
         cls = modal.Cls.from_name(modal_app, "SubjectLLM")
         self.remote = cls(model_id=hf_id, revision=revision or "", max_model_len=max_model_len)
+
+    def encode(self, prompt: str | list[int]) -> list[int]:
+        """A rendered prompt's token ids, as ``apply_chat_template(tokenize=True)`` gives them;
+        the specials the tokenizer itself prepends (a Llama-style BOS) are added only when the
+        render does not already start with them."""
+        if isinstance(prompt, list):
+            return prompt
+        ids = list(self.tok(prompt, add_special_tokens=False)["input_ids"])
+        if not hasattr(self, "_lead"):
+            on = list(self.tok("x", add_special_tokens=True)["input_ids"])
+            off = list(self.tok("x", add_special_tokens=False)["input_ids"])
+            at = next((i for i in range(len(on) - len(off) + 1) if on[i : i + len(off)] == off), 0)
+            self._lead = on[:at]
+        lead = self._lead
+        return ids if not lead or ids[: len(lead)] == lead else lead + ids
+
+    def _calls(self, method: Any, args: list[tuple]) -> list:
+        """One remote call per chunk: in order, or fanned over the subject's replicas."""
+        if self.replicas > 1 and len(args) > 1:
+            return list(method.starmap(args))
+        return [method.remote(*a) for a in args]
 
     def sample(
         self, asks: list[Ask], draws: int, temperature: float, top_p: float = 1.0
     ) -> list[tuple[str, list[str]]]:
-        prompts = [self.render(a) for a in asks]
-        out: list[tuple[str, list[str]]] = []
-        for i in range(0, len(prompts), 512):  # bounded payloads
-            out += self.remote.sample.remote(
-                prompts[i : i + 512],
-                [a.max_tokens for a in asks[i : i + 512]],
-                draws,
-                temperature,
-                top_p,
-                self.seed + i,
-            )
-        return out
+        prompts = [self.encode(self.render(a)) for a in asks]
+        n = self.CHUNK
+        args = [(prompts[i : i + n], [a.max_tokens for a in asks[i : i + n]], draws, temperature,
+                 top_p, self.seed + i) for i in range(0, len(prompts), n)]  # fmt: skip
+        return [r for part in self._calls(self.remote.sample, args) for r in part]
 
     def generate(
         self,
@@ -471,12 +520,56 @@ class RemoteRunner(Runner):
         top_p: float = 1.0,
         stop_token_ids: list[int] | None = None,
     ) -> list[dict]:
-        out: list[dict] = []
-        for i in range(0, len(prompts), 512):
-            out += self.remote.generate.remote(
-                prompts[i : i + 512], temperature, max_tokens, seed + i, top_p, stop_token_ids
-            )
-        return out
+        ids = [self.encode(p) for p in prompts]
+        n = self.CHUNK
+        args = [(ids[i : i + n], temperature, max_tokens, seed + i, top_p, stop_token_ids)
+                for i in range(0, len(ids), n)]  # fmt: skip
+        return [r for part in self._calls(self.remote.generate, args) for r in part]
+
+    # ---- plan 0060 Phase E (wrong_bridge logP legs): scored on Modal from local token ids ----
+    def cont_logprobs(self, prompts: list[str], conts: list[str]) -> list[float]:
+        jobs = cont_jobs(self.tok, prompts, conts)  # token ids, like sample / generate
+        n = self.CHUNK
+        args = [([j[0] for j in jobs[i : i + n]], [j[1] for j in jobs[i : i + n]])
+                for i in range(0, len(jobs), n)]  # fmt: skip
+        return [r for part in self._calls(self.remote.cont_logprobs, args) for r in part]
+
+    # ---- end plan 0060 Phase E ----
+
+
+# ---- plan 0060 Phase E: helpers for Runner.cont_logprobs (shared with scripts/adapt_modal.py) ----
+def cont_jobs(tok: Any, prompts: list[str], conts: list[str]) -> list[tuple[list[int], int]]:
+    """``(ids of BOS + prompt + cont, k)``: ``k`` = the first index where those ids diverge from
+    the prompt's own ids (tokenization may merge at the seam), i.e. where scoring starts. The
+    lead is the raw render's (``bos_prefix``: Gemma ``<bos>``, GLM ``[gMASK]<sop>``) or else the
+    specials the tokenizer itself prepends (a Llama-style BOS, as ``RemoteRunner.encode`` adds):
+    the ids go to the engine as-is, which adds nothing."""
+    from .template import bos_prefix
+
+    bos = list(bos_prefix(tok))
+    if not bos:
+        on = list(tok("x", add_special_tokens=True)["input_ids"])
+        off = list(tok("x", add_special_tokens=False)["input_ids"])
+        at = next((i for i in range(len(on) - len(off) + 1) if on[i : i + len(off)] == off), 0)
+        bos = on[:at]
+    out = []
+    for p, c in zip(prompts, conts, strict=True):
+        p_ids = bos + tok(p, add_special_tokens=False)["input_ids"]
+        full = bos + tok(p + c, add_special_tokens=False)["input_ids"]
+        k = 0
+        while k < len(p_ids) and k < len(full) and full[k] == p_ids[k]:
+            k += 1
+        out.append((full, k))
+    return out
+
+
+def sum_cont_logprob(prompt_logprobs: list, ids: list[int], k: int) -> float:
+    """Sum of the teacher-forced log-probs of ``ids[max(k, 1):]`` (vLLM ``prompt_logprobs``: one
+    ``{token_id: Logprob}`` per position, None at 0)."""
+    return float(sum(prompt_logprobs[i][ids[i]].logprob for i in range(max(k, 1), len(ids))))
+
+
+# ---- end plan 0060 Phase E ----
 
 
 GRADE_WORKERS = int(os.environ.get("ADAPT_CLAUDE_WORKERS", "16"))  # org OTPM is shared
