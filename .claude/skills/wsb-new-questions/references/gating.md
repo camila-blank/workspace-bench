@@ -38,6 +38,10 @@ intermediate "in English or the model's native language").
   first). Readers use `wsbench.banks.native_langs(header)`, which defaults to `("en", "zh")` for
   the frozen Qwen3.6-27B banks. Nothing hard-codes "zh" or "Chinese".
 - Re-run per subject model; never copy another model's list. Qwen3.6-27B: `["en", "zh"]`.
+- **Exception, Chinese-lab models (Camila, 2026-11-03): no measurement.** A model from a Chinese
+  lab (Qwen, GLM / Zhipu, DeepSeek, Kimi / Moonshot, ...) is taken as `["en", "zh"]`: record it
+  with `python -m wsbench.adapt native_langs <m> langs=en,zh evidence="Chinese-lab model: en+zh
+  assumed (Camila 2026-11-03), not measured"`. Measure every other subject as above.
 - `scripts/validate_bank.py` errors on a new multi-token bank whose `contract` lacks
   `native_langs`.
 

@@ -61,7 +61,8 @@ not cover (see the modal_script.py docstring).
              a language is native at >= 10% of thought letters or >= 10% of the J-lens top-10
              tokens; English always counts; the measurement decides, not the model card;
              `python -m wsbench.adapt native_langs <m> stage=measure readouts=<J-lens dir>`
-             runs both and records which criterion made each language native). Record it in
+             runs both and records which criterion made each language native; a Chinese-lab
+             model is not measured: it is ["en", "zh"], Camila 2026-11-03). Record it in
              the bank header as `contract.native_langs` (ISO codes, English first; Qwen3.6-27B:
              ["en", "zh"]). Re-measure per subject; never copy another model's list. Every
              "English or the model's native language" rule reads it (`banks.native_langs`).
