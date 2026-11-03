@@ -240,9 +240,62 @@ def subject_fields(model: str, ids: list[str] | None = None) -> dict[str, int]:
     return {"marked": len(out), "short": len(short)}
 
 
+def br_subject_check(items: list[dict], model: str) -> list[str]:
+    """Freeze refuses (the family is blocked) when an implicit item's options were not re-keyed
+    on ``model`` (``subject_fields`` marks it): its gold would be the pre-gate one (Qwen's for an
+    original, the authored typical member for a new item). The marker and the authored
+    ``mc.spares`` are working fields, never shipped."""
+    imp = [it for it in items if it.get("subfamily") == "implicit"]
+    bad = [_iid(it) for it in imp if it.get(fams.SUBJECT_MARKER) != model]
+    if bad:
+        raise SystemExit(
+            f"{BR}: {len(bad)} implicit items lack subject options built on {model} "
+            f"(`{fams.SUBJECT_MARKER}`; run `adapt mc model={model} families={BR} "
+            f"stage=subject` after the gate): {bad[:5]}"
+        )
+    for it in items:
+        it.pop(fams.SUBJECT_MARKER, None)
+        if isinstance(it.get("mc"), dict):
+            it["mc"].pop("spares", None)
+    return []
+
+
 # ---------------------------------------------------------------- basic_readout_mt overlays
 
 OVERLAY_KEYS = ("exonyms", "hidden_rivals")  # candidate keys -> the set's overlay files
+
+
+def _entity_names(it: dict) -> list[str]:
+    """An item's entity names: its gold display and every listed name form."""
+    gold = ((it.get("mc") or {}).get("readout") or {}).get("gold")
+    forms = [f for fs in ((it.get("name_forms") or {}).get("readout") or {}).values() for f in fs]
+    return [str(x) for x in [gold, *forms] if x]
+
+
+def filter_exonyms(
+    item: dict, exonyms: dict, rivals: list[str], others: list[str]
+) -> dict[str, dict[str, list[str]]]:
+    """The registered exonyms rule (``evals/basic_readout_mt/exonyms.json`` note, audit F4) on an
+    authored item's exonyms, against its FINAL options: drop forms the item already lists, forms
+    under 3 letters, and any form that is, holds or is held by a distractor's name, a hidden
+    rival's or another bank entity's name (``mc.form_in`` both ways)."""
+    have = {mc.fold(f).strip() for f in _entity_names(item)}
+    dis = [str(d) for d in ((item.get("mc") or {}).get("readout") or {}).get("distractors") or []]
+    avoid = [x for x in [*dis, *rivals, *others] if x]
+
+    def bad(f: str) -> bool:
+        if len(f.strip()) < 3 or mc.fold(f).strip() in have:
+            return True
+        return any(mc.form_in(f, [a]) or mc.form_in(a, [f]) for a in avoid)
+
+    out: dict[str, dict[str, list[str]]] = {}
+    for role, langs in (exonyms or {}).items():
+        kept = {str(lang): list(dict.fromkeys(str(f) for f in fs if not bad(str(f))))
+                for lang, fs in (langs or {}).items()}  # fmt: skip
+        kept = {k: v for k, v in kept.items() if v}
+        if kept:
+            out[str(role)] = kept
+    return out
 
 
 def brmt_overlays(items: list[dict], model: str) -> tuple[list[str], dict[str, Any]]:
@@ -253,6 +306,7 @@ def brmt_overlays(items: list[dict], model: str) -> tuple[list[str], dict[str, A
     from wsbench import registry
 
     tables: dict[str, dict[str, Any]] = {k: {} for k in OVERLAY_KEYS}
+    entities = {store.item_id(it): _entity_names(it) for it in items}
     reg = registry.registered_ids(BRMT) if hasattr(registry, "registered_ids") else None
     if reg is None:
         reg = {store.item_id(it) for it in store.original_bank(BRMT)[1]}
@@ -261,8 +315,10 @@ def brmt_overlays(items: list[dict], model: str) -> tuple[list[str], dict[str, A
         iid = store.item_id(it)
         if iid in reg or (it.get("adapt") or {}).get("origin", "original") == "original":
             continue
-        for k in OVERLAY_KEYS:
-            tables[k][iid] = vals[k] or {}
+        rivals = [str(x) for xs in (vals["hidden_rivals"] or {}).values() for x in xs]
+        others = [n for k, ns in entities.items() if k != iid for n in ns]
+        tables["exonyms"][iid] = filter_exonyms(it, vals["exonyms"] or {}, rivals, others)
+        tables["hidden_rivals"][iid] = vals["hidden_rivals"] or {}
     if not tables["exonyms"]:
         return [], {}
     note = {
@@ -290,7 +346,7 @@ def freeze_step(
     """The A2 set-level freeze steps (after ``select``, over the shipped items): notes, and
     extra files to write under ``adapted/<model>/`` (path -> JSON)."""
     if family == BR:
-        return balance_gold_positions(header, items), {}
+        return br_subject_check(items, model) + balance_gold_positions(header, items), {}
     if family == BRMT:
         return brmt_overlays(items, model)
     return [], {}

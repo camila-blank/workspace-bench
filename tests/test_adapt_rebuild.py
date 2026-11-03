@@ -411,7 +411,8 @@ def test_mc_build_writes_options_into_pending_candidates(mdir, monkeypatch):
 
     monkeypatch.setattr(mcstage, "run_builder", fake)
     assert mcstage.build("demo", "basic_readout_mt") == {"built": 1, "dropped": 1}
-    assert [s for s, _a in seen] == ["r4_mc_distractors", "r4b_mc_refine", "build_r4b_mc_banks"]
+    assert [s for s, _a in seen] == ["r4_mc_distractors", *["r4b_mc_refine"] * 3,
+                                     "build_r4b_mc_banks"]  # fmt: skip
     work = mdir / "demo" / "mc" / "basic_readout_mt"
     assert all(str(work) in a for _s, argv in seen for a in argv if a.endswith(".json"))
     cands = {c["name"]: c for c in store._read_jsonl(store.cand_path("demo", "basic_readout_mt"))}
@@ -451,3 +452,143 @@ def test_adapt_mc_cli_needs_families():
         main(["mc", "model=demo"])
     with pytest.raises(SystemExit, match="stage=subject"):
         mcstage.run("demo", ["multihop"], "subject")
+
+
+# ---------------------------------------------------------------- PR #245 review
+
+
+def _fresh_script(name: str):
+    """A fresh import of ``scripts/<name>.py`` (as ``mcstage.run_builder`` loads it)."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(f"_t_{name}", ROOT / "scripts" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
+    return mod
+
+
+def test_mc_steps_carry_review_and_the_r4b_passes(tmp_path):
+    calls = mcstage.steps("association", tmp_path / "in.json", tmp_path, tmp_path / "o.json",
+                          "adapt mc auto-build, demo, 2026-11-03")  # fmt: skip
+    frz = next(a for s, a in calls if s == "association_distractors" and a[0] == "freeze")
+    assert frz[frz.index("--review") + 1] == "adapt mc auto-build, demo, 2026-11-03"
+    calls = mcstage.steps("basic_readout_mt", tmp_path / "in.json", tmp_path, tmp_path / "o.json")
+    refine = [a for s, a in calls if s == "r4b_mc_refine"]
+    assert len(refine) == 3 and "--pass2" in refine[1]
+    assert {"--resume", "--gate-described"} <= set(refine[2]) and "--pass2" not in refine[2]
+    assert [s for s, _a in calls][-1] == "build_r4b_mc_banks"
+    # the real refine main accepts the argv and runs pass 1 / pass 2 / resume in that order
+    seen = []
+    for argv in refine:
+        m = _fresh_script("r4b_mc_refine")
+        (tmp_path / "r4_pools.json").write_text("{}", encoding="utf-8")
+
+        def fake_run(fam, pools, rounds, pass2=False, resume=False, *a, _m=m, **k):
+            seen.append((pass2, resume, "described" in _m.GATE_VARIANTS))
+            return {"pass": 1 + len(seen), "items": {}}
+
+        m.run = fake_run
+        assert m.main(argv) == 0
+    assert seen == [(False, False, False), (True, False, False), (False, True, True)]
+    out = json.loads((tmp_path / "r4b_distractors.json").read_text(encoding="utf-8"))
+    assert out["pass"] >= 2  # build_r4b_mc_banks's requirement
+
+
+def test_mc_build_association_runs_the_real_builder(mdir, monkeypatch):
+    """`adapt mc families=association` through steps() with the REAL association_distractors
+    main (its LLM calls faked; mc_leakage_r4 faked): freeze gets --review, options land."""
+    words = ["anvil", "barrel", "candle", "kettle", "ladder", "mirror", "pillow", "saddle",
+             "teapot", "violin", "wagon", "zipper"]  # fmt: skip
+    cands = []
+    for name, gold, scene in [
+        ("association-au-a", "camping", "A tent pitched by the lake."),
+        ("association-au-b", "skiing", "Fresh powder on the slopes."),
+    ]:
+        cands.append({"name": name, "prompt": scene, "intermediates": [gold],
+                      "mc": {"gold": gold, "distractors": []},
+                      "adapt": {"origin": "authored"}})  # fmt: skip
+    golds = {c["prompt"]: c["intermediates"][0] for c in cands}
+    store.add_candidates("demo", "association", cands)
+
+    def fake_call(prompts, schema):
+        out = []
+        for _sys, user in prompts:
+            name = schema["name"]
+            if name == "assoc_options":
+                out.append({"category": "thing", "aliases": [], "candidates": words})
+            elif name == "entail_check":
+                out.append({"flagged": []})
+            else:
+                gold = next(g for sc, g in golds.items() if sc in user)
+                opts = [ln.split(". ", 1)[1] for ln in user.splitlines() if ". " in ln[:6]]
+                out.append({"choice": opts.index(gold) + 1})
+        return out
+
+    ran = []
+
+    def runner(script, argv):
+        ran.append(script)
+        if script == "association_distractors":
+            m = _fresh_script(script)
+            m.call = fake_call
+            assert m.main(argv) == 0, argv
+        else:  # mc_leakage_r4: round = no-op, freeze = the input bank as is
+            if "--bank-out" in argv:
+                src = Path(argv[argv.index("--bank") + 1]).read_text(encoding="utf-8")
+                Path(argv[argv.index("--bank-out") + 1]).write_text(src, encoding="utf-8")
+
+    monkeypatch.setattr(mcstage, "run_builder", runner)
+    assert mcstage.build("demo", "association") == {"built": 2, "dropped": 0}
+    assert ran.count("association_distractors") == 3
+    got = {c["name"]: c for c in store._read_jsonl(store.cand_path("demo", "association"))}
+    for c in got.values():
+        assert len(c["mc"]["distractors"]) == 7 and c["mc"]["gold"] == c["intermediates"][0]
+
+
+def test_br_freeze_refuses_unmarked_implicit_and_strips_working_fields():
+    _h, items = _bank(BR_V5)
+    imp = _by_name(items, "br-imp-instrument")
+    ent = _by_name(items, "br-ent-ath-ali")
+    with pytest.raises(SystemExit, match="stage=subject"):
+        rebuild.freeze_step("demo", "basic_readout", {}, [copy.deepcopy(imp), ent])
+    imp[fams.SUBJECT_MARKER] = "other-model"
+    with pytest.raises(SystemExit, match="implicit"):
+        rebuild.freeze_step("demo", "basic_readout", {}, [copy.deepcopy(imp), ent])
+    imp[fams.SUBJECT_MARKER] = "demo"
+    imp["mc"]["spares"] = [{"option": "oboe", "aliases": []}]
+    ent[fams.SUBJECT_MARKER] = "demo"
+    shipped = [imp, ent]
+    rebuild.freeze_step("demo", "basic_readout", {}, shipped)
+    assert all(fams.SUBJECT_MARKER not in it and "spares" not in it["mc"] for it in shipped)
+
+
+def test_brmt_exonyms_follow_the_registered_rule():
+    it = {
+        "name": "brh-au-x", "adapt": {"origin": "authored"},
+        "name_forms": {"readout": {"en": ["Kalbid dynasty", "Kalbids"]}},
+        "mc": {"readout": {"gold": "Kalbid dynasty",
+                           "distractors": ["Zirid dynasty", "Hafsid dynasty", "Fatimid Caliphate",
+                                           "Idrisid dynasty"]}},
+        "hidden_rivals": {"readout": ["Aghlabid dynasty"]},
+        "exonyms": {"readout": {
+            "ru": ["Кальбиты", "Жд"],          # kept; under 3 letters dropped
+            "de": ["Kalbiden", "Kalbids"],     # kept; already listed dropped
+            "fr": ["Zirides", "Zirid"],        # 'Zirid' is held by a distractor's name
+            "es": ["Aghlabid"],                # held by a hidden rival
+            "fa": ["Rustamid"],                # another bank entity's name
+        }},
+    }  # fmt: skip
+    other = {"name": "brh-au-y", "adapt": {"origin": "authored"},
+             "name_forms": {"readout": {"en": ["Rustamid dynasty"]}},
+             "mc": {"readout": {"gold": "Rustamid dynasty", "distractors": []}}}  # fmt: skip
+    _notes, files = rebuild.freeze_step("demo", "basic_readout_mt", {}, [it, other])
+    ex = files["basic_readout_mt/exonyms.json"]["items"]["brh-au-x"]
+    assert ex == {"readout": {"ru": ["Кальбиты"], "de": ["Kalbiden"], "fr": ["Zirides"]}}
+    assert files["basic_readout_mt/hidden_rivals.json"]["items"]["brh-au-x"] == {
+        "readout": ["Aghlabid dynasty"]
+    }
