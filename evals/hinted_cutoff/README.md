@@ -145,12 +145,15 @@ Readouts: the source's s3d O-lens readouts at the prompt span, converted with
 
 | mode | value (I − N per pair) | 95% CI | I / N flagged | count #I − #N |
 |---|---|---|---|---|
-| **summary** (the default; the macro row; `run all=True`, layered digest) | SUMMARY_ROW |
+| **summary** (the default; the macro row; `run all=True`, layered digest) | **+0.108** | [0.009, 0.206] | 91 / 79 of 111 decided | +12 |
 | native (calibration against the source) | +0.072 | [−0.009, 0.154] | 96 / 88 of 111 | +8 |
 | source, frozen (native, gw judge) | +0.090 | [0.009, 0.171] | 97 / 87 of 111 | +10 |
 
 - **Native.** The live run lands inside the frozen CI: 96 / 88 against 97 / 87; pairs only-I /
   only-N 15 / 7 against 16 / 6.
+- **Summary.** The digest keeps the small native gap (+12 net, no undecided pair), and it stays
+  below the bench's prompt-only floor (+0.23). `wsbench run all=True` → `wsbench report` counts it
+  in the macro with nothing excluded.
 - **The floor column.** `wsbench report` leaves it empty beside the default all-layer summary row,
   as for every family. Floors are frozen on single-layer union digests, and the "layered" all-layer
   digest is stamped `-layered-v1x4`, which never mixes with them.
