@@ -611,9 +611,12 @@ def mentions(reply: str, word: str) -> bool:
 
     w = word.lower()
     forms = {w}
-    for suf, rep in (("ies", "y"), ("es", ""), ("s", "")):
-        if w.endswith(suf) and len(w) > len(suf) + 2:
-            forms.add(w[: -len(suf)] + rep)
+    if w.endswith("ies") and len(w) >= 6:
+        forms.add(w[:-3] + "y")
+    elif w.endswith(("ses", "xes", "zes", "ches", "shes")) and len(w) >= 6:
+        forms.add(w[:-2])
+    elif w.endswith("s") and not w.endswith("ss") and len(w) >= 5:
+        forms.add(w[:-1])  # stems of 4+ letters only (no "kit", "lie", "bon")
     r = reply.lower()
     return any(re.search(rf"\b{re.escape(f)}(s|es|ed|ing|'s)?\b", r) for f in forms)
 

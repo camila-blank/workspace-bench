@@ -230,6 +230,10 @@ def test_helpers():
     assert not ops.mentions("a cartoon", "car")
     assert ops.mentions("## The Sound of the Trumpet", "trumpets")
     assert ops.mentions("one more berry", "berries") and ops.mentions("a treasure", "treasures")
+    assert ops.mentions("two branch lines", "branches")
+    assert ops.mentions("a xylophone", "xylophones")
+    assert not ops.mentions("a camping kit", "kites") and not ops.mentions("lie down", "lies")
+    assert not ops.mentions("bon voyage", "bones")
 
 
 def test_calib_report_verdicts():
