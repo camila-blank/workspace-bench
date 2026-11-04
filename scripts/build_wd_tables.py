@@ -4,7 +4,15 @@
 Reads the scrape's entity stores (streamed; the round-1 ``entities.json`` is ~295 MB) and fetches
 what they lack from the Wikidata API (``wbgetentities``, rate limited). CC0 Wikidata facts only.
 
-    python scripts/build_wd_tables.py [--entities F ...] [--out-dir D]
+    python scripts/build_wd_tables.py [--entities F ...] [--no-auto-extra] [--out-dir D]
+
+Sources: the round-1 pool ``entities.json`` (``--entities``, default the scrape's), plus (unless
+``--no-auto-extra``) every per-set work-dir store that exists at its exact path,
+``adapted/<m>/gate/{wrong_bridge,wrong_intermediate}.work/entities_extra.json``, and the round-2
+pool ``wrong_bridge_r2/entities.json`` (a missing one is skipped with a printed note).
+
+Every class the walk visits is a key of ``parents``, a parentless one with ``[]``: a class ABSENT
+from the table was never seen, and the gate-time kind check stops on it (rebuild the tables).
 """
 
 import argparse
@@ -23,10 +31,31 @@ sys.path.insert(0, str(REPO / "src"))
 from wsbench.adapt import wrong_intermediate as wb  # noqa: E402
 
 DEFAULT_ENTITIES = "/workspace/gw-wrong-bridge/outputs/wrong_bridge/entities.json"
+ROUND2_ENTITIES = Path("/workspace/gw-wrong-bridge/outputs/wrong_bridge_r2/entities.json")
+ADAPTED = Path("/workspace/wsb-runs/adapted")
+WORK_DIRS = ("wrong_bridge.work", "wrong_intermediate.work")
 ITEMS = REPO / "evals" / "wrong_intermediate" / "items_v4.json"
 OUT = REPO / "src" / "wsbench" / "adapt" / "data"
 API = "https://www.wikidata.org/w/api.php"
-UA = "workspace-bench-adapt/0.1 (interpretability research; build_wd_tables)"
+UA = "workspace-bench-adapt/0.1 (interpretability research; build_wd_tables; camilab@anthropic.com)"
+
+
+def extra_sources(adapted: Path = ADAPTED, round2: Path = ROUND2_ENTITIES) -> list[str]:
+    """The per-set work-dir ``entities_extra.json`` stores and the round-2 pool store that exist
+    (exact paths, one ``adapted/<m>`` level listed; never a recursive search)."""
+    out = []
+    if adapted.is_dir():
+        for m in sorted(p.name for p in adapted.iterdir() if p.is_dir()):
+            for w in WORK_DIRS:
+                f = adapted / m / "gate" / w / "entities_extra.json"
+                if f.is_file():
+                    out.append(str(f))
+    print(f"per-set entities_extra.json stores found: {len(out)}", flush=True)
+    if round2.is_file():
+        out.append(str(round2))
+    else:
+        print(f"note: round-2 pool store {round2} does not exist yet; skipped", flush=True)
+    return out
 
 
 def stream_object(path: Path, chunk: int = 1 << 20) -> Iterator[tuple[str, dict]]:
@@ -136,12 +165,19 @@ def main() -> None:
         default=[DEFAULT_ENTITIES],
         help="claim-bearing entity stores (pool entities.json, entities_extra.json)",
     )
+    ap.add_argument(
+        "--no-auto-extra",
+        action="store_true",
+        help="do not add the per-set entities_extra.json stores and the round-2 pool store",
+    )
     ap.add_argument("--items", default=str(ITEMS))
     ap.add_argument("--out-dir", default=str(OUT))
     ap.add_argument("--min-sitelinks", type=int, default=5, help="pick_bridge's floor for a B'")
     ap.add_argument("--pause", type=float, default=0.5, help="seconds between API requests")
     args = ap.parse_args()  # fmt: skip
 
+    sources = list(dict.fromkeys(args.entities + ([] if args.no_auto_extra else extra_sources())))
+    print("entity sources:\n  " + "\n  ".join(sources), flush=True)
     items = json.loads(Path(args.items).read_text("utf-8"))["items"]
     reg_q = sorted({str(it["wikidata"]["B_prime"]) for it in items})
     p31: set[str] = set()
@@ -149,7 +185,7 @@ def main() -> None:
     registered: dict[str, dict] = {}
     n_ent = 0
     t0 = time.time()
-    for f in args.entities:
+    for f in sources:
         for q, e in stream_object(Path(f)):
             if not q.startswith("Q"):
                 continue
@@ -193,13 +229,13 @@ def main() -> None:
     frontier = set(p106) | occ_roots
     for _ in range(wb.OCC_STEPS):
         frontier = fetch(frontier)
-    # keep only edges a check can walk: drop leaves nobody's class reaches with a parent list
-    table = {q: ps for q, ps in sorted(parents.items()) if ps}
+    # every visited class stays, a parentless one with []: "absent" means "never seen"
+    table = dict(sorted(parents.items()))
     date = dt.date.today().isoformat()
     meta = {"source": "Wikidata (CC0): pool entity stores + wbgetentities", "fetched": date,
             "script": "scripts/build_wd_tables.py", "p31_steps": wb.P31_STEPS,
             "occ_steps": wb.OCC_STEPS, "n_classes": len(table),
-            "entity_files": [str(f) for f in args.entities]}  # fmt: skip
+            "entity_files": sources}  # fmt: skip
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "wd_class_parents.json").write_text(

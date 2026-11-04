@@ -201,6 +201,25 @@ def row_passes(family: str, row: dict) -> bool:
     return bool(hook(row)) if hook is not None else True
 
 
+def bugclaim_missing(rows: list[dict]) -> list[str]:
+    """The ids of buggy_code clean rows whose gate passes but which have no ``bugclaim`` leg
+    (gated before plan 0066): ``row_passes`` fails them, so freeze would ship none of them."""
+    return [
+        r["id"]
+        for r in rows
+        if r["gate"].get("pass") and r["item"].get("src") == "clean" and not has_bugclaim(r)
+    ]
+
+
+def bugclaim_warning(n: int) -> str:
+    """The freeze message for ``n`` clean rows lacking the ``bugclaim`` leg."""
+    return (
+        f"{BUGGY}: {n} clean rows have no {BUGCLAIM} leg (gated before plan 0066) and fail "
+        f"row_passes; run `profile families={BUGGY} regate=true` or `refill families={BUGGY}` "
+        f"before freezing"
+    )
+
+
 def _with_passes(family: str, rows: list[dict]) -> list[dict]:
     """Rows whose gate passes but which fail ``row_passes`` become non-passing copies."""
     out = []
@@ -425,7 +444,8 @@ def refill(
     ``report.json`` ``families.<f>.refill`` and ``status``. Returns {family: status}.
     ``claude_budget`` counts every Claude ask a wave reports (``claude_calls``), cache hits
     included, so on a resumed run it overstates spend and stops early: deliberately conservative
-    (Camila 2026-11-04)."""
+    (Camila 2026-11-04). buggy_code (``run.fill``) gets both budgets: ``claude_budget`` against
+    its authoring + grading calls, ``gpu_minutes`` as its wall clock."""
     from . import run
 
     if bad := [f for f in families if f not in POLICY]:
@@ -435,7 +455,7 @@ def refill(
         if family == BUGGY:
             budget_s = None if gpu_minutes is None else gpu_minutes * 60
             out[family] = run.fill(model, family, llm, waves, runner=runner, pilot=pilot,
-                                   budget_s=budget_s)  # fmt: skip
+                                   budget_s=budget_s, claude_budget=claude_budget)  # fmt: skip
         else:
             out[family] = _refill_family(model, family, waves, claude_budget, gpu_minutes, pilot,
                                          llm, runner)  # fmt: skip

@@ -770,7 +770,9 @@ def freeze(
     Plan 0066: rows pass through ``refill.freeze_rows`` (newer legs, select hooks); buggy_code is
     selected by ``refill.buggy_selection`` and its status counts pairs. ``strict`` (the CLI) with
     ``families`` given refuses a family the refill guard flags (``refill.guard_problem``) unless
-    ``allow_untried`` (True or a reason string, stamped into ``note``)."""
+    ``allow_untried`` (True or a reason string, stamped into ``note``). buggy_code clean rows that
+    pass but lack the ``bugclaim`` leg are printed and noted (``freeze_notes``); ``strict`` refuses
+    the family over them unless ``allow_untried``."""
     from wsbench.banks import native_langs as header_native_langs
 
     from . import native_langs as nl
@@ -799,7 +801,15 @@ def freeze(
 
             header_overlay(model, header)
         reg = {store.item_id(it): it for it in originals}
-        rows = rf.freeze_rows(family, registered_rows(rows, set(reg)))
+        rows = registered_rows(rows, set(reg))
+        warn = None  # plan 0066 §11.6: never ship 0 buggy pairs silently over pre-0066 gates
+        if family == rf.BUGGY and (stale := rf.bugclaim_missing(rows)):
+            warn = rf.bugclaim_warning(len(stale))
+            print(f"WARNING {warn}")
+            if strict and not allow_untried:
+                refused[family] = f"{warn} (or pass allow_untried=<reason>)"
+                continue
+        rows = rf.freeze_rows(family, rows)
         target = len(originals)
         need = fams.SUBJECT_FIELDS.get(family, ())
         # a profiled row is a copy of the registered item, so presence alone proves nothing: the
@@ -852,6 +862,8 @@ def freeze(
             ad["gate"] = {k: r["gate"][k] for k in ("rate", "pass")}
             items.append(it)
         notes = _post_freeze(family, header, items, subject.n_layers, subject.read_band)
+        if warn:
+            notes.insert(0, warn)
         if family == "nyt_connections" and header:  # plan 0060 Phase E: the subject's counts
             from .nyt_connections import post_freeze
 
@@ -864,9 +876,15 @@ def freeze(
                 items, more = restamp_tokens(model, family, items)
                 if family in MT:  # name EVERY item that lost its forms, live_rows' too
                     after = {str(store.item_id(it)) for it in items}
-                    earlier = [str(store.item_id(r["item"])) for r in _mt_lost(
-                        model, family, registered_rows(_gated_rows(model, family, report),
-                                                       set(reg)))]  # fmt: skip
+                    # live_rows' losses among the PASSING ORIGINALS only: the items that
+                    # could have shipped (a failing original or a candidate never would)
+                    passing = [
+                        r
+                        for r in registered_rows(_gated_rows(model, family, report), set(reg))
+                        if r["origin"] == "original" and r["gate"].get("pass")
+                    ]
+                    earlier = [str(store.item_id(r["item"]))
+                               for r in _mt_lost(model, family, passing)]  # fmt: skip
                     lost = list(dict.fromkeys(earlier + [i for i in before if i not in after]))
                     more = [n for n in more if not n.startswith(RESTAMP_NOTE)]
                     more.append(lost_forms_note(lost))
@@ -1243,19 +1261,21 @@ def miss_steer(model: str, family: str, wave_ids: set[str], k: int = 12) -> str:
 
 
 def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves: int = 8,
-         runner=None, pilot: bool = False, budget_s: float | None = None) -> str:  # fmt: skip
+         runner=None, pilot: bool = False, budget_s: float | None = None,
+         claude_budget: int | None = None) -> str:  # fmt: skip
     """Author-and-gate an authored family down its brief's tiers until the bank is full or the
     stop rules fire (SKILL.md §3): waves sized from the last yield (bank units), each steered by
     the previous wave's misses; step down a tier after 3 waves under 30%; ``ooc`` below 3% on at
     least 60 candidates at the last tier. Writes the status to report.json. A family with MC
     builders (``mcstage.FAMILIES``) has each wave's options built (``adapt mc``) between author
     and gate; basic_readout also gets ``stage=subject`` after every gate. buggy_code counts
-    pairs (plan 0066 §2, ``_fill_buggy``; ``pilot`` / ``budget_s`` apply to it only)."""
+    pairs (plan 0066 §2, ``_fill_buggy``; ``pilot`` / ``budget_s`` / ``claude_budget`` apply to it
+    only)."""
     from .author import BRIEFS
     from .author import author as write
 
     if family == "buggy_code":
-        return _fill_buggy(model, llm, max_waves, runner, pilot, budget_s)
+        return _fill_buggy(model, llm, max_waves, runner, pilot, budget_s, claude_budget)
     if pilot:
         raise SystemExit(f"fill: pilot=true is buggy_code only (plan 0066 §1.2), not {family}")
     from .refill import stop_status
@@ -1332,16 +1352,21 @@ def _buggy_tally(rows: list[dict]) -> dict[str, dict[str, int]]:
 
 
 def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool,
-                budget_s: float | None) -> str:  # fmt: skip
+                budget_s: float | None, claude_budget: int | None = None) -> str:  # fmt: skip
     """``fill`` for buggy_code, in PAIRS (plan 0066 §2): ``have`` = pairs of
     ``refill.buggy_selection`` (``select`` still capped at the 63 items, ``src`` quota), target =
     the registered pair count; the tally per tier is kept in the refill block and the last tier's
     counters are the gate log's (so the pilot's t2 seeds the full run); ``pilot`` starts at the
-    last tier and stops after ``n_min`` pair objects; the status comes from ``stop_status``."""
+    last tier and stops after ``n_min`` pair objects; the status comes from ``stop_status``.
+    Budgets (§1.2): ``budget_s`` (wall clock) and ``claude_budget``, checked before each wave
+    against the Claude calls spent so far: authoring calls (``ceil(n / MAX_PER_CALL)`` per wave,
+    an upper bound: a refused call counts) plus grading calls (the grader's in-memory cache
+    growth = uncached asks made; a grader without a ``cache`` counts one call per newly gated
+    item, the ``bugclaim`` leg, as an estimate)."""
     import time
 
     from . import refill as rf
-    from .author import BRIEFS
+    from .author import BRIEFS, MAX_PER_CALL
     from .author import author as write
 
     family = rf.BUGGY
@@ -1355,10 +1380,14 @@ def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool
     hold = ((store.read_report(model).get("families") or {}).get(family) or {}).get("refill_hold")
     t_i = last if pilot else 0
     low, steer, wave, tier_tried, tier_landed, gain = 0, "", 0, 0, 0, None
-    yield_est, start = 0.4, time.monotonic()
+    yield_est, start, calls = 0.4, time.monotonic(), 0
+    grader: Any = False  # one grader for the run (built at the first wave): its cache counts calls
 
     def rows_now() -> list[dict]:
         return rf.freeze_rows(family, _bank_rows(model, family, originals))
+
+    def graded() -> int:
+        return len(getattr(grader, "cache", None) or {})
 
     while True:
         rows = rows_now()
@@ -1370,10 +1399,13 @@ def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool
         cur = tally.get(tiers[t_i], {}) if at_last else {}
         tried, landed = cur.get("tried", 0), cur.get("landed", 0)
         binding = at_last and gain == 0 and rf.crash_cap_binds(rows)
-        spent = budget_s is not None and time.monotonic() - start >= budget_s
+        spent: bool | str = False
+        if claude_budget is not None and calls >= claude_budget:
+            spent = f"claude_budget {claude_budget}"
+        elif budget_s is not None and time.monotonic() - start >= budget_s:
+            spent = "gpu_minutes (wall clock)"
         status, why = rf.stop_status(have, target, tried, landed, pol.n_min, pol.y_min, False,
-                                     "gpu_minutes (wall clock)" if spent else False,
-                                     cap_binding=binding, hold=hold)  # fmt: skip
+                                     spent, cap_binding=binding, hold=hold)  # fmt: skip
         if status is not None:
             break
         if pilot and tried >= pol.n_min:
@@ -1390,8 +1422,14 @@ def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool
         w_id = 1 + max([int((r["item"].get("adapt") or {}).get("wave") or 0)
                         for r in gated_now.values()] + [99])  # fmt: skip
         write(model, family, tiers[t_i], n, steer=steer, wave=w_id)
-        lint_and_gate(model, family, runner, DEFAULT_DRAWS, None, _llm(llm))
+        calls += math.ceil(n / MAX_PER_CALL)
+        if grader is False:
+            grader = _llm(llm)
+        g0 = graded()
+        lint_and_gate(model, family, runner, DEFAULT_DRAWS, None, grader)
         new = set(store.gated(model, family)) - before
+        if grader is not None:
+            calls += graded() - g0 if hasattr(grader, "cache") else len(new)
         after = rows_now()
         gain = rf.selected_pairs(rf.buggy_selection(after, cap, quota)) - have
         wave_t = _buggy_tally([r for r in after if r["id"] in new])
@@ -1412,7 +1450,8 @@ def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool
         "tried": tried if at_last else tier_tried, "landed": landed if at_last else tier_landed,
         "yield": None, "waves": wave, "n_min": pol.n_min, "y_min": pol.y_min, "tally": tally,
         "pool_size": None, "pool_used": None, "stop": why,
-        "budget": {"gpu_minutes": None if budget_s is None else budget_s / 60},
+        "budget": {"gpu_minutes": None if budget_s is None else budget_s / 60,
+                   "claude_budget": claude_budget, "claude_calls": calls},
         "pilot": pilot, "tier": tiers[t_i],
         "authored_pairs": {"non_crash": nc, "crash": crash, "crash_cap": nc // 4},
     }  # fmt: skip

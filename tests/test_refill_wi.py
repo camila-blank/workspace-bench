@@ -3,6 +3,7 @@ over the union, the entity-kind check, per-item categories, the admitted templat
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from test_adapt_phase_e import MODEL, WBRunner, _ent, _no_fetch, _pool
@@ -38,7 +39,20 @@ def _e(label, **props):
 
 
 # a synthetic frozen class table (the real one is vendored by scripts/build_wd_tables.py)
+# parentless classes are keys with [] (the build keeps them): "absent" means "never seen"
+_LEAF_IDS = {"Q5", "Q7275", "Q1048835", "Q42603", "Q116", "Q82955", "Q1028181", "Q2526255",
+             "Q482980"}  # fmt: skip
+LEAVES: dict[str, list[str]] = {
+    q: []
+    for q in sorted(
+        {q for v in wb.CATEGORY_P31.values() for q in v}
+        | {q for v in wb.OCCUPATION_ROOTS.values() for q in v}
+        | set(wb.GROUP_P31)
+        | _LEAF_IDS
+    )
+}
 PARENTS = {
+    **LEAVES,
     "Qcarmaker": ["Q13235160"],  # -> manufacturer
     "Qindie_label": ["Q18127"],  # -> record label
     "Qcable_net": ["Q1254874"],  # -> television network
@@ -157,11 +171,28 @@ def test_hub_share_over_the_union_and_flips_reported(tmp_store, tmp_path):
     (e1u,) = wb.grade(MODEL, f"{tmp_path / 'r1'},{tmp_path / 'r2'}")
     # 40 other prompts of the template give 1946 with another bridge: 40 / 80 screened
     assert e1u["answer_hub_share"] == pytest.approx(40 / 80)
-    flips = json.loads((wd / "hub_flips.json").read_text())
+    (run1,) = json.loads((wd / "hub_flips.json").read_text())
+    flips = run1["flips"]
     assert flips == [{"id": e1c["id"], "was_hub": False, "now_hub": True, "old_share": 0.0,
                       "new_share": 0.5}]  # fmt: skip
+    assert run1["at"] and run1["wave"] is None
+    # a later regrade with no flips appends; it never overwrites the first run's diff
+    wb.grade(MODEL, f"{tmp_path / 'r1'},{tmp_path / 'r2'}", wave=3)
+    runs = json.loads((wd / "hub_flips.json").read_text())
+    assert [r["flips"] for r in runs] == [flips, []] and runs[1]["wave"] == 3
     assert wb.hub_flips([e1u], [e1]) == [{**flips[0], "was_hub": True, "now_hub": False,
                                           "old_share": 0.5, "new_share": 0.0}]  # fmt: skip
+
+
+def test_record_hub_flips_wraps_a_legacy_bare_list(tmp_store):
+    wd = wb.work_dir(MODEL)
+    wd.mkdir(parents=True)
+    legacy = [{"id": "x", "was_hub": False, "now_hub": True, "old_share": 0.0, "new_share": 0.5}]
+    (wd / "hub_flips.json").write_text(json.dumps(legacy))
+    runs = wb.record_hub_flips(MODEL, [], wave=1)
+    assert runs[0]["flips"] == legacy and runs[0]["at"] is None
+    assert runs[1]["flips"] == [] and runs[1]["wave"] == 1
+    assert json.loads((wd / "hub_flips.json").read_text()) == runs
 
 
 # ---------------------------------------------------------------------------- entity-kind check
@@ -184,6 +215,49 @@ def test_entity_allowlist_by_kind_via_the_class_table():
     assert wb.CATEGORY_P31["band"] == wb.GROUP_P31
     # the group set is bridge_kind's
     assert all(wb.bridge_kind(_e("g", P31=[q])) == "group" for q in wb.GROUP_P31)
+
+
+def test_parentless_class_is_handled_and_a_missing_class_is_loud():
+    table = {"Q5": [], "Qparentless_state": [], "Qcarmaker": ["Q13235160"]}
+    state = wb.entity_facts(_e("x", P31=["Qparentless_state"]))
+    assert not wb.kind_ok("company", state, table)  # present with [] : a decided "no"
+    assert wb.item_category(state, {**table, **LEAVES}) is None
+    assert wb.kind_ok("company", wb.entity_facts(_e("x", P31=["Qcarmaker"])), table)
+    unseen = wb.entity_facts(_e("x", P31=["Qunseen1", "Qunseen2"]))
+    with pytest.raises(SystemExit, match=r"Qunseen1.*Qunseen2.*build_wd_tables"):
+        wb.kind_ok("company", unseen, table)
+    # a direct hit needs no lookup; the occupation walk is loud on an unseen class too
+    assert wb.kind_ok("writer", wb.entity_facts(_e("x", P31=["Q5", "Qunseen1"])), table)
+    with pytest.raises(SystemExit, match="Qunseen_occ"):
+        wb.item_category(wb.entity_facts(_e("x", P31=["Q5"], P106=["Qunseen_occ"])), table)
+    it = {"name": "product_manufacturer-Q1-founded_year", "template": "product_manufacturer",
+          "intermediates": ["X"], "mc": {"category": "company"},
+          "wikidata": {"B_prime": "Q77"}}  # fmt: skip
+    with pytest.raises(SystemExit, match="Qunseen1"):
+        wb.entity_kind_failures([it], {"Q77": _e("X", P31=["Qunseen1"])}, table)
+
+
+def test_build_wd_tables_extra_sources_exact_paths(tmp_path, capsys):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_wd_tables", Path(__file__).resolve().parents[1] / "scripts" / "build_wd_tables.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    adapted = tmp_path / "adapted"
+    a = adapted / "m1" / "gate" / "wrong_bridge.work" / "entities_extra.json"
+    b = adapted / "m2" / "gate" / "wrong_intermediate.work" / "entities_extra.json"
+    for f in (a, b):
+        f.parent.mkdir(parents=True)
+        f.write_text("{}")
+    (adapted / "m3" / "gate" / "wrong_bridge.work").mkdir(parents=True)  # no store: skipped
+    r2 = tmp_path / "r2" / "entities.json"
+    assert mod.extra_sources(adapted, r2) == [str(a), str(b)]
+    assert "does not exist yet" in capsys.readouterr().out
+    r2.parent.mkdir()
+    r2.write_text("{}")
+    assert mod.extra_sources(adapted, r2) == [str(a), str(b), str(r2)]
 
 
 def test_missing_entity_or_empty_claims_is_loud():
@@ -419,8 +493,15 @@ def test_registered_bprime_all_pass_their_category():
             "Q849866",
         ]
     }
-    assert not any(wb.kind_ok(c, su) for c in wb.CATEGORY_P31)
-    assert wb.item_category({**su, "P106": [], "P39": []}) is None
+    # the pool scrape predates 4 of these live classes: an unseen class is loud, never a drop
+    table = wb.class_parents()
+    unseen = sorted(q for q in su["P31"] if q not in table)
+    assert unseen == ["Q113393649", "Q160016", "Q17007978", "Q6688521"]
+    with pytest.raises(SystemExit, match=r"Q113393649.*rebuild the tables"):
+        wb.kind_ok("company", su)
+    seen = {"P31": [q for q in su["P31"] if q in table]}
+    assert not any(wb.kind_ok(c, seen) for c in wb.CATEGORY_P31)
+    assert wb.item_category({**seen, "P106": [], "P39": []}) is None
 
 
 # ---------------------------------------------------------------------------- refill hooks
@@ -454,9 +535,9 @@ def test_band_is_a_valid_musician_bprime_on_performer_templates_only():
     ensemble = {"P31": ["Q2088357"], "P106": [], "P39": []}  # musical ensemble
     person = {"P31": ["Q5"], "P106": [], "P39": []}
     for tpl in ("album_performer", "song_performer"):
-        assert wb.kind_ok("musician", band, {}, template=tpl)
-        assert wb.kind_ok("musician", ensemble, {}, template=tpl)
-        assert wb.kind_ok("musician", person, {}, template=tpl)
-    assert not wb.kind_ok("musician", band, {}, template="song_lyricist")
-    assert not wb.kind_ok("musician", band, {})
-    assert not wb.kind_ok("composer", band, {}, template="album_performer")
+        assert wb.kind_ok("musician", band, LEAVES, template=tpl)
+        assert wb.kind_ok("musician", ensemble, LEAVES, template=tpl)
+        assert wb.kind_ok("musician", person, LEAVES, template=tpl)
+    assert not wb.kind_ok("musician", band, LEAVES, template="song_lyricist")
+    assert not wb.kind_ok("musician", band, LEAVES)
+    assert not wb.kind_ok("composer", band, LEAVES, template="album_performer")

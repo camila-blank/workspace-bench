@@ -302,6 +302,22 @@ def test_lint_literal_copy():
     assert not literal_copy("999 of 1000", 'print(999 // 1, "of", 1000)'.replace("999", "x"))
 
 
+def test_literal_copy_needs_separators():
+    # computed numbers are not copies, even when they concatenate small literals (0, 1, 3, 4, 5)
+    code = (
+        "count = 0\nfor x in [3, 4, 5]:\n    count += 1\nprint(count * 4 - 2, sum([3, 4, 5]) - 2)"
+    )
+    for out in ("10", "12", "100", "1010"):
+        assert not literal_copy(out, code), out
+        assert lint("buggy_code", _authored("buggy", code, out)) == [], out
+    # separated copies stay rejected: a space, or a punctuation-only joiner literal
+    assert literal_copy("Ann Ann", 'first = "Ann"\nprint(first + " " + first)')
+    assert literal_copy("Ann | Lee", 'a, b = "Ann", "Lee"\nprint(" | ".join([a, b]))')
+    assert literal_copy("Ann,Lee", 'a, b = "Ann", "Lee"\nprint(",".join([a, b]))')
+    assert not literal_copy("AnnLee", 'a, b = "Ann", "Lee"\nprint(a + b)')
+    assert not literal_copy("Ann | Lee", 'a, b = "Ann", "Lee"\nprint(a, b)')  # no "|" literal
+
+
 def test_lint_single_line_stdout():
     it = _authored("clean", "print(1)\nprint(2)", "1\n2")
     assert any(p.startswith("stdout:") for p in lint("buggy_code", it))

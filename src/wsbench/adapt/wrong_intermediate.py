@@ -52,7 +52,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from . import store
 from .gate import Ask, Leg, gate_record, prompt_of
@@ -463,8 +463,11 @@ def grade(
     pool: str,
     limit: int = 0,
     resolver: Callable[[list[str]], dict[str, list[str]]] | None = None,
+    wave: int | None = None,
 ) -> list[dict]:
-    """Stage 2 (CPU): the E1 candidates (``grade.cmd_grade`` on the subject's screen)."""
+    """Stage 2 (CPU): the E1 candidates (``grade.cmd_grade`` on the subject's screen). A regrade
+    over a stored grade APPENDS ``{at, wave, pool, flips}`` to ``hub_flips.json`` (never
+    overwriting an earlier run's diff with a later, possibly empty, one)."""
     cands, ents = _ents(model, pool, limit)
     scr = {r["key"]: r["greedy"] for r in _read_jsonl(work_dir(model) / "screen.jsonl")}
     stats: collections.Counter = collections.Counter()
@@ -550,7 +553,7 @@ def grade(
     old = _read_jsonl(work_dir(model) / "e1.jsonl")
     flips = hub_flips(old, e1)
     if old:  # reported, never applied to an already-gated row (plan 0066 §5 code change 2)
-        store.write_json(work_dir(model) / "hub_flips.json", flips)
+        record_hub_flips(model, flips, wave=wave, pool=pool)
     if flips:
         print(f"[wb grade] {len(flips)} hub-status flips vs the stored grade: "
               f"{[f['id'] for f in flips][:20]}")  # fmt: skip
@@ -562,6 +565,22 @@ def grade(
     )
     print(f"[wb grade] {dict(stats)}")
     return e1
+
+
+def record_hub_flips(
+    model: str, flips: list[dict], wave: int | None = None, pool: str | None = None
+) -> list[dict]:
+    """Append one run's hub-status diff to ``hub_flips.json`` (a list of
+    ``{at, wave, pool, flips}`` records, oldest first) and return the whole list. A legacy file
+    holding a bare flip list becomes the first record (``at``/``wave`` unknown)."""
+    path = work_dir(model) / "hub_flips.json"
+    runs = json.loads(path.read_text("utf-8")) if path.exists() else []
+    if runs and not all(isinstance(r, dict) and "flips" in r for r in runs):
+        runs = [{"at": None, "wave": None, "pool": None, "flips": runs}]
+    at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    runs.append({"at": at, "wave": wave, "pool": pool, "flips": flips})
+    store.write_json(path, runs)
+    return runs
 
 
 def hub_flips(old: list[dict], new: list[dict]) -> list[dict]:
@@ -994,19 +1013,39 @@ def registered_bprime() -> dict[str, dict[str, list[str]]]:
     return _vendored(REGISTERED_BPRIME)["bprime"]
 
 
-def closure(qids: Iterable[str], parents: dict[str, list[str]], steps: int) -> dict[str, int]:
-    """``{class: steps}``: the classes within ``steps`` P279 steps (0 = the class itself)."""
+def closure(
+    qids: Iterable[str],
+    parents: dict[str, list[str]],
+    steps: int,
+    missing: set[str] | None = None,
+) -> dict[str, int]:
+    """``{class: steps}``: the classes within ``steps`` P279 steps (0 = the class itself).
+    ``missing`` collects the classes the walk had to expand that are ABSENT from ``parents`` (a
+    parentless class is a key with ``[]``; an absent one was never seen by the table build)."""
     dist = dict.fromkeys(qids, 0)
     frontier = list(dist)
     for k in range(1, steps + 1):
         nxt = []
         for q in frontier:
-            for p in parents.get(q, ()):
+            if q not in parents:
+                if missing is not None:
+                    missing.add(q)
+                continue
+            for p in parents[q]:
                 if p not in dist:
                     dist[p] = k
                     nxt.append(p)
         frontier = nxt
     return dist
+
+
+def _missing_classes(qids: set[str], what: str) -> NoReturn:
+    raise SystemExit(
+        f"{FAMILY}: {what} class(es) {sorted(qids)} are missing from the frozen class table "
+        f"{CLASS_TABLE.name}: the entity-kind check cannot decide; rebuild the tables with "
+        f"scripts/build_wd_tables.py (it reads the per-set entities_extra.json stores) and rerun "
+        f"(plan 0066 §5.3)"
+    )
 
 
 def _all_values(ent: dict, prop: str) -> list[str]:
@@ -1056,7 +1095,12 @@ def kind_ok(
     if category == "musician" and template in PERFORMER_TEMPLATES:
         allow = allow | GROUP_P31
     parents = class_parents() if parents is None else parents
-    return bool(set(closure(facts.get("P31") or [], parents, P31_STEPS)) & allow)
+    missing: set[str] = set()
+    if set(closure(facts.get("P31") or [], parents, P31_STEPS, missing)) & allow:
+        return True
+    if missing:  # an unseen class could be the hit: never a quiet entity-kind drop
+        _missing_classes(missing, "B' P31")
+    return False
 
 
 def item_category(facts: dict[str, list[str]], parents: dict | None = None) -> str | None:
@@ -1074,8 +1118,9 @@ def item_category(facts: dict[str, list[str]], parents: dict | None = None) -> s
             return "band"
         return None
     found: set[str] = set()
+    missing: set[str] = set()
     for occ in facts.get("P106") or []:
-        dist = closure([occ], parents, OCC_STEPS)
+        dist = closure([occ], parents, OCC_STEPS, missing)
         best = None
         for cat in CATEGORY_PRIORITY:
             hits = [dist[q] for q in OCCUPATION_ROOTS[cat] if q in dist]
@@ -1083,6 +1128,8 @@ def item_category(facts: dict[str, list[str]], parents: dict | None = None) -> s
                 best = (min(hits), cat)
         if best is not None:
             found.add(best[1])
+    if missing:  # an unseen occupation class could change the category
+        _missing_classes(missing, "B' P106")
     for cat in CATEGORY_PRIORITY:
         if cat in found:
             return cat
@@ -1596,7 +1643,7 @@ def refill_wave(
     resolver = None
     if resolve == "wikidata":
         resolver = wikidata_resolver(model, _ents(model, pool)[1])
-    grade(model, pool, 0, resolver)
+    grade(model, pool, 0, resolver, wave=wave)
     gate(model, pool, runner)
     adj = adjudicate(model, llm, ask=ask)
     bank(model, pool, fetch=fetch, kind_check=True)

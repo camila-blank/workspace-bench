@@ -240,6 +240,37 @@ def test_freeze_buggy_clean_without_bugclaim_drops_its_pair(mdir):
     assert clean["item"]["twin"] not in {store.item_id(it) for it in bank["items"]}
 
 
+def test_freeze_warns_and_notes_clean_rows_without_bugclaim(mdir, capsys):
+    rows = _registered_buggy_rows(7)
+    stale = [r for r in rows if r["item"]["src"] == "clean" and r["gate"]["pass"]]
+    for r in stale:  # every clean row gated before plan 0066
+        del r["gate"]["legs"]["bugclaim"]
+    _gate_log(mdir, "buggy_code", rows)
+    want = rf.bugclaim_warning(len(stale))
+    assert f"{len(stale)} clean rows have no bugclaim leg" in want
+    assert (
+        "profile families=buggy_code regate=true" in want and "refill families=buggy_code" in want
+    )
+    run.freeze(MODEL, ["buggy_code"])  # library default: shipped, but loudly
+    assert want in capsys.readouterr().out
+    rep = json.loads((mdir / "report.json").read_text())["families"]["buggy_code"]
+    assert rep["n_pairs"] == 0 and rep["freeze_notes"][0] == want
+
+
+def test_strict_freeze_refuses_clean_rows_without_bugclaim_unless_allowed(mdir):
+    rows = _registered_buggy_rows(7)
+    clean = next(r for r in rows if r["item"].get("twin") and r["item"]["src"] == "clean")
+    del clean["gate"]["legs"]["bugclaim"]
+    _gate_log(mdir, "buggy_code", rows)
+    for fams in (["buggy_code"], None):  # the CLI's whole-set freeze too
+        with pytest.raises(SystemExit, match="1 clean rows have no bugclaim leg"):
+            run.freeze(MODEL, fams, strict=True)
+    assert not (mdir / "buggy_code.json").exists()
+    run.freeze(MODEL, ["buggy_code"], strict=True, allow_untried="regate pending")
+    rep = json.loads((mdir / "report.json").read_text())["families"]["buggy_code"]
+    assert rep["freeze_notes"][0] == rf.bugclaim_warning(1) and rep["n_pairs"] == 23
+
+
 def test_strict_freeze_guard_for_a_policy_family(mdir):
     rows = _registered_buggy_rows(7)
     for r in rows[:6]:
@@ -459,6 +490,49 @@ def test_fill_buggy_full_counts_pairs_and_pilot_is_buggy_only(mdir, monkeypatch)
     assert authored == []
     with pytest.raises(SystemExit, match="buggy_code only"):
         run.fill(MODEL, "typo_mt", llm=None, runner=object(), pilot=True)
+
+
+def test_fill_buggy_stops_on_claude_budget_through_refill(mdir, monkeypatch):
+    """plan 0066 §1.2: `adapt refill` passes claude_budget to buggy_code's run.fill; author calls
+    (ceil(n / 20) per wave) plus grading calls (the grader's cache growth) count against it."""
+
+    class Grader:
+        def __init__(self):
+            self.cache = {}
+
+        def __call__(self, ask, answers):
+            return [True for _ in answers]
+
+    grader = Grader()
+    monkeypatch.setattr(run, "_llm", lambda name: grader)
+    authored, _caps = _fake_buggy_fill(monkeypatch, mdir, lambda tier, i: False)
+    real_gate = run.lint_and_gate
+
+    def gate_and_grade(model, family, runner, draws, temperature, llm, items=None):
+        assert llm is grader
+        n = len(store.pending(model, family))
+        grader.cache.update({f"k{len(grader.cache) + i}": True for i in range(n)})
+        return real_gate(model, family, runner, draws, temperature, llm, items)
+
+    monkeypatch.setattr(run, "lint_and_gate", gate_and_grade)
+    st = rf.refill(MODEL, ["buggy_code"], waves=8, claude_budget=5, gpu_minutes=60, runner=object())
+    assert st == {"buggy_code": "partial"}
+    assert len(authored) == 1  # the first wave's calls (author + grades) exceed 5
+    b = json.loads((mdir / "report.json").read_text())["families"]["buggy_code"]["refill"]
+    assert b["stop"] == "budget spent (claude_budget 5)"
+    n = authored[0][1]
+    assert b["budget"]["claude_calls"] == -(-n // 20) + 2 * n  # 2 items per pair object
+    assert b["budget"]["claude_budget"] == 5
+
+
+def test_fill_buggy_claude_budget_counts_author_calls_without_a_grader(mdir, monkeypatch):
+    authored, _caps = _fake_buggy_fill(monkeypatch, mdir, lambda tier, i: False)
+    st = run.fill(MODEL, "buggy_code", llm=None, max_waves=8, runner=object(), claude_budget=3)
+    assert st == "partial"
+    b = json.loads((mdir / "report.json").read_text())["families"]["buggy_code"]["refill"]
+    assert b["stop"] == "budget spent (claude_budget 3)"
+    assert b["budget"]["claude_calls"] == sum(-(-n // 20) for _t, n, _w in authored) >= 3
+    assert len(authored) == 2  # 30 pair objects a wave: 2 author calls each
 
 
 def test_cli_pool_arg_passes_a_mode_through():
