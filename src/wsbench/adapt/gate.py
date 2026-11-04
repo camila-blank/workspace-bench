@@ -453,7 +453,8 @@ def merge_legs(record: dict[str, Any], new: dict[str, dict[str, Any]]) -> dict[s
     them) added or replaced, and ``pass`` / ``rate`` / the shown answers re-derived by
     :func:`gate_record`'s rule from the stored leg dicts. The legs already in the record are kept
     exactly as stored, never re-sampled (plan 0066 audit B2: re-asking one missing leg must not
-    re-draw the passing ones)."""
+    re-draw the passing ones). For ADDING legs (a new group, e.g. ``bugclaim``): the shown
+    answers are re-derived only when the head is a new leg."""
     legs = {**(record.get("legs") or {}), **new}
     groups: dict[str, list[tuple[str, dict]]] = {}
     for name, leg in legs.items():

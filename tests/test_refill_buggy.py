@@ -531,3 +531,20 @@ def test_merge_legs_rederives_pass_and_rate():
     undecided = merge_legs(rec, {"bugclaim": {"passed": False, "rate": None}})
     assert not undecided["pass"] and undecided["rate"] is None
     assert rec["legs"].keys() == {"surface", "note:first"}  # the input record is not mutated
+
+
+def test_bugclaim_regate_logs_a_lint_failure_as_rejected(stale_set, monkeypatch):
+    """A stale row that now fails lint is logged as rejected (as lint_and_gate does) and is never
+    asked its bugclaim leg."""
+    from wsbench.adapt import lint, run
+
+    real = lint.lint
+    monkeypatch.setattr(lint, "lint", lambda fam, it: (["leak: test"] if store.item_id(it)
+                        == "py-au-clean-x" else real(fam, it)))  # fmt: skip
+    runner = AskRunner()
+    assert run.regate_missing_bugclaim(MODEL, runner, _no_claim) == 2
+    prompts = [p for c in runner.generate_calls for p in c[0]]
+    assert AU_CLEAN["code"] not in prompts and len(prompts) == 1  # only the original was asked
+    row = store.gated(MODEL, "buggy_code")["py-au-clean-x"]
+    assert row["gate"]["lint"] == ["leak: test"] and not row["gate"]["pass"]
+    assert row["selected"] is False and row["gate"]["legs"] == {}
