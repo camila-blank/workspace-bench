@@ -53,7 +53,8 @@ floor. The bank ships no reply text and no reply span, and its ids stop at the e
 - **Render:** `captured`. The plan row ships `extra.input_ids`, the prompt only; feed them as they
   are. There is no assistant turn.
 - **Positions:** `{"kind": "positions", "positions": [...]}`, the source's prompt span:
-  - user-turn tokens, length-equalized within each pair (38–58, mean 46.5);
+  - prompt-render tokens (the user turn; on metadata items also the generation-prompt
+    template), length-equalized within each pair (38–58, mean 46.5);
   - 88 of 222 items have gaps, so `full_contiguous=False`.
 
   Hint tokens are never read positions:

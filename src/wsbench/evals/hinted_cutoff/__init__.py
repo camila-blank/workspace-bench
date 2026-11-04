@@ -29,7 +29,7 @@ SPEC = register(
             "native: 712 chunk calls (16 prompt positions x all layers each)"
         ),
         sources="",
-        # plan 0064: the gw prompt span (user-turn tokens, length-equalized within each pair;
+        # plan 0064: the gw prompt span (prompt-render tokens, length-equalized within each pair;
         # 88 of 222 items have gaps): not contiguous. No reader sees the reply.
         full_contiguous=False,
         min_full_positions=16,
