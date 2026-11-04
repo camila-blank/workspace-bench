@@ -232,6 +232,8 @@ def test_helpers():
     assert ops.mentions("one more berry", "berries") and ops.mentions("a treasure", "treasures")
     assert ops.mentions("two branch lines", "branches")
     assert ops.mentions("a xylophone", "xylophones")
+    assert ops.mentions("her purse", "purses") and ops.mentions("an avalanche", "avalanches")
+    assert ops.mentions("the suitcase", "suitcases") and ops.mentions("a database", "databases")
     assert not ops.mentions("a camping kit", "kites") and not ops.mentions("lie down", "lies")
     assert not ops.mentions("bon voyage", "bones")
 
