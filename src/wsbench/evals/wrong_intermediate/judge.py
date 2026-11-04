@@ -357,7 +357,7 @@ _CUES = {
     "song_lyricist": "lyric wrot writ 作词 作詞",
     "character_creator": "creat invent wrot writ 创 創",
     "tv_network": "network air broadcast channel 电视 電視",
-    # plan 0064 §5.4 (CUES_VERSION wbcues-v2): templates the adapted refill admits; no entry
+    # plan 0066 §5.4 (CUES_VERSION wbcues-v2): templates the adapted refill admits; no entry
     # above changes, so no registered verdict moves
     "film_screenwriter": "screenplay screenwrit writ wrot script 编剧 編劇",
     "song_composer": "compos wrot writ song 作曲",
@@ -763,7 +763,7 @@ def _audit_version(pv: str) -> str:
     change that moves which lines the audit sees changes its user message, so those calls are
     re-asked anyway; one that does not re-scores the cached answers instead of re-asking every
     audit (rounds 4c / 4d re-asked them all, and the re-ask variation moved cells). The cues
-    stamp never enters a call either (plan 0064 §11.4), so it is stripped too."""
+    stamp never enters a call either (plan 0066 §11.4), so it is stripped too."""
     return pv.replace("+" + wp.CUES_VERSION, "", 1).replace("+" + wp.FORMS_VERSION, "", 1)
 
 

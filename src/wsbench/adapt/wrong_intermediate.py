@@ -900,7 +900,7 @@ def _wd_entry(ent: dict) -> dict:
 
 # ------------------------------------------------------------------ categories (plan 0066 §5)
 # Adapt-side category tables; the registered builder's TEMPLATE_CATEGORY / ITEM_CATEGORY are
-# never edited (its --check stays byte-identical). The cue branch (plan 0064 §5.4 / §11.5,
+# never edited (its --check stays byte-identical). The cue branch (plan 0066 §5.4 / §11.5,
 # CUES_VERSION wbcues-v2) admits the four already-screened templates and the re-scrape's four;
 # each has a judge ROLE_CUES entry (category_of still admits only a cued template). song_composer
 # / album_producer are musician templates but NOT performer templates (PERFORMER_TEMPLATES).

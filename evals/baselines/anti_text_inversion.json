@@ -60954,7 +60954,7 @@
    }
   },
   "restamped_from": "wb-mc-2026-10-31r+rv-2026-11-01h+wbaudit-v2+wbforms-v4+bank-v4",
-  "restamp_note": "plan 0064 §5.4: wbcues-v2 adds role cues only for templates outside the registered bank (every registered template's cues byte-identical, tests/test_refill_wi_cues.py), and no MC or audit call keys on it, so no registered verdict changes and the subset stands; restamped by scripts/ati_restamp_wi_cues.py, not re-gated"
+  "restamp_note": "plan 0066 §5.4: wbcues-v2 adds role cues only for templates outside the registered bank (every registered template's cues byte-identical, tests/test_refill_wi_cues.py), and no MC or audit call keys on it, so no registered verdict changes and the subset stands; restamped by scripts/ati_restamp_wi_cues.py, not re-gated"
  },
  "association": {
   "gate": "panel-v1",

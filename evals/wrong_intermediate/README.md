@@ -206,7 +206,7 @@ native path (one call per layer, the ATI gate) has no sample counts and is uncha
   surname is dropped: `full_forms` removes a one-word form that is the last word or `·`-segment
   of another form, the label itself is kept), not glued by a hyphen into another name, with a
   role cue near it: a cue word of the item's template (`ROLE_CUES`: `direct`, `paint`, `wrot`,
-  `releas`, ... as word starts, CJK cues as substrings; since `+wbcues-v2`, plan 0064 §5.4, also
+  `releas`, ... as word starts, CJK cues as substrings; since `+wbcues-v2`, plan 0066 §5.4, also
   for the templates the adapted refill admits: film_screenwriter, song_composer, tv_creator,
   novel_publisher, film_producer, opera_librettist, album_producer, aircraft_manufacturer; no
   registered template's cues changed), a word of the prompt's subject phrase
@@ -340,7 +340,7 @@ native path (one call per layer, the ATI gate) has no sample counts and is uncha
   moves (both ways) are re-asked audit variation, as in rounds 4c / 4d. Some split verdicts are
   audit noise (L56 Nintendo vs a Capcom-in-Osaka aside); a split can only take a credit away.
 
-### `+wbcues-v2` (plan 0064 §5.4, 2026-11-04, Camila-approved)
+### `+wbcues-v2` (plan 0066 §5.4, 2026-11-04, Camila-approved)
 
 - `judge._CUES` gains the role cues of the templates the adapted refill admits
   (film_screenwriter, song_composer, tv_creator, novel_publisher, and the re-scrape's

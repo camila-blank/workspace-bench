@@ -1,4 +1,4 @@
-"""Plan 0064 §5.4 / §11.3-11.5: the wrong_intermediate role cues for the refill's templates
+"""Plan 0066 §5.4 / §11.3-11.5: the wrong_intermediate role cues for the refill's templates
 (``CUES_VERSION`` wbcues-v2): registered cues byte-identical, no cached call re-asked, ATI
 entry restamped, every adapt-admitted template cued."""
 
