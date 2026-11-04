@@ -853,3 +853,13 @@ def test_decode_offsets_merges_a_token_split_inside_a_character():
     ids = list(text.encode())
     assert ii.decode_offsets(Bytes(), ids, text) == [(0, 1), (1, 2), (2, 3), (2, 3), (3, 4),
                                                      (4, 5)]  # fmt: skip
+
+
+def test_decode_offsets_merges_a_dropped_partial_byte():
+    class Dropping:  # byte-level ids whose decoder drops an incomplete trailing character
+        def decode(self, ids, **_):
+            return bytes(ids).decode("utf-8", errors="ignore")
+
+    text = "a é"
+    assert ii.decode_offsets(Dropping(), list(text.encode()), text) == [(0, 1), (1, 2), (2, 3),
+                                                                        (2, 3)]  # fmt: skip

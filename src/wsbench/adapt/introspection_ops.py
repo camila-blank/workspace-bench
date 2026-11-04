@@ -362,8 +362,9 @@ def run_job(
     counts = {k: sum(op["kind"] == k for op in ops) for k in KINDS}
     log(f"[ops] plan {psha}: {counts} unique ops; shard {shard_index}/{n_shards}: {len(mine)}")
     answers = execute(stack, mine, vectors, budget, log)
+    vsha = _sha({k: array_sha(v) for k, v in vectors.items()})
     return {"job_sha": job.get("job_sha"), "hidden": hidden, "hidden_sha": array_sha(hidden),
-            "vectors": vectors, "plan_sha": psha, "op_counts": counts,
+            "vectors": vectors, "vectors_sha": vsha, "plan_sha": psha, "op_counts": counts,
             "shard": [shard_index, n_shards], "budget": budget, "answers": answers}  # fmt: skip
 
 
@@ -387,10 +388,10 @@ def merge(parts: Sequence[dict[str, Any]]) -> dict[str, Any]:
     for p in parts[1:]:
         if sorted(p["vectors"]) != sorted(v0):
             raise ValueError("shards disagree on the vector table's ids")
-        for k, v in p["vectors"].items():
-            a, b = np.asarray(v, np.float64), np.asarray(v0[k], np.float64)
+        for vid, v in p["vectors"].items():
+            a, b = np.asarray(v, np.float64), np.asarray(v0[vid], np.float64)
             if a.shape != b.shape:
-                raise ValueError(f"shards disagree on vector {k}'s shape")
+                raise ValueError(f"shards disagree on vector {vid}'s shape")
             worst = max(worst, float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-12)))
     if worst > VECTOR_TOL:
         raise ValueError(f"shards' steering vectors differ by rel {worst:.2e} > {VECTOR_TOL}")
@@ -400,7 +401,7 @@ def merge(parts: Sequence[dict[str, Any]]) -> dict[str, Any]:
             if kk in answers:
                 raise ValueError(f"op {kk} answered by two shards")
             answers[kk] = v
-    keep = ("job_sha", "hidden", "hidden_sha", "vectors", "plan_sha", "op_counts")
+    keep = ("job_sha", "hidden", "hidden_sha", "vectors", "vectors_sha", "plan_sha", "op_counts")
     return {**{k2: parts[0][k2] for k2 in keep}, "answers": answers,
             "vector_max_rel_diff_across_shards": worst,
             "budget": parts[0].get("budget"), "n_shards": k}  # fmt: skip
@@ -426,7 +427,8 @@ def finish(
         merged.get("vectors"),
     )
     res["sweep"]["engine"] = {**engine, **{k: merged.get(k) for k in (
-        "plan_sha", "hidden_sha", "op_counts", "vector_max_rel_diff_across_shards", "budget",
+        "plan_sha", "hidden_sha", "vectors_sha", "op_counts", "vector_max_rel_diff_across_shards",
+        "budget",
         "n_shards")}}  # fmt: skip
     return res
 
@@ -672,7 +674,10 @@ GREEDY_PROCESSORS = {"repetition_penalty": (None, 1.0), "no_repeat_ngram_size": 
                      "begin_suppress_tokens": (None, []), "bad_words_ids": (None, []),
                      "min_new_tokens": (None, 0), "min_length": (None, 0),
                      "forced_bos_token_id": (None,), "forced_eos_token_id": (None,),
-                     "sequence_bias": (None, {})}  # fmt: skip
+                     "sequence_bias": (None, {}), "num_beams": (None, 1),
+                     "num_beam_groups": (None, 1), "diversity_penalty": (None, 0.0),
+                     "exponential_decay_length_penalty": (None,),
+                     "encoder_repetition_penalty": (None, 1.0)}  # fmt: skip
 
 
 def check_generation_config(generation_config: dict[str, Any]) -> dict[str, Any]:

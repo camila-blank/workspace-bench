@@ -191,6 +191,7 @@ def test_shards_partition_and_merge_checks(job):
     whole = ops.run_job(FakeStack(job), job, randn=_randn, log=lambda s: None)
     merged = ops.merge(parts)
     assert merged["answers"] == whole["answers"]
+    assert merged["n_shards"] == 3 and merged["vectors_sha"] == whole["vectors_sha"]
     kinds = [sum(1 for k in p["answers"]) for p in parts]
     assert max(kinds) - min(kinds) <= 3
     with pytest.raises(ValueError, match=r"not 0\.\.2"):

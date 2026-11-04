@@ -189,8 +189,8 @@ def decode_offsets(tok: Any, ids: Sequence[int], text: str) -> list[tuple[int, i
     for i in range(len(ids)):
         cur = dec(ids[: i + 1])
         pending += 1
-        if not text.startswith(cur) or len(cur) < prev:
-            continue  # mid-character: closed by the next consistent prefix
+        if not text.startswith(cur) or len(cur) < prev or (len(cur) == prev and i + 1 < len(ids)):
+            continue  # mid-character (U+FFFD or a dropped byte): closed by the next prefix
         out += [(prev, len(cur))] * pending
         prev, pending = len(cur), 0
     if pending or prev != len(text):

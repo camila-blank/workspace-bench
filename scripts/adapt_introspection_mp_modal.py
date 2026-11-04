@@ -326,6 +326,16 @@ def calib(job: dict, extra_stops: list[int]) -> bytes:
     local = {
         "pre_span_max_abs_diff": float((h1[:k] - h0[:k]).abs().max()),
         "in_span_max_rel_err": float(((h1[k:] - want).norm(dim=-1) / want.norm(dim=-1)).max()),
+        # the capture returns at block L, so the line above is exact by construction; the full
+        # depth check (informational): next-token log-probs at the last pre-span position
+        "pre_span_logits_max_abs_diff": float(
+            (
+                stack._forward(ids, s, None, [(0, pre[-1])]).float()
+                - stack._forward(ids, None, None, [(0, pre[-1])]).float()
+            )
+            .abs()
+            .max()
+        ),  # fmt: skip
     }
     blob = pickle.dumps({"noop": noop, "mention": mention, "batch": batch, "local": local,
                          "gpu": torch.cuda.get_device_name(0), "job_sha": job.get("job_sha"),
