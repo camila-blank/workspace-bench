@@ -436,7 +436,8 @@ FIELDS_VERSION = "mh2-fields-v1"
 SEED = "mh2-refill-2026-11-04"
 WAVE_SIZE = 300
 DEFAULT_LLM = "claude-opus-5-5"
-R4_CALLS_PER_ITEM = 70  # the r4 -> r4b chain's Claude calls per item (smoke 2026-11-04: ~68 at --rounds 1)
+# the r4 -> r4b chain's Claude calls per item (smoke 2026-11-04: ~68 at --rounds 1)
+R4_CALLS_PER_ITEM = 70
 
 # the global-workspace candidate pools the frozen bank was built from (finalize.py ``Config``)
 GW_DIR_ENV = "WSB_GW_MH2_DIR"
