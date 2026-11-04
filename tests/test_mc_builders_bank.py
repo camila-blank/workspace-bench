@@ -308,11 +308,16 @@ def test_r4b_small_bank_examples_topped_up(monkeypatch):
     small = [lg.Item(id=f"new{i}", lists=reg[0].lists, golds=reg[0].golds) for i in range(2)]
     try:
         r.BANK = Path("adapted-bank.json")
-        pool = r.example_pool("multihop_mt_v2", small)
-        assert pool[:2] == small and len(pool) == 2 + len(reg)
-        assert len({it.id for it in pool}) == len(pool)
-        ex = lg.pick_examples(pool, 0, "multihop_mt_v2", lg.DEFAULT_SEED, k=r.N_EXAMPLES)
-        assert len(ex) == r.N_EXAMPLES and small[0] not in ex
+        for n in (1, 2, 3):
+            batch = [lg.Item(id=f"new{i}", lists=reg[0].lists, golds=reg[0].golds)
+                     for i in range(n)]  # fmt: skip
+            pool = r.example_pool("multihop_mt_v2", batch)
+            assert pool[:n] == batch and len(pool) > n + r.N_EXAMPLES
+            assert len({it.id for it in pool}) == len(pool)
+            assert all(it.meta.get("topics") for it in pool[n:])  # the frozen list topics
+            ex = lg.pick_examples(pool, 0, "multihop_mt_v2", lg.DEFAULT_SEED, k=r.N_EXAMPLES)
+            assert len(ex) == r.N_EXAMPLES and batch[0] not in ex
+            assert all("(topic: " in lg.render_lists(e, topics=True) for e in ex)
         big = reg[: r.N_EXAMPLES + 1]
         assert r.example_pool("multihop_mt_v2", big) is big
         r.BANK = None
