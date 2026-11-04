@@ -629,7 +629,10 @@ def _rank(scores: Sequence[float], i: int) -> int:
 
 def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dict[str, Any]:
     """Verdicts of plan 0067 §5 from the stack's raw calibration outputs (pure), each with a
-    ``pass``; ``g0_pass`` = all four (the run refuses to launch without it)."""
+    ``pass``. ``g0_pass`` (the run refuses to launch without it) = the ENGINE checks (a) no-op and
+    (d) local steer; (b) concept mention and (c) batched vs single are recorded measurements of
+    the subject (Camila / coordinator 2026-11-04: GO / NO-GO is the registered median-RR rule in
+    ``calibrate``, and batch-composition noise is a stack property, characterised, not gated)."""
     a = raw["noop"]
     base_lp = [x for r in a["base_lp"] for x in r]
     other = [x for k in ("beta0_lp", "zero_lp") for r in a[k] for x in r]
@@ -669,8 +672,8 @@ def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dic
     d = dict(raw["local"])
     d["pass"] = d["pre_span_max_abs_diff"] == 0.0 and d["in_span_max_rel_err"] <= CALIB_SPAN_REL
     rep["d_steer_is_local"] = d
-    rep["g0_pass"] = all(rep[k]["pass"] for k in ("a_noop", "b_mention", "c_batched_vs_single",
-                                                  "d_steer_is_local"))  # fmt: skip
+    rep["g0_pass"] = rep["a_noop"]["pass"] and rep["d_steer_is_local"]["pass"]
+    rep["recorded_not_gated"] = ["b_mention", "c_batched_vs_single"]
     return rep
 
 

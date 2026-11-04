@@ -255,7 +255,11 @@ def test_calib_report_verdicts():
     raw["noop"]["zero_lp"] = [[-1.0, -2.0]]
     assert ops.calib_report(raw, lambda ids: "the ocean" if ids == [1] else "hi")["g0_pass"]
     raw["batch"]["ops"][0]["packed"] = [-2.5, -2.0]  # the target's rank flips
-    assert not ops.calib_report(raw, lambda ids: "x")["c_batched_vs_single"]["pass"]
+    rep2 = ops.calib_report(raw, lambda ids: "x")  # and no reply mentions the concept
+    assert not rep2["c_batched_vs_single"]["pass"] and not rep2["b_mention"]["pass"]
+    assert rep2["g0_pass"]  # (b) and (c) are recorded, not gated: g0 = engine checks (a), (d)
+    raw["local"]["pre_span_max_abs_diff"] = 1e-3
+    assert not ops.calib_report(raw, lambda ids: "x")["g0_pass"]
 
 
 # ---------------------------------------------------------------- torch
