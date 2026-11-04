@@ -807,3 +807,175 @@ def test_bank_builder_functions_are_importable():
     B.unit_fields(u, "person", ["Richard I of England", "Lionheart"], [])
     assert u["full_forms"] == ["Richard I of England", "Richard the Lionheart"]
     assert u["forms"]["en"][-1] == "Lionheart" and u["kind"] == "person"
+
+
+# ============================================================== concurrency / over-gate / tok
+def _s1_cands(n):
+    out = []
+    for k in range(n):
+        it = _cand(FRESH2)
+        it["name"] = f"mh2-s1-par-{k:02d}"
+        it["target"] = f"Target{k}"
+        out.append(it)
+    return out
+
+
+def _slow_adv_ask(seed):
+    """A fake adversary that sleeps a random few ms (so calls complete out of order); every 3rd
+    target gets a factual issue."""
+    import random
+    import threading
+    import time
+
+    rng, lock = random.Random(seed), threading.Lock()
+
+    def ask(system, user):
+        with lock:
+            pause = rng.random() * 0.02
+        time.sleep(pause)
+        k = int(user.split("TARGET: Target", 1)[1].split()[0].rstrip("."))
+        return {"probes": [{"kind": "fill", "text": f"Fact: the inventor {k} was a senator of",
+                            "skips": "bridge1", "shortcut_kind": "LOCAL CUE"}],
+                "factual_issue": "a second answer" if k % 3 == 0 else ""}  # fmt: skip
+
+    return ask
+
+
+def test_parallel_adversary_is_byte_identical_to_serial(tmp_path, gw):
+    (gw / "cand_par.json").write_text(json.dumps({"items": _s1_cands(24)}))
+    outs = {}
+    for workers, seed in ((1, 0), (8, 1), (16, 2)):
+        d = tmp_path / f"pools-{workers}"
+        path = mhmt2.build_pool(d, True, gw=gw, ask=_slow_adv_ask(seed), s1_pools=("cand_par",),
+                                workers=workers)  # fmt: skip
+        outs[workers] = (path.read_bytes(), (d / "mh2_adversary_s1.json").read_bytes())
+    assert outs[1] == outs[8] == outs[16]
+    rows = json.loads(outs[1][1])
+    assert list(rows) == [f"mh2-s1-par-{k:02d}" for k in range(24)]  # candidate order
+
+
+def test_parallel_adversary_cache_files_are_well_formed(tmp_path, monkeypatch):
+    """Real ``claude_sys_json`` (fake Session) at 16 workers: every attempt's cache file holds
+    whole JSON lines only, one per call, and the calls take slots on ``wsbench.llm._PACER``."""
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from wsbench import llm
+    from wsbench.adapt import auth
+
+    cands = _s1_cands(32)
+    reserved = []
+
+    def reserve(rpm):
+        reserved.append(rpm)
+        return 0.0
+
+    monkeypatch.setattr(llm._PACER, "reserve", reserve)
+    calls, lock = {}, threading.Lock()
+
+    class FakeSession:
+        pushed = 0.0
+
+        def create(self, **kw):
+            user = kw["messages"][0]["content"]
+            with lock:
+                n = calls[user] = calls.get(user, 0) + 1
+            time.sleep(0.001 * (hash(user) % 7))
+            if n == 1 and "Target1" in user:  # problem on attempt 0: a fresh retry fixes it
+                js = {"probes": [], "factual_issue": ""}
+            else:
+                js = {"probes": [{"kind": "fill", "text": "Fact: the inventor was a senator of",
+                                  "skips": "bridge1", "shortcut_kind": "LOCAL CUE"}],
+                      "factual_issue": "x" * 500}  # fmt: skip
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(js))])
+
+    monkeypatch.setattr(auth, "Session", FakeSession)
+    rows = mhmt2._adversary_rows(cands, tmp_path, None, "opus", workers=16)
+    assert list(rows) == [it["name"] for it in cands]
+    assert set(reserved) == {mhmt2.CLAUDE_RPM} and len(reserved) == sum(calls.values())
+    files = sorted(tmp_path.glob("mh2_adversary_s1.opus*.jsonl"))
+    assert [f.name for f in files] == ["mh2_adversary_s1.opus.jsonl",
+                                       "mh2_adversary_s1.opus.retry1.jsonl"]  # fmt: skip
+    assert all(rows[it["name"]]["problem"] == "" for it in cands)
+    n_lines = 0
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert text.endswith("\n")
+        for line in text.splitlines():
+            rec = json.loads(line)  # never a torn / interleaved line
+            assert set(rec) == {"k", "v"}
+            n_lines += 1
+    assert n_lines == sum(calls.values())
+
+
+def _fields_fakes_over_gate(n_over):
+    """fields_fakes whose fake r4b refine writes ``n_over_gate`` (as r4b_mc_refine.py does)."""
+    ask, wikidata, builder, log = fields_fakes()
+
+    def builder2(script, argv):
+        out = builder(script, argv)
+        if script == "r4b_mc_refine":
+            p = Path(argv[argv.index("--out") + 1])
+            doc = json.loads(p.read_text(encoding="utf-8"))
+            p.write_text(json.dumps({**doc, "n_over_gate": n_over}))
+        return out
+
+    return ask, wikidata, builder2, log
+
+
+def test_n_over_gate_is_returned_and_recorded(tmp_store, tmp_path, gw, monkeypatch):
+    _gate_pool(tmp_path, gw, monkeypatch, (FRESH2, FRESH3))
+    store.update_report(MODEL, lambda r: r.setdefault("families", {}).setdefault(FAMILY, {})
+                        .update(note="pool: mh2v2 | mc over gate: 9/9 items (old)"))  # fmt: skip
+    ask, wikidata, builder, _log = _fields_fakes_over_gate(1)
+    res = mhmt2.run(MODEL, "fields", ask=ask, wikidata=wikidata, builder=builder, tok=Tok())
+    assert res["n_over_gate"] == 1 and res["mc_refined"] == 2 and res["built"] == 2
+    # over-gate lists ship: both items are built
+    assert all(mhmt2.row_passes(r) for r in store.gated(MODEL, FAMILY).values())
+    entry = store.read_report(MODEL)["families"][FAMILY]
+    assert entry["mc_over_gate"] == 1
+    assert entry["note"] == "pool: mh2v2 | mc over gate: 1/2 items (their MC lists ship)"
+    # a re-record of the same chain run replaces its count, never adds it twice
+    mhmt2.record_over_gate(MODEL, res)
+    assert store.read_report(MODEL)["families"][FAMILY]["mc_over_gate"] == 1
+
+
+def test_refill_wave_records_n_over_gate(tmp_store, tmp_path, gw, monkeypatch):
+    _pool(tmp_path, gw, monkeypatch)
+    ask, wikidata, builder, _log = _fields_fakes_over_gate(2)
+    res = mhmt2.refill_wave(MODEL, wave=0, runner=MH2Runner(), review=review_fake(), ask=ask,
+                            wikidata=wikidata, builder=builder, tok=Tok())  # fmt: skip
+    assert res["n_over_gate"] == 2
+    entry = store.read_report(MODEL)["families"][FAMILY]
+    assert entry["mc_over_gate"] == 2 and "mc over gate: 2/2 items" in entry["note"]
+
+
+def test_subject_tokenizer_fails_loudly_without_transformers(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_transformers(name, *a, **kw):
+        if name == "transformers" or name.startswith("transformers."):
+            raise ImportError("No module named 'transformers'")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_transformers)
+    with pytest.raises(SystemExit) as e:
+        mhmt2.subject_tokenizer(MODEL)
+    assert "gpu" in str(e.value) and "torchvenv" in str(e.value)
+
+
+def test_build_fields_auto_tok_never_silently_skips_stamping(tmp_store, tmp_path, gw, monkeypatch):
+    from wsbench.adapt import author
+
+    def broken(model):
+        raise OSError("tokenizer files not found")
+
+    monkeypatch.setattr(author, "tokenizer", broken)
+    _gate_pool(tmp_path, gw, monkeypatch, (FRESH2,))
+    ask, wikidata, builder, _log = fields_fakes()
+    with pytest.raises(SystemExit, match="gpu"):
+        mhmt2.build_fields(MODEL, ask=ask, wikidata=wikidata, builder=builder)  # tok="auto"
+    assert "fields" not in store.gated(MODEL, FAMILY)[FRESH2]["gate"]
