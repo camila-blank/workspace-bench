@@ -193,7 +193,8 @@ def row_passes(family: str, row: dict) -> bool:
         return False
     if family == BUGGY:
         # every clean row, originals included: plan 0066 §2.2 regates all 38 clean originals
-        # (`profile regate=true`), and no pre-0066 test freezes buggy_code
+        # (`refill families=buggy_code` re-asks every passing clean row lacking the leg,
+        # authored ones too), and no pre-0066 test freezes buggy_code
         if BUGCLAIM_REQUIRED and row["item"].get("src") == "clean":
             return has_bugclaim(row)
         return True
@@ -215,8 +216,10 @@ def bugclaim_warning(n: int) -> str:
     """The freeze message for ``n`` clean rows lacking the ``bugclaim`` leg."""
     return (
         f"{BUGGY}: {n} clean rows have no {BUGCLAIM} leg (gated before plan 0066) and fail "
-        f"row_passes; run `profile families={BUGGY} regate=true` or `refill families={BUGGY}` "
-        f"before freezing"
+        f"row_passes; before freezing run `refill families={BUGGY}` (re-asks the missing leg "
+        f"on every passing clean row, originals and authored) or `gate families={BUGGY} "
+        f"regate=true` (re-gates every passing authored row; `profile families={BUGGY} "
+        f"regate=true` re-gates the originals only)"
     )
 
 

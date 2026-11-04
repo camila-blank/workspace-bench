@@ -248,9 +248,7 @@ def test_freeze_warns_and_notes_clean_rows_without_bugclaim(mdir, capsys):
     _gate_log(mdir, "buggy_code", rows)
     want = rf.bugclaim_warning(len(stale))
     assert f"{len(stale)} clean rows have no bugclaim leg" in want
-    assert (
-        "profile families=buggy_code regate=true" in want and "refill families=buggy_code" in want
-    )
+    assert "refill families=buggy_code" in want and "gate families=buggy_code regate=true" in want
     run.freeze(MODEL, ["buggy_code"])  # library default: shipped, but loudly
     assert want in capsys.readouterr().out
     rep = json.loads((mdir / "report.json").read_text())["families"]["buggy_code"]

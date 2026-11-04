@@ -981,6 +981,42 @@ def test_over_gate_counts_each_shipped_item_once(tmp_store, tmp_path, gw, monkey
     assert rec("refill-a", [FRESH2])["mc_over_gate"] == 1
 
 
+def _ship_row(iid, ents, origin=mhmt2.ORIGIN):
+    """A passing, fields-built gate row (synthetic) with its stored entity set."""
+    gate = {"pass": True, "fields": {"ok": True}, "legs": {}}
+    item = {"name": iid, "subfamily": "2hop"}
+    return {"id": iid, "origin": origin, "item": item, "entities": list(ents), "gate": gate}
+
+
+def test_over_gate_counts_what_freeze_ships(tmp_store, monkeypatch):
+    """The ``N/M`` note counts the refill items freeze would ship: one per entity
+    (``select_refill``) and within the item cap (target = the registered bank's size)."""
+    originals = [{"name": "mh2-orig-a"}, {"name": "mh2-orig-b"}]
+    monkeypatch.setattr(store, "original_bank", lambda family: ({}, copy.deepcopy(originals)))
+    a, b, c = "mh2-var-a", "mh2-var-b", "mh2-distinct"
+
+    def rec(build, ids):
+        text = mhmt2.record_over_gate(MODEL, {"mc_build": build, "mc_over_gate_ids": ids})
+        return store.read_report(MODEL)["families"][FAMILY]["mc_over_gate"], text
+
+    # two variants of one entity, both over gate: one ships, counted once
+    store.record_gates(MODEL, FAMILY, [_ship_row(a, ["richard i", "x"]),
+                                       _ship_row(b, ["richard i", "y"])])  # fmt: skip
+    assert len(mhmt2.shipped_rows(MODEL)) == 1
+    n, text = rec("refill-a", [a, b])
+    assert n == 1 and text.startswith("mc over gate: 1/1 shipped items")
+    # a third, distinct passer not over gate ships too
+    store.record_gates(MODEL, FAMILY, [_ship_row(c, ["voltaire"])])
+    n, text = rec("refill-a", [a, b])
+    assert n == 1 and text.startswith("mc over gate: 1/2 shipped items")
+    # originals that already fill the target leave no room for a refill item
+    store.record_gates(MODEL, FAMILY, [_ship_row(o["name"], [o["name"]], origin="original")
+                                       for o in originals])  # fmt: skip
+    assert mhmt2.shipped_rows(MODEL) == []
+    n, text = rec("refill-a", [a, b])
+    assert n == 0 and text.startswith("mc over gate: 0/0 shipped items")
+
+
 def test_refill_wave_records_n_over_gate(tmp_store, tmp_path, gw, monkeypatch):
     _pool(tmp_path, gw, monkeypatch)
     ask, wikidata, builder, _log = _fields_fakes_over_gate(2)

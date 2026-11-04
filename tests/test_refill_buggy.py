@@ -350,3 +350,110 @@ def test_lint_and_gate_rejects_an_equal_outcome_pair(monkeypatch):
     ids = {r["id"] for r in recorded}
     assert ids == {"py-au-x", "py-au-clean-x"}
     assert all(r["gate"]["lint"] for r in recorded)
+
+
+# --------------------------------------------------------------------------- missing bugclaim
+MODEL = "qwen3.5-4b"  # a registered subject on the Qwen tokenizer (no token restamp)
+_V = "exec: exit 0; stdout = '{}'"
+AU_BUG = {"id": "py-au-x", "name": "py-au-x", "src": "buggy", "code": "print(min([7, 9]))",
+          "verified": _V.format(7), "twin": "py-au-clean-x", "consequence_class": "value",
+          "level2_tokens": [], "lang_group": "python", "language": "python",
+          "adapt": {"origin": "authored", "tier": "t1"}}  # fmt: skip
+AU_CLEAN = {"id": "py-au-clean-x", "name": "py-au-clean-x", "src": "clean",
+            "code": "print(max([7, 9]))", "verified": _V.format(9), "twin": "py-au-x",
+            "lang_group": "python", "language": "python",
+            "adapt": {"origin": "authored", "tier": "t1"}}  # fmt: skip
+
+
+class AskRunner(FakeRunner):
+    """FakeRunner that records which item ids the subject was asked about."""
+
+    def __init__(self):
+        super().__init__()
+        self.asked: set[str] = set()
+
+    def sample(self, asks, draws, temperature, top_p=1.0, **kw):
+        self.asked.update(a.item_id for a in asks)
+        return super().sample(asks, draws, temperature, top_p, **kw)
+
+
+def _no_claim(ask, texts):  # every leg right; the bugclaim leg finds no bug claimed
+    return [ask.leg != "bugclaim" for _ in texts]
+
+
+def _stale_row(item, origin, bugclaim):
+    legs = {"surface": {"greedy": {"text": "x", "ok": True}, "samples": [], "rate": 1.0,
+                        "passed": True}}  # fmt: skip
+    if bugclaim and item["src"] == "clean":
+        legs["bugclaim"] = dict(legs["surface"])
+    return {"id": item["id"] if "id" in item else store.item_id(item), "origin": origin,
+            "item": item, "gate": {"pass": True, "rate": 1.0, "legs": legs},
+            "selected": True}  # fmt: skip
+
+
+@pytest.fixture
+def stale_set(tmp_path, monkeypatch):
+    """24 registered pairs passing (one original clean row without bugclaim) plus one authored
+    pair whose clean row has no bugclaim either: both gated before plan 0066."""
+    import copy
+
+    monkeypatch.setattr(store, "model_dir", lambda model, root=None: tmp_path / model)
+    _h, originals = store.original_bank("buggy_code")
+    rows, stale_orig = [], None
+    for it in originals:
+        if not it.get("twin"):
+            continue  # the orphans never pass here
+        claim = True
+        if stale_orig is None and it["src"] == "clean":
+            stale_orig, claim = store.item_id(it), False
+        rows.append(_stale_row(copy.deepcopy(it), "original", claim))
+    rows += [_stale_row(dict(AU_BUG), "authored", True),
+             _stale_row(dict(AU_CLEAN), "authored", False)]  # fmt: skip
+    store.record_gates(MODEL, "buggy_code", rows)
+    return {stale_orig, "py-au-clean-x"}
+
+
+def _bank_ids(model):
+    bank = json.loads((store.model_dir(model) / "buggy_code.json").read_text())
+    return {store.item_id(it) for it in bank["items"]}
+
+
+def test_refill_reasks_missing_bugclaim_on_originals_and_authored(stale_set, monkeypatch):
+    from wsbench.adapt import author, run
+
+    with pytest.raises(SystemExit, match="2 clean rows have no bugclaim leg"):
+        run.freeze(MODEL, ["buggy_code"], strict=True)
+    wrote: list = []
+    monkeypatch.setattr(author, "author", lambda *a, **k: wrote.append(a) or 0)
+    monkeypatch.setattr(run, "_llm", lambda name: _no_claim)
+    runner = AskRunner()
+    run.fill(MODEL, "buggy_code", llm="fake", max_waves=1, runner=runner)
+    assert runner.asked == stale_set  # exactly the two stale clean rows, not the bank
+    prompts = [p for c in runner.generate_calls for p in c[0]]
+    assert len(prompts) == 2 and AU_CLEAN["code"] in prompts  # one bugclaim ask per stale row
+    assert wrote == []  # the 24 pairs are full: nothing authored
+    rows = store.gated(MODEL, "buggy_code")
+    assert all("bugclaim" in rows[i]["gate"]["legs"] and rows[i]["gate"]["pass"]
+               for i in stale_set)  # fmt: skip
+    assert run.regate_missing_bugclaim(MODEL, runner, _no_claim) == 0  # nothing left to re-ask
+    run.freeze(MODEL, ["buggy_code"], strict=True)
+    assert {"py-au-x", "py-au-clean-x"} | stale_set <= _bank_ids(MODEL)
+
+
+def test_gate_regate_adds_bugclaim_to_the_authored_clean_row(stale_set, monkeypatch):
+    from wsbench.adapt import run
+
+    monkeypatch.setattr(run, "_llm", lambda name: _no_claim)
+    runner = AskRunner()
+    run.gate(MODEL, ["buggy_code"], llm="fake", runner=runner, regate=True)
+    assert runner.asked == {"py-au-x", "py-au-clean-x"}  # authored rows only
+    row = store.gated(MODEL, "buggy_code")["py-au-clean-x"]
+    assert "bugclaim" in row["gate"]["legs"]
+
+
+def test_bugclaim_warning_names_both_remedies():
+    from wsbench.adapt import refill as rf
+
+    msg = rf.bugclaim_warning(3)
+    assert "refill families=buggy_code" in msg and "gate families=buggy_code regate=true" in msg
+    assert "originals only" in msg
