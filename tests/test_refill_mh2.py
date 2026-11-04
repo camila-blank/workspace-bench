@@ -910,7 +910,8 @@ def test_parallel_adversary_cache_files_are_well_formed(tmp_path, monkeypatch):
 
 
 def _fields_fakes_over_gate(n_over):
-    """fields_fakes whose fake r4b refine writes ``n_over_gate`` (as r4b_mc_refine.py does)."""
+    """fields_fakes whose fake r4b refine writes ``n_over_gate`` and the per-list ``gate``
+    records (as r4b_mc_refine.py does): the first ``n_over`` item ids (sorted) over the gate."""
     ask, wikidata, builder, log = fields_fakes()
 
     def builder2(script, argv):
@@ -918,7 +919,12 @@ def _fields_fakes_over_gate(n_over):
         if script == "r4b_mc_refine":
             p = Path(argv[argv.index("--out") + 1])
             doc = json.loads(p.read_text(encoding="utf-8"))
-            p.write_text(json.dumps({**doc, "n_over_gate": n_over}))
+            for k, iid in enumerate(sorted(doc["items"])):
+                for blk in doc["items"][iid].values():
+                    hits = 3 if k < n_over else 0
+                    blk["gate"] = {"blind_item_passes": hits, "informed_item_passes": 0}
+            p.write_text(json.dumps({**doc, "n_over_gate": n_over,
+                                     "gate": {"max_item_passes": 1}}))  # fmt: skip
         return out
 
     return ask, wikidata, builder2, log
@@ -935,10 +941,44 @@ def test_n_over_gate_is_returned_and_recorded(tmp_store, tmp_path, gw, monkeypat
     assert all(mhmt2.row_passes(r) for r in store.gated(MODEL, FAMILY).values())
     entry = store.read_report(MODEL)["families"][FAMILY]
     assert entry["mc_over_gate"] == 1
-    assert entry["note"] == "pool: mh2v2 | mc over gate: 1/2 items (their MC lists ship)"
-    # a re-record of the same chain run replaces its count, never adds it twice
+    assert entry["note"] == (
+        "pool: mh2v2 | mc over gate: 1/2 shipped items (lists ship as in the registered bank)"
+    )
+    assert res["mc_over_gate_ids"] == [sorted([FRESH2, FRESH3])[0]]
+    # a re-record of the same chain run replaces its ids, never adds them twice
     mhmt2.record_over_gate(MODEL, res)
     assert store.read_report(MODEL)["families"][FAMILY]["mc_over_gate"] == 1
+
+
+def test_over_gate_counts_each_shipped_item_once(tmp_store, tmp_path, gw, monkeypatch):
+    _gate_pool(tmp_path, gw, monkeypatch, (FRESH2, FRESH3))
+    ask, wikidata, builder, _log = _fields_fakes_over_gate(0)
+    res = mhmt2.run(MODEL, "fields", ask=ask, wikidata=wikidata, builder=builder, tok=Tok())
+    assert res["built"] == 2 and res["mc_over_gate_ids"] == []
+
+    def rec(build, ids):
+        mhmt2.record_over_gate(MODEL, {"mc_build": build, "mc_over_gate_ids": ids})
+        return store.read_report(MODEL)["families"][FAMILY]
+
+    assert rec("refill-a", [FRESH2])["mc_over_gate"] == 1
+    entry = rec("refill-b", [FRESH2])  # over gate in a second run: still one item
+    assert entry["mc_over_gate"] == 1 and set(entry["mc_over_gate_runs"]) >= {
+        "refill-a",
+        "refill-b",
+    }
+    assert rec("refill-c", ["mh2-not-a-refill-row"])["mc_over_gate"] == 1  # never ships
+    # FRESH3 stops shipping (a later failing record): over gate, but not counted
+    row = copy.deepcopy(store.gated(MODEL, FAMILY)[FRESH3])
+    row["gate"]["pass"] = False
+    store.record_gates(MODEL, FAMILY, [row])
+    entry = rec("refill-d", [FRESH3])
+    assert entry["mc_over_gate"] == 1
+    assert entry["note"].endswith("mc over gate: 1/1 shipped items (lists ship as in the "
+                                  "registered bank)")  # fmt: skip
+    # a legacy count-only run record adds nothing
+    store.update_report(MODEL, lambda r: r["families"][FAMILY]["mc_over_gate_runs"].update(
+        old={"n_over_gate": 5, "n": 9}))  # fmt: skip
+    assert rec("refill-a", [FRESH2])["mc_over_gate"] == 1
 
 
 def test_refill_wave_records_n_over_gate(tmp_store, tmp_path, gw, monkeypatch):
@@ -948,7 +988,165 @@ def test_refill_wave_records_n_over_gate(tmp_store, tmp_path, gw, monkeypatch):
                             wikidata=wikidata, builder=builder, tok=Tok())  # fmt: skip
     assert res["n_over_gate"] == 2
     entry = store.read_report(MODEL)["families"][FAMILY]
-    assert entry["mc_over_gate"] == 2 and "mc over gate: 2/2 items" in entry["note"]
+    assert entry["mc_over_gate"] == 2 and "mc over gate: 2/2 shipped items" in entry["note"]
+
+
+# ====================================================================== failed lookups (no verdict)
+def test_kind_problem_fetch_failed_is_no_verdict_but_empty_p31_is_resolved():
+    # resolved with no P31: still resolved (unchanged): a person must be Q5
+    assert "not a person" in mhmt2.kind_problem("bridge1", "X", "person", {"qid": "Q1", "p31": []})
+    assert mhmt2.kind_problem("bridge1", "X", "work", {"qid": "Q1", "p31": []}) is None
+    assert mhmt2.wd_resolved({"qid": "Q1", "p31": []})
+    failed = {"qid": "Q1", "fetch_failed": True}
+    assert not mhmt2.wd_resolved(failed) and mhmt2.wd_fetch_failed(failed)
+    with pytest.raises(ValueError, match="no verdict"):
+        mhmt2.kind_problem("bridge1", "X", "person", failed)
+
+
+def test_wikidata_fetch_failure_records_nothing_and_retries(tmp_store, tmp_path, gw, monkeypatch):
+    _gate_pool(tmp_path, gw, monkeypatch, (FRESH2, FRESH3))
+    ask, wikidata, builder, _log = fields_fakes()
+    golds2 = {u["forms"]["en"][0] for u in store.gated(MODEL, FAMILY)[FRESH2]["item"]["units"]}
+    flaky = {"on": True}
+
+    def wd(names):
+        got = wikidata(names)
+        if flaky["on"]:  # FRESH2's batch failed after every retry (qid known, no P31 fetched)
+            for n in golds2:
+                got[n] = {"qid": got[n]["qid"], "fetch_failed": True}
+        return got
+
+    res = mhmt2.build_fields(MODEL, ask=ask, wikidata=wd, builder=builder, tok=Tok())
+    assert res["skipped_fetch"] == 1 and res["built"] == 1 and res["failed"] == 0
+    rows = store.gated(MODEL, FAMILY)
+    assert "fields" not in rows[FRESH2]["gate"] and rows[FRESH2]["gate"]["pass"]
+    assert rows[FRESH3]["gate"]["fields"]["ok"]
+    flaky["on"] = False  # next run: the fetch works, the item is built and passes
+    res = mhmt2.build_fields(MODEL, ask=ask, wikidata=wd, builder=builder, tok=Tok())
+    assert res["built"] == 1 and res["skipped_fetch"] == 0
+    assert mhmt2.row_passes(store.gated(MODEL, FAMILY)[FRESH2])
+
+
+def test_r4_lookup_failure_skips_the_item_and_retries(tmp_store, tmp_path, gw, monkeypatch):
+    _gate_pool(tmp_path, gw, monkeypatch, (FRESH2, FRESH3))
+    ask, wikidata, builder, _log = fields_fakes()
+    flaky = {"on": True}
+
+    def builder2(script, argv):
+        out = builder(script, argv)
+        if script == "r4_mc_distractors" and flaky["on"]:
+            p = Path(argv[argv.index("--out") + 1])
+            doc = json.loads(p.read_text(encoding="utf-8"))
+            doc[FAMILY].pop(FRESH2, None)
+            doc["_meta"] = {"lookup_failed": {FAMILY: [f"{FRESH2}|bridge1"]}}
+            p.write_text(json.dumps(doc))
+        return out
+
+    res = mhmt2.build_fields(MODEL, ask=ask, wikidata=wikidata, builder=builder2, tok=Tok())
+    assert res["skipped_fetch"] == 1 and res["built"] == 1 and res["failed"] == 0
+    assert "fields" not in store.gated(MODEL, FAMILY)[FRESH2]["gate"]
+    flaky["on"] = False
+    res = mhmt2.build_fields(MODEL, ask=ask, wikidata=wikidata, builder=builder2, tok=Tok())
+    assert res["built"] == 1 and mhmt2.row_passes(store.gated(MODEL, FAMILY)[FRESH2])
+
+
+def _r4mod():
+    import importlib.util
+    import sys
+
+    path = REPO / "scripts" / "r4_mc_distractors.py"
+    spec = importlib.util.spec_from_file_location("_t_r4_mc_distractors_lookup", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.remove(str(path.parent))
+    return mod
+
+
+def test_wikidata_classes_failed_batches_are_marked_not_resolved(monkeypatch):
+    import time
+    import urllib.request
+
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    mode = {"wd": "ok"}
+
+    class Resp:
+        def __init__(self, doc):
+            self.doc = doc
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps(self.doc).encode()
+
+    def urlopen(req, timeout=None):
+        url = req.full_url
+        if "en.wikipedia.org" in url:
+            if "Broken" in url:
+                raise OSError("down")
+            return Resp(
+                {
+                    "query": {
+                        "pages": {
+                            "1": {"title": "Ada Lovelace", "pageprops": {"wikibase_item": "Q7259"}}
+                        }
+                    }
+                }
+            )
+        if mode["wd"] == "fail":
+            raise OSError("down")
+        return Resp({"entities": {"Q7259": {"claims": {}}}})  # resolved, no P31
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    got = mhmt2.wikidata_classes(["Ada Lovelace"])
+    assert got == {"Ada Lovelace": {"qid": "Q7259", "p31": []}}  # resolved with no P31
+    mode["wd"] = "fail"
+    assert mhmt2.wikidata_classes(["Ada Lovelace"]) == {
+        "Ada Lovelace": {"qid": "Q7259", "fetch_failed": True}
+    }
+    assert mhmt2.wikidata_classes(["Broken Name"]) == {"Broken Name": {"fetch_failed": True}}
+    g = _r4mod()
+    with pytest.raises(g.WikiLookupError):  # no ``failed`` set: never a silent "no article"
+        g.qids_of(["Broken Name"])
+    bad: set = set()
+    assert g.qids_of(["Broken Name"], failed=bad) == {} and bad == {"Broken Name"}
+
+
+def test_r4_run_lookup_failure_is_skipped_not_passed(tmp_path, monkeypatch):
+    g = _r4mod()
+    specs = [{"id": i, "role": "bridge1", "prompt": "Who wrote it?", "question": "", "note": "",
+              "gold": f"Gold {i}", "gold_forms": [f"Gold {i}"], "fixed": [], "fixed_forms": [],
+              "avoid": []} for i in ("item-a", "item-b")]  # fmt: skip
+    monkeypatch.setattr(g, "specs", lambda family, bank=None: copy.deepcopy(specs))
+
+    def stream_json(reqs, schema, model, on_result, concurrency):
+        for k, _req in enumerate(reqs):
+            if schema is g.TOPIC_SCHEMA:
+                on_result(k, {"topic": "a writer", "kind": "a person"})
+            else:
+                on_result(k, {"candidates": [{"name": f"Cand {j}", "enwiki": f"Cand {j}"}
+                                             for j in range(6)]})  # fmt: skip
+
+    def qids_of(titles, failed=None):
+        # every candidate resolves; item-a's gold lookup batch failed
+        if "Gold item-a" in titles:
+            failed.add("Gold item-a")
+        return {t: f"Q{abs(hash(t)) % 10**6}" for t in titles if t != "Gold item-a"}
+
+    monkeypatch.setattr(g, "stream_json", stream_json)
+    monkeypatch.setattr(g, "qids_of", qids_of)
+    monkeypatch.setattr(g, "sitelinks_of", lambda qids, failed=None: dict.fromkeys(qids, 10))
+    out = tmp_path / "pools.json"
+    assert g.main([FAMILY, "--out", str(out)]) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert "item-a" not in doc[FAMILY] and "item-b" in doc[FAMILY]  # skipped, not passed
+    assert doc["_meta"]["lookup_failed"] == {FAMILY: ["item-a|bridge1"]}
 
 
 def test_subject_tokenizer_fails_loudly_without_transformers(monkeypatch):
