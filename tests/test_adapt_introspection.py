@@ -487,6 +487,23 @@ def test_stages_end_to_end(adapted, tok, subject, job, monkeypatch):
     assert "freeze_notes" not in entry  # the fake's grids have >= 9 positions, coherence on
 
 
+def test_go_after_no_go_rejoins_the_macro(adapted, tok, subject, job, monkeypatch):
+    m = subject.key
+    store.update_report(m, lambda r: r.setdefault("families", {}).setdefault(
+        "introspection", {}).update(status="ooc", exclude_from_macro=True,
+                                    note="calibration NO-GO: earlier"))  # fmt: skip
+    ii.stage_job(m, tok)
+    monkeypatch.setattr(ii, "measure", functools.partial(ii.measure, randn=_randn,
+                                                         log=lambda s: None))  # fmt: skip
+    ii.stage_measure(m, engine=FakeEngine(job))
+    ii.stage_coherence(m, rate=_rate, workers=4)
+    assert ii.stage_calibrate(m)["GO"]
+    assert ii.stage_build(m) is not None
+    entry = json.loads((adapted / m / "report.json").read_text())["families"]["introspection"]
+    assert entry["status"] == "full" and entry["exclude_from_macro"] is False
+    assert "NO-GO" not in entry.get("note", "")
+
+
 def test_build_ooc_on_no_go(adapted, subject):
     m = subject.key
     (adapted / m / "introspection").mkdir(parents=True)

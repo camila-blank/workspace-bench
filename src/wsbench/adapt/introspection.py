@@ -1081,7 +1081,9 @@ def stage_build(model: str) -> dict[str, Any] | None:
         )
     _report(
         model,
+        stale_no_go=True,  # an earlier NO-GO's note and exclusion no longer apply
         status="full",
+        exclude_from_macro=False,
         n_items=len(out["items"]),
         target=target,
         change=f"subject vectors at block {job['inject_layer']}; dose headline "
@@ -1094,10 +1096,17 @@ def stage_build(model: str) -> dict[str, Any] | None:
     return out
 
 
-def _report(model: str, **entry: Any) -> None:
-    store.update_report(
-        model, lambda r: r.setdefault("families", {}).setdefault(FAMILY, {}).update(entry)
-    )
+def _report(model: str, stale_no_go: bool = False, **entry: Any) -> None:
+    """Merge ``entry`` into the family's report entry; ``stale_no_go`` (a GO build) first drops
+    the note of an earlier NO-GO record (status ooc / blocked), which no longer describes it."""
+
+    def mutate(r: dict[str, Any]) -> None:
+        e = r.setdefault("families", {}).setdefault(FAMILY, {})
+        if stale_no_go and e.get("status") in ("ooc", "blocked"):
+            e.pop("note", None)
+        e.update(entry)
+
+    store.update_report(model, mutate)
 
 
 STAGES = ("job", "measure", "coherence", "calibrate", "build")
