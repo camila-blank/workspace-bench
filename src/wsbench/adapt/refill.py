@@ -117,9 +117,14 @@ def stop_status(
 
 
 # ---------------------------------------------------------------------------- pools (decision 3)
-POOL_FILES = {"msdm": "msdm_pool.jsonl", "kcutoff": "kcutoff_pool.jsonl", "mh2": "mh2_pool.json"}
+POOL_FILES = {
+    "msdm": "msdm_pool.jsonl",
+    "kcutoff": "kcutoff_pool.jsonl",
+    "mh2": "mh2_pool.json",
+    "mh2v2": "mh2_pool.v2.json",  # decision 7: + the adversary over the S1-only candidates
+}
 # pinned in a follow-up PR once built on the box (plan 0064 §8 step 1); None = not built yet
-POOL_SHA256: dict[str, str | None] = {"msdm": None, "kcutoff": None, "mh2": None}
+POOL_SHA256: dict[str, str | None] = {"msdm": None, "kcutoff": None, "mh2": None, "mh2v2": None}
 DEFAULT_POOL_DIR = "/workspace/wsb-runs/pools"
 
 

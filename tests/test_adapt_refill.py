@@ -126,7 +126,7 @@ def test_pool_loader_refuses_unpinned_missing_and_mismatch(tmp_path, monkeypatch
 def test_pool_dir_default_and_no_pin_yet(monkeypatch):
     monkeypatch.delenv("WSB_POOL_DIR", raising=False)
     assert str(rf.pool_dir()) == "/workspace/wsb-runs/pools"
-    assert set(rf.POOL_FILES) == set(rf.POOL_SHA256) == {"msdm", "kcutoff", "mh2"}
+    assert set(rf.POOL_FILES) == set(rf.POOL_SHA256) == {"msdm", "kcutoff", "mh2", "mh2v2"}
 
 
 def test_no_pool_file_is_tracked_by_git():
@@ -196,6 +196,7 @@ def test_select_hook_applies_to_new_rows_only(monkeypatch):
 
     rows = [_row({"id": "o1"}), _row({"id": "n1"}, origin="refill"), _row({"id": "o2"}),
             _row({"id": "n2"}, origin="refill")]  # fmt: skip
+    monkeypatch.delattr(mhmt2, "select_refill", raising=False)
     assert rf.apply_select_hook("multihop_mt_v2", rows) == rows  # no hook: identity
     monkeypatch.setattr(mhmt2, "select_refill", lambda rs: list(reversed(rs))[:1], raising=False)
     got = [r["id"] for r in rf.apply_select_hook("multihop_mt_v2", rows)]
