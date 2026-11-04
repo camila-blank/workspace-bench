@@ -56,6 +56,26 @@ def registered_pos(spec: Any) -> list[int]:
     return [int(cell["pos"])] if cell.get("pos") is not None else []
 
 
+def has_unregistered_cell(model: str, family: str) -> bool:
+    """True when the adapted bank of ``family`` holds an item whose ``cell.pos`` is None (plan
+    0060 D8, DeepSeek-V4's arithmetic: no pre-registered cell, read at every position). Its judge
+    refuses the native ``cells=frozen`` default, so the stock judge must pass ``cells=all``."""
+    path = store.model_dir(model) / f"{family}.json"
+    if not path.exists():
+        return False
+    _h, items = store.load_wrapped(path)
+    return any(isinstance(it.get("cell"), dict) and it["cell"].get("pos") is None for it in items)
+
+
+def judge_opts(model: str, family: str) -> str:
+    """The stock judge's ``opts=`` (native aggregate; ``cells=all`` for a bank with no
+    pre-registered cell, else its judge exits 2)."""
+    opts = ["aggregate=native"]
+    if has_unregistered_cell(model, family):
+        opts.append("cells=all")
+    return "opts=" + ",".join(opts)
+
+
 def subsample(pos: list[int], keep: Sequence[int] = (), cap: int = MAX_POS) -> list[int]:
     """At most ``cap`` evenly spaced positions of ``pos`` that always include every ``keep``
     position present in ``pos`` (the pre-registered cell: Muse's arithmetic floor was empty when
@@ -138,7 +158,7 @@ def judge(model: str, judge_model: str = "claude-opus-5-5") -> dict:
         cmd = [wsb, "judge", f"family={f}", f"readouts={rd / f'{f}.jsonl'}", f"out={res_dir}",
                f"judge_model={judge_model}", f"layers={layer}", "allow_missing=True",
                # native: these floors sit beside native atlas bundles (plan 0024)
-               "opts=aggregate=native"]  # fmt: skip
+               judge_opts(model, f)]  # fmt: skip
         p = subprocess.run(cmd, env=env, check=False, capture_output=True, text=True)
         res_dir.mkdir(parents=True, exist_ok=True)
         (res_dir / "judge.log").write_text(p.stdout + "\n--- stderr ---\n" + p.stderr)

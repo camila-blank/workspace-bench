@@ -284,3 +284,20 @@ def test_freeze_note_names_every_item_that_lost_every_form(tmp_path, monkeypatch
     mine = [n for n in notes if n.startswith(run.RESTAMP_NOTE)]
     (lost_id,) = lost
     assert mine == [f"{run.RESTAMP_NOTE}1 items lost every multi-token form: {lost_id}"]
+
+
+def test_stock_judge_passes_cells_all_for_a_bank_without_registered_cells(tmp_path, monkeypatch):
+    """V4-Pro finalize: an adapted arithmetic bank with ``cell.pos`` None (no pre-registered
+    cell) made the stock judge exit 2; ``judge_opts`` adds ``cells=all`` for it only."""
+    import json as _json
+
+    monkeypatch.setattr(store, "model_dir", lambda m, *a, **k: tmp_path / m)
+    (tmp_path / "m").mkdir()
+    bank = {"family": "arithmetic_intermediates",
+            "items": [{"name": "a1", "cell": {"layer": 40, "pos": None}}]}  # fmt: skip
+    (tmp_path / "m" / "arithmetic_intermediates.json").write_text(_json.dumps(bank))
+    reg = {"family": "chain_intermediates", "items": [{"name": "c1", "cell": {"pos": -3}}]}
+    (tmp_path / "m" / "chain_intermediates.json").write_text(_json.dumps(reg))
+    assert floors.judge_opts("m", "arithmetic_intermediates") == "opts=aggregate=native,cells=all"
+    assert floors.judge_opts("m", "chain_intermediates") == "opts=aggregate=native"
+    assert floors.judge_opts("m", "association") == "opts=aggregate=native"  # no bank file
