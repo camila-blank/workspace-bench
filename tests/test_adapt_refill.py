@@ -458,3 +458,11 @@ def test_fill_buggy_full_counts_pairs_and_pilot_is_buggy_only(mdir, monkeypatch)
     assert authored == []
     with pytest.raises(SystemExit, match="buggy_code only"):
         run.fill(MODEL, "typo_mt", llm=None, runner=object(), pilot=True)
+
+
+def test_cli_pool_arg_passes_a_mode_through():
+    """plan 0064: `pool=ext` reaches msdm / kcutoff as the mode string, booleans as before."""
+    from wsbench.adapt.__main__ import _pool_arg
+
+    assert _pool_arg("true") is True and _pool_arg("false") is False
+    assert _pool_arg("ext") == "ext" and _pool_arg("Retired") == "retired"

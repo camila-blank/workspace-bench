@@ -56,6 +56,16 @@ from . import run
 USAGE = __doc__
 
 
+def _pool_arg(v: str) -> bool | str:
+    """``pool=`` for msdm / kcutoff: a boolean as before, or a mode name (plan 0064: ``ext``)."""
+    low = v.lower()
+    if low in ("1", "true", "yes"):
+        return True
+    if low in ("0", "false", "no"):
+        return False
+    return low
+
+
 def _args(argv: list[str]) -> dict[str, str]:
     out = {}
     for a in argv:
@@ -180,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
         mod.run(model, a.get("stage", "all"), llm=a.get("llm", "claude-opus-5-5"),
                 limit=int(a.get("limit", 0)),
                 regate=a.get("regate", "").lower() in ("1", "true", "yes"),
-                pool=a.get("pool", "true").lower() in ("1", "true", "yes"), **extra)  # fmt: skip
+                pool=_pool_arg(a.get("pool", "true")), **extra)  # fmt: skip
     elif cmd == "wrong_intermediate":  # plan 0060 Phase E
         from . import wrong_intermediate
 
