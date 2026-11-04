@@ -30,10 +30,10 @@ def test_bank_invariants():
     assert header["frozen"] is True and header["n_pairs"] == 111 and len(items) == 222
     pairs = judge.pairs_of(items)
     assert len(pairs) == 111 and len({p["cluster"] for p in pairs}) == 106
-    for it in items:
-        assert it["positions"] == it["spans"]["reply"]
-        assert min(it["positions"]) >= it["n_prompt"]
-        assert max(it["positions"]) < len(it["input_ids"])
+    for it in items:  # plan 0064: the prompt only; no reply anywhere in the bank
+        assert it["positions"] == it["spans"]["prompt"]
+        assert max(it["positions"]) < it["n_prompt"] == len(it["input_ids"])
+        assert "reply" not in it and "reply" not in it["spans"]
     for p in pairs:
         assert len(p["I"]["positions"]) == len(p["N"]["positions"])
         assert p["I"]["template"] == p["N"]["template"]
@@ -179,3 +179,16 @@ def test_floor_bracket_is_skipped():
     )  # fmt: skip
     entry = {"decided": {"a": True, "b": True}}
     assert results.shared_floor_text(r, entry, "0.63") == "0.63"
+
+
+def test_read_plan_shows_the_prompt_only():
+    """plan 0064: no reader (lens or prompt-only floor) is shown the reply."""
+    from wsbench.readplan import plan
+
+    specs = plan("hinted_cutoff")
+    assert len(specs) == 222
+    for r in specs:
+        assert r.assistant is None and r.render == "captured"
+        n = r.extra["prompt_len"]
+        assert len(r.extra["input_ids"]) == n
+        assert max(r.positions["positions"]) < n
