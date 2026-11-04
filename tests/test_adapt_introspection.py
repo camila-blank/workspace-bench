@@ -487,7 +487,7 @@ def test_stages_end_to_end(adapted, tok, subject, job, monkeypatch):
     assert "freeze_notes" not in entry  # the fake's grids have >= 9 positions, coherence on
 
 
-def test_build_blocked_on_no_go(adapted, subject):
+def test_build_ooc_on_no_go(adapted, subject):
     m = subject.key
     (adapted / m / "introspection").mkdir(parents=True)
     store.write_json(adapted / m / "introspection" / "job.json", {"inject_layer": 6})
@@ -497,7 +497,8 @@ def test_build_blocked_on_no_go(adapted, subject):
     assert ii.stage_build(m) is None
     assert not (adapted / m / "introspection.json").exists()
     entry = json.loads((adapted / m / "report.json").read_text())["families"]["introspection"]
-    assert entry["status"] == "blocked" and entry["n_items"] == 0 and "NO-GO" in entry["note"]
+    assert entry["status"] == "ooc" and entry["n_items"] == 0 and "NO-GO" in entry["note"]
+    assert entry["exclude_from_macro"] is True
 
 
 def test_calibrate_needs_every_reply_rated_unless_off(adapted, subject):
