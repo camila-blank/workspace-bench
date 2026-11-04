@@ -165,3 +165,17 @@ def test_native_run_scores_the_difference(tmp_path, monkeypatch):
     assert r.value == pytest.approx(1.0) and r.chance == 0.0
     assert r.extras["headline"]["count_metric"] == 2 and r.n_items == 2
     assert all(row["score"] == 1 for row in r.rows)
+
+
+def test_floor_bracket_is_skipped():
+    """The shared-id bracket reads row["pass"] (the pair pass), not the class difference."""
+    from wsbench import results
+
+    r = results.FamilyResult(
+        family="hinted_cutoff", metric="pass_rate", value=0.4, ci95=None, n_items=2,
+        higher_is_better=True, chance=0.0, chance_label="", complete=True,
+        pinned_instrument=True, config={}, counts={}, extras={},
+        rows=[{"id": "a", "pass": True}, {"id": "b", "pass": False}],
+    )  # fmt: skip
+    entry = {"decided": {"a": True, "b": True}}
+    assert results.shared_floor_text(r, entry, "0.63") == "0.63"
