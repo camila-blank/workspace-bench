@@ -142,3 +142,40 @@ def test_restamp_script_refuses_bank_sha_mismatch_and_other_instrument_moves():
     )
     with pytest.raises(SystemExit, match="more than the cues stamp"):
         mod.restamp(other)
+
+
+def _cue_item(template: str, prompt: str, opts: list[str]) -> dict:
+    return {"template": template, "prompt": prompt,
+            "mc": {"forms": {o: [o] for o in opts}, "order": opts}}  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("template", "prompt", "opts", "option", "line", "credited"),
+    [
+        # #273 review: performer lines must not credit the producer / composer role
+        ("album_producer", "Fact: the producer of the 1994 album American Recordings was born in",
+         ["Johnny Cash", "Rick Rubin"], "Johnny Cash",
+         "Johnny Cash recorded it alone in his cabin with an acoustic guitar.", False),
+        ("song_composer", "Fact: the composer of the song I Will Always Love You was born in",
+         ["Whitney Houston", "Dolly Parton"], "Whitney Houston",
+         "Whitney Houston sang this famous song in 1992.", False),
+        # an airline near the noun / a generic verb must not credit the manufacturer role
+        ("aircraft_manufacturer", "Fact: the manufacturer of the Concorde was founded in",
+         ["Air France", "Aerospatiale"], "Air France", "Air France retired the aircraft in 2003.",
+         False),
+        ("aircraft_manufacturer", "Fact: the manufacturer of the Concorde was founded in",
+         ["Air France", "Aerospatiale"], "Air France", "Air France made its last flight in 2003.",
+         False),
+        # CJK librettist cues credit in simplified and traditional script
+        ("opera_librettist", "Fact: the librettist of the opera Turandot was born in",
+         ["Puccini", "Adami"], "Adami", "Adami撰写了剧本", True),
+        ("opera_librettist", "Fact: the librettist of the opera Turandot was born in",
+         ["Puccini", "Adami"], "Adami", "Adami負責作詞", True),
+    ],
+)  # fmt: skip
+def test_new_cues_credit_the_role_not_the_wrong_entity(template, prompt, opts, option, line,
+                                                        credited):  # fmt: skip
+    from wsbench import digest
+
+    item = _cue_item(template, prompt, opts)
+    assert bool(wj.option_line(item, option, digest.Line(line))) is credited
