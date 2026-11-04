@@ -262,15 +262,15 @@ def ask_draws(ask: Ask, draws: int) -> int:
 def _greedy_only(ask: Ask, greedy: str, llm) -> Leg:
     """A greedy-only leg (``meta["draws"] = 0``): passes iff the greedy grade is decided and
     passes (for a :data:`NEGATIVE_RUBRICS` rubric: the model said the claim is absent). An
-    undecided grade fails. An empty greedy continuation claims nothing, so it passes a negative
-    rubric (the grader is never asked about an empty text). The leg ``rate`` is 1.0 or 0.0, never
+    undecided grade fails. An empty greedy continuation is NON-EVIDENCE, as in the leak legs
+    (plan 0064, Camila 2026-11-04): with no samples to fall back on, the leg is undecided and
+    fails (the grader is never asked about an empty text). The leg ``rate`` is 1.0 or 0.0, never
     None, so it never blanks the item rate (``gate_record``)."""
     negative = ask.meta.get("rubric") in NEGATIVE_RUBRICS
     ok: bool | None
-    if _broken(ask):  # no read render to continue: nothing is decided
+    # no read render to continue, or an empty greedy (non-evidence): nothing is decided
+    if _broken(ask) or not greedy.strip():
         ok = None
-    elif negative and not greedy.strip():
-        ok = True
     else:
         v = GRADERS[ask.grade](ask, greedy)
         asked = llm is not None and v is not True and ask.grade not in NO_FALLBACK
@@ -285,7 +285,13 @@ def _greedy_only(ask: Ask, greedy: str, llm) -> Leg:
         decided=int(ok is not None),
         passed=passed,
         question=ask.question(),
-        reason=None if ok is not None else "greedy-only leg: the greedy grade is undecided",
+        reason=None
+        if ok is not None
+        else (
+            "greedy-only leg: the greedy continuation is empty (no evidence; undecided)"
+            if not greedy.strip()
+            else "greedy-only leg: the greedy grade is undecided"
+        ),
     )
 
 

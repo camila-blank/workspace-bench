@@ -422,7 +422,10 @@ def refill(
     runner: Any = None,
 ) -> dict[str, str]:
     """``adapt refill``: each family through its route until ``stop_status`` stops it; writes
-    ``report.json`` ``families.<f>.refill`` and ``status``. Returns {family: status}."""
+    ``report.json`` ``families.<f>.refill`` and ``status``. Returns {family: status}.
+    ``claude_budget`` counts every Claude ask a wave reports (``claude_calls``), cache hits
+    included, so on a resumed run it overstates spend and stops early: deliberately conservative
+    (Camila 2026-11-04)."""
     from . import run
 
     if bad := [f for f in families if f not in POLICY]:
