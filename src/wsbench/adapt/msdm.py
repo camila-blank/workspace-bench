@@ -419,16 +419,77 @@ def _mechanical_reason(form: str, label: str, visible: str) -> str:
     return ""
 
 
+COLLIDES = "matches another option"
+GOLD_COLLIDES = "collides with a gold form"
+
+
+def _collide(
+    stage: Mapping[str, Sequence[str]],
+    dropped: dict[str, list[tuple[str, str]]],
+    gold: str | None = None,
+) -> dict[str, list[str]]:
+    """The cross-option rule: a form whose matcher fires on another option's label or forms is
+    dropped. With ``gold`` (build, plan 0064 finalize) the gold's forms are protected: a
+    distractor form a gold form fires on is dropped from the DISTRACTOR instead, and the gold's
+    forms are not tested against the others; the distractors keep the symmetric rule."""
+    from wsbench.multitoken.regex import unicode_word_matcher
+
+    stage = {o: list(fs) for o, fs in stage.items()}
+    if gold is not None and gold in stage:
+        gm = [unicode_word_matcher(f) for f in stage[gold]]
+        for o in stage:
+            if o == gold:
+                continue
+            keep = []
+            for x in stage[o]:
+                if any(m(x) for m in gm):
+                    dropped.setdefault(o, []).append((x, GOLD_COLLIDES))
+                else:
+                    keep.append(x)
+            stage[o] = keep
+    final: dict[str, list[str]] = {}
+    for o, forms in stage.items():
+        if o == gold:
+            final[o] = list(forms)
+            continue
+        others = [x for p in stage if p != o for x in [p, *stage[p]]]
+        ok = []
+        for f in forms:
+            m = unicode_word_matcher(f)
+            if any(m(x) for x in others):
+                dropped.setdefault(o, []).append((f, COLLIDES))
+            else:
+                ok.append(f)
+        final[o] = ok
+    return final
+
+
+def gold_forms(
+    forms: Mapping[str, Sequence[str]],
+    dropped: Mapping[str, Sequence[Sequence[str]]],
+    gold: str,
+) -> tuple[dict[str, list[str]], list[str]]:
+    """``(forms, emptied)``: symmetric ``filter_forms`` output re-filtered so the gold keeps its
+    creditable forms (the forms only the cross-option rule dropped come back, the colliding
+    distractor forms go instead). ``emptied`` = the distractors left with no form (dropped as
+    options by ``build``: a distractor nothing can credit is no option)."""
+    stage = {o: [*fs, *(str(d[0]) for d in dropped.get(o, ()) if d[1] == COLLIDES
+                        and str(d[0]) not in fs)] for o, fs in forms.items()}  # fmt: skip
+    out = _collide(stage, {}, gold)
+    emptied = [o for o in out if o != gold and not out[o]]
+    return out, emptied
+
+
 def filter_forms(
     candidates: Mapping[str, Sequence[str]],
     visible: str,
     flagged: Mapping[str, Mapping[str, str]] | None = None,
+    gold: str | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
     """``(forms, dropped)`` after the source's filters, identically for every option: flagged by
     the verification call, 1-char CJK, Latin under 3 characters, found in the visible prompt,
-    and (per option) a form whose matcher fires on another option's label or forms."""
-    from wsbench.multitoken.regex import unicode_word_matcher
-
+    and (per option) a form whose matcher fires on another option's label or forms (``gold``:
+    the gold's forms win a collision, see ``_collide``)."""
     flags = flagged or {}
     dropped: dict[str, list[tuple[str, str]]] = {}
     stage: dict[str, list[str]] = {}
@@ -442,18 +503,7 @@ def filter_forms(
             else:
                 keep.append(f)
         stage[o] = keep
-    final: dict[str, list[str]] = {}
-    for o, forms in stage.items():
-        others = [x for p in stage if p != o for x in [p, *stage[p]]]
-        ok = []
-        for f in forms:
-            m = unicode_word_matcher(f)
-            if any(m(x) for x in others):
-                dropped.setdefault(o, []).append((f, "matches another option"))
-            else:
-                ok.append(f)
-        final[o] = ok
-    return final, dropped
+    return _collide(stage, dropped, gold), dropped
 
 
 def symmetric_units(item: Mapping[str, Any], options: Sequence[str], ask: AskJson) -> dict | None:
@@ -607,17 +657,28 @@ def build(model: str) -> dict[str, int]:
         item, how = dict(p["item"]), ""
         if g["pass"]:
             forms = reusable_units(p["item"], p["options"])
-            how = "reused"
+            how, dropped = "reused", {}
             if forms is None:
                 u = built.get(iid) or {}
                 forms = u.get("forms") if u.get("options") == p["options"] else None
-                how = "rebuilt"
+                how, dropped = "rebuilt", u.get("dropped") or {}
+            if forms is not None and g["gold"] in forms:
+                # the gold keeps a creditable form: a collision with a distractor form drops
+                # the DISTRACTOR's form, and a distractor left with none is dropped as an option
+                forms, emptied = gold_forms(forms, dropped, g["gold"])
+                if emptied:
+                    keep = [o for o in p["options"] if o not in emptied]
+                    p = {**p, "options": keep, "option_sources":
+                         {o: v for o, v in p["option_sources"].items() if o in keep}}  # fmt: skip
             if len(p["options"]) < MIN_OPTIONS:
                 reasons.append(f"options: {len(p['options'])} (need {MIN_OPTIONS})")
             elif forms is None:
                 reasons.append("units: not built for this option set (run stage=units)")
             elif not forms.get(g["gold"]):
-                reasons.append("units: the gold has no forms left after filtering")
+                reasons.append(
+                    "units: the gold has no creditable form left after filtering (every form "
+                    "flagged, too short or in the visible prompt)"
+                )
             else:
                 item = rebuilt_item(model, p, forms, how)
         rec = gate_record(legs)

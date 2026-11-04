@@ -415,6 +415,30 @@ def _arith_pool_ok(items: list[dict]) -> list[dict]:
     return items
 
 
+def char_offsets(tok: Any, text: str) -> list[tuple[int, int]]:
+    """Each token's ``(start, end)`` character span in ``text``: a fast tokenizer's
+    ``offset_mapping``, else (a slow tokenizer, Kimi-K3's tiktoken one, has none) by incremental
+    decode, which must grow by prefixes and re-join to ``text`` exactly, or it refuses."""
+    try:
+        enc = tok(text, add_special_tokens=False, return_offsets_mapping=True)
+        offsets = enc["offset_mapping"]
+        if offsets is not None:
+            return [(int(a), int(b)) for a, b in offsets]
+    except (KeyError, NotImplementedError, TypeError, ValueError):
+        pass
+    ids = tok.encode(text, add_special_tokens=False)
+    out, prev = [], ""
+    for i in range(len(ids)):
+        cur = tok.decode(ids[: i + 1])
+        if not cur.startswith(prev):
+            raise SystemExit(f"freeze: non-prefix incremental decode at token {i} of {text!r}")
+        out.append((len(prev), len(cur)))
+        prev = cur
+    if prev != text:
+        raise SystemExit(f"freeze: incremental decode does not re-join to {text!r}")
+    return out
+
+
 def _check_blank(tok: Any, items: list[dict]) -> tuple[list[dict], list[str]]:
     """relational reads the full stop of sentence two through the final token of the bare
     stimulus; that final token must lie inside its trailing possessive "'s" (one token for Qwen;
@@ -425,8 +449,7 @@ def _check_blank(tok: Any, items: list[dict]) -> tuple[list[dict], list[str]]:
     bad, no_anchor = [], []
     for it in items:
         text = it["stimulus"]
-        enc = tok(text, add_special_tokens=False, return_offsets_mapping=True)
-        offsets = enc["offset_mapping"]
+        offsets = char_offsets(tok, text)
         start, end = offsets[-1]
         if not (text.endswith("'s") and end == len(text) and start >= len(text) - 2):
             bad.append(str(it.get("id")))
@@ -467,7 +490,7 @@ def restamp_tokens(model: str, family: str, items: list[dict]) -> tuple[list[dic
         return _restamp_arith_cells(tok, items, all_positions=every)
     if family not in MT and family != "multihop":
         return items, []
-    kept, dropped = [], 0
+    kept, lost = [], []
     for it in items:
         if family == "multihop":
             ids = tok(it["prompt"], add_special_tokens=False)["input_ids"]
@@ -477,11 +500,19 @@ def restamp_tokens(model: str, family: str, items: list[dict]) -> tuple[list[dic
             continue
         new = stamp(it, tok, include_target="target" in (it.get("probe_token_lens") or {}))
         if any(p.startswith("units:") for p in lint(family, new)):
-            dropped += 1
+            lost.append(str(store.item_id(it)))
             continue
         kept.append(new)
-    note = f"re-stamped with the subject's tokenizer; {dropped} items lost every multi-token form"
-    return kept, [note] if family in MT else []
+    return kept, [lost_forms_note(lost)] if family in MT else []
+
+
+RESTAMP_NOTE = "re-stamped with the subject's tokenizer; "
+
+
+def lost_forms_note(ids: list[str]) -> str:
+    """The freeze note naming every item that lost every multi-token form."""
+    named = f": {', '.join(ids)}" if ids else ""
+    return f"{RESTAMP_NOTE}{len(ids)} items lost every multi-token form{named}"
 
 
 QWEN_GEN_TAIL = 8  # tokens after the user turn's <|im_end|> in the Qwen chat render (think-off)
@@ -564,20 +595,31 @@ def _post_freeze(family: str, header: dict, items: list[dict], n_layers: int,
     return notes
 
 
-def live_rows(model: str, family: str, report: dict | None = None) -> list[dict]:
+def _gated_rows(model: str, family: str, report: dict | None = None) -> list[dict]:
     """Gate rows minus the audited drops (``report.json`` ``drops[family] = {id: reason}``)."""
     report = report if report is not None else store.read_report(model)
     dropped = (report.get("drops") or {}).get(family, {})
-    rows = [r for r in store.gated(model, family).values() if r["id"] not in dropped]
+    return [r for r in store.gated(model, family).values() if r["id"] not in dropped]
+
+
+def _mt_lost(model: str, family: str, rows: list[dict]) -> list[dict]:
+    """The rows whose item loses every multi-token form on the subject's (non-Qwen) tokenizer."""
     from .lint import MT
 
-    if family in MT and get_subject(model).tokenizer != "qwen3.6":
-        # re-stamp BEFORE select (not only at freeze): an item that loses every multi-token form
-        # on this tokenizer is not live, so fill/select count only what freeze will ship
-        ok = {store.item_id(it) for it in restamp_tokens(model, family,
-              [copy.deepcopy(r["item"]) for r in rows])[0]}  # fmt: skip
-        rows = [r for r in rows if store.item_id(r["item"]) in ok]
-    return rows
+    if family not in MT or get_subject(model).tokenizer == "qwen3.6":
+        return []
+    ok = {store.item_id(it) for it in restamp_tokens(model, family,
+          [copy.deepcopy(r["item"]) for r in rows])[0]}  # fmt: skip
+    return [r for r in rows if store.item_id(r["item"]) not in ok]
+
+
+def live_rows(model: str, family: str, report: dict | None = None) -> list[dict]:
+    """Gate rows minus the audited drops (``report.json`` ``drops[family] = {id: reason}``)."""
+    rows = _gated_rows(model, family, report)
+    # re-stamp BEFORE select (not only at freeze): an item that loses every multi-token form
+    # on this tokenizer is not live, so fill/select count only what freeze will ship
+    lost = {store.item_id(r["item"]) for r in _mt_lost(model, family, rows)}
+    return [r for r in rows if store.item_id(r["item"]) not in lost]
 
 
 ABSENT_NOTE = store.ABSENT_NOTE
@@ -814,7 +856,18 @@ def freeze(
             notes += post_freeze(header, items, subject)
         if subject.tokenizer != "qwen3.6":  # the banks' token-tied fields were Qwen's
             try:
+                from .lint import MT
+
+                before = [str(store.item_id(it)) for it in items]
                 items, more = restamp_tokens(model, family, items)
+                if family in MT:  # name EVERY item that lost its forms, live_rows' too
+                    after = {str(store.item_id(it)) for it in items}
+                    earlier = [str(store.item_id(r["item"])) for r in _mt_lost(
+                        model, family, registered_rows(_gated_rows(model, family, report),
+                                                       set(reg)))]  # fmt: skip
+                    lost = list(dict.fromkeys(earlier + [i for i in before if i not in after]))
+                    more = [n for n in more if not n.startswith(RESTAMP_NOTE)]
+                    more.append(lost_forms_note(lost))
             except SystemExit as e:  # a field this tokenizer can't re-derive: block the family,
                 touched.add(family)
                 fam_reports.setdefault(family, {}).update(  # freeze the rest
