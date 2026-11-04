@@ -585,22 +585,33 @@ _OPTIONAL_OVERLAY = ("gate_variant", "needs_reasons")  # subject-side, overlaid 
 
 
 def get_path(item: Any, path: str) -> Any:
-    """``item["a"]["b"]`` for ``"a.b"``; a missing key is ``None``."""
+    """``item["a"]["b"]`` for ``"a.b"``; a missing key is ``None``. ``"a[].b"`` (plan 0064 §11.1)
+    is the list of each element's ``b`` (``None`` unless ``a`` is a list)."""
+    head, sep, rest = path.partition("[].")
     cur = item
-    for part in path.split("."):
+    for part in head.split("."):
         if not isinstance(cur, dict) or part not in cur:
             return None
         cur = cur[part]
-    return cur
+    if not sep:
+        return cur
+    if not isinstance(cur, list):
+        return None
+    return [get_path(el, rest) for el in cur]
 
 
 def has_path(item: Any, path: str) -> bool:
+    """Every key of ``"a.b"`` present; ``"a[].b"``: ``a`` is a non-empty list and every element
+    has ``b`` (plan 0064 §11.1)."""
+    head, sep, rest = path.partition("[].")
     cur = item
-    for part in path.split("."):
+    for part in head.split("."):
         if not isinstance(cur, dict) or part not in cur:
             return False
         cur = cur[part]
-    return True
+    if not sep:
+        return True
+    return isinstance(cur, list) and bool(cur) and all(has_path(el, rest) for el in cur)
 
 
 def bank_rel(family: str) -> str:
@@ -697,7 +708,12 @@ def registered_families() -> list[str]:
                   if not sp.superseded_by and f not in registry.RETIRED_FAMILIES)  # fmt: skip
 
 
-def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
+def freeze(
+    model: str,
+    families: list[str] | None = None,
+    strict: bool = False,
+    allow_untried: bool | str = False,
+) -> dict[str, Any]:
     """Write ``adapted/<model>/<family>.json`` + ``report.json`` from the gate logs.
 
     Plan 0060 A1: every original is built from the REGISTERED item (``build_original``), and
@@ -705,10 +721,16 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
     their ``SUBJECT_FIELDS``, whose items lack ``REQUIRED_ITEM_FIELDS``, or a multilingual family
     without the subject's ``native_langs.json`` is refused (then nothing is written); each family
     entry records ``bank`` / ``bank_version``; every registered family the set lacks is written
-    as ``absent`` (an existing note is kept)."""
+    as ``absent`` (an existing note is kept).
+
+    Plan 0064: rows pass through ``refill.freeze_rows`` (newer legs, select hooks); buggy_code is
+    selected by ``refill.buggy_selection`` and its status counts pairs. ``strict`` (the CLI) with
+    ``families`` given refuses a family the refill guard flags (``refill.guard_problem``) unless
+    ``allow_untried`` (True or a reason string, stamped into ``note``)."""
     from wsbench.banks import native_langs as header_native_langs
 
     from . import native_langs as nl
+    from . import refill as rf
 
     subject = get_subject(model)
     report = store.read_report(model)
@@ -733,7 +755,7 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
 
             header_overlay(model, header)
         reg = {store.item_id(it): it for it in originals}
-        rows = registered_rows(rows, set(reg))
+        rows = rf.freeze_rows(family, registered_rows(rows, set(reg)))
         target = len(originals)
         need = fams.SUBJECT_FIELDS.get(family, ())
         # a profiled row is a copy of the registered item, so presence alone proves nothing: the
@@ -764,7 +786,10 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
                     )
                     continue
             header.setdefault("contract", {})["native_langs"] = list(langs)
-        chosen = select(family, rows, target, quotas(family, originals))
+        if family == rf.BUGGY:  # plan 0064 §2.4: pairs, crash-capped, then select (cap 63)
+            chosen = rf.buggy_selection(rows, target, quotas(family, originals))
+        else:
+            chosen = select(family, rows, target, quotas(family, originals))
         items = []
         patches = (report.get("patches") or {}).get(family, {})
         for r in chosen:
@@ -839,16 +864,35 @@ def freeze(model: str, families: list[str] | None = None) -> dict[str, Any]:
                 "bank_version": bank_version(family),
             }
         )
-        entry["change"] = describe(family, originals, items)  # measured, not the tier menu
+        block = rf.refill_block(entry)
+        # measured, not the tier menu; from the refill block when the family was refilled
+        measured = describe(family, originals, items)
+        entry["change"] = rf.change_text(block, measured) if block else measured
         if notes:
             entry["freeze_notes"] = notes
         tried = any(r["origin"] != "original" for r in rows)
-        if len(items) >= target:
+        n_have, n_target = len(items), target
+        if family == rf.BUGGY:  # the headline is pair-scored: status and guard count pairs
+            n_have, n_target = rf.pair_count(items), rf.pair_count(originals)
+            entry.update(target_pairs=n_target, n_pairs=n_have)
+        if n_have >= n_target:
             entry["status"] = "full"
         elif entry.get("status") in (None, "full", "profiled", "partial", "untried"):
             # ooc / blocked set by `auto`, `fill` or `note` are kept; short with no refill ever
             # attempted is `untried`, not `partial` (skill audit)
             entry["status"] = "partial" if tried else "untried"
+        if strict and families and (why := rf.guard_problem(family, entry, n_have, n_target)):
+            if not allow_untried:
+                refused[family] = (
+                    f"{why}: refill it (`adapt refill`, plan 0064 §3a) or pass "
+                    "allow_untried=<reason>"
+                )
+                continue
+            reason = allow_untried if isinstance(allow_untried, str) else "no reason given"
+            stamp = f"freeze guard overridden (allow_untried): {why}; {reason}"
+            old = entry.get("note")
+            if not old or stamp not in old:
+                entry["note"] = f"{old} | {stamp}" if old else stamp
     if refused:  # nothing is written: a refused family never ships a half-built bank
         lines = "\n".join(f"  {f}: {w}" for f, w in sorted(refused.items()))
         raise SystemExit(f"freeze refused:\n{lines}")
@@ -1140,15 +1184,22 @@ def miss_steer(model: str, family: str, wave_ids: set[str], k: int = 12) -> str:
 
 
 def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves: int = 8,
-         runner=None) -> str:  # fmt: skip
+         runner=None, pilot: bool = False, budget_s: float | None = None) -> str:  # fmt: skip
     """Author-and-gate an authored family down its brief's tiers until the bank is full or the
     stop rules fire (SKILL.md §3): waves sized from the last yield (bank units), each steered by
     the previous wave's misses; step down a tier after 3 waves under 30%; ``ooc`` below 3% on at
     least 60 candidates at the last tier. Writes the status to report.json. A family with MC
     builders (``mcstage.FAMILIES``) has each wave's options built (``adapt mc``) between author
-    and gate; basic_readout also gets ``stage=subject`` after every gate."""
+    and gate; basic_readout also gets ``stage=subject`` after every gate. buggy_code counts
+    pairs (plan 0064 §2, ``_fill_buggy``; ``pilot`` / ``budget_s`` apply to it only)."""
     from .author import BRIEFS
     from .author import author as write
+
+    if family == "buggy_code":
+        return _fill_buggy(model, llm, max_waves, runner, pilot, budget_s)
+    if pilot:
+        raise SystemExit(f"fill: pilot=true is buggy_code only (plan 0064 §1.2), not {family}")
+    from .refill import stop_status
 
     brief = BRIEFS[family]
     runner = runner or _runner(model)
@@ -1186,7 +1237,9 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         if t_i == len(tiers) - 1 and tried >= OOC_MIN and landed / tried < OOC_YIELD:
             # refill is out of capability; the FAMILY is ooc only if most of it is missing
             # (Gemma buggy_code stopped at 48/49: that bank is usable, i.e. partial)
-            status = "ooc" if have + gained < target / 2 else "partial"
+            stop, _why = stop_status(have + gained, target, tried, landed, OOC_MIN, OOC_YIELD,
+                                     False, False)  # fmt: skip
+            status = stop or "partial"
             break
         if low >= 3 and t_i < len(tiers) - 1:
             t_i, low, tried, landed = t_i + 1, 0, 0, 0  # the ooc rule is per tier (SKILL.md §3)
@@ -1197,4 +1250,114 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     store.update_report(
         model, lambda r: r.setdefault("families", {}).setdefault(family, {}).update(upd)
     )
+    return status
+
+
+def _buggy_tally(rows: list[dict]) -> dict[str, dict[str, int]]:
+    """Per authoring tier: authored pair objects gated (``tried``) and pairs whose two twins both
+    pass (``landed``, before the quota and the crash cap), from the gate log (plan 0064 §1.2)."""
+    from .refill import BUGGY, row_passes
+
+    by_id = {r["id"]: r for r in rows}
+    out: dict[str, dict[str, int]] = defaultdict(lambda: {"tried": 0, "landed": 0})
+    for r in rows:
+        iid = r["id"]
+        if r["origin"] == "original" or AU not in iid or AU_CLEAN in iid:
+            continue  # one pair object = its buggy member
+        tier = str((r["item"].get("adapt") or {}).get("tier"))
+        out[tier]["tried"] += 1
+        twin = by_id.get(iid.replace(AU, AU_CLEAN, 1))
+        if twin is not None and row_passes(BUGGY, r) and row_passes(BUGGY, twin):
+            out[tier]["landed"] += 1
+    return dict(out)
+
+
+def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool,
+                budget_s: float | None) -> str:  # fmt: skip
+    """``fill`` for buggy_code, in PAIRS (plan 0064 §2): ``have`` = pairs of
+    ``refill.buggy_selection`` (``select`` still capped at the 63 items, ``src`` quota), target =
+    the registered pair count; the tally per tier is kept in the refill block and the last tier's
+    counters are the gate log's (so the pilot's t2 seeds the full run); ``pilot`` starts at the
+    last tier and stops after ``n_min`` pair objects; the status comes from ``stop_status``."""
+    import time
+
+    from . import refill as rf
+    from .author import BRIEFS
+    from .author import author as write
+
+    family = rf.BUGGY
+    pol = rf.POLICY[family]
+    runner = runner or _runner(model)
+    _h, originals = store.original_bank(family)
+    cap, quota = len(originals), quotas(family, originals)
+    target = rf.pair_count(originals)
+    tiers = list(BRIEFS[family].tiers)
+    last = len(tiers) - 1
+    hold = ((store.read_report(model).get("families") or {}).get(family) or {}).get("refill_hold")
+    t_i = last if pilot else 0
+    low, steer, wave, tier_tried, tier_landed, gain = 0, "", 0, 0, 0, None
+    yield_est, start = 0.4, time.monotonic()
+
+    def rows_now() -> list[dict]:
+        return rf.freeze_rows(family, _bank_rows(model, family, originals))
+
+    while True:
+        rows = rows_now()
+        have = rf.selected_pairs(rf.buggy_selection(rows, cap, quota))
+        tally = _buggy_tally(rows)
+        at_last = t_i == last
+        # the last tier's counters are its whole tally (the pilot's t2 included); earlier tiers
+        # count from entering the tier, and the ooc rule never applies to them
+        cur = tally.get(tiers[t_i], {}) if at_last else {}
+        tried, landed = cur.get("tried", 0), cur.get("landed", 0)
+        binding = at_last and gain == 0 and rf.crash_cap_binds(rows)
+        spent = budget_s is not None and time.monotonic() - start >= budget_s
+        status, why = rf.stop_status(have, target, tried, landed, pol.n_min, pol.y_min, False,
+                                     "gpu_minutes (wall clock)" if spent else False,
+                                     cap_binding=binding, hold=hold)  # fmt: skip
+        if status is not None:
+            break
+        if pilot and tried >= pol.n_min:
+            status, why = "partial", "pilot: not ooc (run the full refill)"
+            break
+        if wave >= max_waves:
+            status, why = "partial", f"max waves ({max_waves})"
+            break
+        n = min(60, max(10, math.ceil(1.5 * (target - have) / max(yield_est, 0.05))))
+        n = max(5, n // 2)  # a pair object becomes two items
+        gated_now = store.gated(model, family)
+        before = set(gated_now)
+        # a fresh wave id across runs (pilot, then the full run), so authored ids never collide
+        w_id = 1 + max([int((r["item"].get("adapt") or {}).get("wave") or 0)
+                        for r in gated_now.values()] + [99])  # fmt: skip
+        write(model, family, tiers[t_i], n, steer=steer, wave=w_id)
+        lint_and_gate(model, family, runner, DEFAULT_DRAWS, None, _llm(llm))
+        new = set(store.gated(model, family)) - before
+        after = rows_now()
+        gain = rf.selected_pairs(rf.buggy_selection(after, cap, quota)) - have
+        wave_t = _buggy_tally([r for r in after if r["id"] in new])
+        w_tried = sum(v["tried"] for v in wave_t.values())
+        w_landed = sum(v["landed"] for v in wave_t.values())
+        tier_tried, tier_landed = tier_tried + w_tried, tier_landed + w_landed
+        yield_est = w_landed / max(1, w_tried)
+        print(f"  fill {family} {tiers[t_i]} wave {wave}: {w_landed}/{w_tried} pairs land, "
+              f"+{gain} ({have} -> {have + gain} of {target} pairs)")  # fmt: skip
+        steer = miss_steer(model, family, new)
+        low = low + 1 if yield_est < 0.3 else 0
+        if low >= 3 and t_i < last and not pilot:
+            t_i, low, tier_tried, tier_landed = t_i + 1, 0, 0, 0  # the ooc rule is per tier
+        wave += 1
+    nc, crash = rf.buggy_classes(rows)
+    block = {
+        "route": "run.fill", "unit": pol.unit, "target": target, "have": have,
+        "tried": tried if at_last else tier_tried, "landed": landed if at_last else tier_landed,
+        "yield": None, "waves": wave, "n_min": pol.n_min, "y_min": pol.y_min, "tally": tally,
+        "pool_size": None, "pool_used": None, "stop": why,
+        "budget": {"gpu_minutes": None if budget_s is None else budget_s / 60},
+        "pilot": pilot, "tier": tiers[t_i],
+        "authored_pairs": {"non_crash": nc, "crash": crash, "crash_cap": nc // 4},
+    }  # fmt: skip
+    if block["tried"]:
+        block["yield"] = block["landed"] / block["tried"]
+    rf.write_block(model, family, block, status)
     return status
