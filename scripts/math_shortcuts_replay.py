@@ -133,6 +133,7 @@ def main() -> int:
     ok = screened == set(frozen) and n_render_bad == 0
     ok &= all(head[k] == v for k, v in FROZEN.items())
     ok &= abs(head["fisher_one_sided_p"] - 0.2342068259869) < 1e-9
+    ok &= n_gate_diff == 0  # every cell verdict must equal the source's parse_guess
     print("GATE", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 
