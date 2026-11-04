@@ -92,7 +92,7 @@ CONTEXT_WINDOW = 1_000_000  # Opus 5.5 input + output; summ_context=N replaces i
 MIN_CONTEXT = 128_000
 # plan 0059: the cache keys of the digest path (stride, chunk, final, re-ask, ``|level`` and
 # ``ntok:`` rows); a judge row never starts with one, so a seed copy keeps exactly these
-DIGEST_KEY_PREFIXES = ("digest:", "ntok:")
+DIGEST_KEY_PREFIXES = ("digest:", "ntok:", "layered:")  # layered: the v1.1.0 stage-2 digests
 
 DIGEST_SYSTEM = """You are a note-taker for an interpretability benchmark. You are given raw \
 readouts of a language model's internal activations, taken while it read a passage you cannot \
@@ -2824,6 +2824,11 @@ def _layered_pass(
                 fallbacks=None if client else s.server_fallback,
             )
 
+        if miss and s.cache_only:  # plan 0059: replay only — a failed row is a failed call,
+            for _i, key, fp, _u in miss:  # no row exits 2 (stage 2 never calls under cache-only)
+                _cache_only_miss(name, cache, key, fp, col)  # type: ignore[arg-type]
+                out[key] = None
+            miss = []
         if miss:
             if preflight is not None:
                 preflight()

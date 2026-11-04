@@ -346,3 +346,28 @@ def test_digest_path_writes_only_seed_keys(tmp_path, fam, monkeypatch):
     assert all(kinds.values()), kinds
     assert written and all(digest.is_digest_key(k) for k in written)
     assert not digest.is_digest_key("ab12|L20|p3")  # a judge-style key
+
+
+def test_cache_only_replays_layered_stage_two_without_a_call(tmp_path, fam, monkeypatch):
+    # v1.1.0 layered: stage 2 (one summary of the per-layer digests) must replay from the seed
+    # under summ_cache_only, never call (a judge-sweep Arm A union job has no Opus key on Modal)
+    fake = Fake(monkeypatch)
+    cells = {"a": _cells("a", 3), "b": _cells("b", 2)}
+    first = _run(tmp_path, cells, summ_layers="layered")
+    assert first.diag["n_layered_calls"] >= 1
+    fake.live = False
+    again = _run(tmp_path, cells, preflight=_boom, summ_layers="layered", summ_cache_only="1")
+    _same(first, again)
+    assert again.diag["n_layered_calls"] == 0
+
+
+def test_cache_only_layered_miss_exits_instead_of_calling(tmp_path, fam, monkeypatch):
+    fake = Fake(monkeypatch)
+    cells = {"a": _cells("a", 3)}
+    _run(tmp_path, cells, summ_layers="layered")
+    p = tmp_path / "c.jsonl"
+    keep = [ln for ln in p.read_text().splitlines() if '"key": "layered:' not in ln]
+    p.write_text("\n".join(keep) + "\n")  # the per-layer digests stay, stage 2 is gone
+    fake.live = False
+    with pytest.raises(SystemExit):
+        _run(tmp_path, cells, preflight=_boom, summ_layers="layered", summ_cache_only="1")
