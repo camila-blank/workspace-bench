@@ -755,6 +755,15 @@ def test_bare_list_bank_span_from_the_set_report(tmp_path, monkeypatch):
     (tmp_path / "conjunctive_association.json").write_text(
         json.dumps({"adapt": {"min_grid_positions": 15}, "items": []}))  # fmt: skip
     assert reads.min_full_positions("conjunctive_association", 19) == 15  # the header wins
+    (tmp_path / "conjunctive_association.json").write_text(json.dumps([{"id": "q01_c"}]))
+    for bad in (
+        {"families": ["x"]},
+        {"families": "x"},
+        ["x"],
+        {"families": {"conjunctive_association": {"min_grid_positions": True}}},
+    ):
+        (tmp_path / "report.json").write_text(json.dumps(bad))  # malformed: the default
+        assert reads.min_full_positions("conjunctive_association", 19) == 19
     f = tmp_path / "other.json"
     f.write_text(json.dumps([{"id": "q01_c"}]))
     monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + "CONJUNCTIVE_ASSOCIATION", str(f))

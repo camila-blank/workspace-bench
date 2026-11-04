@@ -282,9 +282,10 @@ def _root_min_grid(family: str) -> int | None:
         rep = json.loads((root / "report.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    entry = ((rep.get("families") or {}) if isinstance(rep, dict) else {}).get(family) or {}
+    fams = rep.get("families") if isinstance(rep, dict) else None
+    entry = fams.get(family) if isinstance(fams, dict) else None
     n = entry.get("min_grid_positions") if isinstance(entry, dict) else None
-    return n if isinstance(n, int) else None
+    return n if isinstance(n, int) and not isinstance(n, bool) else None
 
 
 def _spec_of(family: str) -> Any:
