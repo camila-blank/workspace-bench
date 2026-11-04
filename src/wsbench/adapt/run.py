@@ -233,7 +233,7 @@ def lint_and_gate(
     ok, rejected, bad = [], [], defaultdict(int)
     cands = items if items is not None else store.pending(model, family)
     natural: dict[str, list[str]] = {}
-    pairs = lint_pairs(family, cands)  # plan 0064 §2.3: twin outputs differ (buggy_code)
+    pairs = lint_pairs(family, cands)  # plan 0066 §2.3: twin outputs differ (buggy_code)
     if llm is not None and cands:  # Claude available: the everyday-name screen (MT families)
         from . import natural as nat
 
@@ -629,7 +629,7 @@ _OPTIONAL_OVERLAY = ("gate_variant", "needs_reasons")  # subject-side, overlaid 
 
 
 def get_path(item: Any, path: str) -> Any:
-    """``item["a"]["b"]`` for ``"a.b"``; a missing key is ``None``. ``"a[].b"`` (plan 0064 §11.1)
+    """``item["a"]["b"]`` for ``"a.b"``; a missing key is ``None``. ``"a[].b"`` (plan 0066 §11.1)
     is the list of each element's ``b`` (``None`` unless ``a`` is a list)."""
     head, sep, rest = path.partition("[].")
     cur = item
@@ -646,7 +646,7 @@ def get_path(item: Any, path: str) -> Any:
 
 def has_path(item: Any, path: str) -> bool:
     """Every key of ``"a.b"`` present; ``"a[].b"``: ``a`` is a non-empty list and every element
-    has ``b`` (plan 0064 §11.1)."""
+    has ``b`` (plan 0066 §11.1)."""
     head, sep, rest = path.partition("[].")
     cur = item
     for part in head.split("."):
@@ -767,7 +767,7 @@ def freeze(
     entry records ``bank`` / ``bank_version``; every registered family the set lacks is written
     as ``absent`` (an existing note is kept).
 
-    Plan 0064: rows pass through ``refill.freeze_rows`` (newer legs, select hooks); buggy_code is
+    Plan 0066: rows pass through ``refill.freeze_rows`` (newer legs, select hooks); buggy_code is
     selected by ``refill.buggy_selection`` and its status counts pairs. ``strict`` (the CLI) with
     ``families`` given refuses a family the refill guard flags (``refill.guard_problem``) unless
     ``allow_untried`` (True or a reason string, stamped into ``note``)."""
@@ -830,7 +830,7 @@ def freeze(
                     )
                     continue
             header.setdefault("contract", {})["native_langs"] = list(langs)
-        if family == rf.BUGGY:  # plan 0064 §2.4: pairs, crash-capped, then select (cap 63)
+        if family == rf.BUGGY:  # plan 0066 §2.4: pairs, crash-capped, then select (cap 63)
             chosen = rf.buggy_selection(rows, target, quotas(family, originals))
         else:
             chosen = select(family, rows, target, quotas(family, originals))
@@ -939,7 +939,7 @@ def freeze(
         if strict and families and (why := rf.guard_problem(family, entry, n_have, n_target)):
             if not allow_untried:
                 refused[family] = (
-                    f"{why}: refill it (`adapt refill`, plan 0064 §3a) or pass "
+                    f"{why}: refill it (`adapt refill`, plan 0066 §3a) or pass "
                     "allow_untried=<reason>"
                 )
                 continue
@@ -1123,7 +1123,7 @@ def _regrade_row(family: str, row: dict, grade) -> dict:
     if fam.finalize is not None:
         rec = fam.finalize(rec)
     if (missing := sorted(set(asks) - set(legs))) and family == "buggy_code":
-        # plan 0064 §2.2: a leg the family gained after this row was gated (a clean twin's
+        # plan 0066 §2.2: a leg the family gained after this row was gated (a clean twin's
         # `bugclaim`) was never sampled; a regrade cannot supply it, so the row fails (regate it)
         rec = {**rec, "pass": False, "missing_legs": missing}
     if (moral := row["gate"].get("moral")) is not None:
@@ -1250,14 +1250,14 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     least 60 candidates at the last tier. Writes the status to report.json. A family with MC
     builders (``mcstage.FAMILIES``) has each wave's options built (``adapt mc``) between author
     and gate; basic_readout also gets ``stage=subject`` after every gate. buggy_code counts
-    pairs (plan 0064 §2, ``_fill_buggy``; ``pilot`` / ``budget_s`` apply to it only)."""
+    pairs (plan 0066 §2, ``_fill_buggy``; ``pilot`` / ``budget_s`` apply to it only)."""
     from .author import BRIEFS
     from .author import author as write
 
     if family == "buggy_code":
         return _fill_buggy(model, llm, max_waves, runner, pilot, budget_s)
     if pilot:
-        raise SystemExit(f"fill: pilot=true is buggy_code only (plan 0064 §1.2), not {family}")
+        raise SystemExit(f"fill: pilot=true is buggy_code only (plan 0066 §1.2), not {family}")
     from .refill import stop_status
 
     brief = BRIEFS[family]
@@ -1314,7 +1314,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
 
 def _buggy_tally(rows: list[dict]) -> dict[str, dict[str, int]]:
     """Per authoring tier: authored pair objects gated (``tried``) and pairs whose two twins both
-    pass (``landed``, before the quota and the crash cap), from the gate log (plan 0064 §1.2)."""
+    pass (``landed``, before the quota and the crash cap), from the gate log (plan 0066 §1.2)."""
     from .refill import BUGGY, row_passes
 
     by_id = {r["id"]: r for r in rows}
@@ -1333,7 +1333,7 @@ def _buggy_tally(rows: list[dict]) -> dict[str, dict[str, int]]:
 
 def _fill_buggy(model: str, llm: str | None, max_waves: int, runner, pilot: bool,
                 budget_s: float | None) -> str:  # fmt: skip
-    """``fill`` for buggy_code, in PAIRS (plan 0064 §2): ``have`` = pairs of
+    """``fill`` for buggy_code, in PAIRS (plan 0066 §2): ``have`` = pairs of
     ``refill.buggy_selection`` (``select`` still capped at the 63 items, ``src`` quota), target =
     the registered pair count; the tally per tier is kept in the refill block and the last tier's
     counters are the gate log's (so the pilot's t2 seeds the full run); ``pilot`` starts at the

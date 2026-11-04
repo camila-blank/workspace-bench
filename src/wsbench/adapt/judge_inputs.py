@@ -117,7 +117,7 @@ def get_path(d: Any, path: str) -> Any:
 
 def has_path(d: Any, path: str) -> bool:
     """``"a.b"``: every key present; ``"a[].b"``: ``a`` is a non-empty list and every element
-    has ``b`` (plan 0064 §11.1, the same rule as ``run.has_path``)."""
+    has ``b`` (plan 0066 §11.1, the same rule as ``run.has_path``)."""
     head, sep, rest = path.partition("[].")
     if not sep:
         return get_path(d, path) is not _MISSING
@@ -1452,7 +1452,7 @@ _add(
                 BUILD,
                 "multitoken/family.py:1309-1330 (bank_entities), 2082-2089 (_rivals)",
                 "rival pools are keyed by kind: a unit without one joins the '' pool and gets "
-                "no same-kind rivals (plan 0064 §6; refill units are classified, never defaulted)",
+                "no same-kind rivals (plan 0066 §6; refill units are classified, never defaulted)",
                 absent=SILENT,
             ),
             _r(

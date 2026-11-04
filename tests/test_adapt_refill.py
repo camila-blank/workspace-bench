@@ -1,4 +1,4 @@
-"""Plan 0064 shared core (offline: fake author / gate / waves, no GPU or API): the refill policy,
+"""Plan 0066 shared core (offline: fake author / gate / waves, no GPU or API): the refill policy,
 the sha-pinned pools, buggy_code's pair selection and fill, the freeze guard and the CLI."""
 
 import copy
@@ -462,7 +462,7 @@ def test_fill_buggy_full_counts_pairs_and_pilot_is_buggy_only(mdir, monkeypatch)
 
 
 def test_cli_pool_arg_passes_a_mode_through():
-    """plan 0064: `pool=ext` reaches msdm / kcutoff as the mode string, booleans as before."""
+    """plan 0066: `pool=ext` reaches msdm / kcutoff as the mode string, booleans as before."""
     from wsbench.adapt.__main__ import _pool_arg
 
     assert _pool_arg("true") is True and _pool_arg("false") is False

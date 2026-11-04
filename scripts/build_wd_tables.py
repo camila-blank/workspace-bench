@@ -1,4 +1,4 @@
-"""Build the frozen Wikidata tables of the wrong_intermediate entity check (plan 0064 §5.3, §11.2):
+"""Build the frozen Wikidata tables of the wrong_intermediate entity check (plan 0066 §5.3, §11.2):
 ``wd_class_parents.json`` (class -> P279 superclasses) and ``wd_registered_bprime.json``.
 
 Reads the scrape's entity stores (streamed; the round-1 ``entities.json`` is ~295 MB) and fetches

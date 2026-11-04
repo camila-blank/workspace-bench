@@ -1,6 +1,6 @@
-# 0064: refill the five small families of the plan-0060 adapted sets
+# 0066: refill the five small families of the plan-0060 adapted sets
 
-Issue #266. Builds on plan 0060 (PR #230; Phase A2 / Phase E code merged in #250–#258). Sets affected:
+Issue #266. (Written as 0064; renumbered to 0066 because main merged plans 0064 hinted-cutoff-prompt-only and 0065 math-shortcuts meanwhile.) Builds on plan 0060 (PR #230; Phase A2 / Phase E code merged in #250–#258). Sets affected:
 `adapted/glm-5.3` (#259), the six small sets (#263), and deepseek-v4-pro / muse-spark-open /
 kimi-k3 (being finalized).
 
@@ -223,7 +223,7 @@ the `-au-` / `-au-clean-` ids that `run.buggy_twin` / `select` / `_buggy_twins` 
      `false`. The rubric id is added to the grade-cache key, so it never collides with a
      "correct" verdict for the same text. `run._regrade_asks` learns the same leg, and
      `_regrade_row` (which loops over stored legs only, run.py:1017) fails a clean row that lacks
-     it, so a pre-0064 record can never pass by regrade. `profile regate=true` re-asks all 63
+     it, so a pre-0066 record can never pass by regrade. `profile regate=true` re-asks all 63
      originals; buggy-original flips from sampling noise are listed in the PR.
    - **Mechanism:** `run_gate` samples every Ask with the same `draws` (gate.py:797), and
      `grade_leg` needs a decided sample (gate.py:310). So add a per-Ask override,
@@ -624,7 +624,7 @@ candidate rows and entities.
     These are the sanctioned exception, **pending Camila's OK**. So the cue additions, the bump,
     the ATI restamp (script plus the updated `evals/baselines/anti_text_inversion.json`, offline,
     in the code PR, not deferred) and those test edits go on a **stacked branch**
-    (`camila/0064-wi-cues`), merged only on her OK. The main code PR admits only person_mother /
+    (`camila/0066-wi-cues`), merged only on her OK. The main code PR admits only person_mother /
     namesake, which have cues, and needs no bump, so it stays green without touching a
     pre-existing assertion.
 
@@ -789,7 +789,7 @@ refilled"**, referenced from the runbook and §Rules:
 > Every family with a refill route (`wsbench.adapt.refill.POLICY`: buggy_code, msdm,
 > knowledge_cutoff, wrong_intermediate, multihop_mt_v2, plus the `fill` / `auto` families) that
 > ships below its target MUST be refilled with `$A refill $M families=<f>` before freeze. The only
-> acceptable reasons to ship it short are the objective stops of plan 0064 §1.2:
+> acceptable reasons to ship it short are the objective stops of plan 0066 §1.2:
 > - **`ooc`:** at least `n_min` candidates gated at the easiest level, yield below `y_min`, and
 >   the bank under half its target. The thresholds are in the POLICY table, for example msdm
 >   below 3% on 200 categories and knowledge_cutoff below 1% on 1,000 questions;
@@ -981,7 +981,7 @@ Keep the apps warm with `scripts_local/keepalive.py` during Claude-only stages, 
     regression for adapted-only ids).
 - **No pre-existing test assertion changes.** The sanctioned exceptions: (i) if a test pins
   `families._buggy_code`'s leg list for clean items, it gains the new leg (§2.2); (ii) on the
-  stacked `camila/0064-wi-cues` branch only, pending Camila's OK, the §5.4 stamp tests
+  stacked `camila/0066-wi-cues` branch only, pending Camila's OK, the §5.4 stamp tests
   (`test_rename_wrong_intermediate.py:87` + `PRE_PROMPTS_SHA`, and the ATI rename test via the
   restamp). Any other diff
   under `tests/` that modifies an existing assertion is a review blocker.
@@ -1023,7 +1023,7 @@ Keep the apps warm with `scripts_local/keepalive.py` during Claude-only stages, 
      template only if `template in ROLE_CUES`. Source 0 therefore recovers only person_mother /
      namesake, through `ADAPT_ITEM_CATEGORY`. The lower-`min_sl` re-scrape (a) covers only
      templates that already have both a category and cues. GLM's source-0 gain is 33 → about 36.
-   - **Stacked `camila/0064-wi-cues` (merged on Camila's OK):** the four already-screened
+   - **Stacked `camila/0066-wi-cues` (merged on Camila's OK):** the four already-screened
      templates (film_screenwriter, song_composer, tv_creator, novel_publisher) enter
      `ADAPT_TEMPLATE_CATEGORY`. The cues for those four and for the five re-scrape templates are
      added, along with the `CUES_VERSION` bump, the ATI restamp, the sanctioned stamp-test edits,
@@ -1109,7 +1109,7 @@ Keep the apps warm with `scripts_local/keepalive.py` during Claude-only stages, 
 ## Files
 
 ```
-plans/0064-refill-small-families.md            (this plan)
+plans/0066-refill-small-families.md            (this plan)
 src/wsbench/adapt/refill.py                    new: POLICY, stop_status, refill dispatcher
 src/wsbench/adapt/__main__.py                  + `refill` subcommand; freeze allow_untried
 src/wsbench/adapt/run.py                       has_path/get_path a[].b; fill: pair have/target (select cap stays 63), stop_status; freeze guard + change text; _regrade_asks clean leg
@@ -1133,7 +1133,7 @@ src/wsbench/multitoken/family.py / registry    adapted-only mh2 ids under WSB_BA
 .claude/skills/wsb-new-questions/references/families.md
 tests/test_adapt_refill.py, tests/test_refill_{buggy,msdm,kcutoff,wi,mh2}.py   new
 scripts/build_wd_tables.py; src/wsbench/adapt/data/{wd_class_parents,wd_registered_bprime}.json   vendored CC0 Wikidata tables
---- stacked branch camila/0064-wi-cues (Camila's OK) ---
+--- stacked branch camila/0066-wi-cues (Camila's OK) ---
 src/wsbench/evals/wrong_intermediate/{judge,prompts}.py   cues for 9 templates, CUES_VERSION, strip in _mc_version + _audit_version
 evals/wrong_intermediate/README.md             role-cue sentence + version row
 evals/baselines/anti_text_inversion.json; scripts/ati_restamp_wi_cues.py   ATI restamp

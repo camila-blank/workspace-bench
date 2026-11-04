@@ -139,7 +139,7 @@ def bank_path(family: str, bank: Path | None = None) -> Path:
 
 def payload_bank(path: Path, family: str, out: Path) -> Path:
     """``--bank`` as given when it is a bank (``{..., "items": [...]}``). An adapted gate-log
-    payload list (plan 0064 §6: a JSON list, or JSONL, of item payloads or of gate rows
+    payload list (plan 0066 §6: a JSON list, or JSONL, of item payloads or of gate rows
     ``{"id", "item", ...}``) is wrapped in the family's registered bank header and written beside
     ``out`` (``<out>.bank_in.json``); that path is returned, so every reader of ``--bank``
     (``load_bank``, ``WSB_BANK_FILE_<FAMILY>``) sees an ordinary bank."""

@@ -8,8 +8,8 @@ gate      lint + gate pending (regate=true: passing new items; regate=all: faile
 regrade   re-grade stored answers (no resampling)         llm=<claude id> [workers=16]
 auto      generate+gate down the ladder until full / ooc  family=
 freeze    write adapted/<model>/<family>.json + report.json  [families= allow_untried=<reason>]
-          (with families=, refuses a short family never refilled: plan 0064 §1.3)
-refill    refill until target / ooc (plan 0064)  families= [waves=8 claude_budget= gpu_minutes=
+          (with families=, refuses a short family never refilled: plan 0066 §1.3)
+refill    refill until target / ooc (plan 0066)  families= [waves=8 claude_budget= gpu_minutes=
           pilot=true llm=]
 note      status + reason (+ macro exclusion)   family= [status=] [text=] [exclude_from_macro=]
 drop      audited drop: ids leave the bank (reason recorded)  family= ids=a,b reason=
@@ -57,7 +57,7 @@ USAGE = __doc__
 
 
 def _pool_arg(v: str) -> bool | str:
-    """``pool=`` for msdm / kcutoff: a boolean as before, or a mode name (plan 0064: ``ext``)."""
+    """``pool=`` for msdm / kcutoff: a boolean as before, or a mode name (plan 0066: ``ext``)."""
     low = v.lower()
     if low in ("1", "true", "yes"):
         return True
@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> None:
             else au.lower() in ("1", "true", "yes")  # fmt: skip
         run.freeze(model, names if families else None, strict=True, allow_untried=allow)
         run.status(model)
-    elif cmd == "refill":  # plan 0064
+    elif cmd == "refill":  # plan 0066
         from . import refill
 
         if not families:

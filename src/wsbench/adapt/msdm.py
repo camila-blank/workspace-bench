@@ -37,7 +37,7 @@ item that needs new units then fails) -> ``build`` (CPU: writes one gate record 
 ``gate/<family>.jsonl``). Then ``freeze families=model_specific_directed_modulation``. Work files
 live in ``adapted/<m>/msdm/``.
 
-Plan 0064 (refill): ``pool`` is a mode, ``"none" | "retired" | "ext"`` (True = ``"retired"``,
+Plan 0066 (refill): ``pool`` is a mode, ``"none" | "retired" | "ext"`` (True = ``"retired"``,
 False = ``"none"``). ``"ext"`` adds the box-only GW category pool (``refill.load_pool("msdm")``,
 built by ``build_pool``; origin ``refill``) in seeded waves of ``WAVE_SIZE`` unseen rows, and
 ``stage=validity`` adds the category validity legs (membership + label QA, Claude only) that
@@ -124,7 +124,7 @@ VERIFY = (
 )
 CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
 
-# ------------------------------------------------------------------ plan 0064: refill
+# ------------------------------------------------------------------ plan 0066: refill
 POOL_MODES = ("none", "retired", "ext")
 WAVE_SIZE = 200
 DOMAIN_CAP = 2  # shipped non-original categories per domain (the registered bank's maximum)
@@ -348,7 +348,7 @@ def _load(model: str, name: str) -> dict[str, Any]:
 
 
 def _question_changed(item: Mapping[str, Any], rec: Mapping[str, Any]) -> bool:
-    """Was the recorded elicit asked with another question (records before plan 0064 carry no
+    """Was the recorded elicit asked with another question (records before plan 0066 carry no
     ``question``: they were asked the override or default form)?"""
     return question(item) != (rec.get("question") or _legacy_question(item))
 
@@ -591,7 +591,7 @@ def _collide(
     gold: str | None = None,
 ) -> dict[str, list[str]]:
     """The cross-option rule: a form whose matcher fires on another option's label or forms is
-    dropped. With ``gold`` (build, plan 0064 finalize) the gold's forms are protected: a
+    dropped. With ``gold`` (build, plan 0066 finalize) the gold's forms are protected: a
     distractor form a gold form fires on is dropped from the DISTRACTOR instead, and the gold's
     forms are not tested against the others; the distractors keep the symmetric rule."""
     from wsbench.multitoken.regex import unicode_word_matcher
@@ -700,7 +700,7 @@ def symmetric_units(item: Mapping[str, Any], options: Sequence[str], ask: AskJso
 def _plan(model: str, pool: bool | str = True) -> dict[str, dict[str, Any]]:
     """Per elicited category: its item, origin, G0 record and (if G0 passes) its options. The ids
     come from ``candidates(pool)``: an elicited id outside the mode is skipped, so a stage run on
-    ext rows must pass ``pool="ext"`` (plan 0064 §3.3)."""
+    ext rows must pass ``pool="ext"`` (plan 0066 §3.3)."""
     elicited = _load(model, "elicit.json")
     cmaps = _load(model, "canon.json")
     by_id = {it["id"]: it for _o, it in candidates(pool)}
@@ -850,7 +850,7 @@ def _assess(
     return legs, reasons, item, bool(g["pass"]), comply
 
 
-# ------------------------------------------------------------------ validity legs (plan 0064)
+# ------------------------------------------------------------------ validity legs (plan 0066)
 
 
 def member_prompt(item: Mapping[str, Any], gold: str) -> str:
@@ -996,7 +996,7 @@ def build(model: str, pool: bool | str = True, validity: bool = False) -> dict[s
 
 def refill_note(rows: Sequence[Mapping[str, Any]], bank: Sequence[Mapping[str, Any]]) -> dict:
     """The type mix of passing non-original rows beside the registered mix (reported, never
-    capped: plan 0064 §3.5), the domain cap, and the ids re-asked with a changed question."""
+    capped: plan 0066 §3.5), the domain cap, and the ids re-asked with a changed question."""
     mix = Counter(str(r["item"].get("type") or "untyped") for r in rows
                   if r["origin"] != "original" and r["gate"].get("pass"))  # fmt: skip
     return {
@@ -1009,12 +1009,12 @@ def refill_note(rows: Sequence[Mapping[str, Any]], bank: Sequence[Mapping[str, A
     }  # fmt: skip
 
 
-# ------------------------------------------------------------------ refill hooks (plan 0064)
+# ------------------------------------------------------------------ refill hooks (plan 0066)
 
 
 def row_passes(row: Mapping[str, Any]) -> bool:
     """Gate pass AND, for a refill row or a row built with ``validity=True``, both validity legs
-    present and passing (plan 0064 §11.6: freeze and the refill recheck count no row that
+    present and passing (plan 0066 §11.6: freeze and the refill recheck count no row that
     skipped them)."""
     gate = row.get("gate") or {}
     if not gate.get("pass"):
@@ -1107,7 +1107,7 @@ def _mapper(maps: Mapping[str, Any]):
 
 def _pool_row(cat: Mapping[str, Any], r: Mapping[str, Any], maps: Mapping[str, Any],
               src: str, step: int, batch: str) -> dict[str, Any]:  # fmt: skip
-    """One GW row in the bank item's shape (plan 0064 §3.1): gold <- Qwen's label (read by
+    """One GW row in the bank item's shape (plan 0066 §3.1): gold <- Qwen's label (read by
     ``build_options`` as ``peer:qwen3.6-27b``, so never in ``peers``), peers, legacy, Qwen's
     samples, the stored options, and the Opus / Sonnet typical answers where present."""
     m = _mapper(maps)

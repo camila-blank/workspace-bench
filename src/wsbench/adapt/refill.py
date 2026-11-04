@@ -1,4 +1,4 @@
-"""Refill the five small families until target or out of capacity (plan 0064 §1): the policy
+"""Refill the five small families until target or out of capacity (plan 0066 §1): the policy
 table, ``stop_status``, the sha-pinned box pools, buggy_code's pair selection and the driver."""
 
 import hashlib
@@ -93,7 +93,7 @@ def stop_status(
     cap_binding: bool = False,
     hold: str | None = None,
 ) -> tuple[str | None, str]:
-    """Plan 0064 §1.2, conditions 1-6 in order; ``(None, "")`` = keep refilling. ``hold`` (the
+    """Plan 0066 §1.2, conditions 1-6 in order; ``(None, "")`` = keep refilling. ``hold`` (the
     family's ``refill_hold``) turns an ``ooc`` into ``partial`` (§11.6). ``budget_hit`` may name
     the budget spent."""
     if have >= target:
@@ -123,7 +123,7 @@ POOL_FILES = {
     "mh2": "mh2_pool.json",
     "mh2v2": "mh2_pool.v2.json",  # decision 7: + the adversary over the S1-only candidates
 }
-# pinned in a follow-up PR once built on the box (plan 0064 §8 step 1); None = not built yet
+# pinned in a follow-up PR once built on the box (plan 0066 §8 step 1); None = not built yet
 POOL_SHA256: dict[str, str | None] = {"msdm": None, "kcutoff": None, "mh2": None, "mh2v2": None}
 DEFAULT_POOL_DIR = "/workspace/wsb-runs/pools"
 
@@ -140,7 +140,7 @@ def _verified_bytes(name: str) -> tuple[Path, bytes]:
     if pin is None:
         raise SystemExit(
             f"refill: pool {name!r} is not pinned (refill.POOL_SHA256[{name!r}] is None); build it "
-            f"with scripts/build_adapt_pools.py {name} and pin its sha256 (plan 0064 §8)"
+            f"with scripts/build_adapt_pools.py {name} and pin its sha256 (plan 0066 §8)"
         )
     if not path.is_file():
         raise SystemExit(f"refill: pool file {path} is missing (set WSB_POOL_DIR; pinned {pin})")
@@ -192,8 +192,8 @@ def row_passes(family: str, row: dict) -> bool:
     if not row["gate"].get("pass"):
         return False
     if family == BUGGY:
-        # every clean row, originals included: plan 0064 §2.2 regates all 38 clean originals
-        # (`profile regate=true`), and no pre-0064 test freezes buggy_code
+        # every clean row, originals included: plan 0066 §2.2 regates all 38 clean originals
+        # (`profile regate=true`), and no pre-0066 test freezes buggy_code
         if BUGCLAIM_REQUIRED and row["item"].get("src") == "clean":
             return has_bugclaim(row)
         return True
@@ -259,7 +259,7 @@ def buggy_classes(rows: list[dict]) -> tuple[int, int]:
 def buggy_selection(
     rows: list[dict], originals_target: int = 63, quota: dict[str, int] | None = None
 ) -> list[dict]:
-    """Plan 0064 §2.4: both-pass groups (pairs atomic) ordered originals first, then authored
+    """Plan 0066 §2.4: both-pass groups (pairs atomic) ordered originals first, then authored
     non-crash pairs in gate order, then authored crash pairs (at most ``floor(n_nc / 4)``); then
     the existing ``select`` with the item cap and ``src`` quota. Authored singletons are dropped."""
     from .run import select

@@ -1,4 +1,4 @@
-"""wrong_intermediate refill (plan 0064 §5, §10 WI, §11.2 / §11.5): multi-dir pools, the hub share
+"""wrong_intermediate refill (plan 0066 §5, §10 WI, §11.2 / §11.5): multi-dir pools, the hub share
 over the union, the entity-kind check, per-item categories, the admitted templates."""
 
 import hashlib
