@@ -373,6 +373,9 @@ ROLE_CUES: dict[str, tuple[str, ...]] = {k: tuple(v.split()) for k, v in _CUES.i
 _SUBJECT_STOP = frozenset(
     {"film", "album", "song", "video", "game", "record", "label", "released", "recorded"}
     | {"originally", "aired", "fictional", "character", "artist", "that", "with", "from"}
+    # wbcues-v2 hardening (#273 review): a TV work's kind words, so "starred in the series" never
+    # ties an actor through the prompt's own subject phrase; no registered prompt yields them
+    | {"series", "show", "television", "电视", "電視"}
 )
 ROLE_BEFORE, ROLE_AFTER = 60, 40  # characters of folded text around the name (~8 / ~6 words)
 _BY = re.compile(r"(?<!\w)by(?!\w)|由")
