@@ -2824,10 +2824,14 @@ def _layered_pass(
                 fallbacks=None if client else s.server_fallback,
             )
 
-        if miss and s.cache_only:  # plan 0059: replay only — a failed row is a failed call,
-            for _i, key, fp, _u in miss:  # no row exits 2 (stage 2 never calls under cache-only)
-                _cache_only_miss(name, cache, key, fp, col)  # type: ignore[arg-type]
+        if miss and s.cache_only:  # plan 0059: replay only, never a call. Stage 2 caches only
+            # successes (a failed or refused call leaves no row; the reference then re-asked under
+            # "|reask<k>"), so a miss here IS the reference's failed call: replay it as one (the
+            # stage loop then reaches the cached re-ask, or leaves the item unsummarized as the
+            # reference did). Counted, so a seeding gap would show (n_layered_cache_miss).
+            for _i, key, _fp, _u in miss:
                 out[key] = None
+                col.diag["n_layered_cache_miss"] = col.diag.get("n_layered_cache_miss", 0) + 1
             miss = []
         if miss:
             if preflight is not None:

@@ -361,7 +361,10 @@ def test_cache_only_replays_layered_stage_two_without_a_call(tmp_path, fam, monk
     assert again.diag["n_layered_calls"] == 0
 
 
-def test_cache_only_layered_miss_exits_instead_of_calling(tmp_path, fam, monkeypatch):
+def test_cache_only_layered_miss_is_a_failed_call_never_a_call(tmp_path, fam, monkeypatch):
+    # stage 2 caches only successes: a reference whose stage-2 call failed (or was refused, then
+    # re-asked) has no row for that attempt. A miss replays as the failed call: no live call, the
+    # item unsummarized when no attempt has a row, and the misses counted.
     fake = Fake(monkeypatch)
     cells = {"a": _cells("a", 3)}
     _run(tmp_path, cells, summ_layers="layered")
@@ -369,5 +372,5 @@ def test_cache_only_layered_miss_exits_instead_of_calling(tmp_path, fam, monkeyp
     keep = [ln for ln in p.read_text().splitlines() if '"key": "layered:' not in ln]
     p.write_text("\n".join(keep) + "\n")  # the per-layer digests stay, stage 2 is gone
     fake.live = False
-    with pytest.raises(SystemExit):
-        _run(tmp_path, cells, preflight=_boom, summ_layers="layered", summ_cache_only="1")
+    col = _run(tmp_path, cells, preflight=_boom, summ_layers="layered", summ_cache_only="1")
+    assert "a" in col.unsummarized and col.diag["n_layered_cache_miss"] >= 1
