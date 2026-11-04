@@ -1150,6 +1150,8 @@ N_DISTRACTORS = 4
 # Wikidata P31 classes that decide a unit's kind mechanically (frozen; Q5 = human = person). A
 # unit whose P31 hits none of them is not checked beyond the person rule.
 WD_PERSON = "Q5"
+# every class QID below and its label were verified against Wikidata (wbgetentities, en label)
+# on 2026-11-04 (plan 0064 §11.9); the comment is the verified label
 WD_WORK = frozenset({
     "Q7725634",  # literary work
     "Q47461344",  # written work
@@ -1160,7 +1162,7 @@ WD_WORK = frozenset({
     "Q25379",  # play
     "Q3305213",  # painting
     "Q838948",  # work of art
-    "Q2188189",  # musical work / composition
+    "Q2188189",  # musical work
     "Q7366",  # song
     "Q482994",  # album
     "Q5398426",  # television series
@@ -1168,7 +1170,8 @@ WD_WORK = frozenset({
     "Q5185279",  # poem
 })  # fmt: skip
 WD_EVENT = frozenset({
-    "Q1656682",  # event
+    "Q1656682",  # planned event
+    "Q1190554",  # occurrence
     "Q13418847",  # historical event
     "Q178561",  # battle
     "Q198",  # war
@@ -1177,10 +1180,12 @@ WD_EVENT = frozenset({
     "Q180684",  # conflict
     "Q10931",  # revolution
     "Q124734",  # rebellion
-    "Q45382",  # coup d'etat
+    "Q45382",  # coup d'état
     "Q3199915",  # massacre
     "Q40231",  # public election
-    "Q159821",  # Olympic Games
+    "Q159821",  # Summer Olympic Games
+    "Q82414",  # Winter Olympic Games
+    "Q5389",  # Olympic Games
     "Q16510064",  # sporting event
 })  # fmt: skip
 
