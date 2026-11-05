@@ -90,7 +90,7 @@ def _args(argv: list[str]) -> dict[str, str]:
 
 
 KEYS: dict[str, set[str]] = {
-    "profile": {"families", "limit", "regate", "llm", "draws", "temperature"},
+    "profile": {"families", "limit", "regate", "llm", "draws", "temperature", "ids"},
     "generate": {"family", "tier", "n", "seed"},
     "author": {"family", "tier", "n", "steer", "wave"},
     "gate": {"families", "llm", "draws", "temperature", "regate"},
@@ -146,7 +146,8 @@ def main(argv: list[str] | None = None) -> None:
         common["temperature"] = float(a["temperature"])
     if cmd == "profile":  # profile regate re-asks every original, so "all" is the same as true
         regate = a.get("regate", "").lower() in ("1", "true", "yes", "all")
-        run.profile(model, names, limit=int(a.get("limit", 0)), regate=regate, **common)
+        ids = [i for i in a.get("ids", "").split(",") if i] or None
+        run.profile(model, names, limit=int(a.get("limit", 0)), regate=regate, ids=ids, **common)
     elif cmd == "generate":
         run.generate(model, a["family"], a["tier"], int(a["n"]), int(a.get("seed", 0)))
     elif cmd == "author":
