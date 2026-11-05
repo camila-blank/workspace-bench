@@ -715,7 +715,7 @@ def summary_floor_columns() -> dict[str, dict[str, tuple[dict | None, str]]]:
     lucky = {fam: (None, text) for fam, text in native[lucky_col].items()}
     po = {fam: (e, _po_text(fam, e)) for fam, e in prompt_only.summary_floors().items()}
     cols = {lucky_col: lucky, po_col: po}
-    if logit_lens.COLUMN in native:  # plan 0071: the logit-lens L60 floor, same row match
+    if logit_lens.COLUMN in native:  # plan 0071: the logit-lens L63 floor, same row match
         cols[logit_lens.COLUMN] = {
             fam: (e, logit_lens.cell_text(e)) for fam, e in logit_lens.floors().items()
         }
@@ -1109,7 +1109,7 @@ class Freeze(Command):
     ``kind=lucky_guessing``: ``src`` holds ``<family>/<variant>.json`` from ``wsbench baseline``.
     ``kind=prompt_only``: ``src`` holds ``<family>/results.json`` from ``wsbench run`` on the
     prompt-only readouts; ``source`` is the generation's ``run_config.json``.
-    ``kind=logit_lens`` (plan 0071): ``src`` holds the ``layers=60`` summary runs on the
+    ``kind=logit_lens`` (plan 0071): ``src`` holds the ``layers=63`` summary runs on the
     logit-lens readouts, ``ati_src`` the same with ``anti_text_inversion=True``, ``readouts`` the
     readouts dir (sidecar reader and plan_sha checks), ``source`` the generation record."""
 

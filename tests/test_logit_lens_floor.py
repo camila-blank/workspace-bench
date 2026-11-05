@@ -1,4 +1,4 @@
-"""Plan 0071: the frozen logit-lens L60 floor (``evals/baselines/logit_lens.json``): freeze checks,
+"""Plan 0071: the frozen logit-lens L63 floor (``evals/baselines/logit_lens.json``): freeze checks,
 the entry schema, the report column beside a matching summary row, and the committed file."""
 
 import json
@@ -24,7 +24,7 @@ def _result(family: str, pv: str, *, value: float = 0.3, **cfg_extra: object) ->
     cfg: dict = {
         "judge_model": DEFAULT_JUDGE,
         "prompt_version": pv,
-        "layers_judged": [60],
+        "layers_judged": [63],
         "sampling": "tokens10",
         "reader": "logit_lens",
         "reads_checked": "sidecar",
@@ -80,11 +80,11 @@ def test_freeze_entry_schema_ati_and_source(tmp_path, real_families):
     got = ll.freeze(full, ati, dst, source=src)
     assert next(iter(got)) == "_source"
     s = got["_source"]
-    assert (s["protocol"], s["layer"], s["k"], s["method"]) == (ll.PROTOCOL, 60, 10, "logit_lens")
+    assert (s["protocol"], s["layer"], s["k"], s["method"]) == (ll.PROTOCOL, 63, 10, "logit_lens")
     assert s["model"] == "Qwen/Qwen3.6-27B" and "junk" not in s
     e = got["association"]
     assert e["rate"] == 0.3 and e["protocol"] == ll.PROTOCOL
-    assert e["instrument"] == spv and e["layers_judged"] == [60] and e["aggregate"] == "summary"
+    assert e["instrument"] == spv and e["layers_judged"] == [63] and e["aggregate"] == "summary"
     assert e["summarizer"] == po.summarizer_key({"summarizer": SUMM})
     assert e["ati"]["rate"] == 0.1 and e["ati"]["instrument"] == spv
     assert json.loads(dst.read_text()) == got
@@ -106,8 +106,8 @@ def test_freeze_keeps_other_families(tmp_path, real_families):
     ("override", "msg"),
     [
         ({"aggregate": None}, "not a summary-mode run"),
-        ({"layers_judged": [44]}, r"not \[60\]"),
-        ({"layers_judged": [20, 60]}, r"not \[60\]"),
+        ({"layers_judged": [44]}, r"not \[63\]"),
+        ({"layers_judged": [20, 63]}, r"not \[63\]"),
         ({"sampling": "prose1"}, "sampling"),
         ({"limit": 3}, "subset run"),
         ({"items": ["i0"]}, "subset run"),
@@ -142,10 +142,10 @@ def test_freeze_checks_readouts_sidecar(tmp_path, real_families, monkeypatch):
     ro = tmp_path / "readouts"
     ro.mkdir()
     meta = ro / "wrong_bridge.jsonl.meta.json"  # the legacy file name is accepted
-    meta.write_text(json.dumps({"reader": "logitlens-L60", "plan_sha": "main-sha"}))
+    meta.write_text(json.dumps({"reader": "logitlens-L63", "plan_sha": "main-sha"}))
     got = ll.freeze(run, None, tmp_path / "ll.json", source=_source(tmp_path), readouts=ro)
     assert got["wrong_intermediate"]["plan_sha"] == "main-sha"
-    meta.write_text(json.dumps({"reader": "logitlens-L60", "plan_sha": "old-sha"}))
+    meta.write_text(json.dumps({"reader": "logitlens-L63", "plan_sha": "old-sha"}))
     with pytest.raises(ValueError, match="plan_sha"):
         ll.freeze(run, None, tmp_path / "b.json", source=_source(tmp_path), readouts=ro)
     meta.write_text(json.dumps({"reader": "jlens-public", "plan_sha": "main-sha"}))
@@ -222,12 +222,12 @@ def test_freeze_cli(tmp_path, real_families, monkeypatch, capsys):
 def test_committed_floor_file():
     got = json.loads(ll.FROZEN.read_text(encoding="utf-8"))
     s = got["_source"]
-    assert (s["protocol"], s["layer"], s["k"]) == (ll.PROTOCOL, 60, 10)
+    assert (s["protocol"], s["layer"], s["k"]) == (ll.PROTOCOL, 63, 10)
     fams = {f for f in got if not f.startswith("_")}
     assert len(fams) == 29 and "jlens_concept_pr" not in fams
     for f in fams:
         e = got[f]
-        assert e["layers_judged"] == [60] and e["aggregate"] == "summary", f
+        assert e["layers_judged"] == [63] and e["aggregate"] == "summary", f
         assert e["protocol"] == ll.PROTOCOL and e["rate"] is not None, f
         assert len(e["plan_sha"]) == 64, f
 

@@ -168,7 +168,7 @@ ATI_SCOPE = "anti_text_inversion"
 SUMMARY_LEGEND = (
     "† summarize-then-judge (one judged summary per item; the default since plan 0024). Its "
     "prompt-only floor is the summary-mode one, drawn only beside a row with the same summary "
-    "instrument and digest settings, as is the logit-lens L60 floor (plan 0071); its "
+    "instrument and digest settings, as is the logit-lens L63 floor (plan 0071); its "
     "lucky-guessing floor is the per-item one."
 )
 # a summary-floor cell: the frozen entry it rests on (None: a lucky-guessing cell, model-free of

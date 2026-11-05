@@ -141,9 +141,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   of any other fallback model in a resumed dir. A summary floor matches a row regardless of the
   digest's client-side refusal model (`po._floor_match_key` keeps only the fallback mode), so the
   Sonnet 5 floors still draw beside Sonnet 5.5 rows.
-  `logit_lens` (plan 0071): the frozen logit-lens L60 floor `evals/baselines/logit_lens.json`
+  `logit_lens` (plan 0071): the frozen logit-lens final-layer (L63) floor `evals/baselines/logit_lens.json`
   (summary prompt-only entry schema + `protocol` + `ati`), written by `wsbench freeze
-  kind=logit_lens` from `layers=60` summary runs (refused otherwise; registered banks only) and
+  kind=logit_lens` from `layers=63` summary runs (refused otherwise; registered banks only) and
   drawn as the report's third column by the summary prompt-only row-match rule; never a gate.
   `text_inversion` builds the anti-text-inversion subset (`evals/baselines/anti_text_inversion.json`,
   plan 0019 panel gate, which replaced plan 0014's Opus-only gate): Qwen3.6-27B + the frontier
