@@ -78,18 +78,18 @@
    "target": 100,
    "n_original": 100,
    "n_original_gated": 100,
-   "n_original_pass": 76,
+   "n_original_pass": 75,
    "n_items": 100,
-   "n_new": 24,
+   "n_new": 25,
    "n_candidates_gated": 137,
    "change": "new items from t1",
    "status": "full",
-   "bank": "evals/basic_readout/items_v7.json",
-   "bank_version": 7,
+   "bank": "evals/basic_readout/items_v8.json",
+   "bank_version": 8,
    "freeze_notes": [
     "mc.gold_position balanced per subfamily over the 100 shipped items"
    ],
-   "note": "v5 rebuild: 76 originals + 24 authored (Brief tiers t1 / entity / processing) = 100/100; implicit golds are Qwen3.5-4B's own answers (adapt mc stage=subject after every gate); mc.gold_position balanced at freeze | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v7, 100 -> 100 items."
+   "note": "v5 rebuild: 76 originals + 24 authored (Brief tiers t1 / entity / processing) = 100/100; implicit golds are Qwen3.5-4B's own answers (adapt mc stage=subject after every gate); mc.gold_position balanced at freeze | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v7, 100 -> 100 items. | Capital swap 2026-11-05 (#372, plan 0072 follow-up): re-frozen on registered bank v8, 100 -> 100 items; 10 country-capital originals dropped; 9 of #372's 10 new items pass the subject gate and ship; adapted-only items 1 in / 0 out (the target and originals-first selection)."
   },
   "basic_readout_mt": {
    "target": 90,
@@ -101,12 +101,12 @@
    "n_candidates_gated": 60,
    "change": "new items from t1",
    "status": "full",
-   "bank": "evals/basic_readout_mt/items_v6.json",
-   "bank_version": 6,
+   "bank": "evals/basic_readout_mt/items_v7.json",
+   "bank_version": 7,
    "freeze_notes": [
     "41 adapted-only items: exonyms / hidden_rivals in the set's overlay files"
    ],
-   "note": "v4 rebuild (gate = the v4 question in chat), profile + fill, native_langs [en, zh] by Camila's decision (2026-11-03: Chinese-lab models are en+zh; the thinking-off R6 measurement is kept as native_langs.measured-off.json), native units rebuilt by the nl_upgrade (0 dropped): 99/99 (54 originals + 45 authored); tokens re-stamped for Qwen3.5-4B's tokenizer | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v6, 99 -> 90 items; 5 originals dropped by the overhaul's registered drops; 4 authored items fell outside the smaller registered target; plan lineage recorded for 1 drop-only re-freeze step(s) (readouts of a plan on that chain judge the kept items; any other plan refuses); lucky guessers blind 0.140 / described 0.233 vs chance 0.200 (within chance + 5: no rebuild).",
+   "note": "v4 rebuild (gate = the v4 question in chat), profile + fill, native_langs [en, zh] by Camila's decision (2026-11-03: Chinese-lab models are en+zh; the thinking-off R6 measurement is kept as native_langs.measured-off.json), native units rebuilt by the nl_upgrade (0 dropped): 99/99 (54 originals + 45 authored); tokens re-stamped for Qwen3.5-4B's tokenizer | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v6, 99 -> 90 items; 5 originals dropped by the overhaul's registered drops; 4 authored items fell outside the smaller registered target; plan lineage recorded for 1 drop-only re-freeze step(s) (readouts of a plan on that chain judge the kept items; any other plan refuses); lucky guessers blind 0.140 / described 0.233 vs chance 0.200 (within chance + 5: no rebuild). | Capital swap 2026-11-05 (#372, plan 0072 follow-up): re-frozen on registered bank v7, 90 -> 90 items; 1 country-capital originals dropped; 1 of #372's 1 new items pass the subject gate and ship.",
    "exclude_from_macro": false,
    "plan_lineage": [
     {
@@ -162,16 +162,29 @@
    "target": 99,
    "n_original": 99,
    "n_original_gated": 95,
-   "n_original_pass": 71,
-   "n_items": 71,
+   "n_original_pass": 69,
+   "n_items": 69,
    "n_new": 0,
    "n_candidates_gated": 0,
    "change": "original items only",
    "status": "untried",
-   "bank": "evals/multilingual/items_v4.json",
-   "bank_version": 4,
-   "note": "Originals only, native_langs [en, zh] by Camila's decision (2026-11-03: Chinese-lab models are en+zh; the thinking-off R6 measurement is kept as native_langs.measured-off.json), native units rebuilt by the nl_upgrade (0 dropped): 71/99 (71/99 pass on Qwen3.5-4B; no refill); tokens re-stamped for Qwen3.5-4B's tokenizer | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v4, 71 -> 71 items.",
-   "exclude_from_macro": false
+   "bank": "evals/multilingual/items_v5.json",
+   "bank_version": 5,
+   "note": "Originals only, native_langs [en, zh] by Camila's decision (2026-11-03: Chinese-lab models are en+zh; the thinking-off R6 measurement is kept as native_langs.measured-off.json), native units rebuilt by the nl_upgrade (0 dropped): 71/99 (71/99 pass on Qwen3.5-4B; no refill); tokens re-stamped for Qwen3.5-4B's tokenizer | Refresh 2026-11-05 (plan 0072): re-frozen on registered bank v4, 71 -> 71 items. | Capital swap 2026-11-05 (#372, plan 0072 follow-up): re-frozen on registered bank v5, 71 -> 69 items; 4 country-capital originals dropped; 2 of #372's 4 new items pass the subject gate and ship.",
+   "exclude_from_macro": false,
+   "plan_lineage": [
+    {
+     "from": "fccf309e684cba223a1fe0210d272a5d9112a5faf1ecd744d383f9d14d699efb",
+     "to": "4d8fabb6ccde55e105ae63dfabb697d31ac4ff9270786bf308c9ff4a24c99a17",
+     "dropped": [
+      "b3-ml-de-capital-austria",
+      "b3-ml-fr-capital-england",
+      "b3-ml-it-capital-france",
+      "b3-ml-pt-capital-japan"
+     ],
+     "at": "2026-11-05T19:25:09+00:00"
+    }
+   ]
   },
   "conjunctive_association": {
    "target": 100,
@@ -880,8 +893,8 @@
  },
  "n_layers": 32,
  "code": {
-  "git": "420387ce+dirty",
-  "adapt_sha256": "0f1e873c3ffe7449"
+  "git": "195087b3+dirty",
+  "adapt_sha256": "54d929dc5a7a6b62"
  },
  "read_band": [],
  "drops_v1_archived": {
