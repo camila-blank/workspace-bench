@@ -44,8 +44,30 @@ def pair_count(items: list[dict]) -> int:
 
 
 def registered_pairs() -> int:
-    """buggy_code's target: the registered twin-pair count (64 at bank v2; 24 on items.json)."""
+    """The registered twin-pair count (64 at bank v2; 24 on items.json): the pool the originals
+    come from, NOT the adapted target (``target_bank``)."""
     return pair_count(store.original_bank(BUGGY)[1])
+
+
+# Plan 0072 §0 D1 (Camila 2026-11-04, reaffirmed 2026-11-05): an adapted set's buggy_code target
+# stays bank v1's (items.json, frozen: 24 pairs, 63 items, its `src` quota). #325's bank v2 (64
+# pairs) is a larger pool of originals, not a new target; the originals are still the registered
+# bank's items (``store.original_bank``), selected originals first up to this cap.
+BUGGY_TARGET_BANK = "evals/buggy_code/items.json"
+
+
+def target_bank() -> list[dict]:
+    """The items of buggy_code's target bank (``BUGGY_TARGET_BANK``): the pair target, the item
+    cap and the ``src`` quota of every adapted freeze / refill are read off it."""
+    from wsbench.registry import REPO_ROOT
+
+    raw = json.loads((REPO_ROOT / BUGGY_TARGET_BANK).read_text(encoding="utf-8"))
+    return list(raw["items"] if isinstance(raw, dict) else raw)
+
+
+def target_pairs() -> int:
+    """buggy_code's adapted target in pairs (24)."""
+    return pair_count(target_bank())
 
 
 @dataclass(frozen=True)
@@ -63,7 +85,7 @@ class Policy:
 
 
 POLICY: dict[str, Policy] = {
-    BUGGY: Policy("pairs", registered_pairs, 60, 0.03, ("author: brief tiers t1, t2",), "t2"),
+    BUGGY: Policy("pairs", target_pairs, 60, 0.03, ("author: brief tiers t1, t2",), "t2"),
     MSDM: Policy("categories", lambda: _registered_size(MSDM), 200, 0.03,
                  ("bank", "retired_panel_gate", "pool: msdm_pool.jsonl"), "ext pool"),
     KCUTOFF: Policy("items", lambda: _registered_size(KCUTOFF), 1000, 0.01,
@@ -329,8 +351,10 @@ def change_text(block: dict, measured: str = "") -> str:
     ``stop``) keeps the ``measured`` line (``generate.describe``) and appends its stop."""
     if set(block) == {"stop"}:
         return f"{measured}; refill: {block['stop']}" if measured else f"refill: {block['stop']}"
-    parts = [f"refill via {block.get('route', '?')}: {block.get('have')}/{block.get('target')} "
-             f"{block.get('unit', 'items')}"]  # fmt: skip
+    head = f"refill via {block.get('route', '?')}"
+    if block.get("have") is not None or block.get("target") is not None:
+        head += f": {block.get('have')}/{block.get('target')} {block.get('unit', 'items')}"
+    parts = [head]
     if block.get("tried") is not None:
         y = block.get("yield")
         ys = f", yield {y:.2%}" if isinstance(y, int | float) else ""
@@ -358,8 +382,9 @@ def have_of(model: str, family: str) -> int:
     _h, originals = store.original_bank(family)
     rows = freeze_rows(family, run._bank_rows(model, family, originals))
     quota = run.quotas(family, originals)
-    if family == BUGGY:
-        return selected_pairs(buggy_selection(rows, len(originals), quota))
+    if family == BUGGY:  # plan 0072 §0 D1: the target bank's cap and quota, as freeze
+        tb = target_bank()
+        return selected_pairs(buggy_selection(rows, len(tb), run.quotas(family, tb)))
     return len(run.select(family, rows, len(originals), quota))
 
 

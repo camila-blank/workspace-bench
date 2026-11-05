@@ -166,3 +166,31 @@ def test_stored_results_are_told_apart_by_stamp(tmp_path):
             "why": registry.REMOVED_FAMILIES["multihop_mt_regex"],
         }
     ]
+
+
+def test_adapted_set_under_the_old_name_is_planned(tmp_path, monkeypatch):
+    """Plan 0072 §2.1 (a #344 regression): ``readplan.families()`` (what ``plan`` and ``run
+    all=True`` iterate under ``WSB_BANK_ROOT``) finds a set's ``multihop_mt_v2.json`` through the
+    former-key lookup, as ``bank_path`` does; before the fix every adapted set silently skipped
+    the family."""
+    (tmp_path / "multihop_mt_v2.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "typo_mt.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv(registry.BANK_ROOT_ENV, str(tmp_path))
+    assert readplan.families() == ["multihop_mt", "typo_mt"]
+    # a reused key: a file under the removed family's key alone is still this family's file
+    # (``lookup_names`` lists the former key first; the removed family has no registered bank)
+    (tmp_path / "multihop_mt_v2.json").unlink()
+    (tmp_path / "multihop_mt.json").write_text("{}", encoding="utf-8")
+    assert readplan.families() == ["multihop_mt", "typo_mt"]
+    (tmp_path / "multihop_mt.json").unlink()
+    assert readplan.families() == ["typo_mt"]
+
+
+def test_real_adapted_sets_plan_multihop_mt(monkeypatch):
+    """Every committed adapted set that ships ``multihop_mt_v2.json`` plans the family."""
+    sets = sorted(p.parent for p in (REPO / "adapted").glob("*/multihop_mt_v2.json"))
+    assert sets, "no adapted set under the former key"
+    for d in sets:
+        monkeypatch.setenv(registry.BANK_ROOT_ENV, str(d))
+        assert "multihop_mt" in readplan.families(), d.name
+        assert reads.plan_sha("multihop_mt"), d.name

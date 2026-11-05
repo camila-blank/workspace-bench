@@ -952,6 +952,11 @@ def test_native_langs_file_and_freeze_refusal(tmp_path, monkeypatch):
     rebuilt[nl.MARKER] = ["en", "ja"]
     rebuilt["units"] = [{**rebuilt["units"][0], "match": ["ja-form"]}]
     _gate_log(d, "typo_mt", [_row(rebuilt)])
+    # plan 0072: a rebuild must also name the registered item it was rebuilt from
+    with pytest.raises(SystemExit, match="not rebuilt"):
+        run.freeze("qwen3.5-4b", ["typo_mt"])
+    rebuilt[nl.SOURCE_KEY] = nl.source_sha(items[0])
+    _gate_log(d, "typo_mt", [_row(rebuilt)])
     run.freeze("qwen3.5-4b", ["typo_mt"])
     out = _json.loads((d / "typo_mt.json").read_text())
     assert out["contract"]["native_langs"] == ["en", "ja"]

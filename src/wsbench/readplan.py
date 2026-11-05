@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.banks import load_bank as load_bank_file
-from wsbench.registry import BANK_ROOT_ENV, REPO_ROOT, bank_path, canonical, frozen_bank_path
+from wsbench.registry import (
+    BANK_ROOT_ENV,
+    REPO_ROOT,
+    bank_path,
+    canonical,
+    frozen_bank_path,
+    lookup_names,
+)
 
 GRID = list(range(20, 61, 4))  # the benchmark's layer grid for Qwen3.6-27B (64 layers)
 # history (plan 0032 §2.1.2): no plan row reads these any more; every family's grid is GRID
@@ -1312,8 +1319,15 @@ def families() -> list[str]:
     if not root:
         return names
     base = Path(root) if Path(root).is_absolute() else REPO_ROOT / root
+    # a set written under a former key (``registry.lookup_names``: multihop_mt_v2.json after the
+    # 2026-11-04 rename) has the family too; ``bank_path`` reads it the same way
     return [
-        f for f in names if (base / f"{f}.json").exists() or (base / f / "manifest.json").exists()
+        f
+        for f in names
+        if any(
+            (base / f"{k}.json").exists() or (base / k / "manifest.json").exists()
+            for k in lookup_names(f)
+        )
     ]
 
 
