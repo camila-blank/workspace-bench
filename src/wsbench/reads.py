@@ -113,6 +113,89 @@ def plan_sha(family: str) -> str:
     return plan_sha_rows(s.row() for s in readplan.plan(family, layers=None))
 
 
+# ---------------------------------------------------------------- plan lineage (plan 0072 0.3)
+# A re-freeze of an adapted set that only DROPS items (or edits judge-side fields that are not in
+# the plan, e.g. ``mc``) leaves every kept item's plan row as it was, but moves ``plan_sha``.
+# ``adapt freeze`` then records the step in ``report.json`` ``families.<f>.plan_lineage`` and
+# guard (iii) accepts a readout of an older plan only through a chain of such records, with the
+# dropped items' cells removed. Anything else (no record, a changed or added row, no
+# ``WSB_BANK_ROOT``) refuses as before: fail-closed.
+LINEAGE_KEY = "plan_lineage"
+LINEAGE_MAX_STEPS = 64
+
+
+def clean_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The rows ``plan_sha_rows`` hashes, cleaned the same way (``_clean_row``)."""
+    return [_clean_row(r) for r in rows]
+
+
+def lineage_step(old: Sequence[Mapping[str, Any]], new: Sequence[Mapping[str, Any]]) -> dict | None:
+    """The lineage record of a re-freeze from plan rows ``old`` to ``new`` (``wsbench plan``'s
+    rows), or None. A record is written ONLY when the shas differ, no id repeats in either plan,
+    every new id is an old id and every new cleaned row equals the old cleaned row of its id:
+    ``{"from": <old sha>, "to": <new sha>, "dropped": [ids]}``."""
+    o, n = clean_rows(old), clean_rows(new)
+    sha_o, sha_n = plan_sha_rows(old), plan_sha_rows(new)
+    if sha_o == sha_n:
+        return None
+    o_ids = [str(r.get("id")) for r in o]
+    n_ids = [str(r.get("id")) for r in n]
+    if len(set(o_ids)) != len(o_ids) or len(set(n_ids)) != len(n_ids):
+        return None
+    by_id = dict(zip(o_ids, o, strict=True))
+    for iid, row in zip(n_ids, n, strict=True):
+        if by_id.get(iid) != row:
+            return None
+    return {"from": sha_o, "to": sha_n, "dropped": sorted(set(o_ids) - set(n_ids))}
+
+
+def _root_report() -> dict[str, Any] | None:
+    root = os.environ.get(BANK_ROOT_ENV)
+    if not root:
+        return None
+    base = Path(root) if Path(root).is_absolute() else readplan.REPO_ROOT / root
+    try:
+        return json.loads((base / "report.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def lineage_drops(family: str, have: str, want: str) -> list[str] | None:
+    """The ids dropped on a chain of ``plan_lineage`` records from plan ``have`` to plan ``want``
+    of the adapted set at ``$WSB_BANK_ROOT`` (a breadth-first search over ``from -> to`` links,
+    at most ``LINEAGE_MAX_STEPS`` deep), or None when no chain exists, there is no root, or a
+    ``WSB_BANK_FILE_<FAMILY>`` pin overrides the set's bank (fail-closed)."""
+    from wsbench.registry import canonical, legacy_names, lookup_names
+
+    fam = canonical(family)
+    if any(os.environ.get(BANK_FILE_ENV_PREFIX + n.upper()) for n in (fam, *legacy_names(fam))):
+        return None
+    report = _root_report()
+    if report is None:
+        return None
+    fams = report.get("families") or {}
+    entry = next((fams[k] for k in lookup_names(fam) if k in fams), {})
+    steps = [s for s in entry.get(LINEAGE_KEY) or [] if isinstance(s, dict)]
+    frontier: dict[str, set[str]] = {have: set()}
+    seen = {have}
+    for _ in range(LINEAGE_MAX_STEPS):
+        nxt: dict[str, set[str]] = {}
+        for sha, dropped in frontier.items():
+            for s in steps:
+                if s.get("from") != sha or not s.get("to"):
+                    continue
+                acc = dropped | {str(i) for i in s.get("dropped") or []}
+                if s["to"] == want:
+                    return sorted(acc)
+                if s["to"] not in seen:
+                    seen.add(s["to"])
+                    nxt[s["to"]] = acc
+        if not nxt:
+            return None
+        frontier = nxt
+    return None
+
+
 # ---------------------------------------------------------------- selection and span check
 
 
@@ -355,14 +438,27 @@ def load(
         rep.reads_checked = "prompt_only"
         _attach(args, rep)
         return cells, rep
-    # guard (iii): plan drift (never waived by allow_missing)
+    # guard (iii): plan drift (never waived by allow_missing); an adapted set's drop-only
+    # re-freeze is accepted only through its recorded lineage (plan 0072 0.3), dropped ids removed
     if meta is not None and meta.get("plan_sha"):
         want = plan_sha(family)
-        if str(meta["plan_sha"]) != want:
-            fail(
-                f"{path}: readouts were produced for a different plan (plan_sha "
-                f"{str(meta['plan_sha'])[:12]} != {want[:12]})"
-            )
+        have = str(meta["plan_sha"])
+        if have != want:
+            dropped = lineage_drops(family, have, want)
+            if dropped is None:
+                fail(
+                    f"{path}: readouts were produced for a different plan (plan_sha "
+                    f"{have[:12]} != {want[:12]})"
+                )
+            gone = set(dropped)
+            n_before = len(cells)
+            cells = [c for c in cells if c.id not in gone]
+            rep.plan_lineage = {
+                "from": have,
+                "to": want,
+                "n_dropped_items": len(gone),
+                "n_dropped_cells": n_before - len(cells),
+            }
     try:
         sp = specs(family)
     except (SystemExit, KeyError, OSError, ValueError):
@@ -480,6 +576,7 @@ def config_stamps(args: JudgeArgs) -> dict[str, Any]:
         "reads_checked": rep.reads_checked,
         "layers_judged": rep.layers_requested if rep.layers_requested is not None else rep.layers,
         **({"lite_rule": rep.lite_rule} if m == "lite" else {}),
+        **({"plan_lineage": rep.plan_lineage} if rep.plan_lineage else {}),
     }
 
 

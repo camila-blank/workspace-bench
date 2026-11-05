@@ -56,6 +56,19 @@ from . import run
 USAGE = __doc__
 
 
+def _json_arg(key: str, val: str | None) -> dict | None:
+    """``key=<json object>`` or None; malformed JSON exits with a message, not a traceback."""
+    if not val:
+        return None
+    try:
+        out = json.loads(val)
+    except ValueError as e:
+        raise SystemExit(f"{key}= needs a JSON object ({e})") from None
+    if not isinstance(out, dict):
+        raise SystemExit(f"{key}= needs a JSON object")
+    return out
+
+
 def _pool_arg(v: str) -> bool | str:
     """``pool=`` for msdm / kcutoff: a boolean as before, or a mode name (plan 0066: ``ext``)."""
     low = v.lower()
@@ -86,7 +99,7 @@ KEYS: dict[str, set[str]] = {
     "fill": {"families", "llm", "waves"},
     "freeze": {"families", "allow_untried"},
     "refill": {"families", "waves", "claude_budget", "gpu_minutes", "pilot", "llm"},
-    "note": {"family", "status", "text", "exclude_from_macro"},
+    "note": {"family", "status", "text", "exclude_from_macro", "refill"},
     "drop": {"family", "ids", "reason"},
     "patch": {"family", "id", "set", "note"},
     "status": set(),
@@ -221,7 +234,8 @@ def main(argv: list[str] | None = None) -> None:
     elif cmd == "note":
         ex = a.get("exclude_from_macro")
         run.note(model, a["family"], a.get("status"), a.get("text"),
-                 None if ex is None else ex.lower() in ("1", "true", "yes"))  # fmt: skip
+                 None if ex is None else ex.lower() in ("1", "true", "yes"),
+                 _json_arg("refill", a.get("refill")))  # fmt: skip
     elif cmd == "drop":
         run.drop(model, a["family"], [i for i in a["ids"].split(",") if i], a["reason"])
     elif cmd == "patch":
