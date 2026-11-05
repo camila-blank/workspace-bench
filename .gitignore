@@ -22,6 +22,7 @@ viewer_app/.cache/
 **/__pycache__/
 adapted/*/jlens_concept_pr.UNVALIDATED/
 
-# adapt introspection work products (re-derivable from the subject; vectors + coherence kept)
+# adapt introspection work products (re-derivable from the subject; coherence kept)
 adapted/*/introspection/job.json
 adapted/*/introspection/sweep.json
+adapted/*/introspection/vectors/
