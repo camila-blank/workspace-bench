@@ -4,7 +4,7 @@
  "frozen": true,
  "source": "global-workspace ccut v2 (PRs #747, #751, #753), evals/chint_cutoff/frozen_v2.json",
  "source_sha256": "95f6781487aa88c7489f892873001b23750c956b0c1f3d389c060ffdade715ba",
- "source_commit": "18597c6bc",
+ "source_commit": "ecf38e2c3",
  "source_scores": "evals/chint_cutoff/frozen_v2_scores.json",
  "source_scores_sha256": "fb41be8ffaf908ab603f5b7dcf88a6d4dc7afab621ef04cc9e978b6d21ed4643",
  "subject": "Qwen/Qwen3.6-27B",
