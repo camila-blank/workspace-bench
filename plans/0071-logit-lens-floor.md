@@ -1,6 +1,6 @@
 # 0071: a frozen logit-lens L60 floor
 
-Issue #ISSUE. Decision: Camila, 2026-11-05: "can you also include a logit lens L60 baseline as
+Issue #352. Decision: Camila, 2026-11-05: "can you also include a logit lens L60 baseline as
 well ... and ship this to the repo as an official baseline".
 
 ## What it is
