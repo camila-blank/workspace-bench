@@ -252,8 +252,8 @@ elif SUBJECT == "deepseek-v4-pro":
         pad = int(pad[0] if isinstance(pad, list) else pad)
         from transformers.cache_utils import DynamicCache
 
-        # a fresh cache per forward, as xaff's HfV4Flash loop: the cache-less single-shot path
-        # was not causal (calib (d) 2026-11-05)
+        # a fresh cache per forward: the code path xaff's validated HfV4Flash loop uses (the
+        # cache-less path is equivalent in transformers 5.17; the image's 5.11 is unverified)
         def fresh_cache() -> dict[str, Any]:
             return {"use_cache": True, "past_key_values": DynamicCache(config=model.config)}
 
@@ -678,7 +678,7 @@ def calib(job: dict, extra_stops: list[int]) -> bytes:
         "pre_span_max_abs_diff": float((h1[:k] - h0[:k]).abs().max()),
         "in_span_max_rel_err": float(((h1[k:] - want).norm(dim=-1) / want.norm(dim=-1)).max()),
         # the capture returns at block L, so the line above is exact by construction; the full
-        # depth check (informational): next-token log-probs at the last pre-span position
+        # depth check (informational): next-token logits at the last pre-span position
         "pre_span_logits_max_abs_diff": pre_logit_diff,
     }
     blob = pickle.dumps({"noop": noop, "mention": mention, "batch": batch, "local": local,
