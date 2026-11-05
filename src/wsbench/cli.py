@@ -405,6 +405,15 @@ class ReportRuns(Command):
         ati = any(r.config.get("scope") == ATI_SCOPE for r in results)
         floors = floor_columns() if self.floors and not ati else None
         summ_floors = summary_floor_columns() if self.floors and not ati else None
+        if floors and summ_floors and logit_lens.COLUMN in floors:
+            # plan 0071: the logit-lens column only when some row can draw it
+            ll_cells = summ_floors.get(logit_lens.COLUMN, {})
+            if not any(
+                (cell := ll_cells.get(r.family)) and logit_lens.floor_applies(cell[0], r.config)
+                for r in results
+            ):
+                floors.pop(logit_lens.COLUMN)
+                summ_floors.pop(logit_lens.COLUMN, None)
         alt: dict[str, FamilyResult] | None = None
         if self.alt_judge is not None:
             if not self.alt_judge.is_dir():
@@ -1101,7 +1110,8 @@ class Freeze(Command):
     ``kind=prompt_only``: ``src`` holds ``<family>/results.json`` from ``wsbench run`` on the
     prompt-only readouts; ``source`` is the generation's ``run_config.json``.
     ``kind=logit_lens`` (plan 0071): ``src`` holds the ``layers=60`` summary runs on the
-    logit-lens readouts, ``ati_src`` the same with ``anti_text_inversion=True``."""
+    logit-lens readouts, ``ati_src`` the same with ``anti_text_inversion=True``, ``readouts`` the
+    readouts dir (sidecar reader and plan_sha checks), ``source`` the generation record."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1110,11 +1120,13 @@ class Freeze(Command):
         self.dst = ""
         self.source = ""
         self.ati_src = ""
+        self.readouts = ""
 
     def finalize(self) -> None:
         self.kind = str(self.kind)
         self.src = _path(self.src) if self.src else None
         self.ati_src = _path(self.ati_src) if self.ati_src else None
+        self.readouts = _path(self.readouts) if self.readouts else None
         self.dst = _path(self.dst) if self.dst else None
         self.source = _path(self.source) if self.source else None
 
@@ -1143,11 +1155,17 @@ class Freeze(Command):
                         file=sys.stderr,
                     )
                     return EXIT_USAGE
-                if self.src is None:
-                    print("freeze kind=logit_lens needs src=<judged dir>", file=sys.stderr)
+                if self.src is None or self.source is None or self.readouts is None:
+                    print(
+                        "freeze kind=logit_lens needs src=<judged dir> readouts=<readouts dir> "
+                        "source=<run_config.json>",
+                        file=sys.stderr,
+                    )
                     return EXIT_USAGE
                 dst = self.dst or logit_lens.FROZEN
-                frozen = logit_lens.freeze(self.src, self.ati_src, dst, source=self.source)
+                frozen = logit_lens.freeze(
+                    self.src, self.ati_src, dst, source=self.source, readouts=self.readouts
+                )
             else:
                 print(
                     f"unknown baseline kind {self.kind!r}; known: lucky_guessing, prompt_only, "
