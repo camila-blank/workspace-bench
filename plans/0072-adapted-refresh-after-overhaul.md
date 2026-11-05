@@ -1,7 +1,7 @@
 # 0072: refresh the ten adapted sets after the 2026-11-05 bench overhaul
 
-Status: **draft for Camila's review** (read-only assessment; nothing pushed to `adapted/`, nothing
-merged). Numbered 0072 because 0068-0069 are on main, #350 holds 0070, and #359 and #360 both
+Status: **approved with the coordinator's decisions of 2026-11-05 (§0), in execution.** The
+assessment (§1-§2, §5) was read-only; §0 records the decisions and §3 is amended to match. Numbered 0072 because 0068-0069 are on main, #350 holds 0070, and #359 and #360 both
 claim 0071 (that collision is theirs to resolve).
 
 Sets: `adapted/{glm-5.3, qwen3-8b, qwen3.5-9b, qwen3.5-4b, qwen3.5-2b, qwen3.5-0.8b, olmo-3-7b,
@@ -10,6 +10,34 @@ deepseek-v4-pro, muse-spark-open, kimi-k3}`. They were built and frozen under pl
 **#326-#334 and #344 are already merged**, so the default "wait for them before touching the
 multilingual and mh2 families" no longer blocks anything. Still open: #350 (plan 0070,
 reply-free prompt-only), #359 (ATI all-readers-fail) and #360 (logit-lens L63 floor).
+
+## 0. Decisions (coordinator, 2026-11-05)
+
+D1. **buggy_code's adapted target stays 24 pairs** (Camila's 2026-11-04 choice, reaffirmed). #325's
+    64 registered pairs are a larger pool to draw originals from, not a new target. In code: the
+    adapted refill / freeze target is bank v1's pair count (`evals/buggy_code/items.json`, frozen:
+    24 pairs, 63-item cap, its `src` quota), NOT `pair_count(registered bank)`. A set at >= 24
+    pairs is `full`, so no refill record is needed merely because `registered_pairs()` moved. The
+    40 new registered pairs are profiled like any original and enter the selection (originals
+    first) up to the 63-item cap.
+D2. **Stock-subject floors re-judge every changed family**, native moral_rationale and
+    user_modeling included, so the floors and the lens results share an instrument. Every call is
+    cache-seeded from the stored `floors/results/<f>` dirs.
+D3. **The `plan_sha` relaxation (Phase 0.3) is approved only fail-closed.** An old readout loads
+    only if the set's freeze record PROVES the re-freeze was drop-only (or `mc`-only, which leaves
+    the plan rows equal) for that family: every new plan row equals the old plan row of the same
+    id and the new ids are a subset of the old ones. The scoring then skips the dropped items.
+    Anything else (no record, a record that does not chain to the current `plan_sha`, a changed
+    row, an added id, no `WSB_BANK_ROOT`) still refuses. Tests cover both directions.
+D4. **6a is skipped.** The GLM 4-lens results are re-judged once, in 6b, after GLM's refresh.
+D5. **po-opus-v1 floors wait for #350 to merge.** Everything else goes first; if #350 is still
+    open when Phase 4 is reached, the executor reports back instead of building those floors.
+D6. Families short after drops (user_modeling above all, until its 79 new items are profiled) are
+    refilled under plan 0066 §3a: refill unless the subject is truly incapable (`ooc`).
+D7. Phase 0 is one code PR (no data), merged before any re-freeze. Data goes in two PRs (the six
+    small sets, then the four large ones), each set with a fresh-context delta audit appended to
+    its `AUDIT.md`. Budget: ~$3.5k (judge + GPU), re-scaled after the first set; stop and report
+    if the projection passes $4.5k.
 
 ## Invariants this plan keeps (restated, not re-derived)
 
@@ -121,28 +149,63 @@ Verified 2026-11-05 07:30-09:00 UTC in a fresh clone (`/root/tmp/wsb-refresh/mai
    muse 24, k3 18, 4b 21, 8b 17, olmo 9, 2b 1, 0.8b 0. Under §3a and the CLI freeze guard, re-freezing
    buggy_code without a refill record fails unless `allow_untried=true` is passed with a reason.
    Camila's 2026-11-04 decision ("buggy_code targets 24 pairs") was made at bank v1.
-   **Decision needed: keep 24, or adopt 64** (which means authoring roughly 40 more pairs per
-   capable subject, see §4).
+   **Decided (§0 D1): keep 24.** Phase 0.0 makes the code say so.
 6. Tests: `pytest -q` on main: see §5. Every family loads and dry-runs on both sets, apart from 1 and 2
    above and `jlens_concept_pr` on GLM (no reference J-lens at L24/29/59, which is expected).
 
 ## 3. Refresh procedure (ordered)
 
 ### Phase 0: code (one small PR, no data). Can start now.
+- 0.0 buggy_code's adapted target (§0 D1): `refill.POLICY[buggy_code]`'s target and freeze's
+  `target_pairs` / item cap / `src` quota come from bank v1 (`items.json`: 24 pairs, 63 items),
+  through one helper, never from `registered_pairs()`. The originals still come from the
+  registered bank v2 (its 64 pairs are the pool). The freeze guard then treats a >= 24-pair set
+  as `full`. Tests: target 24 with the registered bank at 64; a 24-pair set freezes `full` with no
+  refill block; a 17-pair set is still refused without a refill record. `SKILL.md`'s buggy_code
+  row is updated (it says 64 today).
 - 0.1 `readplan.families()`: former-key lookup (§2.1), with a regression test over a set that
   holds `multihop_mt_v2.json`.
-- 0.2 Stamps under `WSB_BANK_ROOT` carry the ADAPTED header's bank version (§2.3), or `run`
-  writes `bank_version` from `report.json` into each `results.json` config. Pick one. The
-  first changes stamp strings, so it needs Camila's OK on the instrument-naming rule.
-- 0.3 An adapted `read_plan_bank` pass-through. After a re-freeze that only DROPS items or
+- 0.2 Stamps under `WSB_BANK_ROOT` carry the ADAPTED header's bank version (§2.3; the
+  coordinator chose this option). Rule: a result stamp's `+bank-v<N>` tag, where N is the
+  registered bank's header version, becomes `+bank-v<M>` when the judged adapted bank's header
+  says version M != N; the call keys (`CALL_VERSIONS`, `MH2_CALL_VERSION`, ...) never change, so
+  no cache moves. A set whose header matches the registered one (every re-frozen family) keeps
+  the registered stamp byte for byte. No root = unchanged. Applied once, centrally, where the
+  runner finalizes a family result (`wsbench run` and `wsbench judge` alike). Tests: a v3
+  association set stamps `+bank-v3`, a re-frozen v5 set stamps `+bank-v5`, no root is unchanged,
+  and a family whose stamp has no `+bank-v` tag or whose adapted header has no version is
+  untouched.
+- 0.3 Fail-closed `plan_sha` lineage (§0 D3). After a re-freeze that only DROPS items or
   edits `mc`, the kept items' read plan is unchanged, but `plan_sha` covers the whole bank, so
-  every existing readout of a refreshed family fails guard (iii). Proposal: freeze records
-  `read_plan_sha_prev` when the new bank's items are a subset of the old plan's items with the
-  same render, positions and layers, and the reader accepts readouts stamped with that sha (the judge
-  loads only the bank's ids, as for the registered `read_plan_bank`). Without this, every lens run
-  on a refreshed family needs new readouts (GPU). Needs a critique round: it relaxes a guard.
+  every existing readout of a refreshed family fails guard (iii). Design:
+  - **Write side (`adapt freeze`).** For each family it writes, freeze computes the family's plan
+    rows under the set's root from the bank file BEFORE writing (old) and AFTER (new), with
+    `reads.plan_sha_rows` / `_clean_row` (the producer's own hash, so the shas are the ones the
+    readout sidecars carry). Only if the shas differ AND every new cleaned row equals the old
+    cleaned row of the same id AND the new ids are a subset of the old ids, it appends
+    `{from, to, dropped: [ids], at}` to `report.json` `families.<f>.plan_lineage`. Equal shas
+    write nothing (the guard already passes). Any other change writes nothing, so readouts of the
+    old plan stay refused.
+  - **Read side (`reads.load`, guard (iii)).** On a sha mismatch, and only under
+    `WSB_BANK_ROOT`, it walks `plan_lineage` from the sidecar's sha by `from -> to` links until it
+    reaches the current `plan_sha`. Reached: the file loads, cells of every dropped id on the way
+    are removed before selection (so no family ever scores or counts them), and the load report
+    records `plan_lineage` (from, to, n_dropped), stamped into `config`. Not reached, no record,
+    no root: the same exit 2 as today. The walk is bounded (a cycle refuses).
+  - The existing GLM buggy_code mismatch (§2.2, #353's re-freeze before this code) has no record
+    and stays refused: those readouts are re-produced in 6b.
+  - Tests (both directions): a drop-only re-freeze records a lineage and the old readouts judge
+    the kept items only; an `mc`-only re-freeze records nothing and the guard passes; a re-freeze
+    that adds an id, or changes a kept row (render / positions), records nothing and refuses; a
+    sidecar sha with no chain to the current sha refuses; the same files without
+    `WSB_BANK_ROOT` refuse; a two-step drop chain loads with the union of drops removed.
 - 0.4 `mc_options_r5.py --bank <adapted file> --out <dir>` (never writing `evals/`), to
-  screen and rebuild adapted-only lists (§2.4).
+  screen and rebuild adapted-only lists (§2.4). In this mode the rebuild touches only the
+  adapted-only items (origin `authored` / `generated` / `refill`; originals keep the registered
+  r5 lists), writes its work dir and its result (`{id: mc}` plus the measurements) under `--out`,
+  and emits one `adapt patch` per rebuilt list; `freeze` and `confusers` refuse in this mode.
+  Tests: the mode never opens an `evals/` path for writing, and the patch file round-trips
+  through `adapt patch`.
 - 0.5 `kimi-k3/report.json`: drop the stale `math_shortcuts` row at the next k3 freeze.
 
 ### Phase 1: judge-only re-freeze, no GPU. After Phase 0.1 merges.
@@ -157,18 +220,17 @@ originals-only (no Brief refill), so no refill applies.
 - Also run `adapt status` per set. Every family not refrozen keeps its old header, which is
   correct for families whose registered bank did not change (§1 rows with no (b)).
 - **Not in Phase 1:** multihop and user_modeling (refrozen once, after Phase 2 profiles their new
-  items) and buggy_code (decision §2.5).
+  items) and buggy_code (refrozen after Phase 2 profiles its 40 new pairs).
 
 ### Phase 2: GPU, one batched Modal session per subject. After Phase 1.
 Per subject, in one generation run per stage (SKILL: batch every candidate):
 - `profile families=multihop,user_modeling,buggy_code` gates only the new registered ids
   (gated ids are skipped): multihop 30 (answer + bridge legs), user_modeling 79, buggy_code 40
   pairs (80 programs: output, continuation leak and bugclaim legs). Grading: `llm=claude-opus-5-5`.
-- buggy_code: per §2.5. If 64 is adopted, `refill families=buggy_code` until the
-  stop rule fires (`ooc` at 60 pair objects at t2 with yield < 3%, or `partial`), and it re-asks
-  `bugclaim` on clean rows first (plan 0068 invariant). If 24 is kept, record the decision in
-  POLICY (code: a per-set target override, not a lowered gate) and re-freeze with the 40 new
-  pairs as candidates only.
+- buggy_code: the target is 24 pairs (§0 D1, Phase 0.0). The 40 new registered pairs are
+  profiled (originals). A set still below 24 pairs after that runs `refill families=buggy_code`
+  (plan 0066 §3a, which re-asks `bugclaim` on clean rows first, the plan 0068 invariant) until
+  `full` or an objective stop; at >= 24 no refill runs.
 - The stock-subject floor readouts for the new items (`adapt floors stage=generate` is GPU)
   go in the same session.
 - `freeze families=multihop,user_modeling,buggy_code` (with `note`), then dry-run every present
@@ -196,7 +258,10 @@ Per subject, in one generation run per stage (SKILL: batch every candidate):
   rates identical except multihop (0.932 -> 0.945), multilingual (0.873 -> 0.887), multilingual_mt
   (0.429 -> 0.714) and multilingual_multihop (0.364 -> 0.818). The native moral (8,088 calls
   per set on 4b), user_modeling (2,464) and chain (3,240) families dominate the cost of this
-  protocol (§4). Proposal: re-judge them only if the protocol stays in the report.
+  protocol (§4). **Decided (§0 D2): every changed family is re-judged, moral and user_modeling
+  included**, cache-seeded. This does not wait for #350.
+- **Order (§0 D5):** stock-subject-v1 runs with each set; po-opus-v1 runs only once #350 has
+  merged, after everything else.
 - **Not adapted:** #359's ATI change and #360's L63 logit-lens floor are registered-bank
   floors. The adapted sets have no ATI panel, and an adapted L63 floor would need each subject's
   own final-layer lens readouts. Out of scope here. Say so in `adapted/README.md`.
@@ -227,8 +292,9 @@ them** (it was never judged on these readouts). The 26 are the 27 GLM banks minu
 agentic. The table's macro is over the 24 complete in all six views. #348 changes none of the 26.
 What #348 changed is the registered-bank floor macro, which the memory note's ".708" number mixed in.
 
-Re-judge, in two steps:
-- **6a, now (no wait):** re-judge all six views on current main against the CURRENT glm-5.3 set,
+Re-judge in ONE step, 6b (§0 D4: 6a is skipped so the GLM re-judge is paid once). 6a is kept
+below for the record only:
+- **6a (skipped):** re-judge all six views on current main against the CURRENT glm-5.3 set,
   seeded with each view's `cells.jsonl` (the digests are cached; only re-keyed calls are new).
   Families whose instrument changed (everything except directed_modulation, knowledge_cutoff,
   msdm, nyt_connections and typo_mt) get current-instrument numbers on the pre-refresh bank.
@@ -267,6 +333,14 @@ and **$0.3-0.5k of Modal GPU**, or up to ~$1.2k of GPU if buggy_code moves to 64
 biggest swing factors are three things: whether stock-subject-v1 re-judges native moral and
 user_modeling, whether buggy_code adopts 64 pairs, and whether Phase 0.3 lands, which avoids
 re-producing every refreshed family's lens readouts.
+
+**Re-estimate under §0:** D1 removes the buggy refill toward 64 (-$0.3-0.9k). D2 adds the native
+moral / user_modeling stock re-judge (+$1.0-1.5k across ten sets, the upper end only if moral's
+8k calls per set are all re-keyed). D4 removes 6a (-$0.9k) but 6b then re-judges the six views
+in full once (~$0.9k). Net: roughly **$3.0-4.0k judge + $0.3-0.5k GPU**. The executor measures
+the first set (token counts x the price table, since OAuth logs `spend=$0.00`), re-scales, and
+**stops and reports if the projection passes $4.5k** (§0 D7). The first cut if it does is
+stock-subject moral on the small sets (it is the secondary protocol).
 
 ## 5. Evidence from this assessment (2026-11-05)
 
