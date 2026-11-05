@@ -186,7 +186,11 @@ def freeze(
         if summary:
             # the instrument is the summary prompt_version as run; a summary row draws this
             # floor only when its own prompt_version and summarizer match (summary_floor_for)
-            pv = str(r.config.get("prompt_version") or "")
+            # an adapted set's re-stamped row (plan 0072 0.2) is checked on its registered stamp;
+            # the floor's `instrument` stays the row's own (re-stamped) prompt_version
+            pv = str(
+                r.config.get("registered_prompt_version") or r.config.get("prompt_version") or ""
+            )
             bases = summary_bases(r.family, versions.get(r.family))
             if "+digest-" not in pv or (bases and not any(pv.startswith(f"{b}+") for b in bases)):
                 raise ValueError(
@@ -194,7 +198,9 @@ def freeze(
                     f"summary instrument starts with {' or '.join(map(repr, bases))}+…+digest-; "
                     "re-judge first"
                 )
-        elif versions.get(r.family) != r.config.get("prompt_version"):
+        elif versions.get(r.family) != (
+            r.config.get("registered_prompt_version") or r.config.get("prompt_version")
+        ):
             raise ValueError(
                 f"freeze: {path} was judged with prompt_version "
                 f"{r.config.get('prompt_version')!r}, the family's instrument is "

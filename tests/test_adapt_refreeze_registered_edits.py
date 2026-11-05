@@ -99,32 +99,49 @@ def test_upgrade_rebuilds_originals_from_todays_registered_item(tmp_model):
     assert row["item"][nl.SOURCE_KEY] == nl.source_sha(reg)
     assert not nl.unbuilt("multilingual", row["item"], reg, ["en"])
     json.dumps(row)  # serializable
+    shipped = nl.overlay_native_units("multilingual", copy.deepcopy(reg), row["item"])
+    assert shipped[nl.SOURCE_KEY] == nl.source_sha(reg)  # the shipped item carries the record
 
 
 def test_note_refill_block_keeps_a_short_originals_only_family_partial(tmp_model):
     """Plan 0072 D6: user_modeling / multihop refill only by profiling the new registered items;
-    `note refill=` records that block and a re-freeze keeps the short family `partial`."""
+    `note refill=` records that block and a re-freeze keeps the short family `partial`. Every
+    family with a refill driver refuses a hand block (it would pass the strict freeze guard)."""
     m4b = "qwen3.5-4b"  # freeze needs a registered subject
-    _h, items = original_bank("association")
+    _h, items = original_bank("multihop")
     gate = {"pass": True, "rate": 1.0, "legs": {}}
-    store.record_gates(m4b, "association", [{"id": store.item_id(it), "origin": "original",
-                                               "item": copy.deepcopy(it), "gate": gate}
-                                              for it in items[:3]])  # fmt: skip
-    run.freeze(m4b, ["association"])
-    rep = json.loads((tmp_model.parent / m4b / "report.json").read_text())["families"][
-        "association"
-    ]
+    store.record_gates(m4b, "multihop", [{"id": store.item_id(it), "origin": "original",
+                                          "item": copy.deepcopy(it), "gate": gate}
+                                         for it in items[:3]])  # fmt: skip
+    run.freeze(m4b, ["multihop"])
+    rep = json.loads((tmp_model.parent / m4b / "report.json").read_text())["families"]["multihop"]
     assert rep["status"] == "untried"
     with pytest.raises(SystemExit, match="route"):
-        run.note(m4b, "association", refill={"stop": "x"})
+        run.note(m4b, "multihop", refill={"stop": "x"})
     block = {"route": "profile registered", "stop": "pool exhausted (no authoring route)"}
-    run.note(m4b, "association", status="partial", refill=block)
-    run.freeze(m4b, ["association"])
-    rep = json.loads((tmp_model.parent / m4b / "report.json").read_text())["families"][
-        "association"
-    ]
+    for fam in ("buggy_code", "multihop_mt", "association", "typo_mt", "knowledge_cutoff"):
+        with pytest.raises(SystemExit, match="no refill driver"):
+            run.note(m4b, fam, refill=block)
+    run.note(m4b, "multihop", status="partial", refill=block)
+    run.freeze(m4b, ["multihop"], strict=True)
+    rep = json.loads((tmp_model.parent / m4b / "report.json").read_text())["families"]["multihop"]
     assert rep["status"] == "partial" and rep["refill"] == block
-    assert "stop: pool exhausted" in rep["change"]
+    assert (
+        rep["change"] == "refill via profile registered; stop: pool exhausted (no authoring route)"
+    )
+
+
+def test_carry_matches_a_relabelled_bridge_by_gold():
+    reg = _reg(
+        "multihop_mt", lambda it: len([b for b in it["mc"].values() if isinstance(b, dict)]) > 1
+    )
+    roles = [r for r, b in reg["mc"].items() if isinstance(b, dict)]
+    sub = copy.deepcopy(reg)
+    a, b = roles[0], roles[1]
+    sub["mc"][a], sub["mc"][b] = copy.deepcopy(reg["mc"][b]), copy.deepcopy(reg["mc"][a])
+    sub["mc"][a]["distractors"] = ["stale"]  # the registered b block, relabelled as a, stale list
+    assert run.carry_registered_mc(sub, reg) == 1
+    assert sub["mc"][a] == reg["mc"][b] and sub["mc"][b] == reg["mc"][a]
 
 
 def test_floor_readouts_keep_a_former_key_file(tmp_path, monkeypatch):

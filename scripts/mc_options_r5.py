@@ -294,8 +294,17 @@ def start_bank(cfg: Cfg) -> Path:
     (and, after a drop, the read plan it keeps) added to its header, written to the work dir."""
     if ADAPTED is not None:  # the adapted set's bank, copied into the work dir (never evals/)
         path = fdir(cfg) / "start_bank.json"
+        src = Path(ADAPTED["bank"])
+        sha = hashlib.sha256(src.read_bytes()).hexdigest()
+        stamp = fdir(cfg) / "start_bank.sha256"
+        if path.exists() and stamp.exists() and stamp.read_text().strip() != sha:
+            raise SystemExit(
+                f"{cfg.name}: {src} changed since this work dir copied it (a re-freeze?); "
+                "start a fresh --out"
+            )
         if not path.exists():
-            dump(path, load(Path(ADAPTED["bank"])))
+            dump(path, load(src))
+            stamp.write_text(sha + "\n", encoding="utf-8")
         return path
     if not cfg.edit:
         return REPO / cfg.bank
@@ -1117,6 +1126,8 @@ def cmd_measure(cfg: Cfg, a: argparse.Namespace) -> int:
         seed = Path(a.baseline_dir) / cfg.name / "cells.jsonl"
     else:
         seed = fdir(cfg) / f"lucky_r{a.round - 1}" / "cells.jsonl"
+    if a.final and ADAPTED is not None:
+        raise SystemExit("measure --final: registered-bank only (adapted mode measures --round)")
     if a.final:  # the frozen bank (after the drops), seeded from round ``r``'s cache
         bank, tag = REPO / cfg.new, "final"
         seed = fdir(cfg) / f"lucky_r{a.round}" / "cells.jsonl"

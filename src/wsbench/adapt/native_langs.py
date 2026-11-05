@@ -742,4 +742,6 @@ def overlay_native_units(family: str, item: dict, row_item: dict) -> dict:
     for k in NATIVE_KEYS:
         if k in item and k in row_item:
             item[k] = copy.deepcopy(row_item[k])
+    if SOURCE_KEY in row_item:  # plan 0072: the shipped item says which registered item it is from
+        item[SOURCE_KEY] = row_item[SOURCE_KEY]
     return item

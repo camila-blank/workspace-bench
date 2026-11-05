@@ -49,9 +49,20 @@ def r5(tmp_path, monkeypatch, real_families):
     monkeypatch.setattr(mod, "dump", spy)
     mod.written = written
     mod.configure_adapted(SET, tmp_path / "out", "glm-5.3")
+    before = _evals_status()
     yield mod
     evals = (REPO / "evals").resolve()
     assert all(evals not in p.parents for p in written), written
+    assert _evals_status() == before  # nothing under evals/ changed, whatever the write path
+
+
+def _evals_status() -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "evals/"],
+        cwd=REPO, capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
 
 
 def _items(r5):
@@ -156,3 +167,15 @@ def test_cli_refuses_writing_stages_in_adapted_mode(tmp_path, monkeypatch, capsy
     with pytest.raises(SystemExit) as e:
         mod.main()
     assert e.value.code == 2
+
+
+def test_start_bank_refuses_a_changed_source(r5, tmp_path):
+    cfg = r5.CFGS["multihop_mt"]
+    r5.start_bank(cfg)
+    src = tmp_path / "set.json"
+    src.write_text(SET.read_text())
+    r5.ADAPTED["bank"] = str(src)
+    r5.start_bank(cfg)  # same bytes: fine
+    src.write_text(SET.read_text().replace("mh2-", "mh2-x-", 1))
+    with pytest.raises(SystemExit, match="changed since"):
+        r5.start_bank(cfg)

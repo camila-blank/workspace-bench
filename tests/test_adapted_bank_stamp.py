@@ -115,3 +115,31 @@ def test_summary_floor_is_drawn_beside_a_restamped_row(real_families):
     assert po.summary_floor_matches(adapted_floor, re_stamped)  # a floor of the re-stamped rows
     bare = {**cfg, "prompt_version": re_stamped["prompt_version"]}
     assert not po.summary_floor_matches(entry, bare)
+
+
+def test_floor_freeze_accepts_a_restamped_run_dir(tmp_path, monkeypatch, real_families):
+    """A stale adapted set's prompt-only run (re-stamped +bank-v3) still freezes: the check reads
+    the registered stamp, and the floor's instrument is the row's own re-stamped one."""
+    from test_po_floors_r3 import _result, _spv
+
+    from wsbench.baselines import prompt_only as po
+    from wsbench.results import write_results
+
+    spv = _spv("association")
+    r = _result("association", spv, layers=[44])
+    r.config["registered_prompt_version"] = spv
+    r.config["prompt_version"] = spv.replace("+bank-v5", "+bank-v3")
+    run = tmp_path / "run"
+    write_results(run / "association", r)
+    dst = tmp_path / "floors" / "prompt_only_summary.json"
+    dst.parent.mkdir()
+    po.freeze(run, dst)
+    got = json.loads(dst.read_text())["association"]
+    assert got["instrument"] == r.config["prompt_version"]
+    assert po.summary_floor_matches(got, r.config)
+    r.config.pop("registered_prompt_version")  # a bare re-stamp is refused as before
+    write_results(run / "association", r)
+    import pytest
+
+    with pytest.raises(ValueError, match="re-judge first"):
+        po.freeze(run, dst)

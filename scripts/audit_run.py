@@ -74,9 +74,11 @@ def audit_family(fam_dir: Path) -> dict[str, Any]:
             problems.append(f"sampling_source={cfg.get('sampling_source')!r}")
     if spec is not None and cfg.get("aggregate") == "summary":
         want = reads.stamp(digest.prompt_version(spec.judge.prompt_version, _probe(cfg)), mode)
-        if not str(cfg.get("prompt_version", "")).startswith(spec.judge.prompt_version):
+        # an adapted set's re-stamped row (plan 0072 0.2): audit its registered stamp
+        got_pv = cfg.get("registered_prompt_version") or cfg.get("prompt_version", "")
+        if not str(got_pv).startswith(spec.judge.prompt_version):
             problems.append(f"prompt_version {cfg.get('prompt_version')!r} != registry")
-        elif cfg.get("prompt_version") != want:
+        elif got_pv != want:
             problems.append(f"prompt_version {cfg.get('prompt_version')!r} != {want!r}")
     if mode == "lite":
         want_rule = reads.lite_rule_of(reads.specs(family))
