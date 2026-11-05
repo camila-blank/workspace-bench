@@ -105,6 +105,10 @@ def test_topics_labels_adapted_only_lists(r5, monkeypatch):
     seen = {}
 
     def fake(tasks, schema, cache_path, **kw):
+        # the schema llm.stream_json takes: a named schema block (wsbench.llm.schema_block)
+        from wsbench.llm import schema_block
+
+        assert schema == schema_block("r5_topic", {"topic": {"type": "string"}}, ["topic"])
         seen.update(tasks)
         return {k: {"topic": "a famous person"} for k in tasks}
 
