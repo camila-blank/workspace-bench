@@ -301,3 +301,29 @@ def test_freeze_refuses_a_run_without_the_current_cut(tmp_path):
     cfg.write_text(json.dumps({"protocol": pof.PO_OPUS, "families": {}}))
     with pytest.raises(ValueError, match="prompt_cut"):
         pof.freeze(tmp_path / "run", tmp_path / "dst.json", source=cfg)
+
+
+@pytest.mark.parametrize("stamp", [None, po.PROMPT_CUT])
+def test_freeze_refuses_the_legacy_sonnet5_fallback_run(tmp_path, stamp):
+    """Re-review of #350: re-freezing the 2026-10-31 Sonnet 5 fallback run would restore the
+    reply-holding jailbreak / introspection floors; it is refused stamped or not."""
+    from wsbench.baselines import prompt_only as pof
+
+    (tmp_path / "run" / "association").mkdir(parents=True)
+    (tmp_path / "run" / "association" / "results.json").write_text("{}")
+    cfg = {"protocol": pof.PO_FALLBACK_SONNET5, "families": {}}
+    if stamp:
+        cfg["prompt_cut"] = stamp
+    (tmp_path / "cfg.json").write_text(json.dumps(cfg))
+    with pytest.raises(ValueError, match="frozen history"):
+        pof.freeze(tmp_path / "run", tmp_path / "dst.json", source=tmp_path / "cfg.json")
+
+
+def test_freeze_requires_the_cut_on_any_po_opus_protocol(tmp_path):
+    from wsbench.baselines import prompt_only as pof
+
+    (tmp_path / "run" / "association").mkdir(parents=True)
+    (tmp_path / "run" / "association" / "results.json").write_text("{}")
+    (tmp_path / "cfg.json").write_text(json.dumps({"protocol": "po-opus-v1+other", "families": {}}))
+    with pytest.raises(ValueError, match="prompt_cut"):
+        pof.freeze(tmp_path / "run", tmp_path / "dst.json", source=tmp_path / "cfg.json")

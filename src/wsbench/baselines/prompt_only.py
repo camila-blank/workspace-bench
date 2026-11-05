@@ -139,7 +139,12 @@ def _require_cut(source: Path | None) -> None:
     if source is None:
         return
     cfg = json.loads(Path(source).read_text(encoding="utf-8"))
-    if cfg.get("protocol") not in (PO_OPUS, PO_FALLBACK):
+    protocol = str(cfg.get("protocol") or "")
+    if protocol == PO_FALLBACK_SONNET5:
+        # the 2026-10-31 Sonnet 5 fallback run is frozen history (its jailbreak / introspection
+        # inputs held reply text): never written again, whatever its config says
+        raise ValueError(f"freeze: {source} is a {PO_FALLBACK_SONNET5} run: frozen history only")
+    if not protocol.startswith(PO_OPUS):  # every po-opus-v1* run needs the current cut
         return
     from wsbench.baselines.prompt_only_opus import PROMPT_CUT
 
@@ -166,8 +171,8 @@ def freeze(
     the checks above; summary results go to ``FROZEN_SUMMARY`` (``dst`` overrides either), each
     entry also recording ``aggregate``, ``summarizer`` (:func:`summarizer_key`) and its
     ``instrument`` = the summary ``prompt_version`` as run. A ``run_dir`` mixing modes is
-    refused. Plan 0070: an Opus run (``po-opus-v1`` or its Sonnet 5.5 fallback) whose
-    ``source`` lacks the current ``prompt_cut`` is refused before anything is read."""
+    refused. Plan 0070: a ``po-opus-v1*`` run whose ``source`` lacks the current ``prompt_cut``,
+    or any legacy Sonnet 5 fallback run, is refused before anything is read."""
     _require_cut(source)
     versions = instrument_versions()
     frozen: dict[str, Any] = {}

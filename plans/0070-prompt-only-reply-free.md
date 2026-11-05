@@ -60,9 +60,10 @@ cut, so its floor stays valid as frozen.
    Answers are keyed by `prompt_sha` of the exact question (`reader_prompt`), as
    `adapt.poetry._latest` does: an answer to an older prompt is never a cache hit in `ask` /
    `fallback_ask` and never served by `write_readouts` / `primary` / `write_fallback_readouts`.
-   `run_config.json` of both readout stages records `prompt_cut`; `freeze` refuses a
-   `po-opus-v1` / Sonnet 5.5 fallback run config without the current stamp (before reading
-   anything) and copies it onto each frozen entry. The pre-existing test fixtures that
+   `run_config.json` of both readout stages records `prompt_cut`; `freeze` refuses any
+   `po-opus-v1*` run config without the current stamp, and the legacy
+   `po-opus-v1+sonnet5-fallback` run outright (its 2026-10-31 inputs held reply text; before
+   reading anything) and copies it onto each frozen entry. The pre-existing test fixtures that
    hand-write prompt rows, answers and run configs gain the stamp / `prompt_sha` (sanctioned
    here: the guards are new; no assertion changes).
 3b. **Adapted poetry gate** (`adapt.poetry.read_prefix`): a `chat_prefill` item's po-opus-v1
