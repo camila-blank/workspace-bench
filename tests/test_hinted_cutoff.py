@@ -78,9 +78,10 @@ def test_registered_bank_and_stamp(monkeypatch):
     assert bank_path("hinted_cutoff") == BANK_V1
 
 
-def test_build_reproduces_both_banks(tmp_path):
-    """plan 0074: the builder is a pure transform; rebuilding v1 from its own fields is
-    byte-identical in content (checked via the committed bank's items)."""
+def test_build_reproduces_v1_bank(tmp_path):
+    """plan 0074: the builder is a pure transform; rebuilding v1 from its own fields gives the
+    committed bank's header and items (the v2 branch needs the gw files; checked by rebuilding
+    items_v2.json from them, plan §3)."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
