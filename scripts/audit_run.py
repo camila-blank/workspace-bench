@@ -135,7 +135,8 @@ def _instrument_matches(family: str, cfg: dict[str, Any]) -> tuple[str, str]:
         if e is None:
             ati = "none"
         else:
-            ati = "ok" if e.get("instrument") == pv else f"re-gate ({e.get('instrument')} != {pv})"
+            ok = e.get("instrument") in (pv, cfg.get("registered_prompt_version"))  # plan 0072 0.2
+            ati = "ok" if ok else f"re-gate ({e.get('instrument')} != {pv})"
     return floor, ati
 
 

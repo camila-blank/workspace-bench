@@ -143,3 +143,24 @@ def test_floor_freeze_accepts_a_restamped_run_dir(tmp_path, monkeypatch, real_fa
 
     with pytest.raises(ValueError, match="re-judge first"):
         po.freeze(run, dst)
+
+
+def test_native_floor_freeze_roundtrips_a_restamped_row(tmp_path, real_families):
+    """A native prompt-only floor frozen from a re-stamped adapted row stores the registered stamp
+    (what the native loader compares), so `floors()` reads it back."""
+    from test_po_floors_r3 import _result
+
+    from wsbench.baselines import prompt_only as po
+    from wsbench.results import write_results
+
+    pv = registry.FAMILIES["association"].judge.prompt_version
+    r = _result("association", pv, layers=[44])
+    r.config.pop("aggregate", None)
+    r.config["registered_prompt_version"] = pv
+    r.config["prompt_version"] = pv.replace("+bank-v5", "+bank-v3")
+    run = tmp_path / "run"
+    write_results(run / "association", r)
+    dst = tmp_path / "prompt_only.json"
+    po.freeze(run, dst)
+    assert json.loads(dst.read_text())["association"]["instrument"] == pv
+    assert "association" in po.floors(dst)

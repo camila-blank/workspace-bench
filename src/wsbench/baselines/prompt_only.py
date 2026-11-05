@@ -225,7 +225,15 @@ def freeze(
             },
             "judge_model": r.config.get("judge_model"),
             # plan 0032 §2.11.7: one floor serves full and lite rows (and every layer config)
-            "instrument": _strip_reads(str(r.config.get("prompt_version") or "")),
+            # a native floor is read back against the family's (registered) stamp, so a re-stamped
+            # adapted row (plan 0072 0.2) stores its registered one; a summary floor keeps the row's
+            "instrument": _strip_reads(
+                str(
+                    (None if summary else r.config.get("registered_prompt_version"))
+                    or r.config.get("prompt_version")
+                    or ""
+                )
+            ),
             "layers_judged": r.config.get("layers_judged") or r.config.get("layers"),
             "complete": r.complete,
             **({"aggregate": "summary", "summarizer": summarizer_key(r.config)} if summary else {}),

@@ -729,7 +729,7 @@ def plan_rows_under(root: Path, family: str) -> list[dict] | None:
     from wsbench.registry import BANK_FILE_ENV_PREFIX, BANK_ROOT_ENV
 
     if not any((root / f"{k}.json").exists() for k in lookup_names(family)):
-        return None
+        return None  # incl. a manifest-dir family (jlens_concept_pr): never a lineage (fail-closed)
     from wsbench.nyt import NO_NYT_ENV
 
     cleared = (readplan.LAYERS_ENV, readplan.NO_NOCOT_ENV, NO_NYT_ENV)  # the judge's plan sees none
@@ -1034,8 +1034,8 @@ def freeze(
         if notes:
             entry["freeze_notes"] = notes
         # a refill recorded by hand (`note refill=`, plan 0072 D6) counts as tried, too
-        tried = any(r["origin"] != "original" for r in rows) or bool(
-            (rf.refill_block(entry) or {}).get("route")
+        tried = any(r["origin"] != "original" for r in rows) or (
+            family in NOTE_REFILL_FAMILIES and bool((rf.refill_block(entry) or {}).get("route"))
         )
         n_have, n_target = len(items), target
         if family == rf.BUGGY:  # the headline is pair-scored: status and guard count pairs

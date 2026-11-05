@@ -1058,7 +1058,8 @@ def cmd_patches(cfg: Cfg, a: argparse.Namespace) -> int:
         if it["id"] not in keep or it.get("mc") == by[it["id"]].get("mc"):
             continue
         mc_block = json.loads(json.dumps(it["mc"]))
-        recs[it["id"]] = {
+        # keyed by the gate log's id (the raw name, `store.item_id`), not load_bank's label
+        recs[str(it.get("name") or it["id"])] = {
             "set": {"mc": mc_block},
             "note": f"{VERSION} adapted r{a.round}: adapted-only list rebuilt (plan 0072 Phase 3)",
         }
