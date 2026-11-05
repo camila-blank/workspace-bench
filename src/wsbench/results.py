@@ -281,8 +281,9 @@ NO_SHARED_BRACKET = frozenset({"hinted_cutoff"})
 
 
 def shared_floor_text(r: FamilyResult, entry: Mapping[str, Any] | None, text: str) -> str:
-    """A prompt-only floor cell with the floor re-taken on the ids decided by BOTH the row and
-    the floor (the frozen entry's ``decided``), and the row's own rate on them."""
+    """A summary floor cell (prompt-only or logit lens) with the floor re-taken on the ids
+    decided by BOTH the row and the floor (the frozen entry's ``decided``), and the row's own
+    rate on them."""
     if r.family in NO_SHARED_BRACKET:
         return text
     if not entry or not isinstance(entry.get("decided"), dict):
