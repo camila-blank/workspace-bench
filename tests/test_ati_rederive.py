@@ -128,3 +128,13 @@ def test_check_flags_a_differing_file(tmp_path):
     assert m.main(["--frozen", str(p), "--check"]) == 1
     assert m.main(["--frozen", str(p)]) == 0
     assert m.main(["--frozen", str(p), "--check"]) == 0
+
+
+def test_non_panel_entries_pass_through_unchanged():
+    """A construction-gated or plan-0014 entry is not re-derived and does not block --check."""
+    mod = _script()
+    construction = {"answerer": "construction", "gate": "c", "ids": ["x"], "n_ati": 1}
+    legacy = {"answerer": "claude-opus-5-5", "ids": ["y"], "n_ati": 1}
+    out = mod.rederive(_file(fam=_entry(TOY), built=construction, old=legacy))
+    assert out["built"] == construction and out["old"] == legacy
+    assert out["fam"]["gate"] == ti.GATE_VERSION

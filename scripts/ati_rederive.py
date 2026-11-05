@@ -18,7 +18,12 @@ SOURCE_GATES = ("panel-v1", ti.GATE_VERSION)
 
 
 def _entries(data: dict[str, Any]) -> list[str]:
-    return [f for f, e in data.items() if not f.startswith("_") and isinstance(e, dict)]
+    """The panel entries; a construction-gated or plan-0014 entry is passed through unchanged."""
+    return [
+        f
+        for f, e in data.items()
+        if not f.startswith("_") and isinstance(e, dict) and e.get("gate") in SOURCE_GATES
+    ]
 
 
 def _width(entry: dict[str, Any]) -> int:
@@ -66,14 +71,12 @@ def precheck(data: dict[str, Any]) -> None:
 
 def rederive(data: dict[str, Any]) -> dict[str, Any]:
     """The file re-derived under ``ti.panel_verdict`` (idempotent on a re-derived file)."""
-    if any(data[f].get("gate") not in SOURCE_GATES for f in _entries(data)):
-        odd = {f: data[f].get("gate") for f in _entries(data)}
-        raise SystemExit(f"only panel entries can be re-derived: {odd}")
     precheck(data)
     out: dict[str, Any] = {}
+    panel = set(_entries(data))
     not_gated = dict(data.get("_not_gated", {}))
     for fam, e in data.items():
-        if fam.startswith("_") or not isinstance(e, dict):
+        if fam not in panel:  # metadata, or a construction / plan-0014 entry: kept as is
             out[fam] = copy.deepcopy(e)
             continue
         new = _derive(fam, e, ti.panel_verdict)

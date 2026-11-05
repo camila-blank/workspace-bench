@@ -436,9 +436,10 @@ def macro(
             excluded.append({"family": r.family, "reason": f"stale ATI gate ({stale})"})
         elif (
             r.config.get("scope") == ATI_SCOPE
-            and r.extras.get("ati_n_ids", r.n_items) < ATI_MACRO_MIN_ITEMS
+            and min(r.extras.get("ati_n_ids", r.n_items), r.n_items) < ATI_MACRO_MIN_ITEMS
         ):
-            # plan 0071 §1a: count the gated ATI ids, not judged rows (jailbreak scores controls)
+            # plan 0071 §1a: count the gated ATI ids, not judged rows (jailbreak scores controls),
+            # and never more than the row judged (a limit= smoke run stays out)
             excluded.append({"family": r.family, "reason": f"n<{ATI_MACRO_MIN_ITEMS} (ATI)"})
         else:
             included.append(r)

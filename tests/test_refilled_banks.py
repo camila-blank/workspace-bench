@@ -72,7 +72,7 @@ def test_refill_bookkeeping(family):
     assert not live & retired and added <= live
     assert len(retired) == len(added) == b["refill_panel_gate"]["n_retired"]
     assert all(
-        it.get("refill", {}).get("gate") == "panel-v1" for it in b["items"] if _key(it) in added
+        it.get("refill", {}).get("gate") in ti.PANEL_GATES for it in b["items"] if _key(it) in added
     )
 
 
