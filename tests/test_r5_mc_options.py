@@ -16,18 +16,20 @@ REPO = Path(__file__).resolve().parents[1]
 # family -> (the bank it supersedes, the new bank, its version)
 BANKS = {
     "basic_readout_mt": ("items_v4.json", "items_v6.json", 6),
+    "multihop_mt_v2": ("items_v4.json", "items_v6.json", 6),
 }
 # the plan_sha of each family's read plan before the rebuild: options are never rendered, and a
 # dropped item's plan row stays (``read_plan_bank``), so every earlier readout file serves
 PLAN_SHA = {
     "basic_readout_mt": "4c8f2cc057e6",
+    "multihop_mt_v2": "1d5f2e2fa84b",
 }
 
 
 # the rebuild started from a small edit of the bank it supersedes that the series folded into the
 # new bank instead of keeping a file of its own: the header key of the new bank recording the edit
 # (scripts/mc_options_r5.py's ``start_bank`` re-applies it the same way)
-FOLDED = {"basic_readout_mt": "v5"}
+FOLDED = {"basic_readout_mt": "v5", "multihop_mt_v2": "v5"}
 
 
 def _raw(family: str, name: str) -> dict:
@@ -161,7 +163,9 @@ def test_registered_and_read_plan_unchanged(family, real_families):
     assert reads.plan_sha(family).startswith(PLAN_SHA[family])
 
 
-# the rebuild's own record (the header's r5_mc.floors, every measurement up to the freeze)
+# the rebuild's own record (the header's r5_mc.floors, every measurement up to the freeze):
+# multihop_mt_v2 met the standard on the kept items' repair-round draws, but its topic guesser
+# fails it on fresh draws over the frozen bank (evals/baselines/README.md, "Option rebuild r5")
 NOT_MET: set[str] = set()
 
 
@@ -169,19 +173,25 @@ NOT_MET: set[str] = set()
 def test_recorded_floors_and_standard(family):
     """The bank's own record of its last measurement (the frozen floors are measured on fresh
     draws in evals/baselines/lucky_guessing.json): fresh draws over the bank where measured, else
-    the kept items' rates in the last round's draws; every guesser <= chance + 5 points."""
+    the kept items' rates in the last round's draws; every guesser <= chance + 5 points. The
+    header's standard_met is that verdict unless the frozen floors fail."""
     r5 = _raw(family, BANKS[family][1])["r5_mc"]
     fl = r5["floors"]
     base = fl.get("kept_estimate") or fl[max(k for k in fl if k.startswith("round"))]
     last = {v: (fl.get("fresh") or {}).get(v, base[v]) for v in ("blind", "described", "topic")}
     met = all(x <= base.get("chance", fl["chance"]) + 0.05 + 1e-9 for x in last.values())
-    assert met is r5["standard_met"] is (family not in NOT_MET), (family, last)
+    assert met is (family not in NOT_MET), (family, last)
+    # the header's verdict also follows the frozen floors (fresh draws over the whole bank): a bank
+    # its own record passes but those floors fail says standard_met false, with a note
+    assert r5["standard_met"] is (met and not FROZEN_FAILS[family]), family
+    assert ("standard_met_note" in r5) is (met and bool(FROZEN_FAILS[family])), family
 
 
 # the frozen floors (evals/baselines/lucky_guessing.json), every guesser measured on the new bank:
 # the standard verdicts on record
 FROZEN_FAILS: dict[str, set[str]] = {
     "basic_readout_mt": set(),
+    "multihop_mt_v2": {"topic"},
 }
 
 
@@ -201,7 +211,9 @@ def test_frozen_floors_are_on_the_new_bank(family, real_families):
 def test_call_keys_survive_the_bank_stamps(real_families):
     """A bank stamp moves the result stamp only: the MC calls stay keyed as before (the options
     are in the fingerprinted prompt, so a rebuilt list is re-asked and every other one is not)."""
+    from wsbench.evals.multihop_mt_v2.prompts import MH2_CALL_VERSION, MH2_PROMPT_VERSION
     from wsbench.multitoken.family import call_pv
     from wsbench.multitoken.prompts import BRMT_CALL_VERSION, BRMT_PROMPT_VERSION
 
     assert call_pv("basic_readout_mt", BRMT_PROMPT_VERSION) == BRMT_CALL_VERSION
+    assert call_pv("multihop_mt_v2", MH2_PROMPT_VERSION) == MH2_CALL_VERSION
