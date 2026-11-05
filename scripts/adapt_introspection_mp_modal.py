@@ -4,8 +4,10 @@ recorded plan of ``measure``, batched execution with the registered steer) on a 
 sharded over containers; ``finish`` merges the shards and replays them into the ``.npz`` that
 ``stage=measure result=`` ingests.
 
-Subjects: ``glm-5.3`` (the vendored ``Glm53Text`` of global-workspace ``scripts/glm53_aff``, all
-78 blocks + head, H200:8). The subject is fixed at import (Modal builds decorators then): pass
+Subjects (plan 0067 §3): ``glm-5.3`` (the vendored ``Glm53Text`` of global-workspace
+``scripts/glm53_aff``, 78 blocks + head, H200:8), ``deepseek-v4-pro`` / ``muse-spark-open`` /
+``kimi-k3`` (the xaff readers of global-workspace PR #723 at full depth, ``WSB_GW_XAFF``; H200:8,
+H200:8, B300:8). The subject is fixed at import (Modal builds decorators then): pass
 ``--subject`` on the ``modal run`` line (or ``WSB_MP_SUBJECT``).
 
     export WSB_GW=/path/to/global-workspace     # a checkout with scripts/glm53_aff
@@ -494,8 +496,13 @@ elif SUBJECT == "kimi-k3":
 
         cfg = json.loads((Path(MODEL_DIR) / "config.json").read_text())
         tc = cfg.get("text_config", cfg)
+        idx = json.loads((Path(MODEL_DIR) / "model.safetensors.index.json").read_text())
+        head = "language_model.lm_head.weight" in idx["weight_map"]
+        if not head or tc.get("tie_word_embeddings"):
+            raise SystemExit("kimi-k3: no untied language_model.lm_head.weight in the checkpoint")
         return {k: tc.get(k) for k in ("num_hidden_layers", "hidden_size", "tie_word_embeddings",
-                                       "use_attn_residuals", "attn_res_block_size")}  # fmt: skip
+                                       "use_attn_residuals", "attn_res_block_size")} | {
+            "lm_head_in_checkpoint": head}  # fmt: skip
 
 
 app = modal.App(f"adapt-introspection-mp-{SUBJECT}")
@@ -507,7 +514,8 @@ def _engine(n_shards: int, stack: Any, budget: int) -> dict[str, Any]:
 
     return {**stack.record, "gpu": torch.cuda.get_device_name(0),
             "n_gpus": torch.cuda.device_count(), "deterministic": DETERMINISTIC,
-            "token_budget": budget, "n_shards": n_shards}  # fmt: skip
+            "token_budget": budget, "hidden_budget": HIDDEN_BUDGET,
+            "n_shards": n_shards}  # fmt: skip
 
 
 FN: dict[str, Any] = {
@@ -651,8 +659,8 @@ def calib(job: dict, extra_stops: list[int]) -> bytes:
     pre = list(range(max(0, span[0] - 8), span[0]))
     sel = [(0, p) for p in pre + span]
     s = stack._steer([pr["ids"]], [st(raw[w0], 4.0, span)])
-    h0 = stack._forward(ids, None, layer, sel).float().cpu()
-    h1 = stack._forward(ids, s, layer, sel).float().cpu()
+    h0 = stack._forward(ids, None, layer, sel).float().cpu().reshape(len(sel), -1)
+    h1 = stack._forward(ids, s, layer, sel).float().cpu().reshape(len(sel), -1)
     u = torch.as_tensor(raw[w0] / np.linalg.norm(raw[w0]), dtype=torch.float32)
     k = len(pre)
     want = h0[k:] + 4.0 * h0[k:].norm(dim=-1, keepdim=True) * u
@@ -703,6 +711,7 @@ def diag(job: dict, extra_stops: list[int], layers: list[int], betas: list[float
         h_last = np.stack([hmap[tuple(job["concept_ids"][w])] for w in words])
         span = stack._forward(stack._pad([n["ids"]]), None, layer,
                               [(0, p) for p in n["inject"]]).float().cpu()  # fmt: skip
+        span = span.reshape(len(n["inject"]), -1)
         rec: dict[str, Any] = {
             "vec_norm_median": float(np.median(np.linalg.norm(v, axis=1))),
             "h_last_norm_median": float(np.median(np.linalg.norm(h_last, axis=1))),
@@ -742,7 +751,12 @@ def diag(job: dict, extra_stops: list[int], layers: list[int], betas: list[float
                           "steer": {"layer": reg, "positions": pr["inject"], "beta": beta,
                                     "vec": f"c{i}"}})  # fmt: skip
         packed = ops.execute(stack, c_ops, vecs, budget=BUDGET, log=lambda s: None)
-        alone = ops.execute(stack, c_ops, vecs, budget=1, log=lambda s: None)
+        if HIDDEN_BUDGET == 1:
+            alone = ops.execute(stack, c_ops, vecs, budget=1, log=lambda s: None)
+        else:  # a stack with a large per-forward cost: each op alone, as calib (c)
+            alone = {}
+            for op in c_ops:
+                alone.update(ops.execute(stack, [op], vecs, budget=10**9, log=lambda s: None))
         d = []
         for op in c_ops:
             k = ops.op_key(op)
@@ -773,14 +787,16 @@ def diag_main(job: str, out: str, layers: str = "", betas: str = "0.5,1,1.5,2,3,
 
 @app.function(**FN)
 def numerics(job: dict, extra_stops: list[int]) -> bytes:
-    """GLM batch-composition isolation (plan 0067 §5(c) failed at beta 0): the same 10 protocol
-    continuations scored (1) alone twice, (2) as 8 identical unpadded copies, (3) alone with 5 pad
+    """GLM only. Batch-composition isolation (plan 0067 §5(c) failed at beta 0): the same 10
+    protocol continuations scored (1) alone twice, (2) as 8 identical unpadded copies, (3) alone with 5 pad
     tokens appended, (4) inside a production-size packed micro-batch of other ops' rows; under
     the grouped experts with the indexer bypass (the run's stack), then without the bypass, then
     with the loop experts."""
     import numpy as np
     import torch
 
+    if SUBJECT != "glm-5.3":
+        raise SystemExit("numerics is the GLM isolation (it toggles Glm53Text options)")
     stack = make_stack(extra_stops)
     gm = stack.gm
     from global_workspace.glm53_aff import runtime

@@ -526,6 +526,10 @@ class TorchStack:
         return [int(t) for t in logits.float().argmax(dim=-1).cpu().tolist()]
 
 
+class _ReadDone(Exception):  # noqa: N818 (a control-flow signal, not an error)
+    """Raised by :class:`HookStack`'s read hook to stop the forward after the read block."""
+
+
 class HookStack(TorchStack):
     """:class:`TorchStack` over an HF causal LM: the steer is a forward hook on decoder block
     ``layer`` (the block's output tensor, or element 0 of its output tuple), the read a hook on
@@ -563,7 +567,9 @@ class HookStack(TorchStack):
 
             def read_hook(_m: Any, _i: Any, out: Any) -> None:
                 h = self._h(out)
-                store["h"] = h[bi.to(h.device), pi.to(h.device)].float()
+                # flat per position ([N, 4, 7168] -> [N, 28672] on V4: the steer's space)
+                store["h"] = h[bi.to(h.device), pi.to(h.device)].float().reshape(len(select), -1)
+                raise _ReadDone  # nothing past block layer_out is needed
 
             handles.append(self.blocks[layer_out].register_forward_hook(read_hook))
         try:
@@ -572,8 +578,9 @@ class HookStack(TorchStack):
                 x = ids.to(dev)
                 # the decoder stack, then the head on the selected positions only (a full
                 # [B, S, V] logits tensor does not fit a production micro-batch)
-                h = self.model.model(input_ids=x, use_cache=False).last_hidden_state
-                if layer_out is not None:
+                try:
+                    h = self.model.model(input_ids=x, use_cache=False).last_hidden_state
+                except _ReadDone:
                     return store["h"]
                 bi = torch.tensor([b for b, _ in select], device=h.device)
                 pi = torch.tensor([p for _, p in select], device=h.device)

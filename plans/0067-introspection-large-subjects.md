@@ -185,8 +185,10 @@ Muse) records the mode only in `adapt.residual` and `calibration.engine`.
 phase). The CPU preflight passed on all three.
 - **V4-Pro.** `HookStack` over the full-depth `load_native` model, with `patch_reader`
   (`native_linear=False`). The hooks sit on `model.model.layers[L]`, whose output is the raw
-  `[B,S,4,7168]` state. Logits come from the model's own forward (`logits_to_keep`,
-  `use_cache=False`; V4's stateless single-shot mode). The pad id is the config's pad or eos.
+  `[B,S,4,7168]` state, read flat (28,672). Logits are the output embedding applied to
+  `model.model`'s final-normed last hidden state at the selected positions only (full-vocab
+  logits OOM'd V4), `use_cache=False` (V4's stateless single-shot mode); a read stops the
+  forward after its block. The pad id is the config's pad or eos.
 - **Muse.** `load_truncated(…, 62)` builds every block plus the final norm, and `lm_head.weight`
   is read from the checkpoint. The layer step is `MuseReader`'s. Logits are the stock
   `MuseSparkForConditionalGeneration` ones, `T·tanh(lm_head(norm(h))·m/T)` with T = 20 and
@@ -201,7 +203,8 @@ phase). The CPU preflight passed on all three.
   neutral prompts).
 - **Token budget per subject.** Every V4, Muse and Kimi forward dequantizes its experts, so it
   carries a large fixed cost. GLM uses 16k tokens per micro-batch with vectors one row per
-  forward. V4 and Kimi use 64k and Muse 128k (the xaff reader's size). Their vectors are packed
+  forward. V4 uses 32k (64k left GPU 0 without room), Kimi 64k and Muse 128k (the xaff
+  reader's size). Their vectors are packed
   under the same budget; the packing depends only on the request lengths, never on the
   sharding. For those three, calib (c)'s "alone" leg runs each op in its own micro-batch
   instead of each row alone.
