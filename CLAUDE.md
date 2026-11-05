@@ -144,10 +144,15 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `text_inversion` builds the anti-text-inversion subset (`evals/baselines/anti_text_inversion.json`,
   plan 0019 panel gate, which replaced plan 0014's Opus-only gate): Qwen3.6-27B + the frontier
   group (Claude slot opus/sonnet, `openai/gpt-6-astra`, `google/gemini-4-argon`) x 3 draws, each
-  judged by the family's scorer; ATI iff Qwen failed OR every frontier reader failed
-  (`panel_verdict`). Layout: `answers/<answerer>/draw{d}`, `readouts/<answerer>/draw{d}`,
-  `judged/<answerer>/draw{d}`; the flat plan-0014 layout is still gated by the old rule
-  (`_gate_legacy`). `anti_text_inversion=True` sets each family's `items` to it with
+  judged by the family's scorer; ATI iff EVERY panel reader failed every draw (`panel_verdict`,
+  plan 0071's all-fail rule, gate `panel-v2`; the plan-0019 min rule, Qwen failed OR every
+  frontier reader failed, is `panel_verdict_min`, history only). `PANEL_GATES` (`panel-v1`,
+  `panel-v2`) is what keeps the `bank_sha` guard; the frozen file is re-derived from stored
+  statuses by `scripts/ati_rederive.py` (`--check` must pass). The macro gates an ATI row on its
+  gated ids (`extras.ati_n_ids`, < 20 -> out) and excludes a row whose `extras.ati_gate` is not
+  `GATE_VERSION` (`stale ATI gate`). Layout: `answers/<answerer>/draw{d}`, `readouts/<answerer>/draw{d}`,
+  `judged/<answerer>/draw{d}`; the flat plan-0014 layout is still gated by its own old rule
+  (`_gate_legacy`, unchanged by plan 0071). `anti_text_inversion=True` sets each family's `items` to it with
   `JudgeArgs.scope`, which `is_subset` ignores; ungated / empty families are skipped
   (`NotInScope`, exit 0), a stale (instrument or, on panel entries, `bank_sha`) or missing entry
   fails (exit 2). API `reasoning_extraction` refusals are recorded once and never retried or
@@ -283,7 +288,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   (`WSB_BANK_FILE_MORAL_RATIONALE=evals/moral_rationale/items.json`) = legacy `ec-v3.1` (ec-v3
   with a tool-free system opening). Reads:
   full = every render position (`min_full_positions=6`), lite = the last five. Its ATI entry was
-  re-gated under ec-v5c on 2026-10-31 (R1-ATI, full panel: 152/195), re-stamped ec-v5d in round 3 (native scoring unchanged). Round 3: ec-v5d (summary support from a locator call, `judge.located_support`); opt-in bank v4 (`items_v4.json`, 53 gate-passing items, `ec-v6`, `scripts/moral_adversarial.py`).
+  re-gated under ec-v5c on 2026-10-31 (R1-ATI, full panel: 152/195; panel-v1; panel-v2: 83), re-stamped ec-v5d in round 3 (native scoring unchanged). Round 3: ec-v5d (summary support from a locator call, `judge.located_support`); opt-in bank v4 (`items_v4.json`, 53 gate-passing items, `ec-v6`, `scripts/moral_adversarial.py`).
 - association (plan 0039) left the bank judge: bank v2 `evals/association/items_v2.json` (93
   items; v1 `items.json` byte-identical, read only by `tests/test_basic_association.py`'s
   test-only `bank_family` registration), its own `judge.py` (8-way MC + cannot tell; gate:
@@ -293,7 +298,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   proposer from the gold alone, lint + entailment check, 5-draw scene screen). Its ATI entry was
   re-gated on 2026-10-31 (R1-ATI) on the reduced panel, qwen+opus then qwen+opus+astra (R1-ATI
   rev, astra via OpenAI WIF; argon missing): 25/93, PROVISIONAL; then on the full panel (R1-ATI
-  gemini, 2026-11-01, argon via Gemini WIF) at bank v3: 26/93.
+  gemini, 2026-11-01, argon via Gemini WIF) at bank v3: 26/93 (panel-v1; panel-v2: 0).
 - buggy_code (plan 0030) is pair-scored on the bank's symmetric `twin` field: headline
   `pair_rate` since 2026-10-30 (metric `pass_rate`, in the macro, `chance` 0.0;
   `specific_pair_rate`, the grade-≥8 bar, in extras; instrument

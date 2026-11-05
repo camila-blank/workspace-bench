@@ -42,7 +42,7 @@ def _panel_families() -> list[str]:
     return sorted(
         f
         for f, e in FROZEN.items()
-        if not f.startswith("_") and isinstance(e, dict) and e.get("gate") == ti.GATE_VERSION
+        if not f.startswith("_") and isinstance(e, dict) and e.get("gate") in ti.PANEL_GATES
     )
 
 

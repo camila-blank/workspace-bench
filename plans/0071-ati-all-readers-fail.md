@@ -209,6 +209,14 @@ Frozen-file tests:
   is unchanged (the instrument check still raises "re-gate" first).
 - `tests/test_ati_fingerprint.py:45`: filter -> `in ti.PANEL_GATES`.
 
+Found while implementing (sanctioned, review 2026-11-05):
+- `tests/test_text_inversion.py` `_fr` (the macro tests' row builder): ATI-scoped rows carry
+  `extras.ati_gate = GATE_VERSION` (§1b would otherwise mark them stale); assertions unchanged.
+- `tests/test_ati_panel.py::test_crafted_slot_refusal_stops`: it passed under the min rule only
+  through the unverified share (opus's refusal rows never registered: `latest_answers` preferred
+  `_standard`'s clean opus answers); the fixture now writes the other readers all-fail and opus
+  ONLY with the refusal rows, so the refused-share stop fires; assertion unchanged.
+
 New tests: `tests/test_ati_rederive.py` (committed file == re-derivation via `--check`; toy entry
 covering ati / invertible / unverified, an exclusion, the unverified > 20% move, the CRAFTED stop,
 the min-rule pre-check failure on a hand-edited entry); the 1a macro test; the 1b stale-gate test;

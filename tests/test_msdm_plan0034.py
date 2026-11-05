@@ -45,7 +45,7 @@ def test_both_old_names_resolve_and_ati_entry_valid():
     assert spec.title == "Model-specific directed modulation" and spec.group == "model_specific"
     assert NAME in ti.CRAFTED
     entry = ti.subset_entry(NAME)
-    assert len(entry["ids"]) == 98 and entry["bank_sha"] == ti.bank_fingerprint(NAME)
+    assert len(entry["ids"]) == 25 and entry["bank_sha"] == ti.bank_fingerprint(NAME)
     assert ti.subset_entry("directed_modulation_obscure") == entry
     # step 1 of the restamp: under the OLD name the fingerprint is the frozen pre-rename value
     sys.path.insert(0, str(REPO / "scripts"))

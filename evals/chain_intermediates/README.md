@@ -208,7 +208,8 @@ like a lite file"), and a v1 file (25 positions from " What") is refused by its 
   anti-text-inversion gate field (`STRICTER_PASS_FIELD`); `per_layer_hit_rate`, `layer_protocols`,
   `committed_rate` and `kinds` are diagnostics.
 - `prompt_version`: `chain-free-2026-10-30` (the ATI gate's instrument,
-  `text_inversion.gate_instrument`). The retired `cells=` key: `cells=last` exits 2 ("use
+  `text_inversion.gate_instrument`). ATI: 36 survivors under panel-v1; panel-v2 (plan 0071, 2026-11-05: every panel reader must fail):
+  0, so the family has no ATI subset (skipped under the flag). The retired `cells=` key: `cells=last` exits 2 ("use
   reads=lite (final token) or reads=full (every read position)"); `cells=all` is accepted as a
   spelling of `reads=full`.
 
