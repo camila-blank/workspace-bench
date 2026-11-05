@@ -229,13 +229,16 @@ def sample_end_prefix(
     options: Mapping[str, Sequence[str]],
     *,
     near: bool = False,
+    skip: Callable[[str], bool] | None = None,
 ) -> tuple[str, list[str]] | None:
     """A quote cut by the end of its sample (see "A quote cut mid-name"): when the quote is the
     last words of prose line ``ln`` (nothing but whitespace or markdown follows), its trailing
     words (the longest run of its last words, the last one maybe cut mid-word, that begins a
     listed form; folded as ``mc.form_in`` compares) begin forms of exactly one option of
     ``options`` (option -> its listed forms): that option and the forms it begins. ``None`` when
-    the quote does not end its sample, no form starts that way, or several options' forms do."""
+    the quote does not end its sample, no form starts that way, or several options' forms do.
+    ``skip(trailing)`` true: that run of trailing words is not read as a cut name (multihop: the
+    run is the item's final answer or a prefix of it, issue #366)."""
     if ln.pieces is not None:
         return None
     plain = _plain(ln.text)
@@ -252,6 +255,8 @@ def sample_end_prefix(
             if not qs <= s < qe:
                 continue
             t = key(plain[s:qe])
+            if skip is not None and skip(plain[s:qe]):
+                continue
             hits = {
                 o: [f for f, k in fs if len(k) > len(t) and k.startswith(t)]
                 for o, fs in folded.items()

@@ -151,8 +151,8 @@ def test_side_tables_cover_v5_and_leave_earlier_entries():
 
 def test_stamp_and_call_key():
     pv = prompt_version_of("multihop")
-    assert pv == "bank-mc-2026-11-01-v3+bank-gate-r10+bank-v5"
-    assert mj.GATE_VERSION == "bank-gate-r10"
+    assert pv == "bank-mc-2026-11-01-v3+bank-gate-r11+bank-v5"
+    assert mj.GATE_VERSION == "bank-gate-r11"
     assert mj.call_pv("multihop", pv) == "bank-mc-2026-11-01-v3"  # cached calls stay valid
 
 
