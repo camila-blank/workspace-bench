@@ -537,7 +537,15 @@ def _src(tmp_path: Path, name: str, prompts: list[dict], answers: list[dict]) ->
 
 
 def _p(fam: str, i: str) -> dict:
-    return {"family": fam, "id": i, "prefix": "P", "token": "?", "pos": 3, "n_tokens": 4}
+    return {
+        "family": fam,
+        "id": i,
+        "prefix": "P",
+        "token": "?",
+        "pos": 3,
+        "n_tokens": 4,
+        "prompt_cut": poo.PROMPT_CUT,
+    }
 
 
 def _a(fam: str, i: str, text: str = "x", refused: bool = False, answerer: str = poo.MODEL) -> dict:
