@@ -42,11 +42,13 @@ def test_carry_registered_mc_same_gold_only():
     if len(roles) > 1:  # the subject's own gold on another role: its block is kept
         stale["mc"][roles[1]]["gold"] = "Subject Gold"
         stale["mc"][roles[1]]["distractors"] = ["S1", "S2"]
-    n = run.carry_registered_mc(stale, reg)
+    if len(roles) > 1:  # a subject-changed sibling gold: nothing is carried for the item
+        assert run.carry_registered_mc(stale, reg) == 0
+        assert stale["mc"][roles[0]]["distractors"] == ["Old A", "Old B", "Old C", "Old D"]
+        stale["mc"][roles[1]] = copy.deepcopy(reg["mc"][roles[1]])
+    n = run.carry_registered_mc(stale, reg)  # every gold kept: the stale list is replaced
     assert n == 1
     assert stale["mc"][roles[0]] == reg["mc"][roles[0]]
-    if len(roles) > 1:
-        assert stale["mc"][roles[1]]["gold"] == "Subject Gold"
     assert run.carry_registered_mc(stale, reg) == 0  # idempotent
     assert run.carry_registered_mc({"mc": None}, reg) == 0
 

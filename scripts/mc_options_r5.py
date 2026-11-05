@@ -875,7 +875,12 @@ def measure(
 
     variants = tuple(variants or VARIANTS)
     out.mkdir(parents=True, exist_ok=True)
-    if seed is not None and seed.exists() and not (out / "cells.jsonl").exists():
+    # adapted mode may start without a seed cache; the registered rebuild still requires its seed
+    if (
+        seed is not None
+        and (seed.exists() or ADAPTED is None)
+        and not (out / "cells.jsonl").exists()
+    ):
         shutil.copy(seed, out / "cells.jsonl")
     patch_bank(cfg, bank)
     patch_guessers(cfg)
