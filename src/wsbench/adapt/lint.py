@@ -108,6 +108,12 @@ def _single_token(family: str, it: dict) -> list[str]:
             out.append("format: multihop prompt must start with 'Fact:'")
         if target and latent and fold(target[0]) in {fold(x) for x in latent}:
             out.append("latent: bridge equals target")
+        from . import families as _fams  # the gate refuses a multihop item with no bridge leg
+
+        if not _fams._bridge_asks(it) and str(it.get("id") or it.get("name")) not in (
+            _fams._skipped_bridges()
+        ):
+            out.append("format: multihop item has no bridge question (the bridge leg is required)")
     if family == "typo":
         last = (words(prompt) or [""])[-1]
         if not latent or fold(last) == fold(latent[0]):
