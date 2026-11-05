@@ -966,7 +966,9 @@ def freeze(
             if (patch := patches.get(r["id"])) is not None:  # audited fixes, recorded with a note
                 it.update(copy.deepcopy(patch.get("set", {})))
                 it.setdefault("adapt", {})["patch"] = patch.get("note", "")
-            ad = it.setdefault("adapt", {"origin": r["origin"]})
+            ad = it.setdefault("adapt", {})
+            # a patch above may have created `adapt` already (its note): never lose the origin
+            ad.setdefault("origin", r["origin"])
             ad["gate"] = {k: r["gate"][k] for k in ("rate", "pass")}
             items.append(it)
         notes = _post_freeze(family, header, items, subject.n_layers, subject.read_band)
