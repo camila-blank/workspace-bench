@@ -211,7 +211,8 @@ phase). The CPU preflight passed on all three.
 - **Kimi-K3 runs its KDA layers in fla's `fused_recurrent` mode.** With the remote code's default
   `chunk` mode, a β4 steer on the span moved the logits at the position just before it (same
   64-token chunk) by 5.6. In `fused_recurrent` mode the identical test gives exactly 0.0. That is
-  real future-token leakage in the chunk kernel path, not numerics. Kimi is batch-invariant, so
+  real future-token leakage in the chunk kernel path, not numerics: in chunk mode a rerun of the
+  same row is exactly 0.0, so 5.6 is not run-to-run noise. Kimi is batch-invariant, so
   calib (d) gates the full-depth check exactly for Kimi (`GATE_FULL_DEPTH`), and `engine` records
   `kda_mode`. The first Kimi calibration and the stopped full run used chunk mode; neither is
   shipped. The `causal` entrypoint reruns the check: full row vs truncated row, and steered vs
