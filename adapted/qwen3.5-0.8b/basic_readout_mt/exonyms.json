@@ -863,11 +863,6 @@
   "basic-au-t1-w103c0-brh-ent-photoelectric-1905": {},
   "basic-au-t1-w103c0-brh-ent-udhr-1948": {},
   "basic-au-t1-w103c1-brh-ent-alamein-1942": {},
-  "basic-au-t1-w103c1-brh-ent-ammonium-nitrate-beirut": {},
-  "basic-au-t1-w103c1-brh-ent-celiac-gluten": {},
-  "basic-au-t1-w103c1-brh-ent-fleming-penicillin": {},
-  "basic-au-t1-w103c1-brh-ent-hypochlorite-bleach": {},
-  "basic-au-t1-w103c1-brh-ent-ideal-gas-pvnrt": {},
   "basic-au-t1-w103c1-brh-ent-joseon-korea": {
    "readout": {
     "ru": [
@@ -875,8 +870,6 @@
     ]
    }
   },
-  "basic-au-t1-w103c1-brh-ent-meiji-1868": {},
-  "basic-au-t1-w103c1-brh-ent-olympus-zeus": {},
   "basic-au-t2-w0c0-brh-ent-relativity": {
    "readout": {
     "ru": [
