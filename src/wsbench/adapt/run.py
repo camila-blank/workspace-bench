@@ -1121,7 +1121,11 @@ def _regrade_asks(family: str, row: dict) -> dict | None:
     return asks
 
 
-def _regrade_row(family: str, row: dict, grade, legs_only: frozenset[str] | None = None) -> dict:
+def _regrade_row(
+    family: str, row: dict, grade, legs_only: frozenset[str] | None = None
+) -> dict | None:
+    """The row re-graded from its stored texts; with ``legs_only``, None when the row has none of
+    those legs (nothing to re-grade, nothing to record)."""
     from .gate import Leg, _leg_dict, gate_record, grade_leg, merge_legs
 
     fam = fams.get(family)
@@ -1143,8 +1147,10 @@ def _regrade_row(family: str, row: dict, grade, legs_only: frozenset[str] | None
         if fam.finalize is not None or row["gate"].get("moral") is not None:
             raise ValueError(f"{family}: legs= cannot re-derive a finalized / moral record")
         if not legs:  # the row has none of the named legs: nothing to re-grade
-            return row
+            return None
         rec = merge_legs(row["gate"], {k: _leg_dict(v) for k, v in legs.items()})
+        if (missing := sorted(set(asks) - set(rec["legs"]))) and family == "buggy_code":
+            rec = {**rec, "pass": False, "missing_legs": missing}  # as below: regate it
         return dict(row, gate=rec, selected=rec["pass"],
                     item=restamp(family, row["item"], rec))  # fmt: skip
     rec = gate_record(legs)
@@ -1184,9 +1190,16 @@ def regrade(model: str, families: list[str], llm: str, workers: int = 16,
             rows = [r for r in rows if r["id"] not in set(stale)]
         only = frozenset(legs) if legs else None
         if only is not None:
+            emitted = {a.leg for r in rows for a in fams.get(family).asks(r["item"])}
+            if unknown := sorted(only - emitted):
+                raise SystemExit(
+                    f"regrade: {family} has no leg {unknown} (legs: {sorted(emitted)})"
+                )
             rows = [r for r in rows if only & set(r["gate"].get("legs") or {})]
         with ThreadPoolExecutor(workers) as pool:
-            new = list(pool.map(partial(_regrade_row, family, grade=grade, legs_only=only), rows))
+            got = pool.map(partial(_regrade_row, family, grade=grade, legs_only=only), rows)
+            pairs = [(r, n) for r, n in zip(rows, got, strict=True) if n is not None]
+        rows, new = [r for r, _n in pairs], [n for _r, n in pairs]
         for r in new:
             r["graded_by"] = llm
         store.record_gates(model, family, new)
