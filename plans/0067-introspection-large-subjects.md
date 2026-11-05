@@ -208,6 +208,14 @@ phase). The CPU preflight passed on all three.
   rows share: the same class of noise as GLM's batch composition. V4-Pro still runs with a
   fresh `DynamicCache` per forward, which is the code path of xaff's validated loop. It is
   equivalent to the cache-less path in transformers 5.17; the image's 5.11 is unverified.
+- **Kimi-K3 runs its KDA layers in fla's `fused_recurrent` mode.** With the remote code's default
+  `chunk` mode, a β4 steer on the span moved the logits at the position just before it (same
+  64-token chunk) by 5.6. In `fused_recurrent` mode the identical test gives exactly 0.0. That is
+  real future-token leakage in the chunk kernel path, not numerics. Kimi is batch-invariant, so
+  calib (d) gates the full-depth check exactly for Kimi (`GATE_FULL_DEPTH`), and `engine` records
+  `kda_mode`. The first Kimi calibration and the stopped full run used chunk mode; neither is
+  shipped. The `causal` entrypoint reruns the check: full row vs truncated row, and steered vs
+  unsteered before the span.
 - **Token budget per subject.** Every V4, Muse and Kimi forward dequantizes its experts, so it
   carries a large fixed cost. GLM uses 16k tokens per micro-batch with vectors one row per
   forward. V4 uses 32k (64k left GPU 0 without room), Kimi 64k and Muse 128k (the xaff
