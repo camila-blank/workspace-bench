@@ -250,7 +250,14 @@ elif SUBJECT == "deepseek-v4-pro":
         cfg = json.loads((Path(MODEL_DIR) / "config.json").read_text())
         pad = cfg.get("pad_token_id") or cfg.get("eos_token_id")
         pad = int(pad[0] if isinstance(pad, list) else pad)
-        stack = HookStack(model, model.model.layers, stops, pad)
+        from transformers.cache_utils import DynamicCache
+
+        # a fresh cache per forward, as xaff's HfV4Flash loop: the cache-less single-shot path
+        # was not causal (calib (d) 2026-11-05)
+        def fresh_cache() -> dict[str, Any]:
+            return {"use_cache": True, "past_key_values": DynamicCache(config=model.config)}
+
+        stack = HookStack(model, model.model.layers, stops, pad, forward_kwargs=fresh_cache)
         f = f"{_APP}/xaff/backends/v4pro.py"
         stack.record = {
             "stack": "xaff V4-Pro native reader (load_native + patch_reader(native_linear=False))"
@@ -261,7 +268,7 @@ elif SUBJECT == "deepseek-v4-pro":
             "loader_sha256": {f: _sha256(f), f.replace("v4pro", "v4flash"):
                               _sha256(f.replace("v4pro", "v4flash"))},
             "gw_commit": os.environ.get("WSB_GW_COMMIT", ""),
-            "n_blocks": len(model.model.layers),
+            "n_blocks": len(model.model.layers), "forward": "model.model with a fresh DynamicCache",
         }  # fmt: skip
         return stack
 

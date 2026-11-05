@@ -266,6 +266,9 @@ def test_calib_report_verdicts():
     assert rep2["g0_pass"]  # (b) and (c) are recorded, not gated: g0 = engine checks (a), (d)
     raw["local"]["pre_span_max_abs_diff"] = 1e-3
     assert not ops.calib_report(raw, lambda ids: "x")["g0_pass"]
+    raw["local"]["pre_span_max_abs_diff"] = 0.0
+    raw["local"]["pre_span_logits_max_abs_diff"] = 1.8  # a later steer moved earlier logits
+    assert not ops.calib_report(raw, lambda ids: "x")["g0_pass"]
 
 
 # ---------------------------------------------------------------- torch
