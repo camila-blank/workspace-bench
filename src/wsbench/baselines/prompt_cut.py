@@ -1,5 +1,5 @@
 """The prompt/reply boundary of a rendered read: a prompt-only reader never sees a reply
-(plan 0069). Assistant turns are found in token ids, from markers probed off the subject's
+(plan 0070). Assistant turns are found in token ids, from markers probed off the subject's
 own chat template."""
 
 from dataclasses import dataclass

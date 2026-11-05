@@ -1,4 +1,4 @@
-"""plan 0069: the prompt-only control never reads a reply (``baselines.prompt_cut``)."""
+"""plan 0070: the prompt-only control never reads a reply (``baselines.prompt_cut``)."""
 
 import json
 import sys

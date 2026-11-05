@@ -393,7 +393,7 @@ def _po_opus_entries(frozen: dict[str, Any], cfg: dict[str, Any]) -> None:
             label=f"Opus 5.5 ({n_ref} refused)",
             not_measurable=share > NOT_MEASURABLE_REFUSAL_SHARE,
         )
-        if cfg.get("prompt_cut"):  # plan 0069: the reply-free input revision
+        if cfg.get("prompt_cut"):  # plan 0070: the reply-free input revision
             e["prompt_cut"] = cfg["prompt_cut"]
         ff = (cfg.get("family_framing") or {}).get(fam)
         if ff:  # a per-family reader framing (prompt_only_opus.FAMILY_FRAMING)
