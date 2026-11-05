@@ -921,7 +921,7 @@ def causal(job: dict, extra_stops: list[int]) -> bytes:
         out["modes"][mode] = check()
         early[mode] = logits(ids, [ps[0]])
         print(f"[causal] {mode}: {out['modes'][mode]}", flush=True)
-    if len(early) == 2:  # a causal-but-wrong recurrent path would differ here (no leak yet)
+    if len(early) == 2:  # closeness at bf16 scale (a causal-but-wrong recurrent path differs)
         a, b = early.values()
         out["chunk_vs_recurrent_early_max_abs"] = float((a - b).abs().max())
     return pickle.dumps(out)
