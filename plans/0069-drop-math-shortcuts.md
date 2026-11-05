@@ -1,4 +1,4 @@
-# 0068: drop the math_shortcuts family
+# 0069: drop the math_shortcuts family
 
 Issue #347. Decision: Camila, 2026-11-05: "we are officially dropping the math-shortcuts eval,
 remove it from the repo".
