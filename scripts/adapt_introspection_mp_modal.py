@@ -107,6 +107,8 @@ def _generation(model_dir: str, extra_stops: list[int] | None) -> tuple[list[int
     return stops, check_generation_config(gen)
 
 
+GATE_FULL_DEPTH = False  # calib (d) at full depth: recorded only, except a batch-invariant stack
+
 if SUBJECT == "glm-5.3":
     if modal.is_local() and str(GW / "scripts/glm53_aff") not in sys.path:
         sys.path.insert(0, str(GW / "scripts/glm53_aff"))
@@ -408,6 +410,10 @@ elif SUBJECT == "kimi-k3":
     EPHEMERAL_DISK_MB = 524_288  # 1.56 TB: read in place from the volume
     GPU = ["B300:8"]  # the only type that holds it
     BUDGET = HIDDEN_BUDGET = 65536  # experts dequantized per call: big micro-batches
+    # fla's chunk KDA leaked later tokens into earlier positions (a beta-4 steer on the span moved
+    # the position before it by 5.6); fused_recurrent is token-sequential and exactly causal
+    KDA_MODE = "fused_recurrent"
+    GATE_FULL_DEPTH = True  # batch-invariant: the full-depth causality check must be exact
     GW_COMMIT = (_git_commit(XAFF, ["src/global_workspace/xaff/backends",
                                     "src/global_workspace/native_quant_jlens"])
                  if modal.is_local() else "")  # fmt: skip
@@ -484,7 +490,12 @@ elif SUBJECT == "kimi-k3":
                     x = text.norm(mixed[bi.to(last), pi.to(last)])
                     return model.lm_head(x.to(head_dev))
 
+        from wsbench.adapt.introspection_ops import set_kda_mode
+
+        n_kda = set_kda_mode(model, KDA_MODE)  # chunk mode is not causal (plan 0067)
+        assert n_kda > 0, "no KimiDeltaAttention layer found: the KDA mode switch would be a no-op"
         stack = KimiStack(stops, kx.PAD_ID)
+        stack.model = model
         f = f"{_APP}/xaff/backends/kimik3.py"
         g = f"{_APP}/native_quant_jlens/backends.py"
         stack.record = {
@@ -492,6 +503,7 @@ elif SUBJECT == "kimi-k3":
             "code's output AttnRes / norm / lm_head; steer into prefix_sum at full_sum's norm",
             "subject_revision": f"moonshotai/Kimi-K3@{REVISION}",
             "residual": "attnres_full_sum", "stop_ids": stops,
+            "kda_mode": KDA_MODE, "n_kda_layers": n_kda,
             "generation_config_check": gen_check,
             "loader_sha256": {f: _sha256(f), g: _sha256(g)},
             "gw_commit": os.environ.get("WSB_GW_COMMIT", ""),
@@ -857,6 +869,72 @@ def numerics_main(job: str, out: str, subject: str = SUBJECT) -> None:
     print(f"wrote {out}")
 
 
+@app.function(**FN)
+def causal(job: dict, extra_stops: list[int]) -> bytes:
+    """Causality check of the stack: unsteered logits at positions p of the protocol row from the
+    full row vs from the row truncated after p (one row per forward), and the steered (beta 4)
+    vs unsteered logits at the last pre-span position. Kimi-K3: once with KDA in fla's chunk
+    mode (the default) and once in its token-sequential fused_recurrent mode (length-invariant)."""
+    import numpy as np
+    import torch
+
+    from wsbench.adapt import introspection_ops as ops
+
+    stack = make_stack(extra_stops)
+    pr = job["protocol"]
+    ids = list(pr["ids"])
+    span = list(pr["inject"])
+    ps = sorted({4, span[0] // 2, span[0] - 1, span[-1], len(ids) - 1})
+    layer = int(job["inject_layer"])
+    hid = ops.compute_hidden(stack, ops.vector_requests(job), layer, budget=HIDDEN_BUDGET)
+    hmap = ops.hidden_map(job, hid)
+    w0 = pr["paper_words"][0]
+    vec = hmap[tuple(job["concept_ids"][w0])] - np.mean(
+        [hmap[tuple(i)] for i in job["baseline_ids"]], axis=0
+    )
+    st = {"layer": layer, "positions": span, "beta": 4.0, "vector": vec}
+
+    def logits(row: list[int], sel: list[int], steer: Any = None) -> Any:
+        s = None if steer is None else stack._steer([row], [steer])
+        return stack._forward(stack._pad([row]), s, None, [(0, p) for p in sel]).float().cpu()
+
+    def check() -> dict[str, Any]:
+        full = logits(ids, ps)
+        trunc = torch.stack([logits(ids[: p + 1], [p])[0] for p in ps])
+        same = logits(ids, ps)
+        pre = [span[0] - 1]
+        steer_d = (logits(ids, pre, st) - logits(ids, pre)).abs().max()
+        return {"full_vs_truncated_max_abs": [float(x) for x in (full - trunc).abs().amax(-1)],
+                "rerun_max_abs": float((full - same).abs().max()),
+                "steered_pre_span_max_abs": float(steer_d)}  # fmt: skip
+
+    out: dict[str, Any] = {"positions": ps, "span": [span[0], span[-1]], "modes": {}}
+    early: dict[str, Any] = {}
+    modes = ["default"]
+    if SUBJECT == "kimi-k3":
+        modes = ["chunk", "fused_recurrent"]
+    for mode in modes:
+        if SUBJECT == "kimi-k3":
+            from wsbench.adapt.introspection_ops import set_kda_mode
+
+            set_kda_mode(stack.model, mode)
+        out["modes"][mode] = check()
+        early[mode] = logits(ids, [ps[0]])
+        print(f"[causal] {mode}: {out['modes'][mode]}", flush=True)
+    if len(early) == 2:  # closeness at bf16 scale (a causal-but-wrong recurrent path differs)
+        a, b = early.values()
+        out["chunk_vs_recurrent_early_max_abs"] = float((a - b).abs().max())
+    return pickle.dumps(out)
+
+
+@app.local_entrypoint()
+def causal_main(job: str, out: str, subject: str = SUBJECT) -> None:
+    assert subject == SUBJECT
+    j = json.loads(Path(job).read_text(encoding="utf-8"))
+    Path(out).write_bytes(causal.remote(j, reply_end_ids(j["model"])))
+    print(f"wrote {out}")
+
+
 @app.local_entrypoint()
 def calib_main(job: str, out: str, subject: str = SUBJECT) -> None:
     assert subject == SUBJECT
@@ -973,7 +1051,7 @@ def main() -> None:
         if raw.get("job_sha") != job.get("job_sha"):
             raise SystemExit(f"{a.calib} was measured on job {raw.get('job_sha')}, not "
                              f"{job.get('job_sha')}")  # fmt: skip
-        rep = calib_report(raw, _decoder(job["model"]))
+        rep = calib_report(raw, _decoder(job["model"]), gate_full_depth=GATE_FULL_DEPTH)
         rep["job_sha"], rep["engine"] = raw["job_sha"], raw.get("engine")
         text = json.dumps(rep, indent=1, ensure_ascii=False)
         (Path(a.out) if a.out else Path(a.calib).with_suffix(".json")).write_text(text)
