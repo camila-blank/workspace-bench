@@ -136,7 +136,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   and `prompt_only`; `wsbench freeze` stamps entries with the family's
   `prompt_version`, and `report` shows a floor only while the stamp matches. Prompt-only ids
   Opus 5.5 refuses are re-asked on Sonnet 5.5 (`po-opus-v1+sonnet55-fallback`, 2026-11-01); the
-  committed floors carry the frozen Sonnet 5 protocol (`po.PO_FALLBACK_SONNET5`), still read and
+  committed floors (all but plan 0070's six) carry the frozen Sonnet 5 protocol (`po.PO_FALLBACK_SONNET5`), still read and
   labelled (`po.PO_FALLBACKS`), never written; `prompt_only_opus.fallback_rows` ignores answers
   of any other fallback model in a resumed dir. A summary floor matches a row regardless of the
   digest's client-side refusal model (`po._floor_match_key` keeps only the fallback mode), so the
