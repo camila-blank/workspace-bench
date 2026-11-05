@@ -145,14 +145,22 @@ def generate(model: str) -> None:
     planned: dict[str, set[str]] = {}
     for fam in families(model):
         specs = readplan.plan(fam)
-        planned[fam] = {spec.id for spec in specs}
+        have: dict[str, set[tuple[int, int]]] = {}
         if missing_only:
+            planned[fam] = {spec.id for spec in specs}
             stored[fam] = _stored(d, fam)
-            have = {r.get("id") for r in stored[fam]}
-            specs = [spec for spec in specs if spec.id not in have]
+            for row in stored[fam]:
+                have.setdefault(row.get("id"), set()).add((int(row["pos"]), int(row["layer"])))
         for spec in specs:
             r = render(spec, tok)
             pos = subsample(readplan.resolve(spec.positions, r.tokens), registered_pos(spec))
+            if spec.id in have:  # missing-only: a kept id must hold exactly today's cells
+                want = {(int(p), int(spec.layers[0])) for p in set(pos)}
+                if have[spec.id] != want:
+                    raise SystemExit(f"floors {fam}: stored rows of {spec.id} do not match its "
+                                     f"plan today (positions or layer moved): regenerate the "
+                                     f"family without ADAPT_FLOORS_MISSING_ONLY")  # fmt: skip
+                continue
             for p in sorted(set(pos)):
                 # a negative offset (all_from_end) is the same token: -1 is the last, never ids[:0]
                 end = p + 1 if p >= 0 else len(r.ids) + p + 1
