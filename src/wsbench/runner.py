@@ -137,6 +137,7 @@ def judge_family(
     if ati is not None:
         result.config["scope"] = scope
         result.extras["ati_n_bank"] = ati["n_bank"]
+        result.extras["ati_n_ids"] = len(ati["ids"])  # the macro's ATI count (plan 0071 §1a)
         result.extras["ati_judge_model"] = ati.get("judge_model")
         result.extras["ati_gate"] = ati.get("gate", "plan-0014")
         if ati.get("provisional"):  # a reduced-panel gate (decision R1-ATI): say which readers

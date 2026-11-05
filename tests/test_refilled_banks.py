@@ -48,7 +48,8 @@ def test_crafted_family_is_whole_bank_ati_on_the_current_bank(family, frozen):
             ti.subset(family)
         return
     assert e["n_bank"] == len(scored) == N0[family]
-    assert e["n_ati"] == N0[family] and sorted(e["ids"]) == sorted(scored)
+    # panel-v2 (plan 0071, all-fail rule): a crafted family is no longer whole-bank ATI
+    assert set(e["ids"]) <= set(scored) and e["n_ati"] == len(e["ids"])
     assert e["bank_sha"] == ti.bank_fingerprint(family)
     if e["instrument"] != ti.gate_instrument(family):
         # plan 0032 bumped this family's instrument (basic bank-2026-10-30, introspection
@@ -71,7 +72,7 @@ def test_refill_bookkeeping(family):
     assert not live & retired and added <= live
     assert len(retired) == len(added) == b["refill_panel_gate"]["n_retired"]
     assert all(
-        it.get("refill", {}).get("gate") == "panel-v1" for it in b["items"] if _key(it) in added
+        it.get("refill", {}).get("gate") in ti.PANEL_GATES for it in b["items"] if _key(it) in added
     )
 
 
