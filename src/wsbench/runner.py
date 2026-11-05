@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -129,6 +130,7 @@ def judge_family(
     )
     result = spec.run(jargs)
     finalize_reads(jargs, result)
+    stamp_adapted_bank(spec.name, result)
     if opts.get("aggregate") == "summary" and result.config.get("aggregate") != "summary":
         if spec.name not in digest.NATIVE_ONLY:
             fail(f"{spec.name}: aggregate=summary but the family ran native (not hooked)")
@@ -153,6 +155,53 @@ def judge_family(
         f"-> {path}"
     )
     return result
+
+
+STAMP_KEYS = ("prompt_version", "instrument_of_record")
+
+
+def _header_version(path: Path) -> int | None:
+    """A wrapped bank's header ``version`` (None for a bare list or a header without one)."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    v = raw.get("version") if isinstance(raw, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def adapted_bank_stamp(family: str, pv: str) -> str:
+    """Plan 0072 Phase 0.2: under ``$WSB_BANK_ROOT`` (and no ``WSB_BANK_FILE_<FAMILY>`` pin) a
+    stamp's ``+bank-v<N>`` tag, N being the REGISTERED bank's header version, names the judged
+    adapted bank's header version M instead when M != N, so a stale set is never stamped as a
+    refreshed one. Call keys never change (only the result stamp), a set whose header matches
+    the registered one keeps the stamp byte for byte, and no root = unchanged."""
+    if not os.environ.get(registry.BANK_ROOT_ENV) or "+bank-v" not in pv:
+        return pv
+    fam = registry.canonical(family)
+    names = [fam, *registry.legacy_names(fam)]
+    if any(os.environ.get(registry.BANK_FILE_ENV_PREFIX + n.upper()) for n in names):
+        return pv
+    try:
+        reg = _header_version(registry.frozen_bank_path(fam))
+        got = _header_version(registry.bank_path(fam))
+    except (SystemExit, KeyError, OSError, ValueError):
+        return pv
+    if reg is None or got is None or reg == got:
+        return pv
+    return re.sub(rf"\+bank-v{reg}(?=\+|$)", f"+bank-v{got}", pv, count=1)
+
+
+def stamp_adapted_bank(family: str, result: FamilyResult) -> None:
+    """``adapted_bank_stamp`` on the result's stamps (``STAMP_KEYS`` of ``config``). A rewritten
+    ``prompt_version`` keeps the registered one in ``config.registered_prompt_version``, which
+    ``results.floor_applies`` compares instead (the floor column is unchanged by the rewrite)."""
+    for k in STAMP_KEYS:
+        v = result.config.get(k)
+        if isinstance(v, str) and (new := adapted_bank_stamp(family, v)) != v:
+            if k == "prompt_version":
+                result.config["registered_prompt_version"] = v
+            result.config[k] = new
 
 
 def finalize_reads(args: JudgeArgs, result: FamilyResult) -> None:

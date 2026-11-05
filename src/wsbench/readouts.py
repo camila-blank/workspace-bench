@@ -73,6 +73,8 @@ class LoadReport:
     reader: str = ""
     layers_requested: list[int] | None = None
     lite_rule: str = ""  # reads=lite: the frozen lite rule(s) the selection applied (json)
+    # plan 0072 0.3: an older plan's file accepted through the set's lineage records
+    plan_lineage: dict[str, Any] | None = None
     n_samples_trimmed: int = 0
     n_packed_ambiguous: int = 0
     n_cells_short: int = 0

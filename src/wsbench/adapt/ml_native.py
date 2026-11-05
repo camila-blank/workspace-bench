@@ -51,6 +51,10 @@ MC_ROLES: dict[str, list[str]] = {
 }
 
 
+# subject-side keys of an original's gate row kept over the registered item it is rebuilt from
+ROW_KEEP = ("id", "gate_variant", "needs_reasons", "adapt")
+
+
 class DropError(Exception):
     """The item cannot ship for the subject's native languages (the message is the reason)."""
 
@@ -213,18 +217,29 @@ def upgrade(model: str, families: Sequence[str] | None = None, tok: Any = None) 
     for family in families or nl.FAMILIES:
         if family not in CONTENT_ROLES:
             raise SystemExit(f"native_langs upgrade: {family} has no native units")
-        header, _ = store.original_bank(family)
+        header, originals = store.original_bank(family)
         reg_native = list(header_native(header))
+        reg = {store.item_id(it): it for it in originals}
         gone = (report.get("drops") or {}).get(family, {})
         rows = [r for r in store.gated(model, family).values()
                 if r["id"] not in gone and not r["gate"].get("lint")]  # fmt: skip
         new, dropped = [], {}
         for r in rows:
+            # an original is rebuilt from TODAY's registered item (plan 0072: a registered list
+            # rebuild reaches it), keeping the row's subject-side keys; ``SOURCE_KEY`` records
+            # which registered version, so freeze refuses a stale rebuild (``nl.unbuilt``)
+            src_reg = reg.get(r["id"]) if r["origin"] == "original" else None
+            src = r["item"]
+            if src_reg is not None:
+                src = {**copy.deepcopy(src_reg),
+                       **{k: v for k, v in r["item"].items() if k in ROW_KEEP}}  # fmt: skip
             try:
-                item = rebuild(family, r["item"], native, reg_native, tok)
+                item = rebuild(family, src, native, reg_native, tok)
             except DropError as e:
                 dropped[r["id"]] = f"native_langs {native}: {e}"
                 continue
+            if src_reg is not None:
+                item[nl.SOURCE_KEY] = nl.source_sha(src_reg)
             new.append({**r, "item": item, "at": now,
                         "upgraded_from": {"step": "native_langs", "native_langs": native,
                                           "registered_native_langs": reg_native}})  # fmt: skip
