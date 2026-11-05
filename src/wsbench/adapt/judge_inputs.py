@@ -769,7 +769,7 @@ _add(
         "role_bound_association",
         "evals/role_bound_association/{judge,gate,score}.py",
         "upgrade (judge-code overlay, plan 0060 §3)",
-        "list",
+        "dict",
         "id",
         (
             _ID,
