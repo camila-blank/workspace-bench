@@ -788,10 +788,10 @@ def diag_main(job: str, out: str, layers: str = "", betas: str = "0.5,1,1.5,2,3,
 @app.function(**FN)
 def numerics(job: dict, extra_stops: list[int]) -> bytes:
     """GLM only. Batch-composition isolation (plan 0067 §5(c) failed at beta 0): the same 10
-    protocol continuations scored (1) alone twice, (2) as 8 identical unpadded copies, (3) alone with 5 pad
-    tokens appended, (4) inside a production-size packed micro-batch of other ops' rows; under
-    the grouped experts with the indexer bypass (the run's stack), then without the bypass, then
-    with the loop experts."""
+    protocol continuations scored (1) alone twice, (2) as 8 identical unpadded copies, (3) alone
+    with 5 pad tokens appended, (4) inside a production-size packed micro-batch of other ops'
+    rows; under the grouped experts with the indexer bypass (the run's stack), then without the
+    bypass, then with the loop experts."""
     import numpy as np
     import torch
 
