@@ -135,8 +135,56 @@ def test_earlier_assistant_turn_is_dropped(style):
 
 
 def test_no_template_fails_loudly():
-    with pytest.raises(SystemExit, match="no chat template"):
-        pc.turn_marks(CharTok("qwen", template=False))
+    tok = CharTok("qwen", template=False)
+
+    def raise_(*_a, **_k):
+        raise ValueError(
+            "Cannot use chat template functions because tokenizer.chat_template is not set"
+        )
+
+    tok.apply_chat_template = raise_
+    with pytest.raises(SystemExit, match="apply_chat_template failed"):
+        pc.turn_marks(tok)
+
+
+def test_template_method_without_chat_template_attr_is_probed():
+    """Kimi-K3's remote-code tokenizer has chat_template=None but overrides apply_chat_template."""
+    tok = CharTok("qwen", template=False)
+    m = pc.turn_marks(tok)
+    ids = chat(tok, U, prefill="My one-word answer is:")
+    assert pc.prompt_only_ids(ids, len(ids) - 1, m, tok) == chat(tok, U)
+
+
+def test_control_token_inside_reply_fails_loudly():
+    """A template with no end marker (GLM) puts a later system turn inside the assistant text."""
+    tok = CharTok("glm")
+    m = pc.turn_marks(tok)
+    m = pc.TurnMarks(
+        m.header, m.think, m.end, m.user, frozenset(tok.vocab[s] for s in tok.specials)
+    )
+    msgs = [*U, {"role": "assistant", "content": "Paris."}, {"role": "system", "content": "SYS"},
+            {"role": "user", "content": "And Spain?"}]  # fmt: skip
+    ids = chat(tok, msgs)
+    with pytest.raises(SystemExit, match="ambiguous"):
+        pc.prompt_only_ids(ids, len(ids) - 1, m, tok)
+
+
+def test_orphan_end_marker_moves_out_of_the_user_header():
+    """OLMo / Muse: a default system turn precedes the first user turn, so the naive common
+    suffix put the previous turn's end marker into the user header and left it orphaned."""
+    tok = CharTok("qwen")
+    orig = tok.render
+    tok.render = lambda msgs, gen: "<|im_start|>system\nSYS<|im_end|>\n" + orig(msgs, gen)
+    m = pc.turn_marks(tok)
+    assert tok.decode(m.user) == "<|im_start|>user\n" and tok.decode(m.end) == "<|im_end|>\n"
+    msgs = [
+        *U,
+        {"role": "assistant", "content": "Paris."},
+        {"role": "user", "content": "And Spain?"},
+    ]
+    ids = chat(tok, msgs)
+    text = tok.decode(pc.prompt_only_ids(ids, len(ids) - 1, m, tok))
+    assert "<|im_end|>\n<|im_end|>" not in text and "Paris" not in text
 
 
 def test_template_that_rewrites_history_fails_loudly():
@@ -187,6 +235,19 @@ def test_build_regression_reply_free(tmp_path, monkeypatch):
             n_cut += 1
             assert r["prefix"].endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
     assert n_cut >= 8  # every DM / MCDM row and the implicit basic_readout rows in scope
+    # the reader's question holds no reply text, its quoted token included (review of #350: v1
+    # quoted the read-site token, e.g. the prefilled stem's ':')
+    for r in rows:
+        spec = next(s for s in readplan.plan(r["family"]) if s.id == r["id"])
+        q = po.reader_prompt(r)
+        assert r["token"] == tok.decode(tok.encode(r["prefix"])[-1:])
+        assert f"{r['token']!r}" in q
+        shown = q.split("<prompt>\n")[1].split("\n</prompt>")[0]
+        assert shown == r["prefix"]
+        assert pc.reply_tokens(tok.encode(shown), m, tok) == 0, r["id"]
+        if r["family"] != "association":
+            assert r["token"] == "\n\n" or r["prefix"].endswith(r["token"])
+            assert r["site_token"] != r["token"]  # the cell is still placed at the read site
 
 
 def test_stale_prompts_are_refused(tmp_path):
@@ -195,3 +256,48 @@ def test_stale_prompts_are_refused(tmp_path):
     )
     with pytest.raises(SystemExit, match="rebuild"):
         po.write_readouts(tmp_path)
+
+
+def test_answers_to_an_older_prompt_are_never_served(tmp_path, monkeypatch):
+    """Review of #350: answers are keyed by prompt_sha, so a rebuilt prompts.jsonl (e.g. the old
+    reply-holding cut) never reuses, skips or freezes an answer to the older question."""
+    import asyncio
+    from types import SimpleNamespace
+
+    row = {"family": "moral_rationale", "id": "a", "prefix": "NEW", "token": "W", "pos": 1,
+           "n_tokens": 2, "prompt_cut": po.PROMPT_CUT}  # fmt: skip
+    old = {**row, "prefix": "OLD with reply", "token": ":"}
+    (tmp_path / "prompts.jsonl").write_text(json.dumps(row) + "\n")
+    (tmp_path / "answers").mkdir()
+    stale = {"family": "moral_rationale", "id": "a", "answer": "stale", "error": "",
+             "prompt_sha": po.prompt_shas([old])[("moral_rationale", "a")]}  # fmt: skip
+    (tmp_path / "answers" / "draw0.jsonl").write_text(json.dumps(stale) + "\n")
+    st = po.write_readouts(tmp_path)
+    assert st["moral_rationale"]["failed"] == ["a"]  # the stale answer is not served
+    asked: list[str] = []
+
+    class Msgs:
+        async def create(self, **kw):
+            asked.append(kw["messages"][0]["content"])
+            usage = SimpleNamespace(output_tokens=1, input_tokens=1)
+            text = [SimpleNamespace(type="text", text="fresh")]
+            return SimpleNamespace(content=text, stop_reason="end_turn", usage=usage)
+
+    monkeypatch.setattr(po, "client", lambda: SimpleNamespace(messages=Msgs()))
+    asyncio.run(po._ask(tmp_path, 2, None))
+    assert asked == [po.reader_prompt(row)]  # re-asked on the current question
+    po.write_readouts(tmp_path)
+    cell = json.loads((tmp_path / "readouts/moral_rationale.jsonl").read_text())
+    assert cell["samples"] == ["fresh"]
+
+
+def test_freeze_refuses_a_run_without_the_current_cut(tmp_path):
+    from wsbench.baselines import prompt_only as pof
+
+    run = tmp_path / "run" / "association"
+    run.mkdir(parents=True)
+    (run / "results.json").write_text("{}")
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"protocol": pof.PO_OPUS, "families": {}}))
+    with pytest.raises(ValueError, match="prompt_cut"):
+        pof.freeze(tmp_path / "run", tmp_path / "dst.json", source=cfg)

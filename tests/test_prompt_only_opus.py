@@ -22,6 +22,9 @@ def _prompts(tmp_path, rows):
 
 
 def _answers(out, rows):
+    """Answer rows to the CURRENT prompts (plan 0070: an answer counts only with its prompt_sha)."""
+    shas = poo.prompt_shas(json.loads(x) for x in (out / "prompts.jsonl").read_text().splitlines())
+    rows = [{"prompt_sha": shas[(r["family"], r["id"])], **r} for r in rows]
     (out / "answers").mkdir(exist_ok=True)
     (out / "answers" / "draw0.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
 

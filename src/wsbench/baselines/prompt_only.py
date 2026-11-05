@@ -133,6 +133,23 @@ def default_dst(run_dir: Path) -> Path:
     return FROZEN
 
 
+def _require_cut(source: Path | None) -> None:
+    """An Opus prompt-only run built before the reply-free cut (or under an older cut) never
+    overwrites a floor (plan 0070); rebuild it with ``stage=build`` and re-ask."""
+    if source is None:
+        return
+    cfg = json.loads(Path(source).read_text(encoding="utf-8"))
+    if cfg.get("protocol") not in (PO_OPUS, PO_FALLBACK):
+        return
+    from wsbench.baselines.prompt_only_opus import PROMPT_CUT
+
+    if cfg.get("prompt_cut") != PROMPT_CUT:
+        raise ValueError(
+            f"freeze: {source} has prompt_cut={cfg.get('prompt_cut')!r}, not {PROMPT_CUT!r}: its "
+            "prompt-only input may hold reply text; rebuild and re-ask"
+        )
+
+
 def freeze(
     run_dir: Path,
     dst: Path | None = None,
@@ -149,7 +166,9 @@ def freeze(
     the checks above; summary results go to ``FROZEN_SUMMARY`` (``dst`` overrides either), each
     entry also recording ``aggregate``, ``summarizer`` (:func:`summarizer_key`) and its
     ``instrument`` = the summary ``prompt_version`` as run. A ``run_dir`` mixing modes is
-    refused."""
+    refused. Plan 0070: an Opus run (``po-opus-v1`` or its Sonnet 5.5 fallback) whose
+    ``source`` lacks the current ``prompt_cut`` is refused before anything is read."""
+    _require_cut(source)
     versions = instrument_versions()
     frozen: dict[str, Any] = {}
     paths = sorted(run_dir.glob("*/results.json"))

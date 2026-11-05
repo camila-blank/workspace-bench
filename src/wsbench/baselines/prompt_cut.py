@@ -18,6 +18,7 @@ class TurnMarks:
     think: tuple[int, ...]
     end: tuple[int, ...]
     user: tuple[int, ...]
+    specials: frozenset[int] = frozenset()  # control / added token ids of the tokenizer
 
     @property
     def gen(self) -> tuple[int, ...]:
@@ -51,12 +52,13 @@ def _fail(why: str) -> SystemExit:
 def turn_marks(tok: Any) -> TurnMarks:
     """Probe ``tok``'s chat template (thinking off, as every chat render is built) for its turn
     markers; a template whose renders are not prefixes of each other exits loudly."""
-    if not getattr(tok, "chat_template", None):
-        raise _fail("the tokenizer has no chat template")
     u = [{"role": "user", "content": _PROBE_USER}]
     ua = [*u, {"role": "assistant", "content": _PROBE_REPLY}]
-    p0, pg = _ids(tok, u, False), _ids(tok, u, True)
-    three = _ids(tok, [*ua, {"role": "user", "content": _PROBE_NEXT}], True)
+    try:  # no `chat_template` check: a remote-code tokenizer (Kimi-K3) overrides the method
+        p0, pg = _ids(tok, u, False), _ids(tok, u, True)
+        three = _ids(tok, [*ua, {"role": "user", "content": _PROBE_NEXT}], True)
+    except Exception as exc:
+        raise _fail(f"apply_chat_template failed: {type(exc).__name__}: {exc}"[:300]) from exc
     if pg[: len(p0)] != p0 or three[: len(p0)] != p0:
         raise _fail("the one-turn render is not a prefix of the longer renders")
     gen = pg[len(p0) :]
@@ -86,7 +88,18 @@ def turn_marks(tok: Any) -> TurnMarks:
     if not k:
         raise _fail("the two user turns share no opening tokens")
     user, end = between[len(between) - k :], between[: len(between) - k]
-    return TurnMarks(tuple(header), tuple(think), tuple(end), tuple(user))
+    # the common suffix can reach into the previous turn's closing tokens when the probe's user
+    # turn follows a default system turn (OLMo, Muse): those belong to `end`, not the header
+    close = p0[aq + len(q) :]
+    if close and user[: len(close)] == close and len(user) > len(close):
+        user, end = user[len(close) :], end + close
+    return TurnMarks(tuple(header), tuple(think), tuple(end), tuple(user), _specials(tok))
+
+
+def _specials(tok: Any) -> frozenset[int]:
+    ids = set(getattr(tok, "all_special_ids", None) or [])
+    ids |= {int(i) for i in (getattr(tok, "added_tokens_decoder", None) or {})}
+    return frozenset(ids)
 
 
 @dataclass(frozen=True)
@@ -117,6 +130,13 @@ def assistant_turns(ids: list[int], m: TurnMarks) -> list[Turn]:
         e = _find(ids[:nxt], m.end, c) if m.end else -1
         stop = e if e >= 0 else nxt
         close = (e + len(m.end)) if e >= 0 else nxt
+        if any(t in m.specials for t in ids[c:stop]):
+            # a control token inside reply text means another turn (a system / tool turn under
+            # a template with no end marker) sits there: refuse rather than over- or under-cut
+            raise SystemExit(
+                "prompt_cut: an assistant turn's text holds a control token "
+                f"({ids[c:stop][:12]}...): the turn boundary is ambiguous under this template"
+            )
         out.append(Turn(i, c, stop, max(close, stop)))
         i = _find(ids, m.header, max(c, close))
     return out
