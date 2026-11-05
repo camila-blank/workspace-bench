@@ -329,6 +329,14 @@ for originals mechanically: the drops, the new `mc` lists, and the new header an
   `native_units_src == source_sha(registered item)`. Any other mismatch is a stop-and-report.
 - glm-5.3, BEFORE the freeze: `run all=True dry_run=True` on each arm's readouts against the
   wsb-runs set, so a readout sha that never matched the set is known before any lineage exists.
+- glm-5.3, after, with `WSB_BANK_ROOT` = the REFRESHED set (the tree the freeze wrote, never a
+  checkout's old copy, on which every family would show a vacuous "equal sha"). Expected, and
+  observed in the rehearsal (2026-11-05, all four arms): lineage accepted for association (2
+  drops), basic_readout_mt (9), multilingual_multihop (7), multilingual_typo (10),
+  role_bound_association (6); equal sha for basic_readout, multilingual, multilingual_mt,
+  multihop_mt; buggy_code refused (§2.2) and jlens unjudgeable (no reference lens), as before.
+  Any other outcome is a stop. Every 6b judge and the 6b capture also run against the refreshed
+  set, and 6b checks each result's `config.plan_lineage` (or equal sha) and new stamp.
 - glm-5.3, after: `run all=True dry_run=True` on each arm's readouts (`/root/tmp/wsb-out/glm-lenses`):
   per family, equal sha / lineage accepted / refused, so 0.3 is checked on real data. Any
   Phase-1 family REFUSED on any arm (an added id, a kept row that changed, or readouts whose sha
@@ -402,7 +410,9 @@ lists, which `--bank` mode cannot rebuild, so a set could fail on originals.
 - The topic guesser cannot run on adapted items (topics are keyed by Qwen ids; SKILL §4). Record
   this as a known gap rather than skipping silently. Second known gap: on olmo / muse the
   basic_readout_mt originals' `mc` comes from the native rebuild, and `--bank` mode never
-  rebuilds originals; a leak there is reported, not fixed.
+  rebuilds originals; a leak there is reported, not fixed. Third: multihop_mt originals whose gold the
+  subject changed keep the subject's own `mc` (neither carried nor rebuilt); the whole-bank
+  re-measure still covers them.
 
 ### Phase 4: floors. After Phase 3 on the same set. po-opus-v1 also waits for #350.
 Floor records key multihop_mt under the set's existing key (`multihop_mt_v2`, the file stem the
