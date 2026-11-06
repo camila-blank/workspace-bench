@@ -63,7 +63,8 @@ refill before the new generation is measured. Rule:
   unseen} | None` (None when the newest generation is not the pool read, unpinned or absent; it
   never raises) has the driver's stop rule read
   **(tried, landed) of the newest generation while it has unseen candidates** (`unseen > 0`),
-  with `exhausted=False`. `stop_status`, `n_min` and `y_min` are unchanged, so `ooc` still needs
+  with the module's pool `exhausted` flag (so a wave that cannot reach the remaining unseen
+  candidates still stops as pool exhausted, never after empty waves to the wave cap). `stop_status`, `n_min` and `y_min` are unchanged, so `ooc` still needs
   `n_min` candidates OF THE NEW GENERATION at yield < `y_min` with the bank under half its target.
   The `pilot=true` check reads the same generation `tried`.
 - Once the newest generation has no unseen candidate: if it was measured on >= `n_min` of its
@@ -148,7 +149,7 @@ generation) before a stop.
   lexical-leak rules unchanged.
 - **The knob (plan 0066 §5 (a), one step further):** every admitted template at half its r2
   `min_sl`, floor 3 (r2's floor was 5): templates r2 lowered to 5-7 go to 3, r2's new templates
-  (8) to 4, person_father 15 -> 8; the two mixed-kind templates r2 never lowered get one halving
+  (8) to 4, person_father 15 -> 8 (rounded up: parents stay well known); the two mixed-kind templates r2 never lowered get one halving
   (person_mother 30 -> 15, namesake 15 -> 7). building_architect stays out (no category). QLever
   counts: film_director pairs 73k at sitelinks >= 5, 131k at >= 3.
 - **Disjoint:** r3 writes only candidate ids absent from round 1, r2a and r2b, and also leaves out

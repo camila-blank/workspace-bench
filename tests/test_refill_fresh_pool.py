@@ -199,6 +199,21 @@ def test_a_measured_generation_above_y_min_is_never_called_ooc_by_the_old_tally(
     assert block["stop"].startswith("pool exhausted") and "pool generation g2" in block["stop"]
 
 
+class _StuckMod(_Mod):
+    """A wave that reports the pool exhausted while the hook still shows unseen candidates."""
+
+    def refill_wave(self, model, *, wave, runner=None, llm=None):
+        self.waves += 1
+        return {"tried": 0, "landed": 0, "exhausted": True}
+
+
+def test_an_exhausted_wave_stops_even_with_unreachable_unseen_candidates(monkeypatch):
+    mod = _StuckMod(gen_size=50, per_wave=0, hit=0)
+    status, block = _drive(monkeypatch, mod)
+    assert mod.waves == 1 and status == "partial"  # not 50 empty waves to max waves
+    assert block["stop"].startswith("pool exhausted")
+
+
 def test_no_generation_hook_keeps_the_old_rule(monkeypatch):
     mod = _Mod(gen_size=0, per_wave=1, hit=0)
     del_attr = type("M", (), {"prior_tally": mod.prior_tally, "refill_wave": mod.refill_wave})()

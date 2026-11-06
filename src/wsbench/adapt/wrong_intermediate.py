@@ -1628,36 +1628,30 @@ def funded_dir(pool: str | None = None) -> Path | None:
         dirs = pool_dirs(refill_pool(pool))
     except SystemExit:
         return None
-    return next((d for d in dirs if d.name == FUNDED_DIR_NAME), None)
+    for d in dirs:  # the r3 dir by name, or a copy of it carrying r3's meta
+        if d.name == FUNDED_DIR_NAME or (d / "r3_meta.json").is_file():
+            return d
+    return None
 
 
 @functools.cache
-def _funded_rows(path: str, mtime: float) -> tuple[frozenset[str], frozenset[str]]:
-    ids, names = set(), set()
-    for c in _read_jsonl(Path(path)):
-        if not c.get("leak"):
-            ids.add(c["id"])
-            names.add(f"{c['template']}-{c['S']}-{c['hop2']}")
-    return frozenset(ids), frozenset(names)
-
-
-def _funded(pool: str | None = None) -> tuple[frozenset[str], frozenset[str]]:
-    d = funded_dir(pool)
-    if d is None or not (d / "candidates.jsonl").exists():
-        return frozenset(), frozenset()
-    p = d / "candidates.jsonl"
-    return _funded_rows(str(p), p.stat().st_mtime)
+def _funded_rows(path: str, mtime: float) -> frozenset[str]:
+    return frozenset(c["id"] for c in _read_jsonl(Path(path)) if not c.get("leak"))
 
 
 def funded_ids(pool: str | None = None) -> frozenset[str]:
     """The funded generation's non-leak candidate ids (empty when no r3 dir is in the pool)."""
-    return _funded(pool)[0]
+    d = funded_dir(pool)
+    if d is None or not (d / "candidates.jsonl").exists():
+        return frozenset()
+    p = d / "candidates.jsonl"
+    return _funded_rows(str(p), p.stat().st_mtime)
 
 
 def pool_generation(model: str, pool: str | None = None) -> dict | None:
     """Plan 0077 §1: the r3 generation's tally: tried = its screened candidates, landed = the
     passing ``generated`` bank rows built from them (the row's ``candidate`` id)."""
-    ids, _names = _funded(pool)
+    ids = funded_ids(pool)
     if not ids:
         return None
     screened = _screened_ids(model) & ids

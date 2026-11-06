@@ -1,12 +1,7 @@
 # ruff: noqa: C408, E501  (the template definitions are copied verbatim in GW scrape.py's shape)
-"""wrong_intermediate re-scrape rounds (plan 0066 §5 r2, plan 0077 §3 r3) through global-workspace's
-own scripts/wrong_bridge/scrape.py (imported unchanged, read-only). Writes ``candidates.jsonl`` with
-ONLY candidate ids absent from every earlier pool dir (``--exclude``), plus ``entities.json`` and
-``<round>_meta.json``; all pairs via QLever.
-
-  python scripts/wrong_intermediate_rescrape.py --round r3 --out <dir> \
-      --exclude <r1>,<r2a>,<r2b> [--gw <GW scripts/wrong_bridge>]
-"""
+"""wrong_intermediate re-scrape round r3 (plan 0077 §3) through GW scripts/wrong_bridge/scrape.py
+(imported read-only); keeps only candidates new to every ``--exclude`` dir. Usage:
+``--round r3 --out <dir> --exclude <r1>,<r2a>,<r2b> [--gw <dir>] [--names-only]``."""
 
 import argparse
 import hashlib

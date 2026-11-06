@@ -255,11 +255,16 @@ def newest_pool(names: tuple[str, ...], base: str) -> str:
         if name == base:
             break
         if name in POOL_FILES and POOL_SHA256.get(name):
-            if (pool_dir() / POOL_FILES[name]).is_file():
+            path = pool_dir() / POOL_FILES[name]
+            if path.is_file():
                 return name
-            print(f"refill: pool {name!r} is pinned but {pool_dir() / POOL_FILES[name]} is "
-                  f"absent; reading {base!r}")  # fmt: skip
+            if str(path) not in _ABSENT_NOTED:  # once per path, not per call
+                _ABSENT_NOTED.add(str(path))
+                print(f"refill: pool {name!r} is pinned but {path} is absent; reading {base!r}")
     return base
+
+
+_ABSENT_NOTED: set[str] = set()
 
 
 def pool_path(name: str) -> Path:
@@ -563,7 +568,9 @@ def _refill_family(
         gen = gen_hook(model) if gen_hook is not None else None
         gen_rules = gen is not None and (gen["unseen"] > 0 or gen["tried"] >= pol.n_min)
         if gen_rules and gen["unseen"] > 0:
-            s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], False
+            # a wave that reports the pool exhausted while candidates stay unseen (one the wave can
+            # never reach) still stops: the generation cannot be drained further
+            s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], exhausted
         elif gen_rules:  # measured on >= n_min of its own: the generation's yield decides
             s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], exhausted
         else:  # no generation, or one smaller than n_min and exhausted: the combined tally
