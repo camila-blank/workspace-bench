@@ -959,9 +959,11 @@ def freeze(
             # lint (it runs at gate time); a NEWLY shipped one that fails it is left out. Ids the
             # set already ships stay (they passed #375's audit) and are not re-judged here.
             before = shipped_ids(model, family)
-            capital_out = [r["id"] for r in chosen if r["origin"] != "original"
-                           and r["id"] not in before
-                           and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})]  # fmt: skip
+            capital_out = [
+                r["id"] for r in chosen
+                if r["origin"] != "original" and r["id"] not in before
+                and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})
+            ]  # fmt: skip
             chosen = [r for r in chosen if r["id"] not in set(capital_out)]
         items, carried = [], 0
         patches = (report.get("patches") or {}).get(family, {})
