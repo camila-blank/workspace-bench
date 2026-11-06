@@ -49,6 +49,9 @@ def ledger(model: str, usage: Any) -> None:
         "model": model,
         "in": int(getattr(usage, "input_tokens", 0) or 0),
         "out": int(getattr(usage, "output_tokens", 0) or 0),
+        # prompt caching (the system prompt carries cache_control): billed apart from `in`
+        "cache_write": int(getattr(usage, "cache_creation_input_tokens", 0) or 0),
+        "cache_read": int(getattr(usage, "cache_read_input_tokens", 0) or 0),
     }
     with _LEDGER_LOCK, open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")

@@ -152,6 +152,7 @@ def _rb_pair(slug="ra-teacher-student-scolded"):
     out = []
     for it in author._role_bound(x):
         it["adapt"] = {"origin": "authored", "tier": "t1"}
+        it["gate_variant"] = "ask_roles"  # the brief's fixed field (author._finish)
         out.append(it)
     return out
 
@@ -224,16 +225,30 @@ def test_role_bound_lint_requires_a_lexicon_action():
 
 
 def test_fill_pins_strict_role_bound_gate(mdir, monkeypatch):
-    monkeypatch.delenv("ADAPT_ROLE_BOUND_STRICT", raising=False)
-    monkeypatch.setattr(author, "author", lambda *a, **k: None)
-    monkeypatch.setattr(run, "lint_and_gate", lambda *a, **k: ([], {}))
-    monkeypatch.setattr(rbstage, "build", lambda m: {"built": 0, "failed": 0})
-    run.fill(MODEL, "role_bound_association", llm=None, max_waves=1, runner=object())
     import os
 
-    assert os.environ["ADAPT_ROLE_BOUND_STRICT"] == "1"
+    monkeypatch.setenv("ADAPT_ROLE_BOUND_STRICT", "0")
+    monkeypatch.delenv("ADAPT_ROLE_BOUND_STRICT")
+    seen = []
+    monkeypatch.setattr(author, "author", lambda *a, **k: None)
+    monkeypatch.setattr(run, "lint_and_gate", lambda *a, **k: seen.append(
+        os.environ.get("ADAPT_ROLE_BOUND_STRICT")) or ([], {}))  # fmt: skip
+    monkeypatch.setattr(rbstage, "build", lambda m: {"built": 0, "failed": 0})
+    run.fill(MODEL, "role_bound_association", llm=None, max_waves=1, runner=object())
+    assert seen == ["1"] and "ADAPT_ROLE_BOUND_STRICT" not in os.environ  # restored
     rep = json.loads((mdir / "report.json").read_text())["families"]["role_bound_association"]
     assert rep["refill"]["gate_mode"] == "ask_roles+strict" and rep["refill"]["target"] == 100
+
+
+def test_old_authored_rows_never_ship():
+    a, _b = _rb_pair()
+    legacy = a | {"gate_variant": None, rbstage.FIELD: {"roles": [], "actions": []}}
+    assert rf.row_passes("role_bound_association", _row(legacy, origin="authored")) is False
+    mh = {"name": "mh-au-old", "prompt": "Fact: x"}
+    assert rf.row_passes("multihop", _row(mh, origin="authored", legs={"surface": {}})) is False
+    legs = {"surface": {}, "hop2": {}, "shortcut1": {}, "shortcut2": {}}
+    assert rf.row_passes("multihop", _row(mh, origin="authored", legs=legs)) is True
+    assert rf.row_passes("multihop", _row(mh)) is True
 
 
 # ---------------------------------------------------------------- §2.8 user_modeling
@@ -404,6 +419,10 @@ def test_capital_rule_is_about_asking_for_a_capital():
     assert bad("Which city is the seat of government of Bonaire?")
     assert not bad("Which emperor ruled from the Byzantine capital in 1453?")
     assert not bad("What island lies in the French capital and holds Notre-Dame?")
+    assert bad("What is France's capital?") and bad("Which city is Japan's capital?")
+    assert bad("Fact: The country whose capital is Lima has the currency")
+    assert lint._capital("multihop", {"prompt": "Fact: Peru has its capital in the city of",
+                                      "adapt": {"origin": "authored"}})  # fmt: skip
 
 
 def test_guard_reads_the_cumulative_tally():
@@ -420,7 +439,9 @@ def test_token_ledger(tmp_path, monkeypatch):
     path = tmp_path / "ledger.jsonl"
     monkeypatch.setenv(llm.LEDGER_ENV, str(path))
     llm.ledger("claude-opus-5-5", SimpleNamespace(input_tokens=10, output_tokens=3))
-    assert json.loads(path.read_text()) == {"model": "claude-opus-5-5", "in": 10, "out": 3}
+    row = json.loads(path.read_text())
+    assert row == {"model": "claude-opus-5-5", "in": 10, "out": 3, "cache_write": 0,
+                   "cache_read": 0}  # fmt: skip
 
 
 def _mh_item(**kw):
@@ -462,3 +483,18 @@ def test_row_passes_drops_an_old_authored_capital_question():
     ok = {"name": "brh-ent-y", "prompt": "Which river crosses the Byzantine capital in 1453?"}
     assert rf.row_passes("basic_readout_mt", _row(ok, origin="authored")) is True
     assert rf.row_passes("basic_readout_mt", _row(it)) is True  # originals: the registered bank
+
+
+def test_post_gate_upgrades_new_native_rows(mdir, monkeypatch):
+    from wsbench.adapt import ml_native
+
+    seen = []
+    monkeypatch.setattr(
+        ml_native, "upgrade", lambda m, f, only_new=False: seen.append((f, only_new))
+    )
+    run.post_gate(MODEL, "multilingual_multihop", None)  # nothing new: no upgrade (no record)
+    assert seen == []
+    _gate_log(mdir, "multilingual_multihop", [_row({"name": "mlmh-au-x"}, origin="authored")])
+    run.post_gate(MODEL, "multilingual_multihop", None)
+    run.post_gate(MODEL, "typo_mt", None)
+    assert seen == [(["multilingual_multihop"], True)]
