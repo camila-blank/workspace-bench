@@ -567,18 +567,17 @@ def _refill_family(
         # rule reads that generation's own tally (never the older generations' stops)
         gen = gen_hook(model) if gen_hook is not None else None
         gen_rules = gen is not None and (gen["unseen"] > 0 or gen["tried"] >= pol.n_min)
-        if gen_rules and gen["unseen"] > 0:
-            # a wave that reports the pool exhausted while candidates stay unseen (one the wave can
-            # never reach) still stops: the generation cannot be drained further
-            s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], exhausted
-        elif gen_rules:  # measured on >= n_min of its own: the generation's yield decides
+        if gen_rules:
+            # unseen candidates left, or measured on >= n_min of its own: the generation's yield
+            # decides, with the wave's pool `exhausted` flag (a wave that cannot reach the
+            # remaining unseen candidates still stops, never after empty waves to the wave cap)
             s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], exhausted
         else:  # no generation, or one smaller than n_min and exhausted: the combined tally
             s_tried, s_landed, s_exhausted = tried, landed, exhausted
         status, why = stop_status(have, target, s_tried, s_landed, n_min, pol.y_min,
                                   s_exhausted, budget, hold=hold)  # fmt: skip
-        if status is not None and gen_rules:
-            why = f"{why} (pool generation {gen['name']})"
+        if status in ("ooc", "partial") and gen_rules and ("yield" in why or "exhausted" in why):
+            why = f"{why} (pool generation {gen['name']})"  # only when its tally stopped it
         if status is not None:
             break
         if pilot and (s_tried if gen_rules else tried) >= pol.n_min:

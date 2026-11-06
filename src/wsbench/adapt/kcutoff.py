@@ -1377,7 +1377,8 @@ def prior_tally(model: str) -> tuple[int, int]:
 
 def pool_generation(model: str, cutoff: str | None = None) -> dict[str, Any] | None:
     """Plan 0077 §1: the funded generation's tally (``kc2``: rows of ``NEW_BATCHES``) while pool
-    v2 is the pool read; None on pool v1. tried = its elicited ids, landed = their passes."""
+    v2 is the pool read; None on pool v1. tried = its elicited ids, landed = their passes. The
+    driver calls it without ``cutoff`` (plan 0066 decision 4 keeps it unset for refills)."""
     from . import refill
 
     if pool_name() != POOL_NAME_V2:
