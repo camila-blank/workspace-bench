@@ -1695,7 +1695,8 @@ def post_gate(model: str, family: str, llm: str | None) -> None:
     from .author import NATIVE_BUILT
 
     pending = [r for r in store.gated(model, family).values() if r["origin"] != "original"
-               and "upgraded_from" not in r and not r["gate"].get("lint")]  # fmt: skip
+               and "upgraded_from" not in r and not r["gate"].get("lint")
+               and rf.is_0075(r)]  # fmt: skip
     if family in NATIVE_BUILT and pending:
         # plan 0075 §2.6: the per-language rebuild the frozen rows had (``native_units_for``,
         # ``_creditable_l2``), on this wave's new rows, so a row it drops is never counted

@@ -429,6 +429,10 @@ def test_capital_rule_is_about_asking_for_a_capital():
     assert bad("What is France\u2019s capital?")
     assert bad("Which country has Lima as capital?") and bad("Fact: Lima is the capital.")
     assert not bad("Which treaty was signed in Italy's capital in 1957?")
+    assert not bad("Which palace stands in the Ming capital of Beijing?")
+    assert not bad("Which temple is in the former capital of Japan, Kyoto?")
+    assert lint._capital("multihop", {"prompt": "Fact: The capital of the boot-shaped country is",
+                                      "adapt": {"origin": "authored"}})  # fmt: skip
     assert bad("Fact: The country whose capital is Lima has the currency")
     assert lint._capital("multihop", {"prompt": "Fact: Peru has its capital in the city of",
                                       "adapt": {"origin": "authored"}})  # fmt: skip
@@ -503,7 +507,11 @@ def test_post_gate_upgrades_new_native_rows(mdir, monkeypatch):
     )
     run.post_gate(MODEL, "multilingual_multihop", None)  # nothing new: no upgrade (no record)
     assert seen == []
-    _gate_log(mdir, "multilingual_multihop", [_row({"name": "mlmh-au-x"}, origin="authored")])
+    _gate_log(mdir, "multilingual_multihop", [_row({"name": "mlmh-old"}, origin="authored")])
+    run.post_gate(MODEL, "multilingual_multihop", None)  # an earlier, unstamped row: untouched
+    assert seen == []
+    _gate_log(mdir, "multilingual_multihop", [_row({"name": "mlmh-au-x", "adapt": {
+        "plan": "0075"}}, origin="authored")])  # fmt: skip
     run.post_gate(MODEL, "multilingual_multihop", None)
     run.post_gate(MODEL, "typo_mt", None)
     assert seen == [(["multilingual_multihop"], True)]
