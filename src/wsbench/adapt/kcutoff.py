@@ -1285,8 +1285,9 @@ def _cap(n: int) -> int:
 DENIAL_GOLD = re.compile(
     r"^(?:[$€£¥]\s*)?0+(?:[.,]0+)?\s*(?:%|percent|per ?cent|million|billion|units?)?$"
     r"|\b(?:has|have|had|did|does|do|is|was|were|will) not\b|\bnot (?:yet )?(?:occurred|happened"
-    r"|announced|released|been)\b|\bno such\b|^(?:no|none|nothing|nobody)(?:\s+\w+){0,2}$"
-    r"|\bthere (?:is|was|were) no\b",
+    r"|announced|released|been|take place|taken place)\b|\bno\s*such|\b0\s*(?:bps|basis points)\b"
+    r"|^(?:no|none|nothing|nobody)(?:\s+(?:one|such|trade|winner|deal|change|award|appointment"
+    r"|announcement|\w+ed))*$|\bthere (?:is|was|were) no\b",
     re.IGNORECASE,
 )
 
