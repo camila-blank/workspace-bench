@@ -53,11 +53,21 @@ PLAN_0075_SETS = frozenset({
 })  # fmt: skip
 
 
+# plan 0078: a model-specific family whose adapted target is set below its registered size
+# (model_multihop: 100 per set, the caller's brief; freeze still ships every passing item up to
+# ``SHIP_CAP``); every other family keeps the "never lowered" rule above
+TARGET_OVERRIDE: dict[str, int] = {"model_multihop": 100}
+SHIP_CAP: dict[str, int] = {"model_multihop": 283}  # the registered bank's size
+
+
 def adapted_target(
     family: str, originals: list[dict] | None = None, model: str | None = None
 ) -> int:
     """The adapted item target of ``family``: ``max(len(originals), ADAPTED_TARGETS[family])``
-    on a plan-0075 set (``PLAN_0075_SETS``); the registered bank's size elsewhere."""
+    on a plan-0075 set (``PLAN_0075_SETS``); the registered bank's size elsewhere;
+    ``TARGET_OVERRIDE`` first (plan 0078)."""
+    if family in TARGET_OVERRIDE:
+        return TARGET_OVERRIDE[family]
     n = len(originals) if originals is not None else _registered_size(family)
     if model is not None and model not in PLAN_0075_SETS:
         return n
@@ -209,6 +219,7 @@ POOL_FILES = {
     "mh2v2": "mh2_pool.v2.json",  # decision 7: + the adversary over the S1-only candidates
     "kcutoffv2": "kcutoff_pool.v2.jsonl",  # plan 0077 §2: v1 + the b3..b5 batches
     "mh2v3": "mh2_pool.v3.json",  # plan 0077 §4: v2 + the v3 generator runs
+    "mmh": "mmh_pool.json",  # plan 0078: gw mmh v2 candidates (scripts/build_mmh_pool.py)
 }
 # pinned once built on the box by scripts/build_adapt_pools.py (plan 0066 §8 step 1, 2026-11-04;
 # the builds are deterministic, two builds gave the same bytes); None = not built yet
@@ -221,6 +232,8 @@ POOL_SHA256: dict[str, str | None] = {
     # plan 0077 (funded pools), pinned once built on the box
     "kcutoffv2": "6b0dd01656637a4e3664d42f13c1c1fc66d8837576f9691fb444e0a2fd478e93",
     "mh2v3": "dfd973d3bfd57b07d19f00228bb1f397c59f3d836f02fb76f14b78cea4c2a3d6",
+    # plan 0078 (built 2026-11-06 from gw frozen_v2 2027ef208 + /root/tmp/mmh-out cands files)
+    "mmh": "2adc5f0c724c51add14a4a7cc8a8c8cd30ada4a19ec027b8b040d103571443f8",
 }
 DEFAULT_POOL_DIR = "/workspace/wsb-runs/pools"
 

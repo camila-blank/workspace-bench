@@ -132,7 +132,7 @@ def test_pool_dir_default_and_no_pin_yet(monkeypatch):
     assert (
         set(rf.POOL_FILES)
         == set(rf.POOL_SHA256)
-        == {"msdm", "kcutoff", "mh2", "mh2v2", "kcutoffv2", "mh2v3"}
+        == {"msdm", "kcutoff", "mh2", "mh2v2", "kcutoffv2", "mh2v3", "mmh"}
     )
 
 
