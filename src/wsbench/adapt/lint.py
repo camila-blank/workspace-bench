@@ -359,7 +359,13 @@ _CAPITAL = re.compile(
 
 
 _THROUGH = re.compile(r"(?:(\S+)\s+)?\bcapital(?: city)? of (?:the )?[A-Z]")
-_POSSESSIVE = re.compile(rf"\b[A-Z][\w-]+{_APOS}s capital\b(?!\s+in\s+\d)")
+_POSSESSIVE = re.compile(rf"\b[A-Z][\w-]+{_APOS}s (?:capital|seat)\b(?!\s+in\s+\d)")
+# "the French capital": a demonym capital is a country's capital unless the city is named right
+# after it ("the Ming capital of Beijing", "the Byzantine capital, Constantinople") or a year
+# follows ("the Byzantine capital in 1453")
+_ADJ_CAPITAL = re.compile(
+    r"\b[Tt]he [A-Z][a-z]+ capital\b(?!(?: city)? of [A-Z]|,\s*[A-Z]|\s+in\s+\d)"
+)
 _NOT_CONTEXT = {"the", "a", "its", "their", "his", "her", "former", "old", "new", "current"}
 
 
@@ -374,7 +380,7 @@ def goes_through_capital(text: str) -> bool:
         if re.match(r"[^.?]{0,40}?\bin\s+\d{3,4}\b", text[m.end() :]):
             continue
         return True
-    return bool(_POSSESSIVE.search(text))
+    return bool(_POSSESSIVE.search(text) or _ADJ_CAPITAL.search(text))
 
 
 def _capital(family: str, it: dict) -> list[str]:

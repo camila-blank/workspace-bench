@@ -424,7 +424,7 @@ def test_capital_rule_is_about_asking_for_a_capital():
     assert bad("What is the capital of the Byzantine Empire's successor state?")
     assert bad("Which city is the seat of government of Bonaire?")
     assert not bad("Which emperor ruled from the Byzantine capital in 1453?")
-    assert not bad("What island lies in the French capital and holds Notre-Dame?")
+    assert bad("What island lies in the French capital and holds Notre-Dame?")  # through Paris
     assert bad("What is France's capital?") and bad("Which city is Japan's capital?")
     assert bad("What is France\u2019s capital?")
     assert bad("Which country has Lima as capital?") and bad("Fact: Lima is the capital.")
@@ -436,7 +436,11 @@ def test_capital_rule_is_about_asking_for_a_capital():
     assert bad("What river flows through Japan's capital?")
     river = "Fact: The river that flows through the capital of Japan is the"
     assert lint._capital("multihop", {"prompt": river, "adapt": {"origin": "authored"}})
-    assert not bad("Which bridge crosses the river in the French capital?")
+    assert bad("Which bridge crosses the river in the French capital?")
+    assert bad("The Kenyan capital is called what?")
+    assert bad("Fact: The Japanese capital hosted the 1964 Olympics in")
+    assert bad("Fact: Canberra serves as Australia's seat")
+    assert not bad("Which church was the cathedral of the Byzantine capital, Constantinople?")
     assert lint._capital("multihop", {"prompt": "Fact: The capital of the boot-shaped country is",
                                       "adapt": {"origin": "authored"}})  # fmt: skip
     assert bad("Fact: The country whose capital is Lima has the currency")
