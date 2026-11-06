@@ -21,6 +21,7 @@ from . import mcstage, rebuild, store
 from . import refill as rf
 from .gate import DEFAULT_DRAWS, DEFAULT_TEMPERATURE, run_gate
 from .generate import describe
+from .lint import CAPITAL_FAMILIES, _capital
 from .subjects import get as get_subject
 
 # Items that pass or drop together: twins, ab/ba directions, think/dont_think pairs.
@@ -952,6 +953,16 @@ def freeze(
             chosen = rf.buggy_selection(rows, target, quotas(family, rf.target_bank()))
         else:
             chosen = select(family, rows, target, quotas(family, originals))
+        capital_out: list[str] = []
+        if family in CAPITAL_FAMILIES:
+            # plan 0075 / #372: a raised target admits authored rows gated before the capital
+            # lint (it runs at gate time); a NEWLY shipped one that fails it is left out. Ids the
+            # set already ships stay (they passed #375's audit) and are not re-judged here.
+            before = shipped_ids(model, family)
+            capital_out = [r["id"] for r in chosen if r["origin"] != "original"
+                           and r["id"] not in before
+                           and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})]  # fmt: skip
+            chosen = [r for r in chosen if r["id"] not in set(capital_out)]
         items, carried = [], 0
         patches = (report.get("patches") or {}).get(family, {})
         for r in chosen:
@@ -974,6 +985,9 @@ def freeze(
             ad["gate"] = {k: r["gate"][k] for k in ("rate", "pass")}
             items.append(it)
         notes = _post_freeze(family, header, items, subject.n_layers, subject.read_band)
+        if capital_out:
+            notes.append(f"{len(capital_out)} newly admitted capital questions left out (#372): "
+                         f"{capital_out}")  # fmt: skip
         if lost := shipped_ids_lost(model, family, items):  # plan 0075: never silent
             notes.append(f"{len(lost)} previously shipped ids leave the bank: {lost}")
         if carried:
@@ -1606,18 +1620,22 @@ def seed_offset(model: str, family: str) -> int:
     return 0 if not seen else (max(seen) // 10000 + 1) * 10000
 
 
+def shipped_ids(model: str, family: str) -> set[str]:
+    """Ids of the set's current frozen bank (empty when none)."""
+    path = store.bank_file(model, family)
+    if not path.is_file():
+        return set()
+    import json
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {str(store.item_id(it)) for it in (raw["items"] if isinstance(raw, dict) else raw)}
+
+
 def shipped_ids_lost(model: str, family: str, items: list[dict]) -> list[str]:
     """Ids of the set's current frozen bank that this freeze no longer ships (an audited drop,
     a registered drop, a refill rule or a selection change): recorded in ``freeze_notes`` so
     the delta audit sees every one."""
-    path = store.bank_file(model, family)
-    if not path.is_file():
-        return []
-    import json
-
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    old = {str(store.item_id(it)) for it in (raw["items"] if isinstance(raw, dict) else raw)}
-    return sorted(old - {str(store.item_id(it)) for it in items})
+    return sorted(shipped_ids(model, family) - {str(store.item_id(it)) for it in items})
 
 
 @contextlib.contextmanager

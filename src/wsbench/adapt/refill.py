@@ -282,14 +282,6 @@ def row_passes(family: str, row: dict) -> bool:
         if BUGCLAIM_REQUIRED and row["item"].get("src") == "clean":
             return has_bugclaim(row)
         return True
-    from .lint import CAPITAL_FAMILIES, _capital
-
-    # plan 0075 / #372: a raised target admits authored rows gated before the capital lint (it
-    # runs at gate time only): such a row never ships
-    new = row["origin"] != "original"
-    if new and family in CAPITAL_FAMILIES and _capital(family, {**row["item"], "adapt": {
-            "origin": "authored"}}):  # fmt: skip
-        return False
     hook = _hook(family, "row_passes")
     if hook is None:
         return True
