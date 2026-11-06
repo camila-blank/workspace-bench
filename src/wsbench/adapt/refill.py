@@ -29,6 +29,41 @@ def _registered_size(family: str) -> int:
     return len(store.original_bank(family)[1])
 
 
+# Plan 0075 §0 (2026-11-06): adapted targets above the registered size. The target is
+# max(registered, this), so no target is ever lowered; buggy_code keeps plan 0072 D1's target
+# bank (24 pairs) and is never read from here.
+ADAPTED_TARGETS: dict[str, int] = {
+    "association": 100,
+    "basic_readout_mt": 120,
+    "typo_mt": 100,
+    "multihop": 100,
+    "poetry": 100,
+    "multilingual_mt": 100,
+    "multilingual_typo": 100,
+    "multilingual_multihop": 100,
+    "relational_multihop": 100,
+    "role_bound_association": 100,
+}
+
+
+# the sets plan 0075 retargets; every other set keeps its registered-size target
+PLAN_0075_SETS = frozenset({
+    "glm-5.3", "deepseek-v4-pro", "muse-spark-open", "kimi-k3", "qwen3-8b", "qwen3.5-9b",
+    "qwen3.5-4b", "qwen3.5-2b", "qwen3.5-0.8b", "olmo-3-7b",
+})  # fmt: skip
+
+
+def adapted_target(
+    family: str, originals: list[dict] | None = None, model: str | None = None
+) -> int:
+    """The adapted item target of ``family``: ``max(len(originals), ADAPTED_TARGETS[family])``
+    on a plan-0075 set (``PLAN_0075_SETS``); the registered bank's size elsewhere."""
+    n = len(originals) if originals is not None else _registered_size(family)
+    if model is not None and model not in PLAN_0075_SETS:
+        return n
+    return max(n, ADAPTED_TARGETS.get(family, 0))
+
+
 def pair_count(items: list[dict]) -> int:
     """Groups of 2 whose members are each other's ``twin`` (registered field, or derived from the
     authored ``-au-`` / ``-au-clean-`` ids)."""
@@ -96,10 +131,36 @@ POLICY: dict[str, Policy] = {
                 ("bank", "pool: mh2_pool.json"), "2-hop pool"),
 }  # fmt: skip
 
+# Plan 0075 §2.2: the authored (``run.fill``) and generated (``run.auto``) families `adapt refill`
+# drives, with run.fill / run.auto's own stop thresholds (OOC_MIN 60 candidates, OOC_YIELD 3%
+# at the easiest tier); their target is ``adapted_target``.
+FILL_POLICY: dict[str, str] = {
+    "association": "run.fill",
+    "basic_readout_mt": "run.fill",
+    "typo_mt": "run.fill",
+    "multihop": "run.fill",
+    "poetry": "run.fill",
+    "role_bound_association": "run.fill",
+    "user_modeling": "run.fill",
+    "multilingual_mt": "run.fill",
+    "multilingual_typo": "run.fill",
+    "multilingual_multihop": "run.fill",
+    "relational_multihop": "run.auto",
+}
+
+FILL_ROUTES = frozenset(FILL_POLICY.values())
+# run.NOTE_REFILL_FAMILIES (plan 0072 D6): their hand `note refill=` blocks keep counting
+HAND_REFILL_FAMILIES = frozenset({"user_modeling", "multihop"})
+
 # the fill / auto families the strict freeze guard covers by their `untried` status (§1.3)
 UNTRIED_GUARDED = frozenset({
     "typo_mt", "association", "basic_readout", "basic_readout_mt",
     "arithmetic_intermediates", "relational_multihop", "chain_intermediates",
+})  # fmt: skip
+# plan 0075: the families it gave a refill route, guarded on its ten sets only
+UNTRIED_GUARDED_0075 = frozenset({
+    "multihop", "poetry", "role_bound_association", "user_modeling",
+    "multilingual_mt", "multilingual_typo", "multilingual_multihop",
 })  # fmt: skip
 
 
@@ -200,8 +261,15 @@ BUGCLAIM_REQUIRED = True
 BUGCLAIM = "bugclaim"
 
 
+# plan 0075: fill families whose module adds a ``row_passes`` hook (a new row is complete only
+# once its post-gate stage built the judge-side fields)
+ROW_HOOK_MODULES = {
+    "poetry": "poetry", "role_bound_association": "rbstage", "multihop": "mhstage",
+}  # fmt: skip
+
+
 def _module(family: str):
-    name = FAMILY_MODULES.get(family)
+    name = FAMILY_MODULES.get(family) or ROW_HOOK_MODULES.get(family)
     return importlib.import_module(f"wsbench.adapt.{name}") if name else None
 
 
@@ -228,7 +296,17 @@ def row_passes(family: str, row: dict) -> bool:
             return has_bugclaim(row)
         return True
     hook = _hook(family, "row_passes")
-    return bool(hook(row)) if hook is not None else True
+    if hook is None:
+        return True
+    if family in ROW_HOOK_MODULES and not is_0075(row):
+        return True  # rows authored before plan 0075 (other sets' frozen banks) keep shipping
+    return bool(hook(row))
+
+
+def is_0075(row: dict) -> bool:
+    """A row authored under plan 0075's refill rules (``adapt.plan``, stamped by
+    ``author._finish``); only these get the new families' ``row_passes`` hooks."""
+    return ((row.get("item") or {}).get("adapt") or {}).get("plan") == "0075"
 
 
 def bugclaim_missing(rows: list[dict]) -> list[str]:
@@ -272,9 +350,27 @@ def apply_select_hook(family: str, rows: list[dict]) -> list[dict]:
     return orig + list(hook([r for r in rows if r["origin"] != "original"]))
 
 
-def freeze_rows(family: str, rows: list[dict]) -> list[dict]:
-    """What freeze and the refill select from: ``row_passes`` applied, then the select hook."""
-    return apply_select_hook(family, _with_passes(family, rows))
+def freeze_rows(family: str, rows: list[dict], model: str | None = None) -> list[dict]:
+    """What freeze and the refill select from: ``row_passes`` applied, then the select hook.
+    With ``model`` (freeze, ``fill``, ``have_of``), plan 0075 / #372: a capital-family authored row
+    the set does not already ship that fails the capital rule is out, BEFORE selection, so the
+    refill's count and freeze's agree and a passing row backfills it."""
+    rows = _with_passes(family, rows)
+    if model is not None and model in PLAN_0075_SETS:  # other sets re-freeze as before
+        from .lint import CAPITAL_FAMILIES, _capital
+
+        if family in CAPITAL_FAMILIES:
+            from .run import shipped_ids
+
+            before = shipped_ids(model, family)
+            rows = [
+                {**r, "gate": {**r["gate"], "pass": False}, "selected": False}
+                if r["origin"] != "original" and r["id"] not in before and r["gate"].get("pass")
+                and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})
+                else r
+                for r in rows
+            ]  # fmt: skip
+    return apply_select_hook(family, rows)
 
 
 # ---------------------------------------------------------------------------- buggy_code pairs
@@ -380,12 +476,12 @@ def have_of(model: str, family: str) -> int:
     from . import run
 
     _h, originals = store.original_bank(family)
-    rows = freeze_rows(family, run._bank_rows(model, family, originals))
+    rows = freeze_rows(family, run._bank_rows(model, family, originals), model)
     quota = run.quotas(family, originals)
     if family == BUGGY:  # plan 0072 §0 D1: the target bank's cap and quota, as freeze
         tb = target_bank()
         return selected_pairs(buggy_selection(rows, len(tb), run.quotas(family, tb)))
-    return len(run.select(family, rows, len(originals), quota))
+    return len(run.select(family, rows, adapted_target(family, originals, model), quota))
 
 
 def prior_tally(model: str, family: str) -> tuple[int, int]:
@@ -491,11 +587,26 @@ def refill(
     its authoring + grading calls, ``gpu_minutes`` as its wall clock."""
     from . import run
 
-    if bad := [f for f in families if f not in POLICY]:
-        raise SystemExit(f"refill: no refill route for {bad}; known: {sorted(POLICY)}")
+    known = set(POLICY) | set(FILL_POLICY)
+    if bad := [f for f in families if f not in known]:
+        raise SystemExit(f"refill: no refill route for {bad}; known: {sorted(known)}")
     out = {}
     for family in families:
-        if family == BUGGY:
+        if family in FILL_POLICY:  # plan 0075 §2.2
+            if pilot or claude_budget is not None or gpu_minutes is not None:
+                raise SystemExit(
+                    f"refill: pilot / claude_budget / gpu_minutes are for the POLICY families, "
+                    f"not {family} (plan 0075 §3: one family per call, the ledger is the cap)"
+                )
+            if FILL_POLICY[family] == "run.auto":
+                from .generate import GENERATORS
+
+                # run.auto's max_waves is per tier: `waves` bounds the whole ladder (the budget)
+                per_tier = max(1, -(-waves // len(GENERATORS[family].tiers)))
+                out[family] = run.auto(model, family, runner=runner, max_waves=per_tier)
+            else:
+                out[family] = run.fill(model, family, llm, waves, runner=runner)
+        elif family == BUGGY:
             budget_s = None if gpu_minutes is None else gpu_minutes * 60
             out[family] = run.fill(model, family, llm, waves, runner=runner, pilot=pilot,
                                    budget_s=budget_s, claude_budget=claude_budget)  # fmt: skip
@@ -506,7 +617,9 @@ def refill(
     return out
 
 
-def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
+def guard_problem(
+    family: str, entry: dict, n: int, target: int, model: str | None = None
+) -> str | None:
     """The strict freeze guard (§1.3 + §11.6): a POLICY family short of target with no refill block
     (or only a pilot that did not stop it as ooc); a fill / auto family left ``untried``."""
     if n >= target:
@@ -518,6 +631,24 @@ def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
         if block.get("pilot") and entry.get("status") != "ooc":
             return f"{n}/{target} {POLICY[family].unit}; only a pilot ran and it was not ooc"
         return None
-    if family in UNTRIED_GUARDED and entry.get("status") == "untried":
+    # plan 0075's rules apply to its ten sets (a set elsewhere re-freezes exactly as before)
+    plan_0075 = model is None or model in PLAN_0075_SETS
+    guarded = UNTRIED_GUARDED | (UNTRIED_GUARDED_0075 if plan_0075 else frozenset())
+    if family in guarded and entry.get("status") == "untried":
         return f"{n}/{target} items and untried (no refill attempted)"
+    if plan_0075 and family in FILL_POLICY and entry.get("status") not in ("ooc", "blocked"):
+        # plan 0075 §2.1: a family short of its (raised) adapted target ships only after a
+        # refill measured AT that target; authored rows from an earlier, lower target make it
+        # `partial`, not `untried`, so the untried rule alone would let it through
+        block = refill_block(entry) or {}
+        route = block.get("route")
+        if family in HAND_REFILL_FAMILIES and route and route not in FILL_ROUTES:
+            return None  # plan 0072 D6 retained: a `note refill=` block (no driver then) counts
+        if block.get("target") != target:
+            return (
+                f"{n}/{target} items and no refill at the current target {target} "
+                f"(last refill target: {block.get('target')})"
+            )
+        if route in FILL_ROUTES and not block.get("tried_total", block.get("tried")):
+            return f"{n}/{target} items and the last refill gated no candidate (tried 0)"
     return None
