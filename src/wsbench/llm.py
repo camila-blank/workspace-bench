@@ -35,6 +35,25 @@ class JudgeConfigError(RuntimeError):
     """A configuration problem that would fail every judge call (raised, never degraded)."""
 
 
+LEDGER_ENV = "WSB_TOKEN_LEDGER"  # plan 0075 §4: one JSONL row per Anthropic call (spend cap)
+_LEDGER_LOCK = threading.Lock()
+
+
+def ledger(model: str, usage: Any) -> None:
+    """Append ``{model, in, out}`` to ``$WSB_TOKEN_LEDGER`` when set (subprocesses inherit it), so
+    a run's API spend is measured from tokens even where OAuth logs ``spend=$0.00``."""
+    path = os.environ.get(LEDGER_ENV)
+    if not path or usage is None:
+        return
+    row = {
+        "model": model,
+        "in": int(getattr(usage, "input_tokens", 0) or 0),
+        "out": int(getattr(usage, "output_tokens", 0) or 0),
+    }
+    with _LEDGER_LOCK, open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+
+
 @dataclass
 class Spend:
     """Per-run tally. ``calls`` counts HTTP 200 responses (including garbled bodies that were
@@ -304,6 +323,7 @@ async def _anthropic_once(
         resp = await client.beta.messages.create(**kwargs, betas=betas, fallbacks=fallbacks)
     spend.calls += 1
     usage = getattr(resp, "usage", None)
+    ledger(model, usage)
     if usage is not None:
         spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
         spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
@@ -680,6 +700,7 @@ async def _anthropic_text_once(
             resp = await stream.get_final_message()
         spend.calls += 1
         usage = getattr(resp, "usage", None)
+        ledger(model, usage)
         if usage is not None:
             spend.input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
             spend.output_tokens += int(getattr(usage, "output_tokens", 0) or 0)

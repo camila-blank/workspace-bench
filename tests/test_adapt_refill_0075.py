@@ -392,3 +392,73 @@ def test_auto_rerun_uses_fresh_seeds_and_guard_refuses_tried_zero(mdir):
     assert run.seed_offset(MODEL, "association") == 0
     entry = {"status": "partial", "refill": {"route": "run.auto", "target": 100, "tried": 0}}
     assert "tried 0" in rf.guard_problem("relational_multihop", entry, 78, 100)
+
+
+def test_capital_rule_is_about_asking_for_a_capital():
+    def bad(prompt):
+        return lint._capital(
+            "basic_readout_mt", {"prompt": prompt, "adapt": {"origin": "authored"}}
+        )
+
+    assert bad("What is the capital of the Byzantine Empire's successor state?")
+    assert bad("Which city is the seat of government of Bonaire?")
+    assert not bad("Which emperor ruled from the Byzantine capital in 1453?")
+    assert not bad("What island lies in the French capital and holds Notre-Dame?")
+
+
+def test_guard_reads_the_cumulative_tally():
+    entry = {"status": "partial", "refill": {"route": "run.fill", "target": 100, "tried": 0,
+                                             "tried_total": 240}}  # fmt: skip
+    assert rf.guard_problem("association", entry, 95, 100) is None
+
+
+def test_token_ledger(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wsbench import llm
+
+    path = tmp_path / "ledger.jsonl"
+    monkeypatch.setenv(llm.LEDGER_ENV, str(path))
+    llm.ledger("claude-opus-5-5", SimpleNamespace(input_tokens=10, output_tokens=3))
+    assert json.loads(path.read_text()) == {"model": "claude-opus-5-5", "in": 10, "out": 3}
+
+
+def _mh_item(**kw):
+    it = {"name": "mh-au-t1-w100c0-io", "prompt": "Fact: The moon Io orbits the planet",
+          "target": "Jupiter", "intermediates": ["Io"], "bridge_question": "Which moon has "
+          "the most active volcanoes? Answer with just the name.", "bridge_aliases": [],
+          "hop2_question": "Which planet does Io orbit? Answer with one word.",
+          "shortcut_prompts": ["Fact: The volcanic moon orbits the planet",
+                               "Fact: A moon orbits the planet"],
+          "adapt": {"origin": "authored"}}  # fmt: skip
+    return it | kw
+
+
+def test_multihop_bank_v5_lint_and_legs():
+    from wsbench.adapt import families as fams
+
+    assert lint._multihop_v5("multihop", _mh_item()) == []
+    assert any("hop2" in p for p in lint._multihop_v5("multihop", _mh_item(hop2_question="")))
+    named = _mh_item(shortcut_prompts=["Fact: Io orbits", "Fact: x"])
+    assert any("names the bridge" in p for p in lint._multihop_v5("multihop", named))
+    lang = _mh_item(prompt="Fact: The language spoken in the land of Io is")
+    assert any("#323" in p for p in lint._multihop_v5("multihop", lang))
+    demonym = _mh_item(intermediates=["Japan"], target="Japanese")
+    assert any("derives" in p for p in lint._multihop_v5("multihop", demonym))
+    legs = {a.leg: a for a in fams.get("multihop").asks(_mh_item(id="mh-au-x"))}
+    assert {"surface", "bridge1", "hop2", "shortcut1", "shortcut2"} <= set(legs)
+    assert legs["shortcut1"].meta == {"leak": True, "max_rate": fams.SHORTCUT_MAX_RATE}
+
+
+def test_role_bound_lint_rejects_a_tab_garbled_story():
+    a, _b = _rb_pair()
+    bad = a | {"stimulus": a["stimulus"].replace("stood at", "stood \tat")}
+    assert any("#321" in p for p in lint.lint("role_bound_association", bad))
+
+
+def test_row_passes_drops_an_old_authored_capital_question():
+    it = {"name": "brh-ent-x", "prompt": "What is the capital of Palau?"}
+    assert rf.row_passes("basic_readout_mt", _row(it, origin="authored")) is False
+    ok = {"name": "brh-ent-y", "prompt": "Which river crosses the Byzantine capital in 1453?"}
+    assert rf.row_passes("basic_readout_mt", _row(ok, origin="authored")) is True
+    assert rf.row_passes("basic_readout_mt", _row(it)) is True  # originals: the registered bank

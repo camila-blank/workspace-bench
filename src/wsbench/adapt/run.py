@@ -1171,7 +1171,7 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
     target = rf.adapted_target(family, originals)  # plan 0075 §2.1
     quota = quotas(family, originals)
     s_off = seed_offset(model, family)  # plan 0075: a re-run never regenerates logged ids
-    status = "partial"
+    status, tried_total = "partial", 0
     for t_i, tier in enumerate(gen.tiers):
         tried = passed = 0
         for wave in range(max_waves):
@@ -1200,6 +1200,7 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
             rows = _bank_rows(model, family, originals)
             gained = len(select(family, rows, target, quota)) - have
             tried += len(new)
+            tried_total += len(new)
             passed += gained
             n_pass = sum(r["gate"]["pass"] for r in new)
             print(
@@ -1225,7 +1226,8 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
         block = {
             "route": "run.auto", "unit": "items", "target": target, "have": have,
             "tried": tried, "landed": passed, "yield": passed / tried if tried else None,
-            "tier": gen.tiers[t_i].name, "n_min": OOC_MIN, "y_min": OOC_YIELD,
+            "tried_total": tried_total, "tier": gen.tiers[t_i].name,
+            "n_min": OOC_MIN, "y_min": OOC_YIELD,
             "stop": stops.get(status, "ladder exhausted"),
         }  # fmt: skip
 
@@ -1491,7 +1493,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     target, quota = rf.adapted_target(family, originals), quotas(family, originals)
     tiers = list(brief.tiers)
     t_i, low, steer, status, tried, landed, wave = 0, 0, "", "partial", 0, 0, 0
-    why, ran, lost_lint, bank_gain = "", 0, 0, 0
+    why, ran, lost_lint, bank_gain, tried_total = "", 0, 0, 0, 0
     yield_est = 0.4
 
     def have_now() -> int:  # the freeze selection: row_passes (plan 0075 hooks) + select
@@ -1530,6 +1532,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         gated_rows = [r for i, r in store.gated(model, family).items() if i in new]
         subj = [r for r in gated_rows if not r["gate"].get("lint")]
         tried += len(subj)
+        tried_total += len(subj)
         landed += sum(subject_pass(family, r) for r in subj)
         lost_lint += len(gated_rows) - len(subj)
         bank_gain += max(0, gained)
@@ -1565,6 +1568,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
             "route": "run.fill", "unit": "items", "target": target, "have": have,
             "tried": tried, "landed": landed, "yield": landed / tried if tried else None,
             "yield_basis": "subject gate pass / subject-gated rows (lint rejects out)",
+            "tried_total": tried_total,
             "lint_rejects": lost_lint, "bank_gain": bank_gain,
             "tier": tiers[t_i], "waves": w0 + ran,
             **({"gate_mode": "ask_roles+" + rb_mode} if family == "role_bound_association"

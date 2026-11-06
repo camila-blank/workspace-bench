@@ -280,6 +280,14 @@ def row_passes(family: str, row: dict) -> bool:
         if BUGCLAIM_REQUIRED and row["item"].get("src") == "clean":
             return has_bugclaim(row)
         return True
+    from .lint import CAPITAL_FAMILIES, _capital
+
+    # plan 0075 / #372: a raised target admits authored rows gated before the capital lint (it
+    # runs at gate time only): such a row never ships
+    new = row["origin"] != "original"
+    if new and family in CAPITAL_FAMILIES and _capital(family, {**row["item"], "adapt": {
+            "origin": "authored"}}):  # fmt: skip
+        return False
     hook = _hook(family, "row_passes")
     return bool(hook(row)) if hook is not None else True
 
@@ -594,6 +602,6 @@ def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
                 f"{n}/{target} items and no refill at the current target {target} "
                 f"(last refill target: {block.get('target')})"
             )
-        if route in FILL_ROUTES and not block.get("tried"):
+        if route in FILL_ROUTES and not block.get("tried_total", block.get("tried")):
             return f"{n}/{target} items and the last refill gated no candidate (tried 0)"
     return None
