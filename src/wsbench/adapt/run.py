@@ -1716,8 +1716,16 @@ def next_wave(model: str, family: str) -> int:
     family's candidate and gate logs, so a re-run never reuses an id that ``add_candidates``
     would silently drop (plan 0075 §2.2; earlier fills left w100.. with no refill block)."""
     cands = store._read_jsonl(store.cand_path(model, family))
-    ids = [*store.gated(model, family), *(store.item_id(c) for c in cands)]
-    seen = [int(m.group(1)) for i in ids if (m := _WAVE_ID.search(str(i)))]
+    pairs = [(i, r["item"]) for i, r in store.gated(model, family).items()]
+    pairs += [(store.item_id(c), c) for c in cands]
+    seen = []
+    for iid, it in pairs:
+        if m := _WAVE_ID.search(str(iid)):
+            seen.append(int(m.group(1)))
+        # plan 0077: an id without ``-w<k>c<n>-`` (conjunctive ``cj<hex>_x``, a hash of the
+        # grid) carries its wave only in ``adapt.wave``; ids that carry one are read as before
+        elif isinstance(w := (it.get("adapt") or {}).get("wave"), int):
+            seen.append(w)
     return max([99, *seen]) + 1
 
 
