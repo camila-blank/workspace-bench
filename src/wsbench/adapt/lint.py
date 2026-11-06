@@ -401,6 +401,24 @@ def goes_through_capital(text: str) -> bool:
     return bool(_POSSESSIVE.search(text) or _ADJ_CAPITAL.search(text))
 
 
+_CAPITAL_EXTRA = re.compile(
+    r"\b(?:new|national|administrative|future|federal|official)\s+capital(?:\s+city)?\b"
+    r"(?!\s+(?:gains?|expenditures?|investments?|markets?|raise[sd]?|funds?|requirements?)\b)",
+    re.IGNORECASE,
+)
+
+
+def asks_capital(text: str, strict: bool = False) -> bool:
+    """#372's matcher on one text: it asks for, or goes through, a country's capital (the rule
+    ``_capital`` applies to authored items; plan 0077 reuses it on its funded pools' rows).
+    ``strict`` also catches a named kind of capital ("its new capital", "the national capital")
+    that the authored-item rule lets through; it is used on the funded pool rows only."""
+    if not text:
+        return False
+    hit = bool(_CAPITAL.search(text) or goes_through_capital(text))
+    return hit or (strict and bool(_CAPITAL_EXTRA.search(text)))
+
+
 def _capital(family: str, it: dict) -> list[str]:
     if family not in CAPITAL_FAMILIES or it.get("adapt", {}).get("origin") != "authored":
         return []
