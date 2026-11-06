@@ -11,6 +11,7 @@ logs/
 adapted/.grade_cache/
 adapted/*/gate/
 adapted/*/cand/
+adapted/*/mmh/
 adapted/*/jlens_work/
 adapted/*/floors/readouts/
 adapted/*/floors/results/
