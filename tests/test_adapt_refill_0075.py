@@ -71,7 +71,7 @@ def test_guard_refuses_a_fill_family_short_of_its_raised_target(mdir):
     with pytest.raises(SystemExit, match="current target 100"):
         run.freeze(MODEL, ["association"], strict=True)
     store.update_report(MODEL, lambda r: store.report_slot(r, "families", "association").update(
-        refill={"route": "run.fill", "target": 100, "stop": "max waves (16)"}))  # fmt: skip
+        refill={"route": "run.fill", "target": 100, "tried": 60, "stop": "max waves"}))  # fmt: skip
     run.freeze(MODEL, ["association"], strict=True)
     rep = json.loads((mdir / "report.json").read_text())["families"]["association"]
     assert rep["status"] == "partial"
@@ -290,6 +290,9 @@ def test_element_bridge_is_computed():
     assert not author.element_bridge(
         {"bridge_type": "number", "target": "carbon", "intermediates": ["12"]}
     )
+    assert author.element_bridge(
+        {"bridge_type": "number", "target": "carbon", "intermediates": ["six"]}
+    )
     assert not author.element_bridge(
         {"bridge_type": "element", "target": "Fe", "intermediates": ["iron"]}
     )
@@ -380,3 +383,12 @@ def test_poetry_keep_built_and_new_only(mdir, monkeypatch):
     assert seen["ids"] == ["p-new"] and "header" not in seen
     live = store.gated(MODEL, "poetry")
     assert set(live) == {"p-new"}  # the original's live row is untouched
+
+
+def test_auto_rerun_uses_fresh_seeds_and_guard_refuses_tried_zero(mdir):
+    rows = [_row({"name": f"relational-t1-s{k}-0003-a"}, origin="generated") for k in (0, 1005)]
+    _gate_log(mdir, "relational_multihop", rows)
+    assert run.seed_offset(MODEL, "relational_multihop") == 10000
+    assert run.seed_offset(MODEL, "association") == 0
+    entry = {"status": "partial", "refill": {"route": "run.auto", "target": 100, "tried": 0}}
+    assert "tried 0" in rf.guard_problem("relational_multihop", entry, 78, 100)

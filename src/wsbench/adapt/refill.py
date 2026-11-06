@@ -594,4 +594,6 @@ def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
                 f"{n}/{target} items and no refill at the current target {target} "
                 f"(last refill target: {block.get('target')})"
             )
+        if route in FILL_ROUTES and not block.get("tried"):
+            return f"{n}/{target} items and the last refill gated no candidate (tried 0)"
     return None
