@@ -56,6 +56,36 @@ def ids_of(path: Path) -> set[str]:
         return {json.loads(ln)["id"] for ln in fh if ln.strip()}
 
 
+def name_of(c: dict) -> str:
+    """The gate-log key a candidate's bank row gets (``<template>-<S>-<hop2>``)."""
+    return f"{c['template']}-{c['S']}-{c['hop2']}"
+
+
+def drop_name_collisions(out: Path, excl_dirs: list[Path], round_: str) -> int:
+    """Leave out candidates whose gate-log name an earlier dir already has (their hop-1 bridge
+    changed since that scrape, so the id differs but the bank row would share a key); the count
+    goes into the round's meta. Idempotent."""
+    names: set[str] = set()
+    for d in excl_dirs:
+        with (d / "candidates.jsonl").open(encoding="utf-8") as fh:
+            names |= {name_of(json.loads(ln)) for ln in fh if ln.strip()}
+    path, tmp, n = out / "candidates.jsonl", out / "candidates.tmp.jsonl", 0
+    with path.open(encoding="utf-8") as fi, tmp.open("w", encoding="utf-8") as fo:
+        for ln in fi:
+            if name_of(json.loads(ln)) in names:
+                n += 1
+            else:
+                fo.write(ln)
+    tmp.replace(path)
+    mp = out / f"{round_}_meta.json"
+    meta = json.loads(mp.read_text()) if mp.exists() else {}
+    meta["n_name_collisions_dropped"] = meta.get("n_name_collisions_dropped", 0) + n
+    meta["n_new"] = sum(1 for ln in path.open(encoding="utf-8") if ln.strip())
+    mp.write_text(json.dumps(meta, indent=1))
+    print(f"[{round_}] {n} name collisions with the earlier pools dropped; {meta['n_new']} left")
+    return n
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--round", required=True, choices=["r3"])
@@ -63,7 +93,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--exclude", required=True, help="csv of earlier pool dirs (candidates.jsonl)")
     ap.add_argument("--gw", type=Path, default=GW)
     ap.add_argument("--only", default="", help="csv subset of the round's templates")
+    ap.add_argument(
+        "--names-only",
+        action="store_true",
+        help="only re-apply the name-collision filter to an existing round dir",
+    )
     a = ap.parse_args(argv)
+    excl_dirs = [Path(d) for d in a.exclude.split(",") if d]
+    if a.names_only:
+        drop_name_collisions(a.out, excl_dirs, a.round)
+        return 0
     sys.path.insert(0, str(a.gw))
     import qlever
     import scrape
@@ -86,7 +125,6 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     sys.argv = [sys.argv[0], "--out", str(out)]
     scrape.main()
-    excl_dirs = [Path(d) for d in a.exclude.split(",") if d]
     seen: set[str] = set()
     shas = {}
     for d in excl_dirs:
@@ -107,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             "excluded": shas, "n_scraped": n_all, "n_new": kept}  # fmt: skip
     (out / f"{a.round}_meta.json").write_text(json.dumps(meta, indent=1))
     print(f"[{a.round}] {n_all} scraped, {kept} not in the earlier pools -> {out}/candidates.jsonl")
+    drop_name_collisions(out, excl_dirs, a.round)
     return 0
 
 
