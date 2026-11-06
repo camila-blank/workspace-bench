@@ -25,7 +25,9 @@ passes; the exemption of earlier rows stated); round 11 + review round 4 applied
 rule also catches questions that go THROUGH a named place's capital; the selection re-check
 moved into freeze and covers only NEWLY shipped rows, so the 5 authored brmt items #375 kept,
 e.g. "named after a 1973 bank robbery in Sweden's capital", are not silently removed); round 12
-pending.
++ review round 5 applied (the capital rule runs in `refill.freeze_rows(model=)` BEFORE
+selection, so fill / `have_of` / freeze count alike and a passing row backfills; `refill`
+spreads `waves` over `run.auto`'s ladder); round 13 pending.
 Issue #377.
 
 Sets: `adapted/{glm-5.3, deepseek-v4-pro, muse-spark-open, kimi-k3, qwen3-8b, qwen3.5-9b,
@@ -106,7 +108,9 @@ Restated invariants; every one is enforced in code or in the rollout below:
   capital of Beijing"); it also catches a question that goes THROUGH a named place's capital
   ("the museum in the capital of France", "the river through Japan's capital"). Freeze re-applies
   it to every NEWLY shipped authored row (not in the set's current frozen bank), so an older row a
-  raised target admits never ships one; rows the set already ships (5 brmt items #375's audit
+  raised target admits never ships one; it runs inside `refill.freeze_rows(model=)`, before
+selection, so `fill`'s count, `have_of` and freeze agree and a passing row backfills the slot
+(freeze notes name the rows left out); rows the set already ships (5 brmt items #375's audit
   kept: Chang'an / Tang, Stockholm syndrome, the Great Fire of London, Constantinople) are not
   re-judged here, and the delta audit lists them for Camila. Freeze names every previously shipped id it no longer ships in
   `freeze_notes` (`run.shipped_ids_lost`), and the delta audit reviews that list.
@@ -186,7 +190,7 @@ targets.
 basic_readout_mt, typo_mt, multihop, poetry, role_bound_association, user_modeling,
 multilingual_mt, multilingual_typo, multilingual_multihop; unit items, `n_min` 60, `y_min` 3%,
 easiest = the brief's last tier: the thresholds `run.fill` already uses, `OOC_MIN` / `OOC_YIELD`)
-and relational_multihop (route `run.auto`, same thresholds, easiest `t1`). `refill families=<f>`
+and relational_multihop (route `run.auto`, same thresholds, easiest `t1`; `waves` spread over its ladder, ceil(waves / tiers) per tier). `refill families=<f>`
 dispatches them to `run.fill` / `run.auto`, which now also write a structured `refill` block
 (`route`, `unit`, `target`, `have`, `tried`, `landed` at the current tier, `yield`, `waves`,
 `stop`), the same shape the POLICY families write (§1.3 of plan 0066), so `guard_problem` and

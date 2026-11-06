@@ -21,7 +21,6 @@ from . import mcstage, rebuild, store
 from . import refill as rf
 from .gate import DEFAULT_DRAWS, DEFAULT_TEMPERATURE, run_gate
 from .generate import describe
-from .lint import CAPITAL_FAMILIES, _capital
 from .subjects import get as get_subject
 
 # Items that pass or drop together: twins, ab/ba directions, think/dont_think pairs.
@@ -914,7 +913,8 @@ def freeze(
             if strict and not allow_untried:
                 refused[family] = f"{warn} (or pass allow_untried=<reason>)"
                 continue
-        rows = rf.freeze_rows(family, rows)
+        rows_in = rows
+        rows = rf.freeze_rows(family, rows, model)
         target = rf.adapted_target(family, originals)  # plan 0075 §2.1 (never below registered)
         if family == rf.BUGGY:  # plan 0072 §0 D1: the target bank's item cap (63), not the pool's
             target = len(rf.target_bank())
@@ -953,18 +953,6 @@ def freeze(
             chosen = rf.buggy_selection(rows, target, quotas(family, rf.target_bank()))
         else:
             chosen = select(family, rows, target, quotas(family, originals))
-        capital_out: list[str] = []
-        if family in CAPITAL_FAMILIES:
-            # plan 0075 / #372: a raised target admits authored rows gated before the capital
-            # lint (it runs at gate time); a NEWLY shipped one that fails it is left out. Ids the
-            # set already ships stay (they passed #375's audit) and are not re-judged here.
-            before = shipped_ids(model, family)
-            capital_out = [
-                r["id"] for r in chosen
-                if r["origin"] != "original" and r["id"] not in before
-                and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})
-            ]  # fmt: skip
-            chosen = [r for r in chosen if r["id"] not in set(capital_out)]
         items, carried = [], 0
         patches = (report.get("patches") or {}).get(family, {})
         for r in chosen:
@@ -987,7 +975,7 @@ def freeze(
             ad["gate"] = {k: r["gate"][k] for k in ("rate", "pass")}
             items.append(it)
         notes = _post_freeze(family, header, items, subject.n_layers, subject.read_band)
-        if capital_out:
+        if capital_out := capital_left_out(model, family, rows_in):
             notes.append(f"{len(capital_out)} newly admitted capital questions left out (#372): "
                          f"{capital_out}")  # fmt: skip
         if lost := shipped_ids_lost(model, family, items):  # plan 0075: never silent
@@ -1528,7 +1516,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     yield_est = 0.4
 
     def have_now() -> int:  # the freeze selection: row_passes (plan 0075 hooks) + select
-        rows = rf.freeze_rows(family, _bank_rows(model, family, originals))
+        rows = rf.freeze_rows(family, _bank_rows(model, family, originals), model)
         return len(select(family, rows, target, quota))
 
     w0 = next_wave(model, family) - 100  # fresh candidate ids on a re-run (w<100+w0+...>)
@@ -1571,7 +1559,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         steer = miss_steer(model, family, new)
         if family in CAPS:  # plan 0075 §2.7: values at their cap would land nothing (no false ooc)
             steer += cap_steer(family, select(family, rf.freeze_rows(
-                family, _bank_rows(model, family, originals)), target, quota))  # fmt: skip
+                family, _bank_rows(model, family, originals), model), target, quota))  # fmt: skip
         low = low + 1 if yield_est < 0.3 else 0
         if t_i == len(tiers) - 1 and tried >= OOC_MIN and landed / tried < OOC_YIELD:
             # refill is out of capability; the FAMILY is ooc only if most of it is missing
@@ -1631,6 +1619,13 @@ def shipped_ids(model: str, family: str) -> set[str]:
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {str(store.item_id(it)) for it in (raw["items"] if isinstance(raw, dict) else raw)}
+
+
+def capital_left_out(model: str, family: str, rows: list[dict]) -> list[str]:
+    """The passing rows ``refill.freeze_rows(model=)`` leaves out under the capital rule."""
+    before = {r["id"] for r in rf.freeze_rows(family, rows) if r["gate"].get("pass")}
+    after = {r["id"] for r in rf.freeze_rows(family, rows, model) if r["gate"].get("pass")}
+    return sorted(before - after)
 
 
 def shipped_ids_lost(model: str, family: str, items: list[dict]) -> list[str]:

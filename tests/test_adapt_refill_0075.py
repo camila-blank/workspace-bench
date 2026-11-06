@@ -89,7 +89,7 @@ def test_refill_dispatches_fill_and_auto_families(monkeypatch):
         (f, max_waves)) or "ooc")  # fmt: skip
     out = rf.refill(MODEL, ["poetry", "relational_multihop"], waves=16)
     assert out == {"poetry": "full", "relational_multihop": "ooc"}
-    assert seen == [("poetry", 16), ("relational_multihop", 16)]
+    assert seen == [("poetry", 16), ("relational_multihop", 8)]  # auto: per tier
     with pytest.raises(SystemExit, match="pilot"):
         rf.refill(MODEL, ["poetry"], pilot=True)
     with pytest.raises(SystemExit, match="no refill route"):
@@ -504,10 +504,17 @@ def test_freeze_leaves_out_newly_admitted_capital_questions(mdir):
     old = copy.deepcopy(items[1]) | {"name": "basic-au-t1-w100c0-y",
                                      "prompt": "What syndrome is named after Sweden's capital?",
                                      "adapt": {"origin": "authored", "tier": "t1"}}  # fmt: skip
+    for it in (au, old):
+        it.pop("id", None)  # keyed by the authored name
     _gate_log(mdir, "basic_readout_mt", [_row(au, origin="authored"), _row(old, origin="authored")])
     mdir.mkdir(parents=True, exist_ok=True)
     store.write_json(store.bank_file(MODEL, "basic_readout_mt"), {"items": [{"name": old["name"]}]})
     assert run.shipped_ids(MODEL, "basic_readout_mt") == {old["name"]}
+    rows = list(store.gated(MODEL, "basic_readout_mt").values())
+    kept = {r["id"] for r in rf.freeze_rows("basic_readout_mt", rows, MODEL) if r["gate"]["pass"]}
+    assert kept == {old["name"]}  # the new capital question is out; the shipped one stays
+    assert run.capital_left_out(MODEL, "basic_readout_mt", rows) == [au["name"]]
+    assert all(r["gate"]["pass"] for r in rf.freeze_rows("basic_readout_mt", rows))  # no model
 
 
 def test_post_gate_upgrades_new_native_rows(mdir, monkeypatch):
@@ -559,3 +566,12 @@ def test_freeze_names_previously_shipped_ids_it_drops(mdir):
     (mdir).mkdir(parents=True, exist_ok=True)
     store.write_json(store.bank_file(MODEL, "association"), {"items": [{"name": "gone-1"}]})
     assert run.shipped_ids_lost(MODEL, "association", [{"name": "kept"}]) == ["gone-1"]
+
+
+def test_refill_bounds_auto_waves_over_the_ladder(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        run, "auto", lambda m, f, runner=None, max_waves=6: seen.update(w=max_waves)
+    )
+    rf.refill(MODEL, ["relational_multihop"], waves=16)
+    assert seen["w"] == 8  # two tiers: 16 waves over the whole ladder

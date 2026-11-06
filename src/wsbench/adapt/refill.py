@@ -337,9 +337,27 @@ def apply_select_hook(family: str, rows: list[dict]) -> list[dict]:
     return orig + list(hook([r for r in rows if r["origin"] != "original"]))
 
 
-def freeze_rows(family: str, rows: list[dict]) -> list[dict]:
-    """What freeze and the refill select from: ``row_passes`` applied, then the select hook."""
-    return apply_select_hook(family, _with_passes(family, rows))
+def freeze_rows(family: str, rows: list[dict], model: str | None = None) -> list[dict]:
+    """What freeze and the refill select from: ``row_passes`` applied, then the select hook.
+    With ``model`` (freeze, ``fill``, ``have_of``), plan 0075 / #372: a capital-family authored row
+    the set does not already ship that fails the capital rule is out, BEFORE selection, so the
+    refill's count and freeze's agree and a passing row backfills it."""
+    rows = _with_passes(family, rows)
+    if model is not None:
+        from .lint import CAPITAL_FAMILIES, _capital
+
+        if family in CAPITAL_FAMILIES:
+            from .run import shipped_ids
+
+            before = shipped_ids(model, family)
+            rows = [
+                {**r, "gate": {**r["gate"], "pass": False}, "selected": False}
+                if r["origin"] != "original" and r["id"] not in before and r["gate"].get("pass")
+                and _capital(family, {**r["item"], "adapt": {"origin": "authored"}})
+                else r
+                for r in rows
+            ]  # fmt: skip
+    return apply_select_hook(family, rows)
 
 
 # ---------------------------------------------------------------------------- buggy_code pairs
@@ -445,7 +463,7 @@ def have_of(model: str, family: str) -> int:
     from . import run
 
     _h, originals = store.original_bank(family)
-    rows = freeze_rows(family, run._bank_rows(model, family, originals))
+    rows = freeze_rows(family, run._bank_rows(model, family, originals), model)
     quota = run.quotas(family, originals)
     if family == BUGGY:  # plan 0072 §0 D1: the target bank's cap and quota, as freeze
         tb = target_bank()
@@ -568,7 +586,11 @@ def refill(
                     f"not {family} (plan 0075 §3: one family per call, the ledger is the cap)"
                 )
             if FILL_POLICY[family] == "run.auto":
-                out[family] = run.auto(model, family, runner=runner, max_waves=waves)
+                from .generate import GENERATORS
+
+                # run.auto's max_waves is per tier: `waves` bounds the whole ladder (the budget)
+                per_tier = max(1, -(-waves // len(GENERATORS[family].tiers)))
+                out[family] = run.auto(model, family, runner=runner, max_waves=per_tier)
             else:
                 out[family] = run.fill(model, family, llm, waves, runner=runner)
         elif family == BUGGY:
