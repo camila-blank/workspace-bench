@@ -581,6 +581,18 @@ def _cj_shots(model: str, k: int) -> list[dict]:
     return [_cluster_obj(whole[c]) for c in rng.sample(pool, min(k, len(pool)))]
 
 
+def _warn_cluster_repeat(model: str, first: dict, made: list[dict]) -> None:
+    """Warn when an authored cluster's id is already in the cand / gate logs or this run (a
+    24-bit ``_cj_id`` collision or a regenerated grid): ``add_candidates`` drops its cells."""
+    cid = str(first.get("cluster"))
+    seen = {str(c.get("cluster")) for c in store._read_jsonl(store.cand_path(model, CONJ))}
+    seen |= {str(r["item"].get("cluster")) for r in store.gated(model, CONJ).values()}
+    seen |= {str(c.get("cluster")) for c in made}
+    if cid in seen:
+        print(f"  warning: authored cluster {cid} repeats an id already in the cand/gate logs "
+              "(hash collision or regenerated grid); its cells are dropped")  # fmt: skip
+
+
 def _cj_used(it: dict) -> list[str]:
     state = (it.get("cell") or {}).get("state")
     return [f"{it.get('anchor')}: {state}"] if it.get("anchor") and state else []
@@ -1508,6 +1520,8 @@ def author(model: str, family: str, tier: str, n: int, steer: str = "", wave: in
                 it["native_langs"] = list(native)  # popped by the builder (``_native``)
             it[b.id_key] = f"{family.split('_')[0]}-au-{tier}-w{wave}c{call}-{it.get(b.id_key)}"
             built = b.build(it) if b.build is not None else it
+            if family == CONJ and built:
+                _warn_cluster_repeat(model, built[0], made)
             for it in built if isinstance(built, list) else [built]:
                 it.pop("native_langs", None)  # never shipped (a builder that ignores it)
                 if b.stamp and b.build is not None:

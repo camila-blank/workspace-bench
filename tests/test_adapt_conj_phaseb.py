@@ -165,12 +165,15 @@ def test_widen_screens_confusers():
     assert not {"x1", "x2", "x4", "x5"} & set(labels)
     assert obj["cells"][0]["gold_label"] not in labels
     assert len(kept) == conjstage.MAX_CONFUSERS and labels == [c["label"] for c in base]
-    # a confuser value whose head word another confuser's different value holds
+    # a confuser value whose head word another confuser's different value holds (each label
+    # carries its value: review fix, a label must contain its value)
     dup = [
-        {"axis": "relation", "value": "her sibling", "label": "a", "inverted_label": "b"},
-        {"axis": "relation", "value": "his sibling", "label": "c", "inverted_label": "d"},
-    ]
-    assert [c["label"] for c in conjstage.screen([], dup)] == ["a"]
+        {"axis": "relation", "value": "her sibling", "label": "a her sibling",
+         "inverted_label": "b"},
+        {"axis": "relation", "value": "his sibling", "label": "c his sibling",
+         "inverted_label": "d"},
+    ]  # fmt: skip
+    assert [c["label"] for c in conjstage.screen([], dup)] == ["a her sibling"]
     assert conjstage.head("out of fear of being outshone", "motive") == "fear"
 
 
@@ -384,3 +387,72 @@ def test_one_leaking_cell_is_linted_out_and_its_siblings_are_gated(mdir, monkeyp
     rec = store.gated(MODEL, FAM)[items[3]["id"]]
     assert rec["gate"]["pass"] is False and rec["gate"]["lint"][0].startswith("leak: blocklist")
     assert set(store.gated(MODEL, FAM)) == {items[3]["id"]}
+
+
+# ---------------------------------------------------------------- second review (PR #389)
+def _failed(it, said="She felt grief."):
+    leg = {"rate": 0.3, "greedy": {"text": said}}
+    return {"id": store.item_id(it), "origin": "authored", "item": it, "selected": False,
+            "gate": {"pass": False, "rate": 0.3, "legs": {"surface": leg}}}  # fmt: skip
+
+
+def test_miss_steer_leak_screen_family_says_the_continuation_stated_the_gold(mdir):
+    it = _authored()[0]
+    store.record_gates(MODEL, FAM, [_failed(it)])
+    out = run.miss_steer(MODEL, FAM, {it["id"]})
+    assert "STATED the gold" in out and "never name it" in out and "easier" not in out
+    # every other family keeps its steer text byte-identical
+    fam = "association"
+    other = {"name": "association-au-t1-w100c0-x", "intermediates": ["grief"]}
+    store.record_gates(MODEL, fam, [_failed(other)])
+    assert run.miss_steer(MODEL, fam, {other["name"]}) == (
+        "- Last wave: 0/1 passed.\n"
+        "- Failed (gold -> what the model wrote): grief -> model said 'She felt grief.' (3/10). "
+        "Make items like these easier or pick latents the model knows without a close sibling."
+    )
+
+
+def test_screen_label_must_be_a_new_grid_option():
+    obj = _obj()  # q01: relation varies, "grief/guilt over the sudden ... death of her <rel>"
+    gold = obj["cells"][0]["gold_label"]
+    tmpl = "grief over the sudden accidental death of her {}"
+    cases = [
+        # the value is not in its label
+        {"axis": "relation", "value": "niece", "label": tmpl.format("cousin"),
+         "inverted_label": "i1"},
+        # the label is a grid gold after case-folding
+        {"axis": "relation", "value": "young child", "label": gold.upper(), "inverted_label": "i2"},
+        # the label's slot head is a grid gold's slot head ("child")
+        {"axis": "relation", "value": "adopted child", "label": tmpl.format("adopted child"),
+         "inverted_label": "i3"},
+    ]  # fmt: skip
+    assert conjstage.screen(obj["cells"], cases) == []
+    ok = {"axis": "relation", "value": "Niece", "label": tmpl.format("niece"),
+          "inverted_label": "i4"}  # fmt: skip
+    assert [c["label"] for c in conjstage.screen(obj["cells"], [ok])] == [tmpl.format("niece")]
+
+
+def test_cluster_batch_counts_cells_already_in_the_gate_log(mdir, monkeypatch):
+    items = _authored()
+    # a crash mid-batch: 4 cells were gated, 6 are still pending
+    store.add_candidates(MODEL, FAM, items)
+    store.record_gates(MODEL, FAM, [_row(it, ok=True, origin="authored") for it in items[:4]])
+    assert lint.lint_pairs(FAM, items[4:]) != {}  # alone, the siblings look like a short cluster
+    assert lint.lint_pairs(FAM, items[4:], items[:4]) == {}
+    seen = []
+    monkeypatch.setattr(run, "_gate_rows", lambda m, f, ok, *a: seen.extend(ok) or [])
+    run.lint_and_gate(MODEL, FAM, runner=None, draws=10, temperature=None, llm=None)
+    assert [it["id"] for it in seen] == [it["id"] for it in items[4:]]
+    # a broken logged cell still fails the cluster, but only the batch's own cells are rejected
+    bad = copy.deepcopy(items[:4])
+    bad[0]["mc_options"] = bad[0]["mc_options"][:-1]
+    out = lint.lint_pairs(FAM, items[4:], bad)
+    assert set(out) == {it["id"] for it in items[4:]}
+
+
+def test_repeated_cluster_id_warns(mdir, capsys):
+    store.add_candidates(MODEL, FAM, _authored())
+    author._warn_cluster_repeat(MODEL, _authored()[0], [])
+    assert "repeats an id already in the cand/gate logs" in capsys.readouterr().out
+    author._warn_cluster_repeat(MODEL, _authored(_obj("q02"))[0], [])
+    assert capsys.readouterr().out == ""
