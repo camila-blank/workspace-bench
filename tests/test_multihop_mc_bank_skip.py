@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import build_multihop_mc as m  # noqa: E402
@@ -36,8 +38,5 @@ def test_bank_skips_an_unbuildable_item(tmp_path, capsys):
 
 
 def test_registered_build_still_raises_on_unknown_gold():
-    try:
+    with pytest.raises(ValueError, match="not in COUNTRIES"):
         m.build_mc(_country_item("mh-a", "Atlantis Republic"))
-    except (KeyError, ValueError):
-        return
-    raise AssertionError("build_mc should refuse a gold outside its pool")
