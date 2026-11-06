@@ -211,6 +211,46 @@ def _template(tok: Any, messages: list[dict[str, str]]) -> str:
     )
 
 
+def _template_token_ids(tok: Any, messages: list[dict[str, str]]) -> list[int]:
+    """The chat template's own ids (``tokenize=True``), same arguments as :func:`_template`."""
+    return _ids(
+        tok.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=True, enable_thinking=False
+        )
+    )
+
+
+def check_template_ids(
+    tok: Any, messages: list[dict[str, str]], suffix: str, ids: Sequence[int], where: str
+) -> None:
+    """Plan 0067 (a template_ids subject, Kimi-K3): ``encode(rendered)`` must equal the template's
+    own ids for the render, prefill (``suffix``, plain text) included; refuses otherwise."""
+    want = _template_token_ids(tok, messages) + (encode(tok, suffix)[0] if suffix else [])
+    if list(ids) != want:
+        n = min(len(ids), len(want))
+        at = next((i for i in range(n) if ids[i] != want[i]), n)
+        raise SystemExit(
+            f"{FAMILY}: {where}: the re-encoded render is not the chat template's own ids "
+            f"(first difference at position {at}; {len(ids)} vs {len(want)} ids)"
+        )
+
+
+def check_reply_end_decodes_away(tok: Any, reply_end: str, where: str) -> None:
+    """Plan 0067: the reply is decoded with ``skip_special_tokens=True``, so the subject's
+    reply-end marker token must decode to nothing there; refuses otherwise."""
+    ids = _ids(tok(reply_end, add_special_tokens=False))
+    if len(ids) != 1:
+        raise SystemExit(f"{FAMILY}: {where}: reply_end {reply_end!r} is not one token: {ids}")
+    probe = _ids(tok("ok", add_special_tokens=False))
+    plain = str(tok.decode(probe, skip_special_tokens=True))
+    marked = str(tok.decode(probe + ids, skip_special_tokens=True))
+    if marked != plain:
+        raise SystemExit(
+            f"{FAMILY}: {where}: reply_end {reply_end!r} does not decode away under "
+            f"skip_special_tokens=True ({plain!r} -> {marked!r}); the replies would keep it"
+        )
+
+
 def protocol_messages(prompts: dict[str, Any], trial: int) -> list[dict[str, str]]:
     p = prompts["protocol"]
     return [
@@ -344,12 +384,27 @@ def build_job(
         bad := check_against_registered(renders, bank)
     ):
         raise SystemExit(f"{model}: the 27B's template, but sites differ from the bank: {bad[:6]}")
+    if s.reply_end:
+        check_reply_end_decodes_away(tok, s.reply_end, model)
+    if s.template_ids:
+        prompts = bank["prompts"]
+        for key, r in renders.items():
+            kind, name = key.split(":", 1)
+            if kind == "protocol":
+                msgs = protocol_messages(prompts, int(name.removeprefix("trial")))
+                check_template_ids(tok, msgs, prompts["protocol"]["prefill"], r["input_ids"], key)
+            else:
+                msgs = [{"role": "user", "content": prompts["neutral"][name]}]
+                check_template_ids(tok, msgs, "", r["input_ids"], key)
     rec = bank["vector_recipe"]
     words = [c["word"] for c in bank["concepts"]]
 
     def vec_ids(word: str) -> list[int]:
         msg = [{"role": "user", "content": rec["user_turn"].format(word=word.lower())}]
-        return encode(tok, _template(tok, msg))[0]
+        ids = encode(tok, _template(tok, msg))[0]
+        if s.template_ids:
+            check_template_ids(tok, msg, "", ids, f"vector:{word}")
+        return ids
 
     trial = int(bank["prompts"]["protocol"].get("trial_scored", 1))
     proto = renders[f"protocol:trial{trial}"]
@@ -358,6 +413,9 @@ def build_job(
     detect = {}
     for n in range(1, 9):
         d = protocol_render(tok, bank["prompts"], n, prefill=False)
+        if s.template_ids:
+            msgs = protocol_messages(bank["prompts"], n)
+            check_template_ids(tok, msgs, "", d["input_ids"], f"detect:trial{n}")
         detect[str(n)] = {"ids": d["input_ids"], "inject": d["inject_span"]}
     d1 = protocol_render(tok, bank["prompts"], 1, prefill=False)["_text"]
     yes_no = cont_ids(tok, d1, ["Yes", "No"])[0]
