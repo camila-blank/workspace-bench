@@ -1456,7 +1456,9 @@ def _agentic_drop_ids(model: str, ids: list[str]) -> list[str]:
         raise SystemExit(f"drop: not in {model}'s agentic rollouts or shipped bank: {unknown[:5]}")
     partner: dict[str, str] = {}
     pool_items: list[dict] = []
-    with contextlib.suppress(SystemExit):  # no pinned pool: registered bank + shipped set pairs
+    # no pool pinned at all (every POOL_SHA256 None): registered bank + shipped set pairs; a
+    # partly pinned, mismatched or malformed pool exits (load_pool), never silently skipped
+    if any(v is not None for v in agentic.POOL_SHA256.values()):
         pool_items = list(agentic.load_pool().items)
     for it in [*agentic._items(True), *pool_items, *shipped]:
         if tw := it.get("twin"):

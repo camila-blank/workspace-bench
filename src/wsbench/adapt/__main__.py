@@ -185,8 +185,11 @@ def main(argv: list[str] | None = None) -> None:
         pool = a.get("pool") or None  # plan 0077 §5
         if pool is None and "waves" in a:
             raise SystemExit("agentic: waves= needs pool=v3")
-        agentic.run(model, a.get("stage", "all"), twins=twins, pool=pool,
-                    waves=int(a.get("waves", 8)))  # fmt: skip
+        raw = a.get("waves", "8")
+        waves = int(raw) if raw.strip().isdigit() else 0
+        if waves < 1:
+            raise SystemExit(f"agentic: waves={raw!r} is not a positive integer")
+        agentic.run(model, a.get("stage", "all"), twins=twins, pool=pool, waves=waves)
     elif cmd == "moral":
         from . import moral
 

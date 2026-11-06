@@ -587,7 +587,12 @@ def main(argv: list[str] | None = None) -> None:
     if os.environ.get("ANTHROPIC_API_KEY"):
         raise SystemExit("agentic_pool_v3: unset ANTHROPIC_API_KEY (auth is the SDK profile: "
                          "WSB_ANTHROPIC_AUTH=sdk ANTHROPIC_PROFILE=default)")  # fmt: skip
-    os.environ.setdefault("WSB_ANTHROPIC_AUTH", "sdk")
+    auth = os.environ.get("WSB_ANTHROPIC_AUTH")
+    if auth is None:
+        os.environ["WSB_ANTHROPIC_AUTH"] = "sdk"
+    elif auth != "sdk":
+        raise SystemExit(f"agentic_pool_v3: WSB_ANTHROPIC_AUTH={auth!r}; this script authors "
+                         "on the SDK profile only (unset it or set it to sdk)")  # fmt: skip
     ask = Claude(a.work / "claude_cache.jsonl")
     w = {"workers": a.workers} if a.workers else {}
     if a.stage == "draft":
