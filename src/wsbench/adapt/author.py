@@ -1313,6 +1313,7 @@ def _finish(it: dict, b: Brief, family: str, model: str, tier: str, wave: int, s
         "knobs": {"brief": b.tiers[tier]},
         "author": AUTHOR_MODEL,
         "wave": wave,
+        "plan": "0075",  # the refill rules (hooks in refill.row_passes) apply to these rows only
         **({"steer": steer} if steer else {}),
     }
     if family == "multihop":  # plan 0075 §2.4: the judge's element rule needs the flag

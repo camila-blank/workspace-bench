@@ -14,6 +14,7 @@ from . import store
 
 FAMILY = "role_bound_association"
 FIELD = "rb_distractors"  # {roles: [3], actions: [4]}; popped from the item at freeze
+FAILED = "rb_distractors_failed"  # the proposer gave up: never re-asked (spend under a cap)
 OVERLAY = f"{FAMILY}/distractors_v3.json"
 
 
@@ -53,13 +54,14 @@ def todo_pairs(model: str) -> dict[str, list[dict]]:
 
     by_pair: dict[str, list[dict]] = defaultdict(list)
     for r in live_rows(model, FAMILY):
-        if r["origin"] != "original":
+        if r["origin"] != "original" and (r["item"].get("adapt") or {}).get("plan") == "0075":
             by_pair[str(r["item"].get("pair_id"))].append(r)
     return {
         p: rs
         for p, rs in by_pair.items()
         if len(rs) == 2 and all(r["gate"].get("pass") and plan0075_row(r) for r in rs)
         and not all(r["item"].get(FIELD) for r in rs)
+        and not any(r["item"].get(FAILED) for r in rs)
     }  # fmt: skip
 
 
@@ -85,7 +87,9 @@ def build(model: str, propose: Any = None) -> dict[str, int]:
     new = []
     for p, rs in todo.items():
         block = got.get(p)
-        if not block:
+        if not block:  # recorded, so later waves never re-propose it; the pair never ships
+            new += [{**r, "item": {**copy.deepcopy(r["item"]), FAILED: True}, "at": now}
+                    for r in rs]  # fmt: skip
             continue
         for r in rs:
             it = copy.deepcopy(r["item"])
@@ -97,7 +101,8 @@ def build(model: str, propose: Any = None) -> dict[str, int]:
             new.append({**r, "item": it, "at": now, "built_by": "rbstage distractors"})
     if new:
         store.record_gates(model, FAMILY, new)
-    out = {"built": len(new) // 2, "failed": len(todo) - len(new) // 2}
+    built = sum(bool(r["item"].get(FIELD)) for r in new) // 2
+    out = {"built": built, "failed": len(todo) - built}
     print(f"role_bound distractors: {out}")
     return out
 

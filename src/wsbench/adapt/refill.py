@@ -291,7 +291,17 @@ def row_passes(family: str, row: dict) -> bool:
             "origin": "authored"}}):  # fmt: skip
         return False
     hook = _hook(family, "row_passes")
-    return bool(hook(row)) if hook is not None else True
+    if hook is None:
+        return True
+    if family in ROW_HOOK_MODULES and not is_0075(row):
+        return True  # rows authored before plan 0075 (other sets' frozen banks) keep shipping
+    return bool(hook(row))
+
+
+def is_0075(row: dict) -> bool:
+    """A row authored under plan 0075's refill rules (``adapt.plan``, stamped by
+    ``author._finish``); only these get the new families' ``row_passes`` hooks."""
+    return ((row.get("item") or {}).get("adapt") or {}).get("plan") == "0075"
 
 
 def bugclaim_missing(rows: list[dict]) -> list[str]:

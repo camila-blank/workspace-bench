@@ -45,6 +45,8 @@ def ledger(model: str, usage: Any) -> None:
     path = os.environ.get(LEDGER_ENV)
     if not path or usage is None:
         return
+    if not os.path.isabs(path):  # subprocesses run elsewhere: one ledger, one absolute path
+        path = os.environ[LEDGER_ENV] = os.path.abspath(path)
     row = {
         "model": model,
         "in": int(getattr(usage, "input_tokens", 0) or 0),
