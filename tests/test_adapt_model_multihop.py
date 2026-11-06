@@ -792,6 +792,9 @@ def test_changed_question_is_reasked_and_regated(tmp_model):
     mmh.run(MODEL, "gate", runner=runner, ask=fake_claude, workers=1)  # A_f texts moved: not yet
     g = json.loads((mmh.work_dir(MODEL) / "gate.json").read_text())[INV["id"]]
     assert g["fp"] == old_fp
+    mmh.build(MODEL, runner=runner)  # the old verdict can never ship meanwhile
+    rows = {r["id"]: r for r in store.gated(MODEL, mmh.FAMILY).values()}
+    assert rows[INV["id"]]["gate"]["reasons"][0].startswith("gate: stale")
     mmh.run(MODEL, "gen2", runner=runner, ask=fake_claude, workers=1)  # re-asks the moved texts
     mmh.run(MODEL, "gate", runner=runner, ask=fake_claude, workers=1)
     g = json.loads((mmh.work_dir(MODEL) / "gate.json").read_text())[INV["id"]]
@@ -835,3 +838,55 @@ def test_pooled_binomial():
     assert mmh.binom_sf(5, 10, 0.25) == pytest.approx(0.0781, abs=1e-3)
     assert mmh.pooled_out({"blind": [3, 3], "described": [0, 0]}, 5)  # 6/10 at p0 .25
     assert not mmh.pooled_out({"blind": [2, 2], "described": [0, 0]}, 5)  # 4/10
+
+
+def test_leak_fails_the_gate(tmp_model, monkeypatch):
+    q = "In which year was the current flagship Foo phone, the Foo X3, released? "
+    cut_leak = {**CUT, "m2": q + SFX.format(t="year")}  # the read question names its bridge
+    pool = {"header": {}, "invented": [INV], "cutoff": [cut_leak]}
+    monkeypatch.setattr(mmh, "load_pool", lambda: pool)
+    _r, rows = _all()
+    assert rows[CUT["id"]]["gate"]["reasons"] == ["gate: leak"]
+
+
+def test_identifiability_by_foil_truth_alone():
+    s = {
+        "cat": "cutoff",
+        "b_mode": "Foo X3",
+        "foils": [{"name": "Foo X2", "attr": "2024"}],
+        "foil_names": ["Foo X2"],
+        "m": "q",
+        "m2": "q2",
+        "af": ["a0"],
+    }
+    out = {
+        f"i|x|{p}": {"text": "t", "greedy": "2024", "samples": ["2024"] * 20}
+        for p in ("m", "m2", "a")
+    }
+    out["i|x|af0"] = {"text": "t", "greedy": "1999", "samples": []}  # A_f differs ...
+
+    def ask(prompt, valid=None):
+        a = json.loads(re.search(r"second-hop fact\): (\[.*\])", prompt).group(1))
+        return {"bridge": {}, "attr": {x: x for x in a}, "aliases": {}}
+
+    g = mmh._gate_one("i|x", s, out, ask)
+    assert g["fail2"] == "identifiability"  # ... but the foil's TRUE value equals the answer
+
+
+def test_screen_leaves_a_failed_draw_item_unscreened(tmp_model, tmp_path, monkeypatch):
+    _all()
+    out = tmp_path / "scr"
+    _write_baseline(
+        out,
+        {INV["id"]: {"blind": 0, "described": 0}, CUT["id"]: {"blind": 0, "described": 0}},
+        fail=(CUT["id"],),
+    )
+    bank = json.loads((mmh.work_dir(MODEL) / "candidates.json").read_text())
+    bank["items"] = bank["items"] * 1
+    for k in range(3):  # >= 4 candidates for the described guesser
+        bank["items"].append({**bank["items"][0], "id": f"extra{k}"})
+    store.write_json(mmh.work_dir(MODEL) / "candidates.json", bank)
+    monkeypatch.setattr(mmh, "_baseline", lambda env, res, log: mmh.read_hits(out))
+    monkeypatch.setattr(mmh, "failed_draw_ids", lambda res: {CUT["id"]})
+    lk = mmh.lucky(MODEL, out=str(out))
+    assert INV["id"] in lk["draws"] and CUT["id"] not in lk["draws"]
