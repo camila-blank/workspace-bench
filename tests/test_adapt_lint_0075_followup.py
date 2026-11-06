@@ -216,3 +216,50 @@ def test_multihop_brief_reads_the_builder_tables():
         assert "Kenya" in mcstage.multihop_build_steer()
     finally:
         del b.COUNTRIES["Kenya"]
+
+
+@pytest.mark.parametrize("gold", ["12", "13", "20"])
+def test_mh_number_golds_agree_with_the_builder_tables(gold):
+    """12 is in NUMBER_WORDS and ORDINALS; 13..20 only in NUMBER_WORDS: the builder (and so
+    lint) needs both."""
+    b = mcstage.script_module("build_multihop_mc")
+    ok = int(gold) in b.NUMBER_WORDS and int(gold) in b.ORDINALS
+    item = _mh(name=f"mh-n{gold}", intermediates=[gold], bridge_type="number", bridge_aliases=[],
+               target="x", prompt="Fact: A count of things is")  # fmt: skip
+    assert (not _build_problems(item)) is ok
+
+
+def test_mh_buildable_lint_reads_an_item_adapt_mc_already_built():
+    item = _mh()
+    item["mc"] = mcstage.script_module("build_multihop_mc").build_mc(copy.deepcopy(item))
+    assert lint.lint("multihop", item) == []
+    bad = _mh(intermediates=["South Africa"], bridge_type="country", bridge_aliases=[])
+    bad["mc"] = {"bridge_type": "country", "gold": "South Africa", "aliases": []}
+    assert _build_problems(bad)
+
+
+def test_mh_buildable_lint_fails_safe_and_keeps_sys_path():
+    import sys
+
+    before = list(sys.path)
+    for _ in range(3):
+        assert not _build_problems(_mh(intermediates=["7"], bridge_type="number",
+                                       bridge_aliases=[], target="x",
+                                       prompt="Fact: A count of things is"))  # fmt: skip
+    assert sys.path == before
+    # a malformed authored field is rejected, never a crash of the whole lint batch
+    assert _build_problems(_mh(mc_exclude=5))
+
+
+def test_mc_build_drop_reject_still_comes_first():
+    item = _mh(intermediates=["South Africa"], bridge_type="country", bridge_aliases=[])
+    item["adapt"]["mc_build"] = {"dropped": True}
+    assert lint.lint("multihop", item) == ["mc: the MC builder dropped this candidate (no options)"]
+
+
+def test_multihop_brief_names_only_buildable_bridge_kinds():
+    b = mcstage.script_module("build_multihop_mc")
+    br = author.BRIEFS["multihop"]
+    assert all(t in br.invariants[-1] for t in b.POOLS)
+    for tier in br.tiers.values():
+        assert "moon" not in tier.lower() and "company" not in tier.lower()
