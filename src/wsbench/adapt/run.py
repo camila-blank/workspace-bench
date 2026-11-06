@@ -31,6 +31,9 @@ PAIR_KEYS = {
     "directed_modulation": "pair_id",
 }
 
+# Items one authored object becomes (plan 0077 §6): ``fill`` sizes its waves in objects
+OBJECT_ITEMS = {"conjunctive_association": 10}
+
 
 def _origin(item: dict) -> str:
     return (item.get("adapt") or {}).get("origin", "original")
@@ -1568,6 +1571,8 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         n = min(60, max(10, math.ceil(1.5 * (target - have) / max(yield_est, 0.05))))
         if family in PAIR_KEYS:
             n = max(5, n // 2)  # a pair object becomes two items
+        if family in OBJECT_ITEMS:  # plan 0077 §6: a conjunctive object is a 10-item cluster
+            n = max(1, n // OBJECT_ITEMS[family])
         before = set(store.gated(model, family))
         write(model, family, tiers[t_i], n, steer=steer, wave=100 + w0 + wave)
         ran += 1

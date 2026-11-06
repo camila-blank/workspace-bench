@@ -96,12 +96,12 @@ def test_refill_dispatches_fill_and_auto_families(monkeypatch):
     with pytest.raises(SystemExit, match="pilot"):
         rf.refill(MODEL, ["poetry"], pilot=True)
     with pytest.raises(SystemExit, match="no refill route"):
-        rf.refill(MODEL, ["conjunctive_association"])
+        rf.refill(MODEL, ["jailbreak_recognition"])
 
 
 def test_fill_without_a_brief_exits():
     with pytest.raises(SystemExit, match="no authoring brief"):
-        run.fill(MODEL, "conjunctive_association", llm=None, runner=object())
+        run.fill(MODEL, "jailbreak_recognition", llm=None, runner=object())
 
 
 def test_fill_writes_the_block_and_runs_poetry_post_gate(mdir, monkeypatch):
