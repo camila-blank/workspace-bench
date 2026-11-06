@@ -642,6 +642,7 @@ def test_drop_refuses_a_bad_pool(am, monkeypatch):
         raise SystemExit("agentic pool=v3: sha256 mismatch")
 
     monkeypatch.setattr(agentic, "load_pool", bad)
+    monkeypatch.setattr(agentic, "POOL_SHA256", dict.fromkeys(agentic.POOL_FILES))  # unpinned
     adapt_run.drop(MODEL, "agentic_misalignment", ["m1"], "x")  # all None: no pool load
     monkeypatch.setattr(agentic, "POOL_SHA256", dict.fromkeys(agentic.POOL_FILES, "0" * 64))
     with pytest.raises(SystemExit, match="sha256 mismatch"):

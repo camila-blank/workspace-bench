@@ -117,8 +117,10 @@ POOL_FILES = ("agentic_pool_v3.json", "agentic_pool_v3_targets.json")
 # pinned once the pool is built, reviewed and audited (scripts/agentic_pool_v3.py build prints
 # both); None = not built yet, and pool=v3 refuses
 POOL_SHA256: dict[str, str | None] = {
-    "agentic_pool_v3.json": None,
-    "agentic_pool_v3_targets.json": None,
+    "agentic_pool_v3.json": "4539b42578b04c287d76da81ad0255ea17a0aa654419bfbc9daaf7e619c9cd65",
+    "agentic_pool_v3_targets.json": (
+        "591d4cdf854cf8a684676c3632afafad370986d14dd8b438a050e334b3cc1c78"
+    ),
 }
 WAVE = 40  # pool pairs per wave, in the pool's seeded (file) order
 POOL_TARGET, POOL_N_MIN, POOL_Y_MIN = 22, 60, 0.03  # pairs: the registered bank's pair count
