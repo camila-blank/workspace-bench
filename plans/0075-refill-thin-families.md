@@ -32,7 +32,9 @@ multilingual_typo list lint is word-level, so all 88 registered items pass it; a
 role_bound row is gated strict by its stamp, whatever the env); round 14 applied (a demonym
 capital, "the French capital", and "X's seat" are caught unless the city is named right after
 it or a year follows); round 15 applied (the raised targets are scoped to the ten sets,
-`refill.PLAN_0075_SETS`); round 16 pending.
+`refill.PLAN_0075_SETS`); round 16 applied (the strict guard's new members / rule and the
+freeze-time capital re-check are scoped to the same ten sets: a set elsewhere re-freezes exactly
+as on main); round 17 pending.
 Issue #377.
 
 Sets: `adapted/{glm-5.3, deepseek-v4-pro, muse-spark-open, kimi-k3, qwen3-8b, qwen3.5-9b,

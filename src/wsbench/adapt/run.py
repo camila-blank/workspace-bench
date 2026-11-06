@@ -1081,7 +1081,11 @@ def freeze(
             # ooc / blocked set by `auto`, `fill` or `note` are kept; short with no refill ever
             # attempted is `untried`, not `partial` (skill audit)
             entry["status"] = "partial" if tried else "untried"
-        if strict and families and (why := rf.guard_problem(family, entry, n_have, n_target)):
+        if (
+            strict
+            and families
+            and (why := rf.guard_problem(family, entry, n_have, n_target, model))
+        ):
             if not allow_untried:
                 refused[family] = (
                     f"{why}: refill it (`adapt refill`, plan 0066 §3a) or pass "

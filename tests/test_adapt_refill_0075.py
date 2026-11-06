@@ -600,3 +600,11 @@ def test_plan_0075_role_bound_rows_are_gated_strict_without_the_env(monkeypatch)
     a, _b = _rb_pair()
     asked = next(x for x in fams.get("role_bound_association").asks(a) if x.leg != "leak")
     assert asked.meta.get("require_roles") == ["teacher", "student"]
+
+
+def test_guard_is_unchanged_outside_the_ten_sets():
+    other = "gemma-4-31b-it"
+    assert rf.guard_problem("typo_mt", {"status": "partial"}, 80, 85, other) is None
+    assert rf.guard_problem("poetry", {"status": "untried"}, 80, 100, other) is None
+    assert rf.guard_problem("typo_mt", {"status": "untried"}, 80, 85, other)  # as on main
+    assert rf.guard_problem("poetry", {"status": "untried"}, 80, 100, MODEL)

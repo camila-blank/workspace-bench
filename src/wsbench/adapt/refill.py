@@ -152,11 +152,13 @@ FILL_ROUTES = frozenset(FILL_POLICY.values())
 # run.NOTE_REFILL_FAMILIES (plan 0072 D6): their hand `note refill=` blocks keep counting
 HAND_REFILL_FAMILIES = frozenset({"user_modeling", "multihop"})
 
-# the fill / auto families the strict freeze guard covers by their `untried` status (§1.3);
-# plan 0075 adds the families it gave a refill route
+# the fill / auto families the strict freeze guard covers by their `untried` status (§1.3)
 UNTRIED_GUARDED = frozenset({
     "typo_mt", "association", "basic_readout", "basic_readout_mt",
     "arithmetic_intermediates", "relational_multihop", "chain_intermediates",
+})  # fmt: skip
+# plan 0075: the families it gave a refill route, guarded on its ten sets only
+UNTRIED_GUARDED_0075 = frozenset({
     "multihop", "poetry", "role_bound_association", "user_modeling",
     "multilingual_mt", "multilingual_typo", "multilingual_multihop",
 })  # fmt: skip
@@ -354,7 +356,7 @@ def freeze_rows(family: str, rows: list[dict], model: str | None = None) -> list
     the set does not already ship that fails the capital rule is out, BEFORE selection, so the
     refill's count and freeze's agree and a passing row backfills it."""
     rows = _with_passes(family, rows)
-    if model is not None:
+    if model is not None and model in PLAN_0075_SETS:  # other sets re-freeze as before
         from .lint import CAPITAL_FAMILIES, _capital
 
         if family in CAPITAL_FAMILIES:
@@ -615,7 +617,9 @@ def refill(
     return out
 
 
-def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
+def guard_problem(
+    family: str, entry: dict, n: int, target: int, model: str | None = None
+) -> str | None:
     """The strict freeze guard (§1.3 + §11.6): a POLICY family short of target with no refill block
     (or only a pilot that did not stop it as ooc); a fill / auto family left ``untried``."""
     if n >= target:
@@ -627,9 +631,12 @@ def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
         if block.get("pilot") and entry.get("status") != "ooc":
             return f"{n}/{target} {POLICY[family].unit}; only a pilot ran and it was not ooc"
         return None
-    if family in UNTRIED_GUARDED and entry.get("status") == "untried":
+    # plan 0075's rules apply to its ten sets (a set elsewhere re-freezes exactly as before)
+    plan_0075 = model is None or model in PLAN_0075_SETS
+    guarded = UNTRIED_GUARDED | (UNTRIED_GUARDED_0075 if plan_0075 else frozenset())
+    if family in guarded and entry.get("status") == "untried":
         return f"{n}/{target} items and untried (no refill attempted)"
-    if family in FILL_POLICY and entry.get("status") not in ("ooc", "blocked"):
+    if plan_0075 and family in FILL_POLICY and entry.get("status") not in ("ooc", "blocked"):
         # plan 0075 §2.1: a family short of its (raised) adapted target ships only after a
         # refill measured AT that target; authored rows from an earlier, lower target make it
         # `partial`, not `untried`, so the untried rule alone would let it through
