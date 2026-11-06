@@ -47,6 +47,9 @@ def test_adapted_target_raises_never_lowers():
     assert rf.adapted_target("knowledge_cutoff") == len(kc)
     assert "buggy_code" not in rf.ADAPTED_TARGETS  # plan 0072 D1 keeps its target bank
     assert rf.POLICY["buggy_code"].target == 24
+    # scoped to the ten plan-0075 sets: any other set keeps its registered-size target
+    assert rf.adapted_target("basic_readout_mt", brmt, "qwen3.5-4b") == 120
+    assert rf.adapted_target("basic_readout_mt", brmt, "gemma-4-31b-it") == len(brmt)
 
 
 def test_freeze_and_have_of_use_the_adapted_target(mdir):

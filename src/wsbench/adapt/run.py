@@ -915,7 +915,7 @@ def freeze(
                 continue
         rows_in = rows
         rows = rf.freeze_rows(family, rows, model)
-        target = rf.adapted_target(family, originals)  # plan 0075 §2.1 (never below registered)
+        target = rf.adapted_target(family, originals, model)  # plan 0075 §2.1 (never lowered)
         if family == rf.BUGGY:  # plan 0072 §0 D1: the target bank's item cap (63), not the pool's
             target = len(rf.target_bank())
         need = fams.SUBJECT_FIELDS.get(family, ())
@@ -1179,7 +1179,7 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
     gen = GENERATORS[family]
     runner = runner or _runner(model)
     _h, originals = store.original_bank(family)
-    target = rf.adapted_target(family, originals)  # plan 0075 §2.1
+    target = rf.adapted_target(family, originals, model)  # plan 0075 §2.1
     quota = quotas(family, originals)
     s_off = seed_offset(model, family)  # plan 0075: a re-run never regenerates logged ids
     status, tried_total, bank_gain, n_waves = "partial", 0, 0, 0
@@ -1509,7 +1509,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     runner = runner or _runner(model)
     _h, originals = store.original_bank(family)
     # plan 0075 §2.1: the adapted target (never below the registered size)
-    target, quota = rf.adapted_target(family, originals), quotas(family, originals)
+    target, quota = rf.adapted_target(family, originals, model), quotas(family, originals)
     tiers = list(brief.tiers)
     t_i, low, steer, status, tried, landed, wave = 0, 0, "", "partial", 0, 0, 0
     why, ran, lost_lint, bank_gain, tried_total = "", 0, 0, 0, 0

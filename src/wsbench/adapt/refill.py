@@ -46,10 +46,21 @@ ADAPTED_TARGETS: dict[str, int] = {
 }
 
 
-def adapted_target(family: str, originals: list[dict] | None = None) -> int:
+# the sets plan 0075 retargets; every other set keeps its registered-size target
+PLAN_0075_SETS = frozenset({
+    "glm-5.3", "deepseek-v4-pro", "muse-spark-open", "kimi-k3", "qwen3-8b", "qwen3.5-9b",
+    "qwen3.5-4b", "qwen3.5-2b", "qwen3.5-0.8b", "olmo-3-7b",
+})  # fmt: skip
+
+
+def adapted_target(
+    family: str, originals: list[dict] | None = None, model: str | None = None
+) -> int:
     """The adapted item target of ``family``: ``max(len(originals), ADAPTED_TARGETS[family])``
-    (the registered bank's size when the family has no entry)."""
+    on a plan-0075 set (``PLAN_0075_SETS``); the registered bank's size elsewhere."""
     n = len(originals) if originals is not None else _registered_size(family)
+    if model is not None and model not in PLAN_0075_SETS:
+        return n
     return max(n, ADAPTED_TARGETS.get(family, 0))
 
 
@@ -468,7 +479,7 @@ def have_of(model: str, family: str) -> int:
     if family == BUGGY:  # plan 0072 §0 D1: the target bank's cap and quota, as freeze
         tb = target_bank()
         return selected_pairs(buggy_selection(rows, len(tb), run.quotas(family, tb)))
-    return len(run.select(family, rows, adapted_target(family, originals), quota))
+    return len(run.select(family, rows, adapted_target(family, originals, model), quota))
 
 
 def prior_tally(model: str, family: str) -> tuple[int, int]:
