@@ -385,7 +385,10 @@ def _country_attrs(ask: AskJson, countries: set[str], model: str, workers: int) 
     chunks = [xs[i : i + 40] for i in range(0, len(xs), 40)]
 
     def one(ch: list[str]) -> dict[str, Any]:
-        o = ask(COUNTRY_ATTRS.format(countries=json.dumps(ch)))
+        o = ask(
+            COUNTRY_ATTRS.format(countries=json.dumps(ch)),
+            valid=lambda js: isinstance(js, dict) and all(c in js for c in ch),
+        )
         return {k: v for k, v in (o or {}).items() if k in ch and isinstance(v, dict)}
 
     for m in pmap(one, chunks, workers):
@@ -528,8 +531,12 @@ def canon1(model: str, ask: AskJson, limit: int = 0, workers: int = 16) -> dict[
         groups.setdefault((_b_key(r), fn), []).append(r)
     cl_cache = _load(model, "cluster_b.json")
 
+    def ckey(k: tuple) -> str:  # the CLUSTER inputs themselves (B samples + foil names)
+        b = [x for x in (clean(t) for t in _samples(out1, k[0])) if x]
+        return f"{k[0]}|{zlib.crc32(json.dumps([sorted(set(b)), list(k[1])]).encode()):08x}"
+
     def one(k: tuple) -> tuple[str, Any]:
-        ck = f"{k[0]}|{zlib.crc32(json.dumps(k[1]).encode()):08x}"
+        ck = ckey(k)
         if ck in cl_cache:
             return ck, cl_cache[ck]
         b = [x for x in (clean(t) for t in _samples(out1, k[0])) if x]
@@ -539,8 +546,7 @@ def canon1(model: str, ask: AskJson, limit: int = 0, workers: int = 16) -> dict[
     cl_cache.update({k: v for k, v in res.items() if v})
     _save(model, "cluster_b.json", cl_cache)
     for k, rs in groups.items():
-        ck = f"{k[0]}|{zlib.crc32(json.dumps(k[1]).encode()):08x}"
-        cl = res.get(ck)
+        cl = res.get(ckey(k))
         for r in rs:
             st[r["id"]] = _cutoff_canon(r, cl, _samples(out1, k[0]))
     _save(model, "canon1.json", st)
@@ -705,6 +711,20 @@ def canon_fp(s: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(keep, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+def gate_fp(iid: str, s: Mapping[str, Any], out: Mapping[str, Any]) -> str:
+    """What a gate verdict rests on: the canon1 state AND every gen2 answer it read (text,
+    greedy, samples of each hop's M / M2 / A / A_f)."""
+    import hashlib
+
+    rows = [
+        out.get(f"{iid}|{h['hop']}|{p}")
+        for h in s.get("hops") or []
+        for p in ["m", "m2", "a", *(f"af{j}" for j in range(len(h["af"])))]
+    ]
+    blob = json.dumps([canon_fp(s), rows], sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
 def gate(model: str, ask: AskJson, workers: int = 16) -> dict[str, Any]:
     st = _load(model, "canon1.json")
     out = _load(model, "gen2.json")
@@ -722,15 +742,15 @@ def gate(model: str, ask: AskJson, workers: int = 16) -> dict[str, Any]:
         i
         for i, s in st.items()
         if s.get("hops")
-        and (done.get(i) or {}).get("fp") != canon_fp(s)  # re-gate when canon1 changed
         and asked(i, s)
+        and (done.get(i) or {}).get("fp") != gate_fp(i, s, out)  # canon1 or gen2 changed
     ]
     res = [
         (i, g)
         for i, g in pmap(lambda i: (i, _gate_item(i, st[i], out, ask)), todo, workers)
         if g is not None
     ]  # None: a Claude call failed, retried next run
-    done.update({i: {**g, "fp": canon_fp(st[i])} for i, g in res})
+    done.update({i: {**g, "fp": gate_fp(i, st[i], out)} for i, g in res})
     _save(model, "gate.json", done)
     print(f"mmh gate: {dict(Counter(s['fail2'] or 'pass' for s in done.values()))}")
     return done
@@ -830,7 +850,8 @@ PASS_TARGET = 3 * 283  # R45: per-item passes to reach before floor / review sto
 def gate_pass_order(model: str, limit: int = 0) -> list[str]:
     """R45: the gate passes in the ship order (``ship_order``: registered ids first, then the
     invented rows with one cutoff row after every 9)."""
-    gated = _load(model, "gate.json")
+    gated, st = _load(model, "gate.json"), _load(model, "canon1.json")
+    out2 = _load(model, "gen2.json")
     rows = [
         {
             "id": r["id"],
@@ -839,6 +860,8 @@ def gate_pass_order(model: str, limit: int = 0) -> list[str]:
         }
         for r in pool_rows(limit)
         if (gated.get(r["id"]) or {}).get("fail2", "x") is None
+        and r["id"] in st
+        and gated[r["id"]].get("fp") == gate_fp(r["id"], st[r["id"]], out2)  # current only
     ]
     return [r["id"] for r in ship_order(rows)]
 
@@ -873,7 +896,16 @@ def floor_review(
         )
         print(f"mmh floor_review: {k + len(part)}/{len(order)} gate passes asked, {cleared} clear")
         if cleared >= PASS_TARGET:
+            _save(
+                model,
+                "floor_budget.json",
+                {"stopped": True, "asked": k + len(part), "cleared": cleared},
+            )
             break
+    else:
+        _save(
+            model, "floor_budget.json", {"stopped": False, "asked": len(order), "cleared": cleared}
+        )
     return cleared
 
 
@@ -964,7 +996,11 @@ def review(
         }
     )
     for k in range(0, len(countries), 60):
-        o = ask(CAPITALS.format(countries=json.dumps(countries[k : k + 60])))
+        chunk_c = countries[k : k + 60]
+        o = ask(
+            CAPITALS.format(countries=json.dumps(chunk_c)),
+            valid=lambda js, ch=chunk_c: isinstance(js, dict) and all(c in js for c in ch),
+        )
         caps.update(
             {
                 c: [str(x) for x in v]
@@ -1142,6 +1178,8 @@ def _reasons(
     rv: Mapping,
     caps: Mapping,
     fc: Mapping,
+    out2: Mapping | None = None,
+    budget_stopped: bool = False,
 ) -> list[str]:
     from .lint import _CAPITAL, goes_through_capital
 
@@ -1153,13 +1191,13 @@ def _reasons(
     g = gated.get(iid)
     if g is None:
         return ["gate: not run"]
-    if g.get("fp") != canon_fp(s):  # canon1 moved on since this verdict
-        return ["gate: stale (canon1 changed since; re-run gen2 + gate)"]
+    if g.get("fp") != gate_fp(iid, s, out2):  # canon1 or gen2 moved on since this verdict
+        return ["gate: stale (canon1 or gen2 changed since; re-run gen2 + gate)"]
     if g["fail2"]:
         return [f"gate: {g['fail2']}"]
     f = fl.get(iid)
     if not f:
-        return ["floor: not asked (R45 budget reached)"]
+        return ["floor: not asked (R45 budget reached)" if budget_stopped else "floor: not run"]
     if f.get("fp") != g.get("fp"):  # measured on another option list / prompt
         return ["floor: stale (the gate state changed since; re-run stage=floor)"]
     if not f.get("valid"):
@@ -1484,7 +1522,18 @@ def build(model: str, limit: int = 0, runner=None) -> dict[str, int]:
     reasons: dict[str, list[str]] = {}
     for r in rows:
         iid = r["id"]
-        reasons[iid] = _reasons(iid, r, st, gated, fl, rv, caps, fc)
+        reasons[iid] = _reasons(
+            iid,
+            r,
+            st,
+            gated,
+            fl,
+            rv,
+            caps,
+            fc,
+            out2,
+            bool(_load(model, "floor_budget.json").get("stopped")),
+        )
         if not any(x.startswith(("gen1", "canon1", "gate", "floor")) for x in reasons[iid]):
             reasons[iid] += _reasons_opts(iid, ro, (gated.get(iid) or {}).get("fp"))
         if reasons[iid]:
@@ -1570,9 +1619,10 @@ def _baseline(bank_env: dict[str, str], out: Path, log: Path) -> dict[str, dict[
     env = {**os.environ, **bank_env}
     if "WSB_BANK_FILE_MODEL_MULTIHOP" in bank_env:
         env.pop("WSB_BANK_ROOT", None)
-    wsb = str(Path(sys.executable).with_name("wsbench"))
     cmd = [
-        wsb,
+        sys.executable,
+        "-m",
+        "wsbench.cli",
         "baseline",
         "kind=lucky_guessing",
         "variant=blind,described",
@@ -1730,7 +1780,11 @@ def confirm(model: str, src: str) -> dict[str, Any]:
         not strict_ub or all(u <= chance + BAR + 1e-9 for u in upper.values())
     )
     leak = sorted(k for k, h in hits.items() if leaker(h))
-    for k, h in hits.items():
+    dh = lk.setdefault("draw_hash", {})
+    for k, h in hits.items():  # pooled only with draws taken on the same options
+        hk = mc_hash(by_id[k])
+        if dh.get(k) != hk:
+            lk["draws"][k], dh[k] = {}, hk
         for v in GUESSERS:
             if v in h:
                 lk["draws"].setdefault(k, {}).setdefault(v, []).append(h[v])
