@@ -220,7 +220,7 @@ POOL_SHA256: dict[str, str | None] = {
     "mh2v2": "7e3e4d16da32ddef44a9d452474a4ddb12cf1be104ec6c8161bfebc9bf394629",
     # plan 0077 (funded pools), pinned once built on the box
     "kcutoffv2": "6b0dd01656637a4e3664d42f13c1c1fc66d8837576f9691fb444e0a2fd478e93",
-    "mh2v3": None,
+    "mh2v3": "dfd973d3bfd57b07d19f00228bb1f397c59f3d836f02fb76f14b78cea4c2a3d6",
 }
 DEFAULT_POOL_DIR = "/workspace/wsb-runs/pools"
 
