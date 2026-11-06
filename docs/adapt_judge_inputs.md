@@ -478,6 +478,8 @@ SUBJECT_FIELDS: `input_ids`, `positions`, `bridge`, `mc`.
 | item | `mc.forms` | yes | exit | build | model_multihop/judge.py:option_spans |  |
 | item | `mc.exact_case` |  | silent | build | model_multihop/judge.py:option_spans | absent: every form matches in any case |
 | item | `mc.blockers` |  | silent | build | model_multihop/judge.py:option_spans | absent: no non-option name hides a form |
+| item | `mc.blocker_of` |  | silent | build | model_multihop/judge.py:_walls | absent: every blocker may hide every option |
+| item | `answer_names_bridge` |  | silent | build | model_multihop/judge.py:_row | absent: False (extras split only, never scored) |
 | qwen | `GRID layers (Qwen 64 blocks)` |  | - | subject | readplan.py:588-627 | remapped by depth from report.json n_layers under WSB_BANK_ROOT (exit without it) |
 
 ### model_specific_directed_modulation
