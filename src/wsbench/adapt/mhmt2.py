@@ -966,20 +966,32 @@ def build_pool(
 def build_pool_v3(out_dir: Path | str, **kw: Any) -> Path:
     """Plan 0077 §4: ``mh2_pool.v3.json`` = v2's build (same inputs, same adversary cache, which
     must be in ``out_dir``) plus the funded generator files ``V3_POOLS`` (adversary run only
-    where no cached verdict exists). Refuses unless v3's first items ARE the pinned v2's items
-    (same rows, same order), so every id a set already gated keeps its row."""
+    where no cached verdict exists). Refuses (deleting its output) unless every pinned v2 item is
+    in v3 unchanged and in the same relative order, so every id a set already gated keeps its row.
+    Older-source rows v2 did not admit (the registered bank shrank since, freeing entities) may
+    appear between them; they are counted in the header, never part of the v3 generation."""
     from . import refill
 
     kw.setdefault("v3_pools", V3_POOLS)
     v2 = refill.load_pool("mh2v2")["items"]
     out = build_pool(out_dir, adversary=True, **kw)
-    v3 = json.loads(out.read_text(encoding="utf-8"))["items"]
-    if v3[: len(v2)] != v2:
-        pairs = enumerate(zip(v3, v2, strict=False))
-        bad = next((i for i, (a, b) in pairs if a != b), min(len(v3), len(v2)))
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    v3, k = doc["items"], 0
+    for it in v3:
+        if k < len(v2) and it == v2[k]:
+            k += 1
+    if k < len(v2):
         out.unlink()
-        raise SystemExit(f"mh2 pool v3: not a v2 prefix (first difference at item {bad}); copy "
-                         f"v2's adversary cache into {out_dir} and rebuild")  # fmt: skip
+        name = v2[k].get("name", v2[k].get("id"))
+        raise SystemExit(f"mh2 pool v3: v2 item {k} ({name!r}) is missing or changed; "
+                         f"copy v2's adversary cache into {out_dir} and rebuild")  # fmt: skip
+    extra = sum(it.get("pool_source") != V3_ORIGIN for it in v3) - len(v2)
+    if extra:
+        doc["header"]["generation"]["older_rows_newly_admitted"] = extra
+        text = json.dumps(doc, ensure_ascii=False, indent=1) + "\n"
+        out.write_text(text, encoding="utf-8")
+        sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        print(f"mh2 pool v3: {extra} older-source rows newly admitted; final sha256 {sha}")
     return out
 
 

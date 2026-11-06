@@ -338,6 +338,26 @@ def test_mh2_wave_items_put_v3_first_and_pilot_on_its_two_hop_tally(monkeypatch)
     assert [it["id"] for it in todo] == ["new2", "new3", "old2"] and (size, used) == (3, 0)
 
 
+def test_mh2_pool_v3_keeps_v2_items_in_order_with_newly_admitted_older_rows(tmp_path, monkeypatch):
+    v2 = {"header": {"pool": "mh2v2"}, "items": [{"id": "a"}, {"id": "b"}]}
+    monkeypatch.setattr(refill, "load_pool", lambda name: v2)
+
+    def fake_build(out_dir, adversary=False, **kw):
+        p = tmp_path / "mh2_pool.v3.json"
+        items = [
+            {"id": "a"},
+            {"id": "old"},
+            {"id": "b"},
+            {"id": "n", "pool_source": mhmt2.V3_ORIGIN},
+        ]
+        p.write_text(json.dumps({"header": {"generation": {}}, "items": items}))
+        return p
+
+    monkeypatch.setattr(mhmt2, "build_pool", fake_build)
+    out = mhmt2.build_pool_v3(tmp_path)
+    assert json.loads(out.read_text())["header"]["generation"]["older_rows_newly_admitted"] == 1
+
+
 def test_mh2_pool_v3_refuses_a_build_that_is_not_a_v2_prefix(tmp_path, monkeypatch):
     v2 = {"header": {"pool": "mh2v2"}, "items": [{"id": "a"}, {"id": "b"}]}
     monkeypatch.setattr(refill, "load_pool", lambda name: v2)
@@ -349,7 +369,7 @@ def test_mh2_pool_v3_refuses_a_build_that_is_not_a_v2_prefix(tmp_path, monkeypat
         return p
 
     monkeypatch.setattr(mhmt2, "build_pool", fake_build)
-    with pytest.raises(SystemExit, match="not a v2 prefix"):
+    with pytest.raises(SystemExit, match="missing or changed"):
         mhmt2.build_pool_v3(tmp_path)
     assert not (tmp_path / "mh2_pool.v3.json").exists()  # the bad output is deleted
 
