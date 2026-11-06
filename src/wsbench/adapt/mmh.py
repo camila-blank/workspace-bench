@@ -1,6 +1,6 @@
 """model_multihop on a new subject (plan 0078): the gw mmh v2 pipeline re-run on the subject's own
 beliefs. Stages: ``python -m wsbench.adapt model_multihop model=<m> stage=gen1|canon1|gen2|gate|
-floor|review|build|all``; work files in ``adapted/<m>/mmh/`` (git-ignored)."""
+floor|review|build|lucky|confirm|status|all``; work files in ``adapted/<m>/mmh/`` (git-ignored)."""
 
 import datetime as dt
 import json
@@ -227,7 +227,8 @@ def regions(
     start = full.rfind(text)
     if start < 0:
         raise ValueError("read prompt not found in the decoded render")
-    k = full.lower().find(entity.lower(), start)
+    hit = re.search(re.escape(entity), full[start:], re.I)
+    k = start + hit.start() if hit else -1
     if k < 0:
         raise ValueError(f"entity {entity!r} not found in the read prompt")
     ent_s, ent_e = k, k + len(entity)
@@ -351,7 +352,10 @@ def pool_rows(limit: int = 0) -> list[dict[str, Any]]:
 def gen1(model: str, runner=None, limit: int = 0) -> dict:
     jobs: dict[str, tuple[str, str, bool]] = {}
     for r in pool_rows(limit):
-        jobs.setdefault(_b_key(r), (_b_key(r), r["b"], False))
+        k = _b_key(r)
+        if k in jobs and jobs[k][1] != r["b"]:
+            raise SystemExit(f"mmh gen1: two B questions share the key {k}; widen _b_key")
+        jobs.setdefault(k, (k, r["b"], False))
     return _generate(model, "gen1", list(jobs.values()), runner)
 
 
@@ -367,7 +371,7 @@ def _country_canon(ask: AskJson, raws: set[str], model: str, workers: int) -> di
     def one(ch: list[str]) -> dict[str, Any]:
         o = ask(
             COUNTRY_CANON.format(raws=json.dumps(ch, ensure_ascii=False)),
-            valid=lambda js: isinstance(js.get("map"), dict),
+            valid=lambda js: isinstance(js.get("map"), dict) and all(r in js["map"] for r in ch),
         )
         m = (o or {}).get("map") or {}
         return {r: m[r] for r in ch if r in m}  # a raw Opus left out is re-asked next run
@@ -1297,7 +1301,8 @@ def select_rows(model: str, rows: list[dict], cap: int) -> list[dict]:
       back-fill);
     - else: screen leakers out (round 1) or, after a failed confirm, items whose pooled screen +
       confirm draws are significantly above chance + 5 (R11); one item per entity (whole-word
-      containment either way is a near-duplicate; pool order); ascending hits (ties: pool order)
+      containment either way is a near-duplicate; ship order); round 1 in ship order, a pooled
+      round in ascending hit rate (ties: ship order)
       up to ``cap`` with at most ``BRIDGE_CAP`` of the SHIPPED set on one bridge."""
     lk = _load(model, "lucky_screen.json")
     draws: dict[str, dict[str, list[int]]] = lk.get("draws", {})
@@ -1517,6 +1522,7 @@ def build(model: str, limit: int = 0, runner=None) -> dict[str, int]:
     fl, rv = _load(model, "floor.json"), _load(model, "review.json")
     caps, fc = _load(model, "capitals.json"), _load(model, "forms_cutoff.json")
     ro = _load(model, "review_opts.json")
+    budget_stopped = bool(_load(model, "floor_budget.json").get("stopped"))
     rows = [r for r in pool_rows(limit) if _b_key(r) in out1]
     built: dict[str, dict] = {}
     reasons: dict[str, list[str]] = {}
@@ -1532,7 +1538,7 @@ def build(model: str, limit: int = 0, runner=None) -> dict[str, int]:
             caps,
             fc,
             out2,
-            bool(_load(model, "floor_budget.json").get("stopped")),
+            budget_stopped,
         )
         if not any(x.startswith(("gen1", "canon1", "gate", "floor")) for x in reasons[iid]):
             reasons[iid] += _reasons_opts(iid, ro, (gated.get(iid) or {}).get("fp"))
