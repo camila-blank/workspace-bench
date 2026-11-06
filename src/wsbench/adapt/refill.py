@@ -29,6 +29,30 @@ def _registered_size(family: str) -> int:
     return len(store.original_bank(family)[1])
 
 
+# Plan 0075 §0 (2026-11-06): adapted targets above the registered size. The target is
+# max(registered, this), so no target is ever lowered; buggy_code keeps plan 0072 D1's target
+# bank (24 pairs) and is never read from here.
+ADAPTED_TARGETS: dict[str, int] = {
+    "association": 100,
+    "basic_readout_mt": 120,
+    "typo_mt": 100,
+    "multihop": 100,
+    "poetry": 100,
+    "multilingual_mt": 100,
+    "multilingual_typo": 100,
+    "multilingual_multihop": 100,
+    "relational_multihop": 100,
+    "role_bound_association": 100,
+}
+
+
+def adapted_target(family: str, originals: list[dict] | None = None) -> int:
+    """The adapted item target of ``family``: ``max(len(originals), ADAPTED_TARGETS[family])``
+    (the registered bank's size when the family has no entry)."""
+    n = len(originals) if originals is not None else _registered_size(family)
+    return max(n, ADAPTED_TARGETS.get(family, 0))
+
+
 def pair_count(items: list[dict]) -> int:
     """Groups of 2 whose members are each other's ``twin`` (registered field, or derived from the
     authored ``-au-`` / ``-au-clean-`` ids)."""
@@ -96,10 +120,34 @@ POLICY: dict[str, Policy] = {
                 ("bank", "pool: mh2_pool.json"), "2-hop pool"),
 }  # fmt: skip
 
-# the fill / auto families the strict freeze guard covers by their `untried` status (§1.3)
+# Plan 0075 §2.2: the authored (``run.fill``) and generated (``run.auto``) families `adapt refill`
+# drives, with run.fill / run.auto's own stop thresholds (OOC_MIN 60 candidates, OOC_YIELD 3%
+# at the easiest tier); their target is ``adapted_target``.
+FILL_POLICY: dict[str, str] = {
+    "association": "run.fill",
+    "basic_readout_mt": "run.fill",
+    "typo_mt": "run.fill",
+    "multihop": "run.fill",
+    "poetry": "run.fill",
+    "role_bound_association": "run.fill",
+    "user_modeling": "run.fill",
+    "multilingual_mt": "run.fill",
+    "multilingual_typo": "run.fill",
+    "multilingual_multihop": "run.fill",
+    "relational_multihop": "run.auto",
+}
+
+FILL_ROUTES = frozenset(FILL_POLICY.values())
+# run.NOTE_REFILL_FAMILIES (plan 0072 D6): their hand `note refill=` blocks keep counting
+HAND_REFILL_FAMILIES = frozenset({"user_modeling", "multihop"})
+
+# the fill / auto families the strict freeze guard covers by their `untried` status (§1.3);
+# plan 0075 adds the families it gave a refill route
 UNTRIED_GUARDED = frozenset({
     "typo_mt", "association", "basic_readout", "basic_readout_mt",
     "arithmetic_intermediates", "relational_multihop", "chain_intermediates",
+    "multihop", "poetry", "role_bound_association", "user_modeling",
+    "multilingual_mt", "multilingual_typo", "multilingual_multihop",
 })  # fmt: skip
 
 
@@ -200,8 +248,13 @@ BUGCLAIM_REQUIRED = True
 BUGCLAIM = "bugclaim"
 
 
+# plan 0075: fill families whose module adds a ``row_passes`` hook (a new row is complete only
+# once its post-gate stage built the judge-side fields)
+ROW_HOOK_MODULES = {"poetry": "poetry", "role_bound_association": "rbstage"}
+
+
 def _module(family: str):
-    name = FAMILY_MODULES.get(family)
+    name = FAMILY_MODULES.get(family) or ROW_HOOK_MODULES.get(family)
     return importlib.import_module(f"wsbench.adapt.{name}") if name else None
 
 
@@ -385,7 +438,7 @@ def have_of(model: str, family: str) -> int:
     if family == BUGGY:  # plan 0072 §0 D1: the target bank's cap and quota, as freeze
         tb = target_bank()
         return selected_pairs(buggy_selection(rows, len(tb), run.quotas(family, tb)))
-    return len(run.select(family, rows, len(originals), quota))
+    return len(run.select(family, rows, adapted_target(family, originals), quota))
 
 
 def prior_tally(model: str, family: str) -> tuple[int, int]:
@@ -491,11 +544,19 @@ def refill(
     its authoring + grading calls, ``gpu_minutes`` as its wall clock."""
     from . import run
 
-    if bad := [f for f in families if f not in POLICY]:
-        raise SystemExit(f"refill: no refill route for {bad}; known: {sorted(POLICY)}")
+    known = set(POLICY) | set(FILL_POLICY)
+    if bad := [f for f in families if f not in known]:
+        raise SystemExit(f"refill: no refill route for {bad}; known: {sorted(known)}")
     out = {}
     for family in families:
-        if family == BUGGY:
+        if family in FILL_POLICY:  # plan 0075 §2.2
+            if pilot:
+                raise SystemExit(f"refill: pilot=true is for the POLICY families, not {family}")
+            if FILL_POLICY[family] == "run.auto":
+                out[family] = run.auto(model, family, runner=runner, max_waves=waves)
+            else:
+                out[family] = run.fill(model, family, llm, waves, runner=runner)
+        elif family == BUGGY:
             budget_s = None if gpu_minutes is None else gpu_minutes * 60
             out[family] = run.fill(model, family, llm, waves, runner=runner, pilot=pilot,
                                    budget_s=budget_s, claude_budget=claude_budget)  # fmt: skip
@@ -520,4 +581,17 @@ def guard_problem(family: str, entry: dict, n: int, target: int) -> str | None:
         return None
     if family in UNTRIED_GUARDED and entry.get("status") == "untried":
         return f"{n}/{target} items and untried (no refill attempted)"
+    if family in FILL_POLICY and entry.get("status") not in ("ooc", "blocked"):
+        # plan 0075 §2.1: a family short of its (raised) adapted target ships only after a
+        # refill measured AT that target; authored rows from an earlier, lower target make it
+        # `partial`, not `untried`, so the untried rule alone would let it through
+        block = refill_block(entry) or {}
+        route = block.get("route")
+        if family in HAND_REFILL_FAMILIES and route and route not in FILL_ROUTES:
+            return None  # plan 0072 D6 retained: a `note refill=` block (no driver then) counts
+        if block.get("target") != target:
+            return (
+                f"{n}/{target} items and no refill at the current target {target} "
+                f"(last refill target: {block.get('target')})"
+            )
     return None

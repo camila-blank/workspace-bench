@@ -361,4 +361,8 @@ def freeze_step(
         return br_subject_check(items, model) + balance_gold_positions(header, items), {}
     if family == BRMT:
         return brmt_overlays(items, model)
+    if family == "role_bound_association":  # plan 0075 §2.7
+        from .rbstage import overlay
+
+        return overlay(model, items)
     return [], {}
