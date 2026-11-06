@@ -1171,7 +1171,7 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
     target = rf.adapted_target(family, originals)  # plan 0075 §2.1
     quota = quotas(family, originals)
     s_off = seed_offset(model, family)  # plan 0075: a re-run never regenerates logged ids
-    status, tried_total = "partial", 0
+    status, tried_total, bank_gain = "partial", 0, 0
     for t_i, tier in enumerate(gen.tiers):
         tried = passed = 0
         for wave in range(max_waves):
@@ -1199,9 +1199,13 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
             # pair family's wave size and its out-of-capability call use what actually lands
             rows = _bank_rows(model, family, originals)
             gained = len(select(family, rows, target, quota)) - have
-            tried += len(new)
-            tried_total += len(new)
-            passed += gained
+            # plan 0075 §2.2: the ooc yield is the subject's own item passes (lint rejects out),
+            # never the bank gain, which CAPS / pairing cut (bank_gain is recorded beside it)
+            subj = [r for r in new if not r["gate"].get("lint")]
+            tried += len(subj)
+            tried_total += len(subj)
+            passed += sum(bool(r["gate"].get("pass")) for r in subj)
+            bank_gain += max(0, gained)
             n_pass = sum(r["gate"]["pass"] for r in new)
             print(
                 f"  {tier.name} wave {wave}: {n_pass}/{len(new)} items pass, +{gained} to the bank "
@@ -1226,7 +1230,8 @@ def auto(model: str, family: str, runner=None, max_waves: int = 6, **kw: Any) ->
         block = {
             "route": "run.auto", "unit": "items", "target": target, "have": have,
             "tried": tried, "landed": passed, "yield": passed / tried if tried else None,
-            "tried_total": tried_total, "tier": gen.tiers[t_i].name,
+            "tried_total": tried_total, "bank_gain": bank_gain, "tier": gen.tiers[t_i].name,
+            "yield_basis": "subject gate pass / subject-gated rows (lint rejects out)",
             "n_min": OOC_MIN, "y_min": OOC_YIELD,
             "stop": stops.get(status, "ladder exhausted"),
         }  # fmt: skip
