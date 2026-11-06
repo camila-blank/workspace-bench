@@ -9,7 +9,7 @@ what they lack from the Wikidata API (``wbgetentities``, rate limited). CC0 Wiki
 Sources: the round-1 pool ``entities.json`` (``--entities``, default the scrape's), plus (unless
 ``--no-auto-extra``) every per-set work-dir store that exists at its exact path,
 ``adapted/<m>/gate/{wrong_bridge,wrong_intermediate}.work/entities_extra.json``, and the round-2
-pool ``wrong_bridge_r2/entities.json`` (a missing one is skipped with a printed note).
+pools' ``wrong_bridge_{r2a,r2b,r3}/entities.json`` (a missing one is skipped with a note).
 
 Every class the walk visits is a key of ``parents``, a parentless one with ``[]``: a class ABSENT
 from the table was never seen, and the gate-time kind check stops on it (rebuild the tables).
@@ -31,7 +31,11 @@ sys.path.insert(0, str(REPO / "src"))
 from wsbench.adapt import wrong_intermediate as wb  # noqa: E402
 
 DEFAULT_ENTITIES = "/workspace/gw-wrong-bridge/outputs/wrong_bridge/entities.json"
-ROUND2_ENTITIES = Path("/workspace/gw-wrong-bridge/outputs/wrong_bridge_r2/entities.json")
+# the later rounds' pool stores (plan 0066 §5 r2 as built: r2a / r2b; plan 0077 §3: r3)
+LATER_ROUNDS = tuple(
+    Path(f"/workspace/gw-wrong-bridge/outputs/wrong_bridge_{r}/entities.json")
+    for r in ("r2a", "r2b", "r3")
+)
 ADAPTED = Path("/workspace/wsb-runs/adapted")
 WORK_DIRS = ("wrong_bridge.work", "wrong_intermediate.work")
 ITEMS = REPO / "evals" / "wrong_intermediate" / "items_v4.json"
@@ -40,9 +44,11 @@ API = "https://www.wikidata.org/w/api.php"
 UA = "workspace-bench-adapt/0.1 (interpretability research; build_wd_tables; camilab@anthropic.com)"
 
 
-def extra_sources(adapted: Path = ADAPTED, round2: Path = ROUND2_ENTITIES) -> list[str]:
-    """The per-set work-dir ``entities_extra.json`` stores and the round-2 pool store that exist
-    (exact paths, one ``adapted/<m>`` level listed; never a recursive search)."""
+def extra_sources(
+    adapted: Path = ADAPTED, rounds: Path | tuple[Path, ...] = LATER_ROUNDS
+) -> list[str]:
+    """The per-set work-dir ``entities_extra.json`` stores and the later rounds' pool stores
+    that exist (exact paths, one ``adapted/<m>`` level listed; never a recursive search)."""
     out = []
     if adapted.is_dir():
         for m in sorted(p.name for p in adapted.iterdir() if p.is_dir()):
@@ -51,10 +57,11 @@ def extra_sources(adapted: Path = ADAPTED, round2: Path = ROUND2_ENTITIES) -> li
                 if f.is_file():
                     out.append(str(f))
     print(f"per-set entities_extra.json stores found: {len(out)}", flush=True)
-    if round2.is_file():
-        out.append(str(round2))
-    else:
-        print(f"note: round-2 pool store {round2} does not exist yet; skipped", flush=True)
+    for store in (rounds,) if isinstance(rounds, Path) else rounds:
+        if store.is_file():
+            out.append(str(store))
+        else:
+            print(f"note: pool store {store} does not exist yet; skipped", flush=True)
     return out
 
 

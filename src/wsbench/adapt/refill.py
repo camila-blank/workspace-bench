@@ -205,6 +205,8 @@ POOL_FILES = {
     "kcutoff": "kcutoff_pool.jsonl",
     "mh2": "mh2_pool.json",
     "mh2v2": "mh2_pool.v2.json",  # decision 7: + the adversary over the S1-only candidates
+    "kcutoffv2": "kcutoff_pool.v2.jsonl",  # plan 0077 §2: v1 + the b3..b5 batches
+    "mh2v3": "mh2_pool.v3.json",  # plan 0077 §4: v2 + the v3 generator runs
 }
 # pinned once built on the box by scripts/build_adapt_pools.py (plan 0066 §8 step 1, 2026-11-04;
 # the builds are deterministic, two builds gave the same bytes); None = not built yet
@@ -214,6 +216,9 @@ POOL_SHA256: dict[str, str | None] = {
     "mh2": "553df6a6de636ddad043b63bcb21b7e38cc35cb2a89a13f7749e6910d2b29926",
     # decision 7 (built 2026-11-04 for GLM-5.3: + the GW adversary over the S1-only candidates)
     "mh2v2": "7e3e4d16da32ddef44a9d452474a4ddb12cf1be104ec6c8161bfebc9bf394629",
+    # plan 0077 (funded pools), pinned once built on the box
+    "kcutoffv2": "6b0dd01656637a4e3664d42f13c1c1fc66d8837576f9691fb444e0a2fd478e93",
+    "mh2v3": None,
 }
 DEFAULT_POOL_DIR = "/workspace/wsb-runs/pools"
 
@@ -239,6 +244,22 @@ def _verified_bytes(name: str) -> tuple[Path, bytes]:
     if got != pin:
         raise SystemExit(f"refill: pool {path} sha256 mismatch: pinned {pin}, file {got}")
     return path, data
+
+
+def newest_pool(names: tuple[str, ...], base: str) -> str:
+    """The newest of ``names`` (newest first) that is pinned AND whose file is in the pool dir;
+    ``base`` otherwise (its own loader still refuses a missing / mismatched file). A pinned newer
+    generation whose file is absent is skipped with a printed note (plan 0077: a funded pool is
+    used once it is on the box)."""
+    for name in names:
+        if name == base:
+            break
+        if name in POOL_FILES and POOL_SHA256.get(name):
+            if (pool_dir() / POOL_FILES[name]).is_file():
+                return name
+            print(f"refill: pool {name!r} is pinned but {pool_dir() / POOL_FILES[name]} is "
+                  f"absent; reading {base!r}")  # fmt: skip
+    return base
 
 
 def pool_path(name: str) -> Path:
@@ -521,6 +542,9 @@ def _refill_family(
     exhausted, pool_size, pool_used = False, prev.get("pool_size"), prev.get("pool_used")
     status, why = None, ""
     levels_hook = _hook(family, "untried_levels")
+    gen_hook = _hook(family, "pool_generation")
+    gen: dict | None = None
+    gen_rules = False
     untried: list[str] = []
     while True:
         have = have_of(model, family)
@@ -534,11 +558,23 @@ def _refill_family(
             budget = f"claude_budget {claude_budget}"
         elif gpu_minutes is not None and (time.monotonic() - start) / 60 >= gpu_minutes:
             budget = f"gpu_minutes {gpu_minutes:g} (wall clock)"
-        status, why = stop_status(have, target, tried, landed, n_min, pol.y_min, exhausted,
-                                  budget, hold=hold)  # fmt: skip
+        # plan 0077 §1: while the newest funded pool generation has unseen candidates, the stop
+        # rule reads that generation's own tally (never the older generations' stops)
+        gen = gen_hook(model) if gen_hook is not None else None
+        gen_rules = gen is not None and (gen["unseen"] > 0 or gen["tried"] >= pol.n_min)
+        if gen_rules and gen["unseen"] > 0:
+            s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], False
+        elif gen_rules:  # measured on >= n_min of its own: the generation's yield decides
+            s_tried, s_landed, s_exhausted = gen["tried"], gen["landed"], exhausted
+        else:  # no generation, or one smaller than n_min and exhausted: the combined tally
+            s_tried, s_landed, s_exhausted = tried, landed, exhausted
+        status, why = stop_status(have, target, s_tried, s_landed, n_min, pol.y_min,
+                                  s_exhausted, budget, hold=hold)  # fmt: skip
+        if status is not None and gen_rules:
+            why = f"{why} (pool generation {gen['name']})"
         if status is not None:
             break
-        if pilot and tried >= pol.n_min:
+        if pilot and (s_tried if gen_rules else tried) >= pol.n_min:
             status, why = "partial", "pilot: not ooc (run the full refill)"
             break
         if done >= waves:
@@ -558,7 +594,9 @@ def _refill_family(
         "have": have, "tried": tried, "landed": landed,
         "yield": landed / tried if tried else None, "waves": int(prev.get("waves") or 0) + done,
         "n_min": pol.n_min, "y_min": pol.y_min,
-        "tally": {pol.easiest: {"tried": tried, "landed": landed, "prior": tally0}},
+        "tally": {pol.easiest: {"tried": tried, "landed": landed, "prior": tally0},
+                  **({gen["name"]: {k: gen[k] for k in ("tried", "landed", "size", "unseen")}}
+                     if gen is not None else {})},
         "pool_size": pool_size, "pool_used": pool_used, "stop": why,
         "budget": {"claude_budget": claude_budget, "gpu_minutes": gpu_minutes,
                    "claude_calls": calls},

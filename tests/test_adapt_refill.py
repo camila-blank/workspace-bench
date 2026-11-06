@@ -129,7 +129,11 @@ def test_pool_loader_refuses_unpinned_missing_and_mismatch(tmp_path, monkeypatch
 def test_pool_dir_default_and_no_pin_yet(monkeypatch):
     monkeypatch.delenv("WSB_POOL_DIR", raising=False)
     assert str(rf.pool_dir()) == "/workspace/wsb-runs/pools"
-    assert set(rf.POOL_FILES) == set(rf.POOL_SHA256) == {"msdm", "kcutoff", "mh2", "mh2v2"}
+    assert (
+        set(rf.POOL_FILES)
+        == set(rf.POOL_SHA256)
+        == {"msdm", "kcutoff", "mh2", "mh2v2", "kcutoffv2", "mh2v3"}
+    )
 
 
 def test_no_pool_file_is_tracked_by_git():
