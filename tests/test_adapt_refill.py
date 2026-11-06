@@ -472,7 +472,7 @@ def test_refill_driver_hold_pilot_budget_and_missing_route(mdir, monkeypatch):
     with pytest.raises(SystemExit, match="not implemented yet"):
         rf.refill(MODEL, ["knowledge_cutoff"])
     with pytest.raises(SystemExit, match="no refill route"):
-        rf.refill(MODEL, ["conjunctive_association"])
+        rf.refill(MODEL, ["jailbreak_recognition"])
 
 
 def test_prior_tally_counts_the_gate_log(mdir):

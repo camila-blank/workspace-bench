@@ -146,6 +146,7 @@ FILL_POLICY: dict[str, str] = {
     "multilingual_typo": "run.fill",
     "multilingual_multihop": "run.fill",
     "relational_multihop": "run.auto",
+    "conjunctive_association": "run.fill",  # plan 0077 §6 (plan 0075 §2.9's Phase B)
 }
 
 FILL_ROUTES = frozenset(FILL_POLICY.values())
@@ -161,6 +162,7 @@ UNTRIED_GUARDED = frozenset({
 UNTRIED_GUARDED_0075 = frozenset({
     "multihop", "poetry", "role_bound_association", "user_modeling",
     "multilingual_mt", "multilingual_typo", "multilingual_multihop",
+    "conjunctive_association",  # plan 0077 §6
 })  # fmt: skip
 
 
