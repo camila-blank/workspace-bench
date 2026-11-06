@@ -699,6 +699,9 @@ def lint(family: str, item: dict) -> list[str]:
         missing += [k for k in ("target", "intermediates") if not item.get(k)]
     if missing:
         return [f"keys: missing {missing}"]
+    if ((item.get("adapt") or {}).get("mc_build") or {}).get("dropped"):
+        # ``adapt mc`` could not build its options (plan 0075): never gated without a list
+        return ["mc: the MC builder dropped this candidate (no options)"]
     if family in MT:
         return _mt(family, item) + _capital(family, item)
     return [p for check in CHECKS for p in check(family, item)] + _capital(family, item)
