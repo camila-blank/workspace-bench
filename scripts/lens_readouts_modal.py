@@ -569,30 +569,35 @@ def jobs_for(args: argparse.Namespace) -> list[dict[str, Any]]:
     jobs = []
     for arm in args.arm.split(","):
         spec = arms_of(args.subject)[arm]
+        # one arm's pending rows of EVERY family packed together (a refresh adds a few rows to
+        # many families: per-family jobs would each pay a container's model load)
+        pend: list[dict[str, Any]] = []
         for fam in _families(args.families):
             rows = _plan_rows(fam, args.subject)
             if args.limit:
                 rows = rows[: args.limit]
             have = stored_shas(store_path(Path(args.store), args.subject, arm, fam))
-            pend = [{"row_sha": row_sha(r), "row": r} for r in rows]
-            pend = [p for p in pend if p["row_sha"] not in have]
-            pack: list[dict[str, Any]] = []
-            n = 0
-            for p in pend:
-                pack.append(p)
-                n += _est_cells(p["row"], tok)
-                if n >= args.job_cells:
-                    jobs.append(_job(args, subj, arm, spec, fam, pack, len(jobs)))
-                    pack, n = [], 0
-            if pack:
-                jobs.append(_job(args, subj, arm, spec, fam, pack, len(jobs)))
+            pend += [{"row_sha": row_sha(r), "row": r, "family": fam} for r in rows
+                     if row_sha(r) not in have]  # fmt: skip
+        pack: list[dict[str, Any]] = []
+        n = 0
+        for p in pend:
+            pack.append(p)
+            n += _est_cells(p["row"], tok)
+            if n >= args.job_cells:
+                jobs.append(_job(args, subj, arm, spec, pack, len(jobs)))
+                pack, n = [], 0
+        if pack:
+            jobs.append(_job(args, subj, arm, spec, pack, len(jobs)))
     return jobs
 
 
-def _job(args, subj, arm, spec, fam, pack, k) -> dict[str, Any]:
+def _job(args, subj, arm, spec, pack, k) -> dict[str, Any]:
+    fam = pack[0]["family"]
     seed = int(hashlib.sha256(f"{arm}|{fam}|{pack[0]['row_sha']}".encode()).hexdigest()[:8], 16)
+    fams = sorted({p["family"] for p in pack})
     return {"subject": args.subject, "hf_id": subj.hf_id, "revision": subj.revision, "arm": arm,
-            "kind": spec["kind"], "path": spec["path"], "family": fam, "specs": pack,
+            "kind": spec["kind"], "path": spec["path"], "family": "+".join(fams), "specs": pack,
             "seed": seed, "batch": args.batch or BATCH.get(args.subject, 1024), "k": k}  # fmt: skip
 
 
@@ -617,13 +622,20 @@ def produce(args: argparse.Namespace) -> None:
                 print(f"FAILED {tag}: {res['error'][-600:]}", flush=True)
                 _append(log, {"job": tag, "error": res["error"], "ts": time.time()})
                 continue
-            dst = store_path(store, job["subject"], job["arm"], job["family"])
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            with dst.open("a", encoding="utf-8") as fh:
-                fh.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in res["rows"]))
-                for d in job["specs"]:  # a row with no position: a marker so it is not re-read
-                    if d["row_sha"] in res["empty_ids"]:
-                        fh.write(json.dumps({"row_sha": d["row_sha"], "row": None}) + "\n")
+            fam_of = {d["row_sha"]: d["family"] for d in job["specs"]}  # a job spans families
+            out: dict[str, list[str]] = {}
+            for r in res["rows"]:
+                out.setdefault(fam_of[r["row_sha"]], []).append(json.dumps(r, ensure_ascii=False))
+            for d in job["specs"]:  # a row with no position: a marker so it is not re-read
+                if d["row_sha"] in res["empty_ids"]:
+                    out.setdefault(d["family"], []).append(
+                        json.dumps({"row_sha": d["row_sha"], "row": None})
+                    )
+            for fam, lines in out.items():
+                dst = store_path(store, job["subject"], job["arm"], fam)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with dst.open("a", encoding="utf-8") as fh:
+                    fh.write("".join(line + "\n" for line in lines))
             _append(log, {"job": tag, **res["meta"], "ts": time.time()})
             print(
                 f"done {tag}: {res['meta']['n_cells']} cells, {res['meta']['total_s']}s, "
