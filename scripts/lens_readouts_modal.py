@@ -386,7 +386,9 @@ def same_topk(t1: list, s1: list, t2: list, s2: list, tol: float = 1e-3) -> bool
     1) rank by rank, and the token lists differ only where scores tie within ``tol`` (a batched
     and a per-vector matmul may order near-equal scores differently, or swap the k-th token)."""
     close = lambda a, b: abs(a - b) <= tol * max(1.0, abs(a))  # noqa: E731
-    if len(s1) != len(s2) or not all(close(a, b) for a, b in zip(s1, s2, strict=True)):
+    if len({len(t1), len(t2), len(s1), len(s2)}) > 1:
+        return False
+    if not all(close(a, b) for a, b in zip(s1, s2, strict=True)):
         return False
     for i, (a, b) in enumerate(zip(t1, t2, strict=True)):
         if a != b:
