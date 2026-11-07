@@ -4,6 +4,7 @@ category fill only on a shortfall, and the offline rebuild route that emits free
 import json
 import shlex
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -125,6 +126,7 @@ def test_exclusions_unchanged_for_same_template_candidates():
 @pytest.fixture
 def tmp_set(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "model_dir", lambda model, root=None: tmp_path / model)
+    monkeypatch.setattr(wb, "class_parents", lambda: {})  # plan 0077 §3b: facts below, no closure
     pool_dir = tmp_path / "pool"
     pool_dir.mkdir()
     (pool_dir / "candidates.jsonl").write_text("", "utf-8")
@@ -157,6 +159,14 @@ def _setup(set_dir, pool_dir):
     rows.append({"id": dropped["name"], "origin": "generated", "item": dropped,
                  "gate": {"pass": False, "drop": "gate"}})  # fmt: skip
     store.record_gates(MODEL, wb.FAMILY, rows)
+    # plan 0077 §3b: the kind-matched rebuild reads the bridges' facts from the pool entity store
+    # (record labels and aerospace manufacturers are different kinds)
+    facts = {_qid(n): {"labels": {"en": {"value": n}},
+                       "claims": {"P31": [{"rank": "normal", "mainsnak": {"datavalue": {
+                           "type": "wikibase-entityid",
+                           "value": {"id": "Q18127" if n in LABELS else "Q936518"}}}}]}}
+             for n in (*LABELS, *PLANES)}  # fmt: skip
+    (Path(pool_dir) / "entities.json").write_text(json.dumps(facts), "utf-8")
     wd = _wd()
     opts = wb.option_pool([*labels, *planes], [], {}, wd)
     assert "Gatefail Records" not in opts
@@ -182,17 +192,18 @@ def test_rebuild_mc_patches_only_changed_generated_items(tmp_set):
     set_dir, pool_dir = tmp_set
     wd, stale, fresh, original = _setup(set_dir, pool_dir)
     before = (set_dir / f"{wb.FAMILY}.json").read_text("utf-8")
-    got = wb.rebuild_mc(MODEL, pool=pool_dir, registered=[], wd=wd, r4={})
+    got, no_list, poorer = wb.rebuild_mc(MODEL, pool=pool_dir, registered=[], wd=wd, r4={})
+    assert not no_list and not poorer
     assert set(got) == {stale["name"]}  # the fresh one is unchanged, the original never touched
     mc = got[stale["name"]]
-    assert set(mc["distractors"]) <= set(LABELS) and mc["pool"].endswith(wb.MC_SAME_TEMPLATE)
-    assert {k: v for k, v in mc.items() if k not in ("distractors", "order", "forms")} == {
-        k: v for k, v in stale["mc"].items() if k not in ("distractors", "order", "forms")
+    assert set(mc["distractors"]) <= set(LABELS) and "kind-matched" in mc["pool"]
+    assert {k: v for k, v in mc.items() if k not in ("distractors", "order", "forms", "pool")} == {
+        k: v for k, v in stale["mc"].items() if k not in ("distractors", "order", "forms", "pool")
     }
     assert (set_dir / f"{wb.FAMILY}.json").read_text("utf-8") == before  # nothing written
     assert not (set_dir / "report.json").exists()
     assert wb.rebuild_mc(MODEL, ids=[fresh["name"]], pool=pool_dir, registered=[], wd=wd,
-                         r4={}) == {}  # fmt: skip
+                         r4={}) == ({}, [], [])  # fmt: skip
     with pytest.raises(SystemExit):  # an original is not a rebuild target
         wb.rebuild_mc(MODEL, ids=[original["name"]], pool=pool_dir, registered=[], wd=wd, r4={})
 
@@ -240,7 +251,9 @@ def test_rebuild_skips_poorer_forms(tmp_set, capsys):
     gold = stale["mc"]["gold"]
     data["items"][0]["mc"]["forms"][gold] = [*stale["mc"]["forms"][gold], "Extra Alias"]
     path.write_text(json.dumps(data), "utf-8")
-    assert wb.rebuild_mc(MODEL, pool=pool_dir, registered=[], wd=wd, r4={}) == {}
+    # plan 0077 §3b: poorer forms with a different distractor set are reported as ``poorer``
+    assert wb.rebuild_mc(MODEL, pool=pool_dir, registered=[], wd=wd, r4={}) == (
+        {}, [], [stale["name"]])  # fmt: skip
     assert "poorer" in capsys.readouterr().out
 
 
