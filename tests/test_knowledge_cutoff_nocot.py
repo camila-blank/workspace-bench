@@ -160,8 +160,9 @@ def test_ati_entry_is_offline_and_current(monkeypatch, real_families):
         assert len(judge.item_ids()) == 147
         return
     assert ti.subset("knowledge_cutoff") == frozen["ids"]
-    assert frozen["ids"] == judge.item_ids()  # regenerate the ATI entry when the bank grows
-    assert frozen["n_bank"] == frozen["n_ati"] == len(judge.item_ids())
+    # panel-v2 (plan 0071, all-fail rule): a subset of the bank, no longer the whole bank
+    assert set(frozen["ids"]) <= set(judge.item_ids()) and frozen["n_ati"] == len(frozen["ids"])
+    assert frozen["n_bank"] == len(judge.item_ids())
 
 
 def test_judge_reports_by_source(tmp_path, monkeypatch):

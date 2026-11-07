@@ -60,8 +60,10 @@
 - `wsbench baseline kind=prompt_only_opus stage=build` hard-codes the `Qwen/Qwen3.6-27B` tokenizer
   (`baselines/prompt_only_opus.py`): for a non-Qwen subject the render is decoded wrong until it
   takes the subject's tokenizer.
-- ATI does not apply to adapted banks: `text_inversion` is scoped to the frozen 27B banks and its
-  `bank_sha` guard refuses any other bank.
+- An adapted set's ATI subset is gated separately (plan 0079, `stage=gate_adapted` under
+  `WSB_BANK_ROOT`): the all-fail panel with the subject in the Qwen slot (SKILL.md
+  "Anti-text-inversion subset of an adapted set"); the registered file's `bank_sha` guard
+  refuses any other bank.
 - Judge a refreshed set with every family `dry_run=True` first. A non-zero exit means a field the
   registered bank's judge requires (`mc`, `mc.candidates`, `mc_roles`, a consistent `bank_version`)
   was not built.
