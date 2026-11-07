@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -129,6 +130,7 @@ def judge_family(
     )
     result = spec.run(jargs)
     finalize_reads(jargs, result)
+    stamp_adapted_bank(spec.name, result)
     if opts.get("aggregate") == "summary" and result.config.get("aggregate") != "summary":
         if spec.name not in digest.NATIVE_ONLY:
             fail(f"{spec.name}: aggregate=summary but the family ran native (not hooked)")
@@ -154,6 +156,53 @@ def judge_family(
         f"-> {path}"
     )
     return result
+
+
+STAMP_KEYS = ("prompt_version", "instrument_of_record")
+
+
+def _header_version(path: Path) -> int | None:
+    """A wrapped bank's header ``version`` (None for a bare list or a header without one)."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    v = raw.get("version") if isinstance(raw, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def adapted_bank_stamp(family: str, pv: str) -> str:
+    """Plan 0072 Phase 0.2: under ``$WSB_BANK_ROOT`` (and no ``WSB_BANK_FILE_<FAMILY>`` pin) a
+    stamp's ``+bank-v<N>`` tag, N being the REGISTERED bank's header version, names the judged
+    adapted bank's header version M instead when M != N, so a stale set is never stamped as a
+    refreshed one. Call keys never change (only the result stamp), a set whose header matches
+    the registered one keeps the stamp byte for byte, and no root = unchanged."""
+    if not os.environ.get(registry.BANK_ROOT_ENV) or "+bank-v" not in pv:
+        return pv
+    fam = registry.canonical(family)
+    names = [fam, *registry.legacy_names(fam)]
+    if any(os.environ.get(registry.BANK_FILE_ENV_PREFIX + n.upper()) for n in names):
+        return pv
+    try:
+        reg = _header_version(registry.frozen_bank_path(fam))
+        got = _header_version(registry.bank_path(fam))
+    except (SystemExit, KeyError, OSError, ValueError):
+        return pv
+    if reg is None or got is None or reg == got:
+        return pv
+    return re.sub(rf"\+bank-v{reg}(?=\+|$)", f"+bank-v{got}", pv, count=1)
+
+
+def stamp_adapted_bank(family: str, result: FamilyResult) -> None:
+    """``adapted_bank_stamp`` on the result's stamps (``STAMP_KEYS`` of ``config``). A rewritten
+    ``prompt_version`` keeps the registered one in ``config.registered_prompt_version``, which
+    ``results.floor_applies`` compares instead (the floor column is unchanged by the rewrite)."""
+    for k in STAMP_KEYS:
+        v = result.config.get(k)
+        if isinstance(v, str) and (new := adapted_bank_stamp(family, v)) != v:
+            if k == "prompt_version":
+                result.config["registered_prompt_version"] = v
+            result.config[k] = new
 
 
 def finalize_reads(args: JudgeArgs, result: FamilyResult) -> None:
@@ -218,14 +267,11 @@ def refusals_only(args: JudgeArgs, result: FamilyResult) -> int:
 
 
 def readouts_path(root: Path, name: str) -> Path | None:
-    """``root/<family>.jsonl`` (or a former family key's file), None when there is none."""
-    path = root / f"{name}.jsonl"
-    if path.exists():
-        return path
-    for old in registry.legacy_names(name):
-        if (legacy := root / f"{old}.jsonl").exists():
-            return legacy
-    return None
+    """``root/<family>.jsonl`` (or a former family key's file, ``registry.lookup_names``), None
+    when there is none."""
+    return next(
+        (p for key in registry.lookup_names(name) if (p := root / f"{key}.jsonl").exists()), None
+    )
 
 
 def run_layer_count(path: Path, layers: Sequence[int] | None) -> int:
@@ -318,13 +364,12 @@ def run_families(
     runnable: list[tuple[EvalSpec, Path]] = []
     for s in specs:
         readouts = readouts_root / f"{s.name}.jsonl"
-        if not readouts.exists():
-            # a readout file written under a former family key (registry.LEGACY_FAMILY_NAMES)
-            for old in registry.legacy_names(s.name):
-                if (legacy := readouts_root / f"{old}.jsonl").exists():
-                    print(f"{s.name}: no {readouts.name}, reading legacy {legacy.name}")
-                    readouts = legacy
-                    break
+        # a readout file written under a former family key (registry.LEGACY_FAMILY_NAMES; for a
+        # reused key the former key's file wins, registry.lookup_names)
+        found = readouts_path(readouts_root, s.name)
+        if found is not None and found != readouts:
+            print(f"{s.name}: reading legacy {found.name}")
+            readouts = found
         if not readouts.exists():
             msg = f"no readouts at {readouts}"
             print(f"{s.name}: skipped ({msg})")

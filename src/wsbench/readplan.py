@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.banks import load_bank as load_bank_file
-from wsbench.registry import BANK_ROOT_ENV, REPO_ROOT, bank_path, canonical, frozen_bank_path
+from wsbench.registry import (
+    BANK_ROOT_ENV,
+    REPO_ROOT,
+    bank_path,
+    canonical,
+    frozen_bank_path,
+    lookup_names,
+)
 
 GRID = list(range(20, 61, 4))  # the benchmark's layer grid for Qwen3.6-27B (64 layers)
 # history (plan 0032 §2.1.2): no plan row reads these any more; every family's grid is GRID
@@ -403,14 +410,21 @@ def relational_tail(item: dict[str, Any]) -> str:
     return stim[stim.index(RELATIONAL_ANCHOR) :]
 
 
+def bank_file(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """``(header, items)`` of a bank file in any of the three shapes: a plain list (the items
+    carry ids; no header), a wrapped bank keyed on id, or a ``lens-eval`` bank keyed on name
+    (``banks.load_bank`` derives the ids)."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, list):
+        return {}, raw
+    if raw["items"] and "name" not in raw["items"][0]:
+        return {k: v for k, v in raw.items() if k != "items"}, raw["items"]
+    return load_bank_file(path)
+
+
 def _bank(family: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     path = bank_path(family)
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(raw, list):  # the plain-list banks already carry ids
-        return {}, raw
-    if raw["items"] and "name" not in raw["items"][0]:  # wrapped banks keyed on id
-        return {k: v for k, v in raw.items() if k != "items"}, raw["items"]
-    header, items = load_bank_file(path)
+    header, items = bank_file(path)
     if header.get(READ_PLAN_BANK):
         return header, read_plan_items(path, header, items)
     return header, items
@@ -432,7 +446,7 @@ def read_plan_items(
     every item of ``items`` is in it with the same render-relevant fields (a bank that changed a
     text could not reuse the earlier plan's readouts: ValueError)."""
     plan_path = path.parent / str(header[READ_PLAN_BANK])
-    _ph, plan_items = load_bank_file(plan_path)
+    _ph, plan_items = bank_file(plan_path)
     by = {it["id"]: it for it in plan_items}
     for it in items:
         p = by.get(it["id"])
@@ -740,7 +754,7 @@ def _plan(family: str) -> list[ReadSpec]:
             else:  # the v1 completion bank (WSB_BANK_FILE_BASIC_READOUT_MT=items.json)
                 out += _final_token_families_items(family, [it], "plain")
         return out
-    if family == "multihop_mt_v2":
+    if family == "multihop_mt":
         # bank v2 (plan 0041; Camila 2026-10-30: "read at every token not just final position
         # (except lite/fast should be last token)"): the item's `readout` block is the source,
         # every prompt token at every GRID layer, lite = its `lite` rule (the final token)
@@ -1108,6 +1122,25 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ]
+    if family == "model_multihop":
+        _h, items = _bank(family)
+        return [
+            ReadSpec(
+                family,
+                it["id"],
+                "captured",
+                {"kind": "positions", "positions": it["positions"]},
+                GRID,
+                text=it["text"],
+                extra={"input_ids": it["input_ids"], "prompt_len": len(it["input_ids"])},
+                note="every position after the entity (the rest of the question, the answer "
+                "suffix and the assistant header; Qwen tokenizer indices into the shipped "
+                "chat-template ids, thinking off)",
+                # plan 0076 rev 6: gw's `tail`, the last 12 prompt tokens
+                lite_positions={"kind": "last_n", "n": 12},
+            )
+            for it in items
+        ]
     if family == "introspection":
         return _introspection()
     if family == "jlens_concept_pr":
@@ -1305,8 +1338,15 @@ def families() -> list[str]:
     if not root:
         return names
     base = Path(root) if Path(root).is_absolute() else REPO_ROOT / root
+    # a set written under a former key (``registry.lookup_names``: multihop_mt_v2.json after the
+    # 2026-11-04 rename) has the family too; ``bank_path`` reads it the same way
     return [
-        f for f in names if (base / f"{f}.json").exists() or (base / f / "manifest.json").exists()
+        f
+        for f in names
+        if any(
+            (base / f"{k}.json").exists() or (base / k / "manifest.json").exists()
+            for k in lookup_names(f)
+        )
     ]
 
 

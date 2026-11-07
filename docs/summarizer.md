@@ -94,7 +94,7 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
   contributes nothing; rows carry `summary_hierarchical` / `summary_chunks`, extras
   `n_digest_refused`, `n_digest_too_long`, `n_chunk_calls`, `n_hierarchical_items`,
   `max_halvings`. Agentic keeps `summ_max=25`, `summ_rare=25`, concurrency 4, timeout 1800 s
-  and `summ_fallback=default`.
+  and `summ_fallback=none+claude-opus-5` (its digest runs on its Stage C pin `claude-sonnet-5`).
 - **Audit fixes (digest-v5, 2026-10-31; `notes/AUDIT_FIXES.md` F1 / F2 / F3 / F11).**
   - *F1, the all-layer budget scales with the layers* (`summ_layers=union`, the default; `joint`
     is the old single call, an ablation stamped `-joint`). An item read at several layers gets
@@ -152,7 +152,8 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     once and the fuller answer kept (`n_digest_reasked`, `n_digest_collapsed` = still collapsed).
     An unsummarized item is undecided, never a fail (moral_rationale, user_modeling,
     conjunctive_association, relational_multihop and role_bound_association used to score it a
-    fail; jailbreak_recognition keeps plan 0037's rule). A summary row whose ONLY shortfall is
+    fail; jailbreak_recognition scores an item undecided when both its digest models decline it, and keeps
+    plan 0037's rule for any other unsummarized item). A summary row whose ONLY shortfall is
     final digest refusals that the family scores undecided stays complete
     (`runner.refusals_only`, `extras.complete_with_digest_refusals`); a failed judge call still
     makes it incomplete. `results` marks a row whose undecided
@@ -160,21 +161,20 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     every headline, re-takes a prompt-only floor on the ids both decided
     (`[floor vs row on n shared]`) and reports a twin-bank pair (`results.PAIRED_FAMILIES`,
     empty since plan 0058) on the ids decided in both; `prompt_only.freeze` counts digest refusals toward the floor's refusal share.
-  - *F11, arithmetic (numbers digest).* The family passes its operands and `consensus=True`:
-    the digest asks for `NUMBERS_SPARE` = 4 spare numbers, keys that restate an operand take a
-    judged slot only when nothing else is left, a number that at least 3 of the 4 samples of ONE
-    activation begin with (`digest.consensus_claims`, `lead_number`) is marked `first number of
-    K of N samples at [L.. pos ..]` and fills a slot the summarizer left free (still five slots;
-    an operand is never marked). The summary judge reads the mark (`CONSENSUS_RULE`); the headline
-    stays the judge, and `extras.consensus_band` reports the raw-readout rate of the same rule
-    beside it with the same rule on the cross null.
+  - *Arithmetic (numbers digest).* The family passes its operands: the digest asks for
+    `NUMBERS_SPARE` = 4 spare numbers, and a key that restates an operand takes a judged slot
+    only when nothing else is left. The first-number consensus marks (`consensus=True`,
+    `digest.consensus_claims`), the judge's `CONSENSUS_RULE` and `extras.consensus_band` were
+    retired on 2026-11-04 (`+generic-r7`); `collapse(consensus=)` remains, but no family sets it.
 - **Refusal fallbacks** (`summ_fallback`): `default` passes the server-side refusal fallback
   (`fallbacks="default"`); `default+<claude model>` additionally re-runs a call still declined
   after it once on that model, at the same level, before any halving (plan 0037 J10;
-  jailbreak_recognition and the four F3 families use `default+claude-sonnet-5-5`, i.e.
+  the four F3 families use `default+claude-sonnet-5-5`, i.e.
   `digest.REFUSAL_MODEL`; Sonnet 5 before 2026-11-01). `none+<claude model>` is that
   client-side re-run alone, for a digest model that rejects server-side `fallbacks`
-  (`claude-sonnet-5` answers the parameter with a 400). A digest model whose answers can outrun
+  (`claude-sonnet-5` answers the parameter with a 400): agentic_misalignment and
+  jailbreak_recognition, whose digests run on their `claude-sonnet-5` judge pins, use
+  `none+claude-opus-5` (`digest.SONNET_REFUSAL_MODEL`). A digest model whose answers can outrun
   32k output tokens gets its own per-call cap (`digest.OUTPUT_CAPS`, `Settings.max_tokens`:
   64k for `claude-sonnet-5`, which can overrun the rare tier on long agentic bundles); the cap
   keys no fingerprint, the re-run keeps it, and `MAX_TOKENS` (32k) still sizes the single-call
@@ -237,7 +237,7 @@ and this goes to the judge." The default for a multi-layer config since bench v1
   A single-layer run, a hand-built `JudgeArgs` and `summ_layers=union` / `joint` are unchanged
   from v1.0 (same instrument, same requests). The numbers digests (`chain_intermediates`,
   `arithmetic_intermediates`) keep their v1.0 all-layer path: their five-number budget is fixed
-  by design (plan 0022 Part B) and their operand / consensus / tie passes act on the merged keys,
+  by design (plan 0022 Part B) and their operand and tie passes act on the merged keys,
   so a multiplied stage-2 budget does not apply (`summ_layers=layered` with `summ_numbers > 0` exits 2).
   `jlens_concept_pr` is native-only.
 - **Stamps:** the instrument gains `-layered-v1x4` after the render tag

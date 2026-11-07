@@ -913,5 +913,5 @@ def test_ati_entry_regated_on_v2(real_families):
     ids = {it["id"] for it in load_bank("conjunctive_association")}
     # 89 was the comp-v3 entry; the comp-v5 re-gate on the full four-reader panel gives 91
     # (decision R1-ATI gemini, 2026-11-01: +q03_c, +q07_a, +q10_j, -q02_a); the all-fail
-    # re-derivation (panel-v2, plan 0071) keeps 29
-    assert set(e["ids"]) <= ids and e["n_ati"] == len(e["ids"]) == 29
+    # re-derivation (panel-v2, plan 0071) of the 2026-11-04 comp-v5+maj refreeze (91) keeps 26
+    assert set(e["ids"]) <= ids and e["n_ati"] == len(e["ids"]) == 26
