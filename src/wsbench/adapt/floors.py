@@ -60,7 +60,8 @@ def _stored(d: Path, fam: str) -> list[dict]:
     path = readouts_path(d, fam)
     if path is None or not path.exists():
         return []
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    # split on "\n" only: str.splitlines() also breaks at U+2028 / U+0085 inside a JSON string
+    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").split("\n") if ln.strip()]
 
 
 def _only() -> set[str]:
@@ -219,7 +220,13 @@ def judge(model: str, judge_model: str = "claude-opus-5-5") -> dict:
     stems = {canonical(p.stem) for p in rd.glob("*.jsonl")}
     picked = [readouts_path(rd, f) for f in sorted(stems) if not only or f in want]
     for f in sorted(p.stem for p in picked if p is not None):
-        layer = json.loads((rd / f"{f}.jsonl").read_text(encoding="utf-8").split("\n")[0])["layer"]
+        first = next((ln for ln in (rd / f"{f}.jsonl").read_text(encoding="utf-8").split("\n")
+                      if ln.strip()), None)  # fmt: skip
+        if first is None:  # a family with no planned items (missing-only writes an empty file)
+            out[f] = {"rate": None, "n_items": 0, "error": "empty readout file: no rows to judge"}
+            print(f"floors {f}: empty readout file, not judged")
+            continue
+        layer = json.loads(first)["layer"]
         res_dir = _dir(model) / "results" / f
         wsb = str(Path(sys.executable).with_name("wsbench"))
         cmd = [wsb, "judge", f"family={f}", f"readouts={rd / f'{f}.jsonl'}", f"out={res_dir}",
