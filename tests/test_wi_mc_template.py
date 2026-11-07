@@ -242,3 +242,15 @@ def test_rebuild_skips_poorer_forms(tmp_set, capsys):
     path.write_text(json.dumps(data), "utf-8")
     assert wb.rebuild_mc(MODEL, pool=pool_dir, registered=[], wd=wd, r4={}) == {}
     assert "poorer" in capsys.readouterr().out
+
+
+def test_patch_lines_keep_earlier_patch_fields(tmp_set):
+    set_dir, _pool = tmp_set
+    set_dir.mkdir(parents=True, exist_ok=True)
+    earlier = {"x": {"set": {"target": "T", "mc": {"old": 1}}, "note": "n"}}
+    store.update_report(
+        MODEL, lambda r: r.setdefault("patches", {}).setdefault(wb.FAMILY, {}).update(earlier)
+    )
+    (line,) = wb.patch_lines(MODEL, {"x": {"gold": "G"}})
+    kv = dict(a.split("=", 1) for a in shlex.split(line)[4:])
+    assert json.loads(kv["set"]) == {"target": "T", "mc": {"gold": "G"}}
