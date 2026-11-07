@@ -479,6 +479,33 @@ adds ids, so no lens readouts are reused for refilled families); #346 buggy leak
   `n_items` / `status` / `note` carry the shipped state. Updating `have` at freeze would change
   what the guard and `change_text` read, so it waits for the next driver run or a separate fix.
 
+## Follow-up 2 (after the qwen3.5-0.8b delta audit, 2026-11-07): three lint guards, code + tests only
+The qwen3.5-0.8b delta audit (adapted/qwen3.5-0.8b/AUDIT.md, 2026-11-07) dropped 7 association
+items that ask for or go through a capital, 76 near-duplicate user_modeling items (the same
+festival / workplace authored again wave after wave) and 4 wedding-role gender giveaways. Camila
+(2026-11-06): drop items whose clue routes through a capital, near-duplicates, and giveaways.
+- **association joins `lint.CAPITAL_FAMILIES`** (the #372 capital lint, over `prompt`). Freeze's
+  re-check of newly shipped rows (`refill.freeze_rows`) reads the same set, so a raised target
+  never ships an association capital row either. **§0.1(e) is retained** for basic_readout_mt and
+  multihop unchanged; originals are never re-judged.
+- **user_modeling gendered self-reference** gains bride, groom, bridesmaid, groomsman and the
+  phrases "maid / matron of honor" (`lint.GENDERED`, `GENDERED_PHRASES`); the brief's invariant
+  lists them. **§0.1(c) is retained** (selfdescribe only, registered golds, the alias lint).
+- **user_modeling near-duplicate topics (`lint._um_topic_batch`, through `lint_pairs`).** An
+  authored candidate whose slug topic words (`lint.um_topics`: the words of `name` after
+  `um-sd-<attr_label>-<attr>-`) share a word with an authored item of the same gold already in the
+  gate log (`run.lint_and_gate`'s `logged`), or earlier in the same batch, is rejected before the
+  gate (a lint reject: it never counts in `tried`, so the ooc rule is unchanged). The brief's
+  do-not-reuse list for user_modeling becomes the used topic slugs (`Brief.used = ("name",)`; it
+  listed values, and every allowed value is reused by design, which made Opus refuse whole calls),
+  plus one invariant asking for a new topic per value; its class mix becomes about 20% country,
+  40% occupation, 30% gender, 10% religion (the audits measured Country at 34-42% of new items).
+- **Sanctioned change to one pre-existing test:** `tests/test_adapt_refill_0075.py`
+  `test_capital_questions_are_rejected` asserted `lint._capital("association", it) == []` as its
+  example of a family the capital lint skips. association is now checked, so the example family
+  becomes `poetry` (still outside `CAPITAL_FAMILIES`); the other assertions are unchanged. No
+  other pre-existing test is edited. New tests: `tests/test_adapt_lint_0075_followup2.py`.
+
 ## Files
 - `plans/0075-refill-thin-families.md` (this plan)
 - `src/wsbench/adapt/{refill,run,author,lint,poetry,rebuild,judge_inputs,families,auth}.py`,

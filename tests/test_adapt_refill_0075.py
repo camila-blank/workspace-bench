@@ -332,7 +332,8 @@ def test_capital_questions_are_rejected():
           "adapt": {"origin": "authored"}}  # fmt: skip
     assert any("#372" in p for p in lint._capital("multihop", it))
     assert lint._capital("multihop", it | {"adapt": {"origin": "original"}}) == []
-    assert lint._capital("association", it) == []
+    # poetry: a family outside CAPITAL_FAMILIES (plan 0075 follow-up 2 moved association in)
+    assert lint._capital("poetry", it) == []
 
 
 def test_audit_probe_reads_the_element_flag():
