@@ -108,3 +108,30 @@ def test_a_no_position_row_is_reported_not_reread(setup):
     lr.assemble(args)
     report = json.loads((Path(args.out) / "assemble_report.json").read_text())
     assert report["fam"] == {"items": 2, "missing": 0, "no_position": ["b"]}
+
+
+def test_produce_routes_a_mixed_family_job_to_each_familys_store(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    a, b = _row("a"), {**_row("b"), "family": "fam2"}
+    job = {"subject": "qwen3.5-0.8b", "arm": "jlens", "family": "fam+fam2", "k": 0,
+           "specs": [{"row_sha": lr.row_sha(a), "row": a, "family": "fam"},
+                     {"row_sha": lr.row_sha(b), "row": b, "family": "fam2"}]}  # fmt: skip
+    failed = {**job, "k": 1, "specs": job["specs"][:1]}
+    res = {"k": 0, "rows": [{"row_sha": lr.row_sha(a), "row": _cells("a")[0]}],
+           "empty_ids": [lr.row_sha(b)],
+           "meta": {"n_cells": 1, "total_s": 1, "n_empty_samples": 0, "gpu": "x"}}  # fmt: skip
+    monkeypatch.setattr(lr, "jobs_for", lambda args: [job, failed])
+    monkeypatch.setattr(lr, "app", SimpleNamespace(run=nullcontext))
+    monkeypatch.setattr(
+        lr, "read_job", SimpleNamespace(map=lambda jobs, **kw: [{"k": 1, "error": "boom"}, res])
+    )
+    args = Namespace(subject="qwen3.5-0.8b", arm="jlens", store=str(tmp_path), dry_run=False,
+                     verbose=False)  # fmt: skip
+    lr.produce(args)
+    assert lr.stored_shas(lr.store_path(tmp_path, "qwen3.5-0.8b", "jlens", "fam")) == {
+        lr.row_sha(a)
+    }
+    f2 = lr.store_path(tmp_path, "qwen3.5-0.8b", "jlens", "fam2").read_text().splitlines()
+    assert [json.loads(x) for x in f2] == [{"row_sha": lr.row_sha(b), "row": None}]
