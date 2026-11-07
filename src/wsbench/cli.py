@@ -1273,6 +1273,12 @@ class TextInversion(Command):
                 print(f"{fam}: {e['n_ati']}/{e['n_bank']} ATI ({e['n_invertible']} invertible)")
             print(f"wrote {dst or text_inversion.frozen_path()}")
         elif self.stage == "gate":
+            if text_inversion.adapted_root() is not None:  # plan 0079: never the 27B file
+                print(
+                    "gate: WSB_BANK_ROOT is set; an adapted set uses stage=gate_adapted",
+                    file=sys.stderr,
+                )
+                return EXIT_USAGE
             try:
                 frozen = text_inversion.gate(
                     self.out,

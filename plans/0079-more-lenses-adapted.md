@@ -77,10 +77,13 @@ From the mOre-lenses README and each run's `olens.json` (`read`), asserted at lo
   distill (the run's END checkpoint, what Agam's `_end_lora` read; the README's `lora_hf/` copy is
   never used), `.../iter_000600` for RL. Loading refuses a silent no-op (no nonzero `lora_B`) or
   any LoRA tensor PEFT did not attach (count in the file == count on the model).
-- **Carrier cross-check:** the carrier (ids, slot) built from `olens.json` must equal
-  `wsbench.produce.methods.OLens._carrier` for the same template (same enclosed-ideograph search;
-  Agam asserted the training renderer == `OLens._carrier`), at every layer; Qwen3-8B's thinking-off
-  template (empty think block) is covered by the same check.
+- **Carrier:** built from `olens.json` (template, `slot_char`), the training contract: the slot
+  char must encode to exactly `[slot_id]` and occur exactly once in the carrier at every layer
+  (enforced). Agreement with the bench's own search `wsbench.produce.methods.OLens._carrier` is
+  recorded per layer (`carrier_matches_bench` in the job log), not enforced: it agrees on the
+  Qwen3.5 sizes (the 27B's tokenizer, where Agam asserted it), but on Qwen3-8B that search picks
+  U+320E while the 8B checkpoint was trained on U+321C / 144490 (README recipe table), so the
+  checkpoint's contract wins.
 - **J-lens:** the bench's `wsbench.produce.methods.JLens` readout of record, `(W_U J h) /
   ||J^T W_U[t]||`, top 10 (`tokens10`), W_U = the subject's `lm_head`, batched per layer; every
   job re-reads up to 8 cells through `JLens.read` itself and refuses any difference.

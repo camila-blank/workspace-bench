@@ -1,31 +1,6 @@
 """Readouts of the per-subject mOre-lenses O-lenses and neuronpedia J-lenses on an ADAPTED set
-(plan 0079), on Modal, incremental by item.
-
-The read is the checkpoint's own contract (``agu18dec/mOre-lenses`` README + each run's
-``olens.json``): the residual after decoder block L (``hidden_states[L + 1]``, the base model with
-the adapter disabled) at every plan cell; ``scaled`` (inverters: ``global_scale * h``) or ``unit``
-(distill / RL: ``alpha * h / |h|``) REPLACES the input embedding at the carrier's slot token; the
-LoRA generates under the WSB sampling of record (T 1.0, top-p 0.95, top-k 64, 256 new tokens,
-thinking off, k = 1: sampling ``prose1``). Port of global-workspace
-``scripts/ola/port/subject_wsbench_qwen_modal.py`` (Agam's producer of record for the README's WSB
-tags: HF + PEFT, batched ``inputs_embeds`` decode, same image pins), reading the adapted plan
-(``WSB_BANK_ROOT=adapted/<m>``) instead of a remapped 27B plan. A J-lens arm is the bench's own
-``wsbench.produce.methods.JLens`` cosine readout (top 10, sampling ``tokens10``), batched.
-
-Incremental (plan 0079 §3): every cell is stored with the sha of its plan row
-(``row_sha``: the row minus lite / note keys, layers kept). ``produce`` reads only rows whose sha
-has no stored cells; ``assemble`` writes ``<readouts>/<family>.jsonl`` from the store for the
-CURRENT plan's rows (a dropped id leaves, a changed row is re-read) plus the sidecar with today's
-``plan_sha``. Judging the same ``out=`` dir again then calls the judge only for new items (the
-judge caches by content fingerprint).
-
-    source /workspace/wsb-runs/run_env.sh   # Modal profile / environment, no API key
-    WSB_BANK_ROOT=adapted/qwen3.5-9b uv run --with modal --with "transformers>=5" \\
-        python scripts/lens_readouts_modal.py produce --subject qwen3.5-9b \\
-        --arm qwen3.5-9b.rl.i600 --store /root/tmp/wsb-0079/store [--families a,b] [--limit 4]
-    WSB_BANK_ROOT=adapted/qwen3.5-9b uv run ... python scripts/lens_readouts_modal.py assemble \\
-        --subject qwen3.5-9b --arm qwen3.5-9b.rl.i600 --store ... --out READOUTS_DIR
-"""
+(plan 0079 §2-§5: the read spec, producer, incremental store and usage), on Modal, incremental
+by plan row. Port of global-workspace scripts/ola/port/subject_wsbench_qwen_modal.py."""
 
 import argparse
 import hashlib
@@ -236,7 +211,9 @@ def _attach_lora(backend: Any, adir: str) -> None:
     blocks = backend.blocks
     backend.model = PeftModel.from_pretrained(backend.model, adir)
     backend.model.eval()
-    type(backend).blocks = property(lambda _self: blocks)
+    # this instance only (Modal reuses warm containers: never patch the shared Backend class)
+    patched = {"blocks": property(lambda _s: blocks)}
+    backend.__class__ = type("PeftBackend", (type(backend),), patched)
     b = [p for n, p in backend.model.named_parameters() if "lora_B" in n]
     if not b or all(float(p.detach().abs().max()) == 0.0 for p in b):
         raise RuntimeError(f"{adir}: LoRA did not load (no nonzero lora_B)")
@@ -261,15 +238,18 @@ def _carrier(tok: Any, template: str, layer: int, slot_char: str, slot_id: int) 
     return ids, slots[0]
 
 
-def _check_carrier(backend: Any, template: str, layer: int, carrier: tuple) -> None:
-    """The bench's own carrier (``OLens._carrier``: the same enclosed-ideograph search Agam
-    asserted equal to the training renderer) must be the olens.json one (plan 0079 §2)."""
+def _check_carrier(backend: Any, rd: dict[str, Any], layer: int, carrier: tuple) -> bool:
+    """olens.json's slot char must encode to exactly ``[slot_id]`` (the training contract, plan
+    0079 §2); returns whether the bench's own search (``OLens._carrier``) agrees. Diagnostic only:
+    on Qwen3-8B that search picks U+320E while the checkpoint was trained on U+321C."""
     from wsbench.produce.methods import OLens
 
-    ref = OLens(lora="", prompt=template)
+    tok = backend.tokenizer
+    if tok(rd["slot_char"], add_special_tokens=False)["input_ids"] != [rd["slot_id"]]:
+        raise RuntimeError(f"slot char {rd['slot_char']!r} does not encode to [{rd['slot_id']}]")
+    ref = OLens(lora="", prompt=rd["prompt_template"])
     ref._b = backend
-    if ref._carrier(layer) != (list(carrier[0]), carrier[1]):
-        raise RuntimeError(f"L{layer}: olens.json carrier != wsbench OLens._carrier")
+    return ref._carrier(layer) == (list(carrier[0]), carrier[1])
 
 
 def _cells(backend: Any, specs: list[dict[str, Any]]) -> tuple[list[tuple], list[str]]:
@@ -284,7 +264,7 @@ def _cells(backend: Any, specs: list[dict[str, Any]]) -> tuple[list[tuple], list
         r = render(s, backend.tokenizer)
         pos = _positions(s.positions, r.tokens)
         if not pos:
-            empty.append(s.id)
+            empty.append(d["row_sha"])
             continue
         idx = [q % len(r) for q in pos]
         acts = backend.capture(r.ids, list(s.layers), idx)
@@ -312,12 +292,13 @@ def _olens_read(backend: Any, card: dict[str, Any], cells: list[tuple], batch: i
     pad = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
     texts: list[str] = [""] * len(cells)
     norms: dict[int, dict[str, float]] = {}
+    bench_agrees: dict[int, bool] = {}
     by_layer: dict[int, list[int]] = {}
     for ci, c in enumerate(cells):
         by_layer.setdefault(c[2], []).append(ci)
     for layer, cis in sorted(by_layer.items()):
         ids, slot = _carrier(tok, rd["prompt_template"], layer, rd["slot_char"], rd["slot_id"])
-        _check_carrier(backend, rd["prompt_template"], layer, (ids, slot))
+        bench_agrees[layer] = _check_carrier(backend, rd, layer, (ids, slot))
         with torch.no_grad():
             base = embed(torch.tensor([ids], device=backend.device))[0]
         hn, inn = [], []
@@ -352,7 +333,8 @@ def _olens_read(backend: Any, card: dict[str, Any], cells: list[tuple], batch: i
             "median_h": round(float(torch.cat(hn).median()), 2),
             "median_injected": round(float(torch.cat(inn).median()), 1),
         }
-    return [{"samples": [t]} for t in texts], {"norms": norms, "stop_ids": stop}
+    info = {"norms": norms, "stop_ids": stop, "carrier_matches_bench": bench_agrees}
+    return [{"samples": [t]} for t in texts], info
 
 
 def _jlens_read(backend: Any, filename: str, cells: list[tuple], batch: int) -> tuple:
@@ -390,7 +372,9 @@ def _jlens_read(backend: Any, filename: str, cells: list[tuple], batch: int) -> 
     ref._b, ref._jac, ref._w_u = backend, jac, w_u
     for ci in range(0, len(cells), max(1, len(cells) // 8))[:8]:
         r = ref.read(cells[ci][5], cells[ci][2])
-        if r.tokens != out[ci]["tokens"]:
+        pairs = zip(r.scores, out[ci]["scores"], strict=True)
+        off = any(abs(a - b) > 1e-3 * max(1, abs(a)) for a, b in pairs)
+        if r.tokens != out[ci]["tokens"] or off:
             raise RuntimeError(f"batched J-lens != JLens.read at cell {ci}")
     return out, {"lens_layers": int(jac.shape[0])}
 
@@ -420,8 +404,11 @@ def _read_job(job: dict[str, Any]) -> dict[str, Any]:
         card, adir = _olens_card(job["path"])
         if card["base_model"] != job["hf_id"]:
             raise RuntimeError(f"{job['path']}: base model {card['base_model']} != {job['hf_id']}")
+        if card["read"].get("sampling_of_record") != SAMPLING:
+            raise RuntimeError(f"{job['path']}: sampling of record != {SAMPLING}")
         _attach_lora(backend, adir)
         meta["read"] = card["read"]
+    hf_vol.commit()  # the downloaded weights / adapters / lenses persist for the next container
     cells, empty = _cells(backend, job["specs"])
     t_cap = time.time() - t0
     torch.manual_seed(int(job["seed"]))
@@ -434,13 +421,16 @@ def _read_job(job: dict[str, Any]) -> dict[str, Any]:
         rows.append({"row_sha": c[0], "row": {"id": c[1], "layer": c[2], "pos": c[3],
                                               "token": c[4], **r}})  # fmt: skip
     n_empty = sum(1 for r in reads if r.get("samples") == [""])
+    n_cells = len(cells)
+    del backend, cells  # free the GPU before a warm container's next job
+    torch.cuda.empty_cache()
     return {
         "rows": rows,
         "empty_ids": empty,
         "meta": {
             **meta,
             **info,
-            "n_cells": len(cells),
+            "n_cells": n_cells,
             "n_empty_samples": n_empty,
             "capture_s": round(t_cap),
             "total_s": round(time.time() - t0),
@@ -565,7 +555,7 @@ def produce(args: argparse.Namespace) -> None:
             with dst.open("a", encoding="utf-8") as fh:
                 fh.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in res["rows"]))
                 for d in job["specs"]:  # a row with no position: a marker so it is not re-read
-                    if d["row"]["id"] in res["empty_ids"]:
+                    if d["row_sha"] in res["empty_ids"]:
                         fh.write(json.dumps({"row_sha": d["row_sha"], "row": None}) + "\n")
             _append(log, {"job": tag, **res["meta"], "ts": time.time()})
             print(
@@ -601,6 +591,8 @@ def assemble(args: argparse.Namespace) -> None:
     report = {}
     for fam in _families(args.families):
         rows = _plan_rows(fam, args.subject)
+        if not rows:  # no in-band row (or an empty bank): no file
+            continue
         src = store_path(Path(args.store), args.subject, args.arm, fam)
         cells: dict[str, list[dict[str, Any]]] = {}
         if src.exists():

@@ -19,17 +19,22 @@ answerers=$(cd "$OUT/answers" && ls -d */ 2>/dev/null | tr -d / | grep -E '^(qwe
 [ -n "$answerers" ] || { echo "no answers/<answerer>/ under $OUT" >&2; exit 2; }
 
 # family -> the layer its readouts were written at (stage=build's `layer`; 44 when absent)
-declare -A LAYER
-while read -r fam lay; do LAYER[$fam]=$lay; done < <(python3 -c '
+[ -s "$OUT/prompts.jsonl" ] || { echo "no $OUT/prompts.jsonl (run stage=build)" >&2; exit 2; }
+layer_map=$(python3 -c '
 import json, sys
 seen = {}
 for line in open(sys.argv[1], encoding="utf-8"):
     if line.strip():
         r = json.loads(line)
-        seen.setdefault(r["family"], r.get("layer", 44))
-for f, l in seen.items():
-    print(f, l)
-' "$OUT/prompts.jsonl")
+        seen.setdefault(r["family"], set()).add(r.get("layer", 44))
+bad = {f: sorted(v) for f, v in seen.items() if len(v) > 1}
+if bad:
+    sys.exit(f"families written at more than one layer: {bad}")
+for f, v in seen.items():
+    print(f, *v)
+' "$OUT/prompts.jsonl") || exit 2
+declare -A LAYER
+while read -r fam lay; do LAYER[$fam]=$lay; done <<< "$layer_map"
 
 JOBS=${JOBS:-24}  # concurrent `wsbench run` processes, one per (answerer, draw, family)
 jobs_file=$(mktemp)
