@@ -1,6 +1,6 @@
 # 0082: poetry v6: couplets and option lists an options-only guesser cannot read
 
-Status: draft, critique rounds 1-4 applied (round 5 pending). Sets: the ten plan-0060 adapted sets
+Status: draft, critique rounds 1-5 applied (round 6 pending). Sets: the ten plan-0060 adapted sets
 (`adapted/{glm-5.3, deepseek-v4-pro, muse-spark-open, kimi-k3, qwen3-8b, qwen3.5-9b, qwen3.5-4b,
 qwen3.5-2b, qwen3.5-0.8b, olmo-3-7b}`). GLM first.
 
@@ -50,9 +50,13 @@ smaller model" framing line is replaced for this tier (`Brief.tier_frame`). The 
 `v6` alone (it never steps down into `t1`). Without the variable `fill` walks the plan-0075
 tiers (`run.fill_tiers`). **Retained invariant:** every other tier's few-shots never sample an
 opt-in tier's rows, so `t1` waves see the same examples whether or not v6 rows exist. v6
-few-shots skip rows dropped in `report.drops`. Each v6 wave's steer also names the rhyme
-families (line one's CMU rhyming part) already at 20% of the target among the selected rows
-(`poetry.family_steer`), so `fill` steers away from a full family before spending on it.
+few-shots skip rows dropped in `report.drops`. The steer of every v6 wave, the first one
+included, names the rhyme families already at 20% of the target among the selected rows. A
+rhyme family is line one's CMU rhyming part (`poetry.family_steer`). So `fill` steers away from
+a full family before spending on it. The steer is advisory. The cap is enforced at the audit
+(§5.5): if a rhyme family exceeds 20% of the shipped poetry bank, the newest v6 rows of that
+family are dropped (`adapt drop`, reason "plan 0082 rhyme-family cap") until it fits. They
+are back-filled. 0075 rows are never dropped for the cap.
 
 The scored latent is unchanged: the gold is whatever word THE SUBJECT plans at line one's
 newline (free leg modal >= 4/11, stub leg >= 8/10, same word; `poetry.finalize`), whatever the
@@ -69,7 +73,9 @@ For each new `v6` item that passed the subject gate:
    subject wrote).
 2. **Prior order**: Opus 5.5 ranks the gold and up to 24 pool words from the most to the least
    likely answer, blind to which word is the gold and to the couplet, in the lucky guesser's own
-   framing (`lucky_guessing.SYSTEM` + the family sentence), 2 shuffled draws, mean rank.
+   framing (`lucky_guessing.SYSTEM` + the family sentence), 2 shuffled draws, mean rank. Both
+   draws must be usable, else the item is pending (the usable draw stays cached). An item whose
+   pool holds fewer than 5 words (gold + 4) is unmatched: no retry can change that.
 3. **Candidate lists**: up to 6 four-word distractor lists from the 10 most answer-like pool
    words. List 0 = the most answer-like word plus the three nearest the gold; lists 1-5 seeded
    draws. Every list holds at least one word the prior ranks above the gold. If no top word
@@ -88,7 +94,8 @@ For each new `v6` item that passed the subject gate:
    whose rows passed the whole gate, are not dropped and are not already shipped + the lists
    pass 1 chose in this wave (before this wave's Opus gate, which removes a few). A list is
    kept only when the described guesser misses under both pools, so a replacement list passes
-   both. Every screen draw is cached under a stable tag (`b<d>` for blind,
+   both. Pass 2 starts at the list pass 1 chose (earlier lists already leaked under the
+   shipped pool). Every screen draw is cached under a stable tag (`b<d>` for blind,
    `p<pool>d<d>` for described). Pass 2 therefore re-reads pass 1's blind and shipped-pool
    draws, and adds `SCREEN_DRAWS` NEW blind draws and the mix-pool draws. An accepted list has
    survived 4 blind, 2 shipped-pool described and 2 mix-pool described draws with no gold pick.
@@ -106,23 +113,28 @@ For each new `v6` item that passed the subject gate:
    row again. This is the one exception to "a row already through opus_gate keeps its live
    row": a v6 row whose gate row has no chosen list while `draft_mc.json` now has one. The
    pilot reports pending and unmatched counts separately. A v6 item whose `vet --all` entry is
-   missing or empty (a failed vet call) is pending too: it is never screened on a thin pool, and
+   MISSING (under `--all` a failed vet call writes no entry; a successful empty reply, or no CMU
+   rhyme left to vet, writes `[]`, which counts as vetted) is pending too: it is never screened on a thin pool, and
    its vet entry is dropped so the next build asks again. **Settle before every freeze:** `adapt
    poetry stage=settle` (`poetry.settle` = `build_mc(keep_built=True)` + `opus_gate(new_only=
    True)`) retries pending lists and re-gates them, and prints the v6 ids still pending. It only
    adds gate rows for v6 rows that were pending; 0075 rows already through `opus_gate` are
    untouched. Built lists stay in `mc.prior.candidates_built`; the full
    record (ranks, every screened list with its picks, both passes) is `mc.prior`.
-7. **Built once (terminal)**: a v6 id whose stored `mc` carries a `prior` record, matched or
-   unmatched, keeps it on every path: `build_mc(keep_built=False)` (`adapt poetry stage=mc|all`)
-   included. So a list that was lucky-measured is never re-screened, and an unmatched item is
+7. **Built once (terminal)**: a v6 id whose stored `mc` carries a `prior` record keeps it on
+   every path, `build_mc(keep_built=False)` (`adapt poetry stage=mc|all`) included. The record
+   binds what was screened: `prior.gold` and the subject's commits. A chosen list stands only
+   while the item's current gold is that gold AND the judge's four shown distractors
+   (`options.distractors`, which drop the CURRENT gold and commits) are exactly the chosen list
+   (`poetry.v6_current`). An unmatched record stands for the same gold. A re-gate that moves
+   either makes the item new again, so it is ranked, screened and Opus-gated afresh. So a list that was lucky-measured is never re-screened, and an unmatched item is
    never re-tried. **Retained invariant (plan 0075 §2.5):** an id whose options were already
    built keeps them; `keep_built` still governs non-v6 rows exactly as before.
 8. **No unscreened v6 list is ever written or shipped.** `build_mc` keeps the previous
    `draft_mc.json` bytes and puts them back if screening the v6 lists raises (the builder's
    `--out` is unchanged, so plan 0075's `test_poetry_keep_built_and_new_only` holds as is). Independently, `poetry.row_passes` refuses a v6 row whose `mc.prior` has no
-   chosen list. **Retained invariant (plan 0075 §2.5):** a new row passes only once `opus_gate`
-   built it; non-v6 rows are judged exactly as before.
+   chosen list that is still current (`v6_current`). **Retained invariant (plan 0075 §2.5):** a
+   new row passes only once `opus_gate` built it; non-v6 rows are judged exactly as before.
 
 Only the stored ORDER of `mc.candidates` changes. Tiers, `candidate_ok`, the judge's
 `option_set`, prompts and stamps are untouched. The headline free-response judge shows no options
@@ -264,6 +276,9 @@ the strict freeze's refill check (plan 0075 §2.2) satisfied by the 0075 record.
   - a crash in `v6_lists` restores the previous `draft_mc.json` (or leaves none);
   - a failed vet leaves the item pending, and the next build re-vets and screens it;
   - `settle` = `build_mc(keep_built=True)` then `opus_gate(new_only=True)`;
+  - a gold re-gated onto a chosen word, or a newly committed chosen word, voids the list (it is
+    built again and `row_passes` refuses it meanwhile);
+  - a one-draw prior is pending; a pool under 5 words is unmatched;
   - `family_steer`; dropped v6 rows are neither few-shots nor pass-2 examples; `t1` few-shots
     never sample v6 rows.
 

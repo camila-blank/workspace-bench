@@ -105,6 +105,8 @@ def test_guess_item_is_the_judge_option_order():
 
 # ---------------------------------------------------------------------------------- screening
 
+POOL = ["bbb", "ccc", "ppp", "qqq", "rrr", "sss", "ttt"]
+
 
 def _alphabetical_guesser(log: list | None = None):
     """Picks the alphabetically first option of the item's own list (never the examples')."""
@@ -134,7 +136,7 @@ def test_screen_chooses_the_first_list_the_guessers_miss(tmp_path):
         "x1": {"mmm": 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0, "rrr": 6.0},
         "x2": {"aaa": 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0, "rrr": 6.0},
     }
-    items = [_item("x1", "mmm", []), _item("x2", "aaa", [])]
+    items = [_item("x1", "mmm", POOL), _item("x2", "aaa", POOL)]
     ask = _alphabetical_guesser()
     st = pp.screen(items, ranks, [_examples()], tmp_path / "s.jsonl", ask=ask)
     assert st["x1"]["chosen"] == pp.candidate_lists("mmm", ranks["x1"], "x1")[0]
@@ -160,7 +162,7 @@ def test_screen_uses_the_lucky_prompts_verbatim(tmp_path):
         seen.extend(prompts)
         return _alphabetical_guesser()(prompts)
 
-    pp.screen([_item("x1", "mmm", [])], ranks, [_examples()], tmp_path / "s.jsonl", ask=ask)
+    pp.screen([_item("x1", "mmm", POOL)], ranks, [_examples()], tmp_path / "s.jsonl", ask=ask)
     systems = {s for s, _u in seen}
     assert systems == {lg.SYSTEM}
     blind = [u for _s, u in seen if "Example 1" not in u]
@@ -175,7 +177,7 @@ def test_build_lists_second_pass_reads_v6_examples(tmp_path):
     golds = ["mmm", "mmn", "mmo", "mmp", "mmq"]
     ranks = {f"x{i}": {g: 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0, "rrr": 6.0}
              for i, g in enumerate(golds)}  # fmt: skip
-    items = [_item(f"x{i}", g, []) for i, g in enumerate(golds)]
+    items = [_item(f"x{i}", g, POOL) for i, g in enumerate(golds)]
     log: list = []
     st = pp.build_lists(items, ranks, _examples(), tmp_path / "s.jsonl",
                         ask=_alphabetical_guesser(log))  # fmt: skip
@@ -191,7 +193,7 @@ def test_build_lists_second_pass_reads_v6_examples(tmp_path):
 
 def test_build_lists_keeps_pass_one_with_too_few_v6_lists(tmp_path):
     ranks = {"x1": {"mmm": 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0}}
-    st = pp.build_lists([_item("x1", "mmm", [])], ranks, _examples(), tmp_path / "s.jsonl",
+    st = pp.build_lists([_item("x1", "mmm", POOL)], ranks, _examples(), tmp_path / "s.jsonl",
                         ask=_alphabetical_guesser())  # fmt: skip
     assert st["x1"]["chosen"] and "pass1" not in st["x1"]["record"]
     assert st["x1"]["record"]["pass2"].startswith("skipped")
@@ -203,7 +205,7 @@ def test_pass_two_replacement_list_must_also_pass_the_shipped_pool(tmp_path):
     golds = ["mmm", "mmn", "mmo", "mmp", "mmq"]
     ranks = {f"x{i}": {g: 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0, "rrr": 6.0,
                        "sss": 7.0, "ttt": 8.0} for i, g in enumerate(golds)}  # fmt: skip
-    items = [_item(f"x{i}", g, []) for i, g in enumerate(golds)]
+    items = [_item(f"x{i}", g, POOL) for i, g in enumerate(golds)]
     lists0 = {f"x{i}": pp.candidate_lists(g, ranks[f"x{i}"], f"x{i}")[0] for i, g in
               enumerate(golds)}  # fmt: skip
     base = _alphabetical_guesser()
@@ -325,7 +327,7 @@ def _v6_setup(adapted, monkeypatch, ids_tiers):
     def fake_lists(m, items, built=()):
         screened.append(([i["id"] for i in items], [b[0] for b in built]))
         for it in items:
-            it["mc"] = {**it["mc"], "prior": {"chosen": it["mc"]["candidates"][:4]}}
+            it["mc"] = {**it["mc"], "prior": {"chosen": it["mc"]["candidates"][:4], "gold": "hay"}}
 
     monkeypatch.setattr(po, "v6_lists", fake_lists)
     return d, calls, script, screened
@@ -337,7 +339,8 @@ def test_build_mc_vets_and_screens_only_new_v6_rows(adapted, monkeypatch):
                                ("p-v6-unmatched", "v6"), ("p-v6-dropped", "v6")])  # fmt: skip
     store.update_report(MODEL, lambda r: r.setdefault("drops", {}).setdefault("poetry", {})
                         .update({"p-v6-dropped": "leaker"}))  # fmt: skip
-    built = {"candidates": ["tray", "clay", "jay", "spray"], "prior": {"chosen": ["tray"]}}
+    built = {"candidates": ["tray", "clay", "jay", "spray"],
+             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}  # fmt: skip
     unmatched = {"candidates": [], "prior": {"unmatched": "u", "candidates_built": ["x"]}}
     (d / "draft_mc.json").write_text(
         json.dumps(
@@ -368,7 +371,7 @@ def test_build_mc_vets_and_screens_only_new_v6_rows(adapted, monkeypatch):
 
 def test_v6_lists_survive_a_rebuild_without_keep_built(adapted, monkeypatch):
     """``adapt poetry stage=mc`` (keep_built=False) rebuilds every v5 list but never a v6 one."""
-    d, calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
+    _d, calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
     po.build_mc(MODEL, script=script)
     first = po.load_mc(MODEL)["p-v6"]
     po.build_mc(MODEL, script=script)
@@ -552,25 +555,64 @@ def test_a_failed_draw_is_pending_and_retried(tmp_path):
 
 def test_an_out_of_range_pick_never_passes_a_list(tmp_path):
     ranks = {"x1": {"mmm": 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0}}
-    st = pp.screen([_item("x1", "mmm", [])], ranks, [_examples()], tmp_path / "s.jsonl",
+    st = pp.screen([_item("x1", "mmm", POOL)], ranks, [_examples()], tmp_path / "s.jsonl",
                    ask=lambda ps: [{"choice1": 9} for _ in ps])  # fmt: skip
     assert st["x1"]["chosen"] is None and "pending" in st["x1"]
 
 
 def test_a_v6_row_ships_only_on_its_screened_list():
-    mc = {"candidates": ["a", "b", "c", "d"]}
-    row = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}},
-           "item": {"adapt": {"tier": "v6"}, "mc": mc}}  # fmt: skip
+    mc = {"candidates": ["tray", "clay", "jay", "spray"]}
+    item = {"adapt": {"tier": "v6"}, "intermediates": ["hay"], "mc": mc}
+    row = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}}, "item": item}
     assert not po.row_passes(row)
-    row["item"]["mc"] = {**mc, "prior": {"chosen": ["a", "b", "c", "d"]}}
+    item["mc"] = {**mc, "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}
     assert po.row_passes(row)
+    # a re-gate that moves the gold onto a chosen word, or commits one, voids the list
+    assert not po.row_passes({**row, "item": {**item, "intermediates": ["tray"]}})
+    assert not po.row_passes({**row, "item": {**item, "qwen_commits": {"jay": 2}}})
     t1 = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}},
           "item": {"adapt": {"tier": "t1"}, "mc": mc}}  # fmt: skip
     assert po.row_passes(t1)  # plan 0075 rows unchanged
 
 
+def test_a_stale_v6_list_is_built_again(adapted, monkeypatch):
+    d, _calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
+    stale = {"candidates": ["tray", "clay", "jay", "spray"],
+             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "day"}}  # fmt: skip
+    (d / "draft_mc.json").write_text(json.dumps({"items": [{"id": "p-v6", "mc": stale}]}))
+    po.build_mc(MODEL, script=script, keep_built=True)
+    assert screened == [(["p-v6"], [])]  # the gold moved (day -> hay): screened again
+    assert po.v6_settled({"intermediates": ["day"]}, {"prior": {"unmatched": "u", "gold": "day"}})
+    assert not po.v6_settled(
+        {"intermediates": ["hay"]}, {"prior": {"unmatched": "u", "gold": "day"}}
+    )
+
+
+def test_a_one_draw_prior_is_pending(tmp_path):
+    items = [_item("a", "hay", ["day", "tray", "clay", "jay"])]
+    n = {"k": 0}
+
+    def rank(prompts):
+        out = []
+        for _s, u in prompts:
+            n["k"] += 1
+            words = sorted(re.findall(r"^\s+\d+\. (\S+)$", u, re.M))
+            out.append({"ranking": words} if n["k"] != 2 else None)
+        return out
+
+    assert pp.measure(items, tmp_path / "p.jsonl", ask=rank) == {}  # 1 of 2 draws: pending
+    assert "a" in pp.measure(items, tmp_path / "p.jsonl", ask=rank)  # the good draw is cached
+    assert n["k"] == pp.RANK_DRAWS + 1
+
+
+def test_too_small_a_pool_is_unmatched_not_pending(tmp_path):
+    st = pp.screen([_item("x", "hay", ["day", "tray"])], {}, [_examples()], tmp_path / "s.jsonl",
+                   ask=_alphabetical_guesser())  # fmt: skip
+    assert "pending" not in st["x"] and st["x"]["record"]["unmatched"] == "fewer than 4 candidates"
+
+
 def test_build_mc_crash_in_v6_lists_leaves_no_unscreened_list(adapted, monkeypatch):
-    d, calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
+    d, _calls, script, _screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
 
     def boom(*a, **k):
         raise RuntimeError("api down")
@@ -582,7 +624,7 @@ def test_build_mc_crash_in_v6_lists_leaves_no_unscreened_list(adapted, monkeypat
 
 
 def test_build_mc_crash_restores_the_previous_draft(adapted, monkeypatch):
-    d, calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
+    d, _calls, script, _screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
     before = json.dumps({"items": [{"id": "old", "mc": {"candidates": ["a"]}}]}).encode()
     (d / "draft_mc.json").write_bytes(before)
 
@@ -601,7 +643,7 @@ def test_a_failed_vet_leaves_the_v6_item_pending(adapted, monkeypatch):
     def flaky_vet(args):
         if args[:2] == ["vet", "--all"]:
             out = Path(args[args.index("--out") + 1])
-            out.write_text(json.dumps({"p-v6b": ["clay"], "p-v6": []}))  # p-v6: vet failed
+            out.write_text(json.dumps({"p-v6b": ["clay"]}))  # p-v6: the vet call failed
             calls.append(args)
             return
         script(args)
@@ -663,7 +705,7 @@ def test_pass_two_rereads_the_shipped_pool_draws(tmp_path):
     golds = ["mmm", "mmn", "mmo", "mmp", "mmq"]
     ranks = {f"x{i}": {g: 3.0, "bbb": 1.0, "ccc": 2.0, "ppp": 4.0, "qqq": 5.0}
              for i, g in enumerate(golds)}  # fmt: skip
-    items = [_item(f"x{i}", g, []) for i, g in enumerate(golds)]
+    items = [_item(f"x{i}", g, POOL) for i, g in enumerate(golds)]
     asked: list = []
 
     def ask(prompts):
@@ -702,7 +744,7 @@ def test_unusable_replies_are_asked_again(tmp_path):
             return [{"choice1": 99}] * len(prompts)
         return _alphabetical_guesser()(prompts)
 
-    it = [_item("x1", "mmm", [])]
+    it = [_item("x1", "mmm", POOL)]
     assert "pending" in pp.screen(it, ranks, [_examples()], tmp_path / "s.jsonl", ask=guess)["x1"]
     assert pp.screen(it, ranks, [_examples()], tmp_path / "s.jsonl", ask=guess)["x1"]["chosen"]
 
@@ -729,7 +771,7 @@ def test_a_pending_v6_row_is_opus_gated_once_screened(adapted, monkeypatch):
                    "legs": {"opus_gate": {"passed": False}}}}  # fmt: skip
     monkeypatch.setattr(po, "subject_rows", lambda m: [row, t1])
     screened = {"candidates": ["tray", "clay", "jay", "spray"],
-                "prior": {"chosen": ["tray", "clay", "jay", "spray"]}}  # fmt: skip
+                "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}  # fmt: skip
     monkeypatch.setattr(po, "load_mc", lambda m: {"p-v6": screened, "p-t1": screened})
 
     def ask(content):

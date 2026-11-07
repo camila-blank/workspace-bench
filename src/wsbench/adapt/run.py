@@ -1609,6 +1609,12 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
 
     w0 = next_wave(model, family) - 100  # fresh candidate ids on a re-run (w<100+w0+...>)
     have = have_now()
+    if family == "poetry" and set(tiers) & set(brief.opt_in):  # plan 0082: before wave 1 too
+        from .poetry import family_steer
+
+        steer = family_steer(select(family, rf.freeze_rows(
+            family, _bank_rows(model, family, originals), model), target, quota), target).lstrip(
+            "\n")  # fmt: skip
     while wave < max_waves:
         have = have_now()
         if have >= target:
