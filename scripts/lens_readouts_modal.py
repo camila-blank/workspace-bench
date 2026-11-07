@@ -399,6 +399,7 @@ def _olens_multi(job, backend, card, adir, cells, batch) -> tuple:
     """``_olens_read`` over every GPU of the container: device 0 in this process, each other
     device in a subprocess pinned to it (``CUDA_VISIBLE_DEVICES``; threads race in Triton's
     autotuner), the cells cut into contiguous chunks (order kept)."""
+    import shutil
     import subprocess
     import sys
     import tempfile
@@ -424,13 +425,19 @@ def _olens_multi(job, backend, card, adir, cells, batch) -> tuple:
         )
         env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(i)}
         procs.append(subprocess.Popen([sys.executable, "-c", code], env=env))
-    reads0, info0 = _olens_read(backend, card, chunks[0], batch)
-    parts = [(reads0, info0)]
-    for i, pr in enumerate(procs, start=1):
-        if pr.wait() != 0:
-            raise RuntimeError(f"GPU worker {i} exited {pr.returncode}")
-        res = json.loads((tmp / f"in{i}.pt.out.json").read_text())
-        parts.append((res["reads"], res["info"]))
+    try:
+        reads0, info0 = _olens_read(backend, card, chunks[0], batch)
+        parts = [(reads0, info0)]
+        for i, pr in enumerate(procs, start=1):
+            if pr.wait() != 0:
+                raise RuntimeError(f"GPU worker {i} exited {pr.returncode}")
+            res = json.loads((tmp / f"in{i}.pt.out.json").read_text())
+            parts.append((res["reads"], res["info"]))
+    finally:  # a failed job leaves no live worker and no stacked activations on disk
+        for pr in procs:
+            if pr.poll() is None:
+                pr.kill()
+        shutil.rmtree(tmp, ignore_errors=True)
     reads = [r for part, _ in parts for r in part]
     if len(reads) != len(cells):
         raise RuntimeError(f"multi-GPU decode returned {len(reads)} of {len(cells)} cells")
