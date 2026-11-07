@@ -5,10 +5,14 @@
 
 The only writer of the vendored file. It refuses (exit 2) an index whose ``git_sha`` is not
 ``HB_SHA`` (a 7+ hex prefix of it is accepted as the argument; the full sha is stored), or whose
-``version`` is not ``hbindex.VERSION`` (``hindex-v6``, plan 0057). It keeps only the methods
-named in ``evals/hallucinationbench/methods.json`` and, per row, ``method``, ``layer``,
-``full`` / ``matched`` and each family's ``{v, ci, n, n_items}``. The dev-box ``sources`` paths
-and the per-reader ``safety`` meta are dropped. A refresh is a new commit with a new ``hb_sha``.
+``version`` is not ``hbindex.VERSION`` (``hindex-v8``, plan 0080). It keeps only the methods
+named in ``evals/hallucinationbench/methods.json`` and, per per-layer row, ``method``, ``layer``,
+``full`` / ``matched`` and each family's ``{v, ci, n, n_items}``. A joint row (HB layer
+``"all"``, hindex-v8's 11-layer unit) goes to ``joint`` instead: ``method``, ``full_joint`` and
+each family's ``{v, ci, n, n_items}``; it is never a per-layer row. The excluded-cell report
+(``manifest.persistent_failures``, HB plan 0029 Amendment 4) is kept as per-entry counts. The
+dev-box ``sources`` paths and the per-reader ``safety`` meta are dropped. A refresh is a new
+commit with a new ``hb_sha``.
 """
 
 import json
@@ -24,6 +28,7 @@ from wsbench import hbindex  # noqa: E402
 
 HB_REPO = "github.com/camila-blank/hallucination-bench"
 FAMILY_KEYS = ("v", "ci", "n", "n_items")
+JOINT_LAYER = "all"  # hindex-v8's joint 11-layer unit
 
 
 def vendor(src: Path, hb_sha: str, methods_path: Path | None = None) -> dict[str, Any]:
@@ -41,20 +46,29 @@ def vendor(src: Path, hb_sha: str, methods_path: Path | None = None) -> dict[str
     present = {r.get("method") for r in idx.get("rows", [])}
     if missing := [m for m in keep if m not in present]:
         raise ValueError(f"{src}: methods.json names HB methods absent from the index: {missing}")
-    rows = []
+    rows, joint = [], []
     for r in idx["rows"]:
         if r.get("method") not in keep:
             continue
-        row: dict[str, Any] = {"method": r["method"], "layer": r["layer"]}
-        for key in ("full", "matched"):
-            if isinstance(r.get(key), dict):
-                row[key] = {"v": r[key]["v"], "ci": r[key]["ci"]}
-        row["families"] = {
+        fams = {
             fam: {k: cell[k] for k in FAMILY_KEYS if k in cell}
             for fam, cell in (r.get("families") or {}).items()
         }
+        if r.get("layer") == JOINT_LAYER:
+            j: dict[str, Any] = {"method": r["method"]}
+            if isinstance(r.get("full_joint"), dict):
+                j["full_joint"] = {"v": r["full_joint"]["v"], "ci": r["full_joint"]["ci"]}
+            j["families"] = fams
+            joint.append(j)
+            continue
+        row: dict[str, Any] = {"method": r["method"], "layer": int(r["layer"])}
+        for key in ("full", "matched"):
+            if isinstance(r.get(key), dict):
+                row[key] = {"v": r[key]["v"], "ci": r[key]["ci"]}
+        row["families"] = fams
         rows.append(row)
     rows.sort(key=lambda r: (r["method"], r["layer"]))
+    joint.sort(key=lambda r: r["method"])
     notes = {
         k: v
         for k, v in (idx.get("notes") or {}).items()
@@ -68,7 +82,19 @@ def vendor(src: Path, hb_sha: str, methods_path: Path | None = None) -> dict[str
         "families": list((idx.get("weights") or {}).get("family", {})),
         "notes": notes,
         "rows": rows,
+        "joint": joint,
+        "excluded": excluded(idx, keep),
     }
+
+
+def excluded(idx: dict[str, Any], keep: list[str]) -> list[dict[str, Any]]:
+    """HB plan 0029 Amendment 4: the cells `hbench final` excluded as persistent judge failures,
+    per (family, method, unit), for the kept methods (empty when the index has no report)."""
+    pf = (idx.get("manifest") or {}).get("persistent_failures") or {}
+    keys = ("family", "method", "unit", "n_cells", "n_excluded", "share", "by_reason")
+    return [
+        {k: e[k] for k in keys if k in e} for e in pf.get("entries", []) if e.get("method") in keep
+    ]
 
 
 def main(argv: list[str]) -> int:
