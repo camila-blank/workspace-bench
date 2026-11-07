@@ -16,6 +16,9 @@ did not admit and append panel-ATI replacements from the family's refill pool.
   second run before a re-gate cannot retire the previous round's replacements, and every added
   item's pool verdict must be ATI under ``panel_verdict`` (plan 0071's all-fail rule: every panel
   reader failed every draw).
+- Under the all-fail rule a crafted family is no longer whole-bank ATI (e.g. msdm 25 of 98), so
+  a run now retires every item the entry does not admit, most of the bank: decide the target
+  before running it; refilling to a whole-bank subset is not the default any more.
 Then re-gate the family from the cached verdicts:
     wsbench text-inversion stage=gate families=<family> roots=<main>,<round dirs...>
 """

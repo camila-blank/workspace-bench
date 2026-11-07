@@ -248,7 +248,8 @@ the reference is `origin/main` at rebase time):
   adapted gate's and the registered gate's subsets now coincide on the same statuses); its
   `gate == ti.GATE_VERSION` and `"qwen" in panel` assertions are unchanged.
 - `tests/test_refilled_banks.py`: crafted = whole bank -> `set(ids) <= set(scored)` and
-  `n_ati == len(ids)`. Its refill-record assertion (`refill.gate == "panel-v1"`) is NOT changed:
+  `n_ati == len(ids)`; the test is renamed `test_crafted_family_ati_entry_is_on_the_current_bank`
+  (it no longer asserts a whole bank). Its refill-record assertion (`refill.gate == "panel-v1"`) is NOT changed:
   the stored records stay `panel-v1`; the next refill PR updates it.
 - `tests/test_knowledge_cutoff_nocot.py`: whole bank -> `set(ids) <= set(item_ids())`,
   `n_ati == len(ids)`, `n_bank == len(item_ids())`.

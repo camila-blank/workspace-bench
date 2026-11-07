@@ -36,7 +36,7 @@ def frozen(real_families) -> dict:
 
 
 @pytest.mark.parametrize("family", sorted(N0))
-def test_crafted_family_is_whole_bank_ati_on_the_current_bank(family, frozen):
+def test_crafted_family_ati_entry_is_on_the_current_bank(family, frozen):
     e = frozen[family]
     scored = [s.id for s in readplan.plan(family) if ti.ati_scored(s)]
     assert e["gate"] == ti.GATE_VERSION
