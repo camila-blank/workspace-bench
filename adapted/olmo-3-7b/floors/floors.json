@@ -923,7 +923,7 @@
      "aggregate": "native"
     },
     "wrong_intermediate": {
-     "rate": 0.6666666666666666,
+     "rate": 0.3333333333333333,
      "ci95": [
       0.0,
       1.0
