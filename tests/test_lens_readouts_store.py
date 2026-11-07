@@ -123,9 +123,13 @@ def test_produce_routes_a_mixed_family_job_to_each_familys_store(tmp_path, monke
            "empty_ids": [lr.row_sha(b)],
            "meta": {"n_cells": 1, "total_s": 1, "n_empty_samples": 0, "gpu": "x"}}  # fmt: skip
     monkeypatch.setattr(lr, "jobs_for", lambda args: [job, failed])
-    monkeypatch.setattr(lr, "app", SimpleNamespace(run=nullcontext))
+    # without the modal package (CI) the module defines no app / read_job: create them
+    monkeypatch.setattr(lr, "app", SimpleNamespace(run=nullcontext), raising=False)
     monkeypatch.setattr(
-        lr, "read_job", SimpleNamespace(map=lambda jobs, **kw: [{"k": 1, "error": "boom"}, res])
+        lr,
+        "read_job",
+        SimpleNamespace(map=lambda jobs, **kw: [{"k": 1, "error": "boom"}, res]),
+        raising=False,
     )
     args = Namespace(subject="qwen3.5-0.8b", arm="jlens", store=str(tmp_path), dry_run=False,
                      verbose=False)  # fmt: skip

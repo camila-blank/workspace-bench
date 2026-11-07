@@ -596,8 +596,9 @@ def _job(args, subj, arm, spec, pack, k) -> dict[str, Any]:
     fam = pack[0]["family"]
     seed = int(hashlib.sha256(f"{arm}|{fam}|{pack[0]['row_sha']}".encode()).hexdigest()[:8], 16)
     fams = sorted({p["family"] for p in pack})
+    label = fams[0] + (f"+{len(fams) - 1}" if len(fams) > 1 else "")
     return {"subject": args.subject, "hf_id": subj.hf_id, "revision": subj.revision, "arm": arm,
-            "kind": spec["kind"], "path": spec["path"], "family": "+".join(fams), "specs": pack,
+            "kind": spec["kind"], "path": spec["path"], "family": label, "specs": pack,
             "seed": seed, "batch": args.batch or BATCH.get(args.subject, 1024), "k": k}  # fmt: skip
 
 
