@@ -260,9 +260,11 @@ untouched).
 - *Eligible and ranked:* a candidate is eligible when its `kind_facts` (same `prop`, same
   closure) contain at least one value of `shared`; a factless candidate is not eligible. The top
   tier is candidates carrying ALL of `shared` (so a {rapper, record producer} pair never gets
-  producers who are not rappers); if fewer than four, the draw falls back to candidates carrying
-  the rarest single `shared` value (rarity = frequency among the category's option-pool facts),
-  then the next-rarest. Within the chosen eligible set the four distractors fill tier by tier, each
+  producers who are not rappers); if fewer than four, the draw falls back (replacing, not adding)
+  to the candidates carrying the rarest single `shared` value (rarity = frequency among the
+  category's option-pool facts), all-shared candidates ranked first inside it; still fewer than
+  four -> `NO_KIND_LIST` (no further fallback). Within the chosen set the four distractors fill
+  tier by tier, each
   tier in seeded-shuffle order: (1) same template AND same country, (2) same template, (3) same
   country, (4) the rest. Country = the gold's P17 (non-humans; bands also P495), any shared value
   counts; humans have no country fact in the pools (no P27), so they use tiers (2) and (4).
@@ -297,8 +299,9 @@ the union.
 table; it returns `(patches, no_list)`, `no_list` = shipped generated items whose result is a
 sentinel (other None causes stay "left as is", printed). The script writes `adapt patch` lines
 for the patches and, only with `--drop-no-list`, `adapt drop ... reason=no kind-matched list
-(plan 0077 §3b)` lines for `no_list`; a rebuilt list with poorer forms joins `no_list` (it would
-keep the old, rule-breaking list). The pre-r4 rebuild emits patches only (an item may get a list
+(plan 0077 §3b)` lines for `no_list`; a rebuilt list with poorer forms joins `no_list` only when
+its distractor set differs from the shipped one (same distractors, poorer labels: left as is, no
+patch, no drop). The pre-r4 rebuild emits patches only (an item may get a list
 once r4 grows the pool; until then `bank` already keeps it out); the final rebuild after the last
 r4 bank runs with `--drop-no-list`.
 
@@ -321,13 +324,15 @@ building_architect excluded, the hub share and caps over the union, the P676 / P
 `FUNDED_DIR_NAME = "wrong_bridge_r4"`, `GENERATION = "wi-r4"`, `funded_dir` matches
 `f"{round}_meta.json"`. §1 for WI after the switch: a tally row counts toward wi-r4 when its
 `candidate` is an r4 id; r3 rows join the combined tally; `refill_wave` screens r4 first; when
-r4 is smaller than `n_min` 200k the stop rule reads r4's tally once all of r4 is measured (§1's
-"measured in full" branch). `_landed` ignores ids in `drops` (a dropped row is not landed).
+§1 unchanged: an r4 below `n_min` 200k, once fully screened, is decided by the combined tally
+(r1-r4); `refill.py` is not changed. `_landed` and `pool_generation`'s `landed` both ignore ids
+in `drops` (read via `store.report_entry(store.read_report(model).get("drops"), FAMILY)`, as
+`run._gated_rows` does), so a dropped row is not landed even before the next bank.
 
 **Go / no-go (offline, before any r4 GPU spend):** (a) run rule (1) over the shipped generated
 items of glm-5.3 and qwen3.5-4b and over their gate-eligible rows: report the share that gets a
-kind-matched list; below 40% on glm-5.3, loosen (a one-step P106 closure, or the next-rarest key
-first) and re-measure before going on; (b) extrapolate r4's landings per set from r3's gate logs
+kind-matched list; below 40% on glm-5.3, loosen with a one-step P106 closure (still rarest-value
+only) and re-measure before going on; (b) extrapolate r4's landings per set from r3's gate logs
 (yield per subject-sitelinks bucket, sl 3 vs 4-7, times r4's sl-2 candidate count) and write the
 expected counts next to the 100 target in the PR.
 
@@ -353,7 +358,12 @@ and the script writes drops only with `--drop-no-list`; `build_wd_tables` only g
 `tests/test_wi_mc_template.py` (this plan's own file, #410) where a fixture needs facts or the
 new `rebuild_mc` return shape; `tests/test_refill_fresh_pool.py` (l.257-323): rename the
 `wrong_bridge_r3` fixture dirs / `r3_meta.json` to r4 and the asserted `wi-r3` to `wi-r4`,
-nothing else. No other pre-existing test changes.
+nothing else. No other pre-existing test changes. In particular
+`tests/test_adapt_phase_e.py::test_wb_rebuilds_the_bank_from_the_subjects_own_errors` runs the
+real `build_mc` through `bank` and must pass UNMODIFIED (the end-to-end check that `bank` ships a
+kind-matched list; film director Q2526255 is not on `KIND_STOP`, and the vendored
+`wd_registered_options.json` is committed before it runs); a failure there means the rule, the
+stoplist or the table is wrong, not the test.
 
 ## 4. multihop_mt: pool v3 (`mh2_pool.v3.json`)
 - **Candidates:** GW `scripts/v4_flash/newfam/multihop_mt_v2/gen.py` run unchanged, 8 parallel
