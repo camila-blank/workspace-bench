@@ -657,7 +657,24 @@ def _rank(scores: Sequence[float], i: int) -> int:
     return 1 + sum(1 for j, x in enumerate(scores) if x > scores[i] or (x == scores[i] and j < i))
 
 
-def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dict[str, Any]:
+def set_kda_mode(model: Any, mode: str) -> int:
+    """Kimi-K3: put every ``KimiDeltaAttention`` (fla KDA) in ``mode``; returns the count.
+    ``fused_recurrent`` is token-sequential and exactly causal; ``chunk`` (the remote code's
+    default) let a steer on later tokens move earlier positions' logits by 5.6 within one 64-token
+    chunk (plan 0067, 2026-11-05)."""
+    if mode not in ("chunk", "fused_recurrent"):
+        raise ValueError(mode)
+    n = 0
+    for m in model.modules():
+        if type(m).__name__ == "KimiDeltaAttention":
+            m.mode = mode
+            n += 1
+    return n
+
+
+def calib_report(
+    raw: dict[str, Any], decode: Callable[[list[int]], str], gate_full_depth: bool = False
+) -> dict[str, Any]:
     """Verdicts of plan 0067 §5 from the stack's raw calibration outputs (pure), each with a
     ``pass``. ``g0_pass`` (the run refuses to launch without it) = the ENGINE checks (a) no-op and
     (d) local steer; (b) concept mention and (c) batched vs single are recorded measurements of
@@ -666,7 +683,7 @@ def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dic
     a = raw["noop"]
     base_lp = [x for r in a["base_lp"] for x in r]
     other = [x for k in ("beta0_lp", "zero_lp") for r in a[k] for x in r]
-    rep: dict[str, Any] = {"gpu": raw.get("gpu")}
+    rep: dict[str, Any] = {"gpu": raw.get("gpu"), "gate_full_depth": gate_full_depth}
     ra = {
         "beta0_logprobs_equal": a["beta0_lp"] == a["base_lp"],
         "zero_vec_logprobs_equal": a["zero_lp"] == a["base_lp"],
@@ -704,6 +721,8 @@ def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dic
     # re-routes the span's tokens, which changes the per-expert GEMM shapes the pre-span rows
     # share, so it is ~1.8 on V4-Pro and Muse alike (Muse's loop has explicit causal masks)
     d["pass"] = d["pre_span_max_abs_diff"] == 0.0 and d["in_span_max_rel_err"] <= CALIB_SPAN_REL
+    if gate_full_depth:  # a batch-invariant stack (Kimi-K3): the full-depth check is exact
+        d["pass"] = d["pass"] and d.get("pre_span_logits_max_abs_diff") == 0.0
     rep["d_steer_is_local"] = d
     rep["g0_pass"] = rep["a_noop"]["pass"] and rep["d_steer_is_local"]["pass"]
     rep["recorded_not_gated"] = ["b_mention", "c_batched_vs_single"]

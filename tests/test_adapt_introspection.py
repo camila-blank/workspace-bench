@@ -176,6 +176,48 @@ def test_registered_template_gate_is_the_template_not_the_tokenizer_key(tok, ban
         ii.build_job(s.key, tok, bank)
 
 
+class StripTok(FakeTok):
+    """FakeTok whose ``skip_special_tokens=True`` decode drops ``<|...|>`` markers (as HF does)."""
+
+    def decode(self, ids, skip_special_tokens=False):
+        out = [self.inv[i] for i in ids]
+        return "".join(t for t in out if not (skip_special_tokens and t.startswith("<|")))
+
+
+class BosTemplateTok(StripTok):
+    """A template whose own ids lead with a BOS the rendered text does not carry."""
+
+    def apply_chat_template(self, messages, tokenize=False, **kw):
+        out = super().apply_chat_template(messages, tokenize=tokenize, **kw)
+        return [self._id("<|bos|>"), *out] if tokenize else out
+
+
+def _kimi_like(monkeypatch, **kw):
+    s = Subject("fake-k3", "org/Fake-K3", "Fake-K3", 32, "fake", "abc123", **kw)
+    monkeypatch.setitem(subjects.SUBJECTS, s.key, s)
+    return s
+
+
+def test_template_ids_check_passes_and_refuses(bank, monkeypatch):
+    s = _kimi_like(monkeypatch, template_ids=True)
+    assert ii.build_job(s.key, StripTok(), bank)["job_sha"]  # re-encode == template ids
+    with pytest.raises(SystemExit, match="not the chat template's own ids"):
+        ii.build_job(s.key, BosTemplateTok(), bank)
+    # a subject that is not template_ids is not held to it
+    plain = _kimi_like(monkeypatch)
+    assert ii.build_job(plain.key, BosTemplateTok(), bank)["job_sha"]
+
+
+def test_reply_end_check_passes_and_refuses(bank, monkeypatch):
+    s = _kimi_like(monkeypatch, reply_end="<|close|>", template_ids=True)
+    assert ii.build_job(s.key, StripTok(), bank)["job_sha"]  # the marker decodes away
+    with pytest.raises(SystemExit, match="does not decode away"):
+        ii.build_job(s.key, FakeTok(), bank)  # FakeTok keeps specials under skip
+    multi = _kimi_like(monkeypatch, reply_end="close me")
+    with pytest.raises(SystemExit, match="is not one token"):
+        ii.build_job(multi.key, StripTok(), bank)
+
+
 def test_unregistered_external_subject_gets_the_runner_guidance(tok, bank, monkeypatch):
     # deepseek-v4-flash is registered since #239; unregister it here so the case still exercises
     # an EXTERNAL subject that has no Subject entry yet

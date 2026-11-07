@@ -9,7 +9,6 @@ that passes takes the registered item's code path (no silent ``[]`` / default fa
 
 import copy
 import json
-import shutil
 
 import pytest
 
@@ -107,7 +106,7 @@ def test_plan_0060_floor_fields_are_in_the_table():
     }
     for fam, keys in floor.items():
         assert keys <= set(ji.REQUIRED_ITEM_FIELDS[fam]), fam
-    assert ji.ADAPTED_ONLY_FIELDS["multihop"] == ("split_subject",)
+    assert ji.ADAPTED_ONLY_FIELDS["multihop"] == ()
     for fam in ("multilingual", "multilingual_mt", "multilingual_typo", "multilingual_multihop"):
         assert "version" in ji.REQUIRED_HEADER_FIELDS[fam]
     for fam in ("multilingual", "multilingual_mt", "multilingual_typo", "multilingual_multihop"):
@@ -151,7 +150,6 @@ def test_registered_ids_decide_original_vs_adapted_only():
 # what check_item reports for a registered item with only its id changed; families absent
 # here must pass unchanged (their judge reads nothing keyed on the id)
 EXPECT_REPORTED = {
-    "multihop": "missing: split_subject",
     "basic_readout_mt": "exonyms.json",
     "agentic_misalignment": "exit: agentic targets",
     "relational_multihop": "rel-{scene}-a/b",
@@ -170,27 +168,6 @@ def test_adapted_only_clone_passes_or_is_reported(family):
         assert got and any(want in p for p in got), got
 
 
-def test_multihop_split_subject_field_replaces_the_id_lookup(monkeypatch):
-    from wsbench.basic import mcjudge_bank
-
-    _h, items, _ = _bank("multihop")
-    orig = {**items[0], "id": ji.item_id(items[0])}  # banks.load_bank sets id = label_of(name)
-    terms = mcjudge_bank.split_subject(orig)
-    assert terms  # the registered id resolves through split_subjects.json
-    clone = _clone("multihop", orig)
-    assert mcjudge_bank.split_subject(clone) == []  # the hazard: rule silently off
-    clone["split_subject"] = terms
-    assert ji.check_item("multihop", clone) == []
-
-    # with the field the judge never consults the id-keyed file
-    class Boom(dict):
-        def get(self, *a, **k):
-            raise AssertionError("split_subjects.json consulted for an item with split_subject")
-
-    monkeypatch.setattr(mcjudge_bank, "_SUBJECTS", {"multihop": Boom()})
-    assert mcjudge_bank.split_subject(clone) == terms
-
-
 def test_multihop_element_rule_is_keyed_on_the_id():
     from wsbench.basic.mcjudge_bank import element_item
 
@@ -198,7 +175,6 @@ def test_multihop_element_rule_is_keyed_on_the_id():
     el = next(it for it in items if it["name"].endswith("-element"))
     assert element_item({"id": ji.item_id(el)})
     clone = _clone("multihop", el, suffix="-v2")  # nhop-cube-element-v2: pattern broken
-    clone["split_subject"] = ["cube"]
     assert not element_item({"id": ji.item_id(clone)})
     got = ji.check_item("multihop", clone)
     assert any("nhop-*-element" in p for p in got), got
@@ -298,10 +274,10 @@ def test_v1_shaped_items_are_reported():
     _h, items, _ = _bank("association")
     v1 = {k: v for k, v in items[0].items() if k != "mc"}
     assert any(p.startswith("missing: mc") for p in ji.check_item("association", v1))
-    mh, mitems, _ = _bank("multihop_mt_v2")
+    mh, mitems, _ = _bank("multihop_mt")
     bad = copy.deepcopy(mitems[0])
     bad["readout"] = {"kind": "final_prompt_token", "offsets": [-1]}
-    assert any("v1 final-token" in p for p in ji.check_item("multihop_mt_v2", bad, mh))
+    assert any("v1 final-token" in p for p in ji.check_item("multihop_mt", bad, mh))
     _mh, moral, _ = _bank("moral_rationale")
     m1 = {k: v for k, v in moral[0].items() if k != "bank_version"}
     got = ji.check_item("moral_rationale", m1)
@@ -319,8 +295,8 @@ PLAN_SKIP = {
 def test_read_plan_of_an_adapted_only_clone_equals_the_original(family, tmp_path, monkeypatch):
     src = registry.frozen_bank_path(family)
     raw = json.loads(src.read_text(encoding="utf-8"))
-    if isinstance(raw, dict) and raw.get(readplan.READ_PLAN_BANK):
-        shutil.copy(src.parent / raw[readplan.READ_PLAN_BANK], tmp_path)
+    if isinstance(raw, dict):  # an adapted bank is its own read plan (adapt freeze drops it)
+        raw.pop(readplan.READ_PLAN_BANK, None)
     items = raw if isinstance(raw, list) else raw["items"]
     orig = items[0]
     items.append(_clone(family, orig))
@@ -370,11 +346,6 @@ def test_review_fixes():
     bh, bitems, _ = _bank("basic_readout_mt")
     plain = {**bitems[0], "eval_render": "plain"}
     assert any("eval_render" in p for p in ji.check_item("basic_readout_mt", plain, bh))
-    # multihop: an empty split_subject is treated as absent by the judge
-    _mh, mitems, _ = _bank("multihop")
-    clone = _clone("multihop", mitems[0])
-    clone["split_subject"] = []
-    assert any("split_subject is empty" in p for p in ji.check_item("multihop", clone))
     # wrong_intermediate: the subject regex is the judge's (case-insensitive, leading space)
     _wh, witems, _ = _bank("wrong_intermediate")
     w = copy.deepcopy(witems[0])

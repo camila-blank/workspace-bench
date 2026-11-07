@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.banks import load_bank as load_wrapped
-from wsbench.registry import REPO_ROOT, legacy_names
+from wsbench.registry import REPO_ROOT, lookup_names
 
 
 def model_dir(model: str, root: Path = REPO_ROOT) -> Path:
@@ -21,7 +21,10 @@ def item_id(item: dict) -> str:
 
 
 def original_bank(family: str) -> tuple[dict[str, Any], list[dict]]:
-    """The frozen bank, header and items, whether wrapped or a plain list."""
+    """The frozen bank, header and items, whether wrapped or a plain list. The header never
+    carries ``read_plan_bank``: that names a sibling file of the registered bank whose read plan
+    the registered bank reuses, while an adapted bank is read at its own items' plan."""
+    from wsbench.readplan import READ_PLAN_BANK
     from wsbench.registry import frozen_bank_path
 
     path = frozen_bank_path(family)
@@ -29,8 +32,10 @@ def original_bank(family: str) -> tuple[dict[str, Any], list[dict]]:
     if isinstance(raw, list):
         return {}, raw
     if raw.get("items") and "name" not in raw["items"][0]:
-        return {k: v for k, v in raw.items() if k != "items"}, raw["items"]
-    return load_wrapped(path)
+        header = {k: v for k, v in raw.items() if k not in ("items", READ_PLAN_BANK)}
+        return header, raw["items"]
+    header, items = load_wrapped(path)
+    return {k: v for k, v in header.items() if k != READ_PLAN_BANK}, items
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -50,16 +55,41 @@ def _append_jsonl(path: Path, rows: list[dict]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _legacy_ok(base: Path, family: str) -> Path:
-    """``base/<family>.jsonl``, or the file under a former family key when only that exists
-    (a pre-v1.2.0 ``wrong_bridge.jsonl``)."""
-    path = base / f"{family}.jsonl"
-    if path.exists():
-        return path
-    for old in legacy_names(family):
-        if (legacy := base / f"{old}.jsonl").exists():
-            return legacy
-    return path
+def _legacy_ok(base: Path, family: str, suffix: str = ".jsonl") -> Path:
+    """``base/<family><suffix>``, or the file under a former family key when only that exists
+    (a pre-v1.2.0 ``wrong_bridge.jsonl``, a set's ``multihop_mt_v2.json`` written before the
+    2026-11-04 rename; for a reused key the former key's file wins, ``registry.lookup_names``)."""
+    return next(
+        (p for key in lookup_names(family) if (p := base / f"{key}{suffix}").exists()),
+        base / f"{family}{suffix}",
+    )
+
+
+def bank_file(model: str, family: str) -> Path:
+    """The set's bank of ``family`` (``<model dir>/<family>.json``, or one written under a former
+    family key)."""
+    return _legacy_ok(model_dir(model), family, ".json")
+
+
+def report_key(section: dict[str, Any] | None, family: str) -> str:
+    """The key of ``family``'s entry in a section of a set's ``report.json`` (``families``,
+    ``drops``): the first one present in ``registry.lookup_names`` order (a set written before a
+    rename keeps its entry under the former key), else ``family``."""
+    section = section or {}
+    return next((k for k in lookup_names(family) if k in section), family)
+
+
+def report_entry(section: dict[str, Any] | None, family: str) -> dict[str, Any]:
+    """``section[family]`` of a set's ``report.json`` (``families``, ``drops``), or the entry
+    written under a former family key (``report_key``); ``{}`` when there is none."""
+    return (section or {}).get(report_key(section, family), {})
+
+
+def report_slot(report: dict[str, Any], section: str, family: str) -> dict[str, Any]:
+    """``report[section]``'s entry of ``family``, created when missing: a writer's view of
+    ``report_entry``, so an update lands on the entry that readers see."""
+    sec = report.setdefault(section, {})
+    return sec.setdefault(report_key(sec, family), {})
 
 
 def gate_path(model: str, family: str) -> Path:

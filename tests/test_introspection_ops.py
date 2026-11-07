@@ -409,3 +409,65 @@ def test_hookstack_forward_kwargs_are_fresh_per_forward():
     stack.hidden([[1, 2, 3]], 1)
     assert len(made) == 2 and made[0] is not made[1]
     del torch
+
+
+def test_set_kda_mode_switches_every_kimi_delta_attention():
+    class KimiDeltaAttention:
+        def __init__(self):
+            self.mode = "chunk"
+
+    class Other:
+        mode = "chunk"
+
+    class Model:
+        def __init__(self):
+            self.kda = [KimiDeltaAttention(), KimiDeltaAttention()]
+            self.other = Other()
+
+        def modules(self):
+            return [*self.kda, self.other]
+
+    m = Model()
+    assert ops.set_kda_mode(m, "fused_recurrent") == 2
+    assert all(k.mode == "fused_recurrent" for k in m.kda) and m.other.mode == "chunk"
+    with pytest.raises(ValueError):
+        ops.set_kda_mode(m, "parallel")
+
+
+def test_full_depth_causality_gate_for_batch_invariant_stacks():
+    raw = {
+        "noop": {"base_lp": [[-1.0]], "beta0_lp": [[-1.0]], "zero_lp": [[-1.0]],
+                 "base_greedy": [1], "beta0_greedy": [1], "zero_greedy": [1]},
+        "mention": {"words": ["ocean"], "base": [0], "steered": {"4": {"ocean": [1]}}},
+        "batch": {"ops": [{"single": [-1.0, -2.0], "packed": [-1.0, -2.0], "target": 0}]},
+        "local": {"pre_span_max_abs_diff": 0.0, "in_span_max_rel_err": 0.001,
+                  "pre_span_logits_max_abs_diff": 5.6},  # Kimi chunk-mode KDA
+    }  # fmt: skip
+    dec = lambda ids: "x"  # noqa: E731
+    assert ops.calib_report(raw, dec)["g0_pass"]  # recorded only by default (MoE shape noise)
+    assert not ops.calib_report(raw, dec, gate_full_depth=True)["g0_pass"]
+    raw["local"]["pre_span_logits_max_abs_diff"] = 0.0  # fused_recurrent: exactly causal
+    assert ops.calib_report(raw, dec, gate_full_depth=True)["g0_pass"]
+
+
+def test_hookstack_steer_never_moves_earlier_logits():
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    torch.manual_seed(0)
+    cfg = LlamaConfig(vocab_size=60, hidden_size=32, intermediate_size=64, num_hidden_layers=3,
+                      num_attention_heads=4, num_key_value_heads=4,
+                      max_position_embeddings=64)  # fmt: skip
+    model = LlamaForCausalLM(cfg).eval()
+    stack = ops.HookStack(model, model.model.layers, [0], 0)
+    row = [3, 9, 4, 7, 11, 5, 8, 2, 6, 10]
+    vec = np.random.default_rng(0).standard_normal(32).astype(np.float32)
+    st = stack._steer([row], [{"layer": 1, "positions": [6, 7, 8], "beta": 4.0, "vector": vec}])
+    sel = [(0, p) for p in range(6)]
+    a = stack._forward(stack._pad([row]), None, None, sel)
+    b = stack._forward(stack._pad([row]), st, None, sel)
+    assert torch.equal(a, b)  # the calib (d) full-depth check: exactly 0 on a causal stack
+    later = [(0, 9)]
+    assert not torch.equal(stack._forward(stack._pad([row]), None, None, later),
+                           stack._forward(stack._pad([row]), st, None, later))  # fmt: skip

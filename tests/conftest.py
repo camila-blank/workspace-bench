@@ -28,6 +28,16 @@ def _reset_pacer():
 
 
 @pytest.fixture(autouse=True)
+def _no_box_pools(monkeypatch, tmp_path_factory):
+    """Plan 0077: the refill driver reads the newest pinned pool generation from the box pool dirs
+    (``WSB_POOL_DIR``, ``WSB_WI_POOL``), so every test starts with empty ones (a test that builds a
+    pool sets its own); on the box the real pools would otherwise reach driver tests."""
+    empty = tmp_path_factory.mktemp("no_box_pools")
+    monkeypatch.setenv("WSB_POOL_DIR", str(empty))
+    monkeypatch.setenv("WSB_WI_POOL", str(empty))
+
+
+@pytest.fixture(autouse=True)
 def _offline_nocot(monkeypatch):
     """knowledge_cutoff's nocot rows render from nocot-bench's zip (a network fetch, plan 0018):
     every test gets synthetic question text instead, so plan / produce tests stay offline. The
