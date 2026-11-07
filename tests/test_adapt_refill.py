@@ -129,7 +129,11 @@ def test_pool_loader_refuses_unpinned_missing_and_mismatch(tmp_path, monkeypatch
 def test_pool_dir_default_and_no_pin_yet(monkeypatch):
     monkeypatch.delenv("WSB_POOL_DIR", raising=False)
     assert str(rf.pool_dir()) == "/workspace/wsb-runs/pools"
-    assert set(rf.POOL_FILES) == set(rf.POOL_SHA256) == {"msdm", "kcutoff", "mh2", "mh2v2"}
+    assert (
+        set(rf.POOL_FILES)
+        == set(rf.POOL_SHA256)
+        == {"msdm", "kcutoff", "mh2", "mh2v2", "kcutoffv2", "mh2v3", "mmh"}
+    )
 
 
 def test_no_pool_file_is_tracked_by_git():
@@ -468,7 +472,7 @@ def test_refill_driver_hold_pilot_budget_and_missing_route(mdir, monkeypatch):
     with pytest.raises(SystemExit, match="not implemented yet"):
         rf.refill(MODEL, ["knowledge_cutoff"])
     with pytest.raises(SystemExit, match="no refill route"):
-        rf.refill(MODEL, ["typo_mt"])
+        rf.refill(MODEL, ["jailbreak_recognition"])
 
 
 def test_prior_tally_counts_the_gate_log(mdir):

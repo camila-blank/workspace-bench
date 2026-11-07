@@ -1122,6 +1122,25 @@ def _plan(family: str) -> list[ReadSpec]:
             )
             for it in items
         ]
+    if family == "model_multihop":
+        _h, items = _bank(family)
+        return [
+            ReadSpec(
+                family,
+                it["id"],
+                "captured",
+                {"kind": "positions", "positions": it["positions"]},
+                GRID,
+                text=it["text"],
+                extra={"input_ids": it["input_ids"], "prompt_len": len(it["input_ids"])},
+                note="every position after the entity (the rest of the question, the answer "
+                "suffix and the assistant header; Qwen tokenizer indices into the shipped "
+                "chat-template ids, thinking off)",
+                # plan 0076 rev 6: gw's `tail`, the last 12 prompt tokens
+                lite_positions={"kind": "last_n", "n": 12},
+            )
+            for it in items
+        ]
     if family == "introspection":
         return _introspection()
     if family == "jlens_concept_pr":
