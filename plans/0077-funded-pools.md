@@ -301,21 +301,27 @@ strength order, a failed item never consumes a slot, originals keep precedence, 
 the union.
 
 **(3) Rebuild route.** `rebuild_mc` passes `ents` (today discarded as `_e`) and the registered
-table; it returns `(patches, no_list)`, `no_list` = shipped generated items whose result is a
-sentinel (other None causes stay "left as is", printed). The script writes `adapt patch` lines
-for the patches and, only with `--drop-no-list`, `adapt drop ... reason=no kind-matched list
-(plan 0077 §3b)` lines for `no_list`; a rebuilt list with poorer forms whose distractor set
-differs from the shipped one is returned separately as `poorer` (same distractors, poorer
-labels: left as is, no patch, no drop); `--drop-poorer` writes drops for `poorer`. The pre-r4
-rebuild emits patches and runs with `--drop-poorer` (else a §3-era patch keeps shipping its old
-list through the whole round); no-list items are not dropped yet (an item may get a list once r4
-grows the pool; until then `bank` already keeps it out); the final rebuild after the last r4 bank
-runs with `--drop-no-list --drop-poorer`, and if it drops anything the set gets one more
-back-fill and draw.
+table, and returns `(patches: dict[id, mc], no_list: list[id], poorer: list[id])`. Per shipped
+generated item, in this precedence: (a) its shipped `mc.pool` says `kind-matched` and its options
+still pass the per-candidate exclusions -> left as is (no patch; never `no_list` / `poorer`): the
+same stability predicate as `bank`'s reuse below, so a grown pool never reshuffles a measured
+list; (b) its current passing gate-log `mc` is kind-matched and differs from the shipped (patched)
+block -> `patches[id]` = that gate-log `mc` (shipped and gate-log lists never drift apart); (c)
+otherwise a fresh `build_mc`: a sentinel -> `no_list`; a pool-label-only difference -> skipped;
+poorer forms with a different distractor set -> `poorer`; poorer forms with the same distractors
+-> left as is, printed; anything else -> `patches`. Other None causes stay "left as is",
+printed. The script writes `adapt patch` lines for `patches`, and only with `--drop-no-list` /
+`--drop-poorer` `adapt drop ... reason=no kind-matched list (plan 0077 §3b)` / `reason=rebuilt
+list has poorer forms (plan 0077 §3b)` lines. The pre-r4 rebuild runs with `--drop-poorer` (else
+a §3-era patch keeps shipping its old list through the whole round); no-list items are not
+dropped yet (an item may get a list once r4 grows the pool; until then `bank` keeps it out); the
+final rebuild after the last r4 bank runs with `--drop-no-list --drop-poorer`, and if it drops
+anything the set gets one more back-fill and draw.
 - **Lists stay stable once measured:** `bank` reuses an id's prior passing gate-log `mc` when
 that block's `mc.pool` says `kind-matched` and its options still pass the per-candidate
 exclusions, so a growing pool does not reshuffle lists already measured and audited; only new or
-sentinel-failed items get a fresh draw. Tested.
+sentinel-failed items get a fresh draw. Tested, with a test that grows the pool after a bank
+and checks `rebuild_mc` emits nothing for a kind-matched shipped item.
 
 **(4) Re-scrape round r4 (`scripts/wrong_intermediate_rescrape.py --round r4`).** An `R4_MIN_SL`
 table (2 everywhere; person_father 4, person_mother 8, namesake 4) and `--round r4`; `--exclude`
@@ -379,7 +385,9 @@ nothing else. No other pre-existing test changes. In particular
 real `build_mc` through `bank` and must pass UNMODIFIED (the end-to-end check that `bank` ships a
 kind-matched list; film director Q2526255 is not on `KIND_STOP`, and the vendored
 `wd_registered_options.json` is committed before it runs); a failure there means the rule, the
-stoplist or the table is wrong, not the test.
+stoplist or the table is wrong, not the test. The same holds for
+`tests/test_refill_wi.py::test_refill_wave_and_prior_tally_over_the_merged_pool` (it also runs
+the real `build_mc` through `bank`).
 
 ## 4. multihop_mt: pool v3 (`mh2_pool.v3.json`)
 - **Candidates:** GW `scripts/v4_flash/newfam/multihop_mt_v2/gen.py` run unchanged, 8 parallel
