@@ -138,3 +138,15 @@ def test_gate_fails_a_code_inside_a_foils_zone():
     out["i|calling_code|af0"]["greedy"] = "+44"
     s["truth_attr"] = {"Jamaica": "+44"}
     assert mmh._gate_one("i|calling_code", s, out, lambda prompt, valid=None: {})["fail2"] is None
+
+
+def test_ooc_never_claims_a_manual_exclusion():
+    e = {"status": "full", "exclude_from_macro": True}  # set by `adapt note`
+    mmh.set_grade(e, "ooc")
+    assert e["exclude_from_macro"] is True and "mmh_ooc" not in e
+    mmh.set_grade(e, "full")
+    assert e["exclude_from_macro"] is True  # the manual exclusion survives a later grade
+    e = {"status": "unconfirmed", "exclude_from_macro": True, "mmh_unconfirmed": True}
+    mmh.clear_unconfirmed(e)
+    mmh.set_grade(e, "ooc")
+    assert e["mmh_ooc"] and e["exclude_from_macro"]
