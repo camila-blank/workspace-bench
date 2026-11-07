@@ -304,9 +304,11 @@ def _mt(family: str, it: dict) -> list[str]:
 
 GENDERED = {"man", "woman", "husband", "wife", "mother", "father", "boyfriend", "girlfriend",
             "he", "she", "mr", "mrs", "guy", "girl", "boy", "lady", "gentleman",
-            "bride", "groom", "bridesmaid", "groomsman"}  # fmt: skip
+            "bride", "bridesmaid", "bridesmaids", "groomsman", "groomsmen"}  # fmt: skip
 # plan 0075 follow-up 2 (qwen3.5-0.8b delta audit): a wedding role names the speaker's gender
-GENDERED_PHRASES = re.compile(r"\b(?:maid|matron) of honou?r\b", re.IGNORECASE)
+GENDERED_PHRASES = re.compile(
+    r"\b(?:maid|matron) of honou?r\b|\b(?:the|a|as) groom\b", re.IGNORECASE
+)  # "groom" alone is also a verb ("I groom my beard")
 
 
 def _user_modeling(family: str, it: dict) -> list[str]:
@@ -372,13 +374,20 @@ CAPITAL_FAMILIES = frozenset({"basic_readout_mt", "multihop", "association"})
 # association joined in plan 0075 follow-up 2: the qwen3.5-0.8b refill shipped seven
 # "its capital is Y" / "the capital of X" association prompts
 _APOS = "['\u2019]"  # a straight or curly apostrophe
+# the ordinary non-place senses ("a capital crime", "capital letter", "capital A", "its capital
+# gains"): never a capital city (plan 0075 follow-up 2, association prompts)
+_NOT_SEAT = (
+    r"(?!\s+(?:letters?|[A-Z]\b|crimes?|offen[cs]es?|punishment|gains?|invest\w*|expenditures?|"
+    r"markets?|goods|assets?))"
+)
 _CAPITAL = re.compile(
     r"\b(?:what|which|name)(?: city| town)?(?:'s| is| was)? (?:the |its )?(?:current |former )?"
     r"capital(?: city)? of\b"
     r"|\bcapital(?: city)? of\b[^.?]*\b(?:is|was)\s*$"  # a "Fact: The capital of X is" stem
-    rf"|\b(?:what|which)(?:'s| is| was)? (?:the |its |their |\w+{_APOS}s )?capital\b"
-    r"|\b(?:its|their|whose)\s+(?:national\s+)?capital\b(?!\s+in\s+\d)"
+    rf"|\b(?:what|which)(?:'s| is| was)? (?:the |its |their |\w+{_APOS}s )?capital\b{_NOT_SEAT}"
+    rf"|\b(?:its|their|whose)\s+(?:national\s+)?capital\b(?!\s+in\s+\d){_NOT_SEAT}"
     rf"|\b(?:is|was|as) (?:the |its |a |\w+{_APOS}s )?(?:national )?capital\b(?!\s+in\s+\d)"
+    rf"{_NOT_SEAT}"
     r"|\bseat of government\b",
     re.IGNORECASE,
 )  # asks for, or goes through, a capital; a capital named as context ("the Byzantine capital
@@ -823,7 +832,9 @@ def lint_pairs(family: str, items: list[dict], logged: list[dict] = ()) -> dict[
 
 
 _UM_STOP = frozenset({"and", "the", "of", "in", "at", "on", "for", "with", "my", "day", "life",
-                      "daily", "new", "big", "old"})  # fmt: skip
+                      "daily", "new", "big", "old", "festival", "spring", "night", "shift",
+                      "line", "market", "food", "home", "family", "weekend", "morning",
+                      "routine", "work", "shop"})  # fmt: skip
 
 
 def um_topics(it: dict) -> set[str]:

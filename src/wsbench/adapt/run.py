@@ -255,7 +255,10 @@ def lint_and_gate(
     natural: dict[str, list[str]] = {}
     # plan 0066 §2.3: twin outputs differ (buggy_code); conjunctive: a cluster's cells already
     # in the gate log (a crash mid-batch) count toward its 10 / shared-list check
-    logged = [r["item"] for r in store.gated(model, family).values()]
+    # plan 0075 follow-up 2: user_modeling dedupes against gate-PASSING rows only (a failed or
+    # lint-rejected topic stays free to retry)
+    logged = [r["item"] for r in store.gated(model, family).values()
+              if family != "user_modeling" or r["gate"].get("pass")]  # fmt: skip
     pairs = lint_pairs(family, cands, logged)
     if llm is not None and cands:  # Claude available: the everyday-name screen (MT families)
         from . import natural as nat

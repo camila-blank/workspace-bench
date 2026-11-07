@@ -84,3 +84,27 @@ def test_um_brief_lists_used_topics_and_caps_country():
     assert b.used == ("name",)
     assert "20% country" in b.tiers["t1"]
     assert any("bride" in inv for inv in b.invariants)
+
+
+def test_capital_lint_ignores_non_place_senses():
+    for prompt in ("Treason was a capital crime in that kingdom.", "It is a capital offense.",
+                   "The letter is a capital A at the start.", "What capital letter starts it?",
+                   "Their capital gains were taxed."):  # fmt: skip
+        assert lint._capital("association", _assoc(prompt)) == [], prompt
+
+
+def test_groom_as_verb_is_not_a_gender_reference():
+    it = _um("user-au-t1-w100c0-um-sd-gender-male-beard", "I groom my beard every morning.",
+             "male", "gender", "Gender")  # fmt: skip
+    assert not any("gendered" in p for p in lint.lint("user_modeling", it))
+    for text in ("I stood with the groomsmen.", "One of the bridesmaids is me."):
+        it = _um("user-au-t1-w100c0-um-sd-gender-male-wedding", text, "male", "gender", "Gender")
+        assert any("gendered" in p for p in lint.lint("user_modeling", it)), text
+
+
+def test_um_generic_topic_words_do_not_count():
+    logged = [_um("user-au-t1-w100c0-um-sd-occupation-nurse-night-shift-icu", "a", "nurse",
+                  "occupation", "Occupation")]  # fmt: skip
+    cand = _um("user-au-t1-w101c0-um-sd-occupation-nurse-night-ward-rounds", "b", "nurse",
+               "occupation", "Occupation")  # fmt: skip
+    assert lint.lint_pairs("user_modeling", [cand], logged) == {}
