@@ -675,7 +675,9 @@ R51. **Generation reproduces gw's invented route (gw #744 / #745, `scripts/feas/
      the last 120 names of [the pool's invented names in pool order, then every earlier tier C
      batch's raw reply names in generation order], plus every raw reply name of this cluster in
      this batch so far (pre-screen, as gw's `got`). **Stops** (gw): a cluster leaves the batch's
-     rotation after 4 consecutive calls with no well-formed item; a generation call's validity
+     rotation after 4 consecutive calls with no well-formed item; a spend guard, since gw bounded each cluster by
+     a quota instead: a cluster also leaves after 8 consecutive passes that keep nothing, and a
+     batch stops after 40 passes (a short batch, recorded); a generation call's validity
      check requires >= 1 well-formed item, so an empty reply is never cached (the cache cannot
      replay it forever); a screen call that still fails after the client's retries is never
      cached and its entity is dropped (`screen_failed`, gw drops it too). The kept row is a pool

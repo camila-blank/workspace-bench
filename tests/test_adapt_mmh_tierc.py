@@ -493,3 +493,17 @@ def test_pass_path_dropping_every_tier_c_item_closes_the_epoch(ws):
     store.write_json(mmh.work_dir(MODEL) / "extend.json", ext)
     assert mmh.select_rows(MODEL, rows, 283) == base
     assert mmh._ext(MODEL)["state"] == "closed: no tier C items"
+
+
+def test_screen_with_non_numeric_p_fails_cleanly():
+    assert t.screen_verdict({"top5": [{"country": "A", "p": "high"}]})[0] == "screen_failed"
+
+
+def test_dry_clusters_retire_so_spend_is_bounded():
+    def gen(prompt, valid=None):
+        c = next(k for k, v in t.SIB_CLUSTERS.items() if ", ".join(v) in prompt)
+        item = {"type": "dish", "name": f"{c} dish {len(prompt)}", "pre": "p", "b": "b?"}
+        return {"items": [{**item, "ref_after": "r", "ref_first": "r1", "role": "ro"}]}
+
+    res = t.build_batch(1, gen, lambda p, valid=None: {"real": True}, [], [], n=10, workers=1)
+    assert res["short"] and res["n_pass"] == t.DRY_MAX and len(res["retired"]) == 34

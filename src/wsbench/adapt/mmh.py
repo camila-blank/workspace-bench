@@ -1779,7 +1779,10 @@ def lucky(model: str, level: int = 1, out: str | None = None) -> dict[str, Any]:
         )
         dead = failed_draw_ids(res)  # R44: an item with a failed draw stays unscreened (excluded)
         hashes = {it["id"]: mc_hash(it) for it in bank["items"]}
+        tc_ids = {it["id"] for it in bank["items"] if it.get("pool_tier") == "C"}
         for k, h in hits.items():
+            if epoch and k not in tc_ids:  # R55: in an epoch only tier C ids gain draws
+                continue
             if k not in lk["draws"] and k not in dead:
                 lk["draws"][k] = {v: [h[v]] for v in GUESSERS if v in h}
                 lk.setdefault("draw_hash", {})[k] = hashes.get(k)

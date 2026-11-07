@@ -54,6 +54,7 @@ def main() -> None:
         "short": res["short"],
         "n_pass": res["n_pass"],
         "retired_clusters": res["retired"],
+        "pass_cap_hit": res.get("pass_cap_hit", False),
         "n_raw": res["n_raw"],
         "raw_names": res["raw_names"],
         "names_past_cut": res["names_past_cut"],

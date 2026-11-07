@@ -191,15 +191,22 @@ def screen_verdict(s: Any) -> tuple[str | None, list[str]]:
     """gw's screen drops: (reason or None, top-5 countries by descending p)."""
     if not isinstance(s, dict):
         return "screen_failed", []
-    top = sorted(
-        [t for t in s.get("top5") or [] if isinstance(t, dict) and t.get("country")],
-        key=lambda t: -float(t.get("p") or 0),
-    )
+
+    def pf(t: dict) -> float:
+        try:
+            return float(t.get("p") or 0)
+        except (TypeError, ValueError):
+            return float("nan")
+
+    top = [t for t in s.get("top5") or [] if isinstance(t, dict) and t.get("country")]
+    if any(pf(t) != pf(t) for t in top):  # a non-numeric p: unusable screen
+        return "screen_failed", []
+    top = sorted(top, key=lambda t: -pf(t))
     if s.get("real"):
         return "real", []
     if s.get("marker"):
         return "marker", []
-    if not top or float(top[0].get("p") or 0) >= TOP1_MAX:
+    if not top or pf(top[0]) >= TOP1_MAX:
         return "top1>=0.7", []
     return None, [str(t["country"]) for t in top[:5]]
 
@@ -256,6 +263,8 @@ def pool_row(k: int, idx: int, x: dict[str, Any], top5: list[str]) -> dict[str, 
 
 Ask = Callable[..., Any]
 EMPTY_MAX = 4  # gw cands_invented: a cluster stops after 4 consecutive empty replies
+DRY_MAX = 8  # a spend guard (gw's per-cluster quota bounds it there): 8 passes keeping nothing
+MAX_PASSES = 40  # and at most 40 passes per batch (batch 1 needed 6); a stop is recorded
 
 
 def build_batch(
@@ -274,6 +283,7 @@ def build_batch(
     clusters = list(SIB_CLUSTERS)
     got: dict[str, list[str]] = {c: [] for c in clusters}  # gw `got`: raw reply names
     empty = dict.fromkeys(clusters, 0)
+    dry = dict.fromkeys(clusters, 0)  # consecutive passes in which a cluster kept nothing
     tail = list(avoid_tail[-AVOID_TAIL:])
     kept: list[tuple[dict[str, Any], list[str]]] = []
     raw_names: list[str] = []
@@ -290,7 +300,11 @@ def build_batch(
         return screen_verdict(screen(screen_prompt(x), lambda js: isinstance(js, dict)))
 
     n_pass = 0
-    while len(kept) < n and (active := [c for c in clusters if empty[c] < EMPTY_MAX]):
+    while (
+        len(kept) < n
+        and n_pass < MAX_PASSES
+        and (active := [c for c in clusters if empty[c] < EMPTY_MAX and dry[c] < DRY_MAX])
+    ):
         n_pass += 1
         with ThreadPoolExecutor(workers) as ex:
             replies = list(ex.map(ask, active))
@@ -302,6 +316,7 @@ def build_batch(
         raw_names += [x["name"] for x in raw]
         with ThreadPoolExecutor(workers) as ex:
             verdicts = list(ex.map(scr, raw))
+        got_kept: Counter[str] = Counter()
         for x, (why, top5) in zip(raw, verdicts, strict=True):
             if why is None and idx.dup(x["name"]):
                 why = "dup"
@@ -310,6 +325,9 @@ def build_batch(
                 continue
             idx.add(x["name"])
             kept.append((x, top5))
+            got_kept[x["cluster"]] += 1
+        for c in active:
+            dry[c] = 0 if got_kept[c] else dry[c] + 1
     rows = [pool_row(k, i, x, t5) for i, (x, t5) in enumerate(kept[:n])]
     return {
         "rows": rows,
@@ -318,7 +336,8 @@ def build_batch(
         "drops": dict(drops),
         "raw_names": raw_names,
         "names_past_cut": [x["name"] for x, _ in kept[n:]],
-        "retired": sorted(c for c in clusters if empty[c] >= EMPTY_MAX),
+        "retired": sorted(c for c in clusters if empty[c] >= EMPTY_MAX or dry[c] >= DRY_MAX),
+        "pass_cap_hit": n_pass >= MAX_PASSES and len(kept) < n,
         "short": len(rows) < n,
     }
 
