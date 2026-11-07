@@ -139,3 +139,12 @@ def test_produce_routes_a_mixed_family_job_to_each_familys_store(tmp_path, monke
     }
     f2 = lr.store_path(tmp_path, "qwen3.5-0.8b", "jlens", "fam2").read_text().splitlines()
     assert [json.loads(x) for x in f2] == [{"row_sha": lr.row_sha(b), "row": None}]
+
+
+def test_same_topk_tolerates_only_near_ties():
+    t, s = ["a", "b", "c"], [3.0, 2.0, 1.0]
+    assert lr.same_topk(t, s, t, s)
+    assert lr.same_topk(["a", "b", "c"], [3.0, 2.0, 2.0], ["a", "c", "b"], [3.0, 2.0, 2.0])
+    assert lr.same_topk(t, s, ["a", "b", "d"], [3.0, 2.0, 1.0])  # k-th boundary swap
+    assert not lr.same_topk(t, s, ["b", "a", "c"], [3.0, 2.0, 1.0])  # a real reorder
+    assert not lr.same_topk(t, s, t, [3.0, 2.5, 1.0])  # scores differ
