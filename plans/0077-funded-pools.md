@@ -298,9 +298,11 @@ drop: "adapt drop: <reason>"` (the gate log stays the record; `store.gated` keep
 per id, so the row stops counting as landed), and gives it no cap slot. **Exception:** a row
 whose drop reason matches `/lucky-guessing|any-guesser/i` (both phrasings in the shipped
 reports) still counts against its B''s 4-per-B' cap (a salient-attractor B' would otherwise
-refill with more leakers): leaker drops are added to `per_b` once, after pass 1 and before pass
-2 (below), so a stronger new row cannot take that slot first (tested: B' with 3 incumbents and 1
-leaker drop keeps a stronger new row out); every other drop (audit kind failures, `no kind-matched list`) frees
+refill with more leakers), and it also keeps its one-per-S slot (its S-siblings `<template>-<S>-<other
+hop2>` share B', B and the attractor gold, so they are near-certain leakers): leaker drops are
+added to `per_b` and `seen_s` once, after pass 1 and before pass 2 (below), so a stronger new row cannot take that slot first (tested: B' with 3 incumbents and 1
+leaker drop keeps a stronger new row out; a leaker drop on `film_director-QS-birth_year` keeps
+`film_director-QS-birth_city` out while a kind drop on the same S lets it in); every other drop (audit kind failures, `no kind-matched list`) frees
 its slots. Dropped originals are handled the same way. **Incumbents keep their slots:** every
 bank first gives cap slots to the rows that currently pass and are not dropped (in strength
 order), then lets re-admitted and new rows fill only the room left (in strength order), so a
@@ -340,8 +342,10 @@ an item with a §3 patch fails with a sentinel, a freeze drops it from the shipp
 grows, the item passes again, and the rebuild emits a branch-(b) patch (or the earlier
 `mc`-stripping patch already removed the old list).
 - **Lists stay stable once measured:** `bank` reuses an id's prior passing gate-log `mc` when
-that block's `mc.pool` says `kind-matched` and its options still pass the per-candidate
-exclusions, so a growing pool does not reshuffle lists already measured and audited; only new or
+that block's `mc.pool` says `kind-matched`, its options still pass the per-candidate exclusions,
+AND it still belongs to the item (`mc.gold == item.intermediates[0]`, `mc.contrast ==
+item.true_intermediates[0]`, same `wikidata.B_prime` / `B` as the row it came from; a re-graded
+B' gets a fresh draw; tested); rebuild branch (a) uses the same predicate, so a growing pool does not reshuffle lists already measured and audited; only new or
 sentinel-failed items get a fresh draw. Tested, with a test that grows the pool after a bank
 and checks `rebuild_mc` emits nothing for a kind-matched shipped item.
 
@@ -378,7 +382,10 @@ items of glm-5.3 and qwen3.5-4b and over their gate-eligible rows: report the sh
 kind-matched list; below 40% on glm-5.3, loosen with a one-step P106 closure (still rarest-value
 only) and re-measure before going on; if glm-5.3 is still under 40% after loosening, STOP before any
 GPU spend and report to Camila; (b) extrapolate r4's landings per set from r3's gate logs
-(yield per subject-sitelinks bucket, sl 3 vs 4-7, times r4's sl-2 candidate count) and write the
+(yield per subject-sitelinks bucket times ALL r4 candidates bucketed the same way, since r4's
+lower floors also add sl 3+ subjects on the templates r3 floored higher), both the extrapolated
+r4 term and the re-admitted passers multiplied by the kind-matched share measured in (a), and
+re-admitted passers counted without leaker S-siblings and write the
 expected counts next to the 100 target in the PR; if a set's expected count (incumbents keeping
 a kind-matched list + re-admitted passers + extrapolated r4 landings) is below its current count,
 that set is not run and is reported to Camila.
