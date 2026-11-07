@@ -81,6 +81,45 @@ def drop_name_collisions(out: Path, excl_dirs: list[Path], round_: str) -> int:
     return n
 
 
+def _robust(qlever, out: Path) -> None:
+    """QLever rate-limits long fetches (HTTP 429): retry without giving up (waits capped at 10
+    min) and checkpoint every fetched entity chunk under ``<out>/entities.partial/``, so a crash
+    or restart never refetches what it already has (the fetch result is unchanged)."""
+    import time
+
+    real_query = qlever.query
+
+    def query(q: str, tries: int = 12) -> list[list[str]]:
+        for k in range(1000):
+            try:
+                return real_query(q, tries=1)
+            except RuntimeError:
+                time.sleep(min(600, 30 * (k + 1)))
+        raise RuntimeError("qlever giving up after 1000 rounds")
+
+    qlever.query = query
+    real_fetch = qlever.fetch
+    part = out / "entities.partial"
+    part.mkdir(parents=True, exist_ok=True)
+
+    def fetch(ids: list[str], chunk: int = 3000) -> dict:
+        ids = sorted(set(ids))
+        got: dict = {}
+        for n in range(0, len(ids), chunk):
+            sub = ids[n : n + chunk]
+            key = hashlib.sha256(" ".join(sub).encode()).hexdigest()[:16]
+            f = part / f"{key}.json"
+            if f.exists():
+                got.update(json.loads(f.read_text()))
+                continue
+            res = real_fetch(sub, chunk=chunk)
+            f.write_text(json.dumps(res))
+            got.update(res)
+        return got
+
+    qlever.fetch = fetch
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--round", required=True, choices=["r3"])
@@ -116,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     for p in ("P676", "P87"):  # hop1 props of the new templates (the single-valued check)
         if p not in qlever.ITEM_PROPS:
             qlever.ITEM_PROPS.append(p)
+    _robust(qlever, a.out)
     out = a.out
     out.mkdir(parents=True, exist_ok=True)
     sys.argv = [sys.argv[0], "--out", str(out)]
