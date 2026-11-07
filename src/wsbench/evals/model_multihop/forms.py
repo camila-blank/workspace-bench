@@ -185,6 +185,15 @@ COUNTRY_ALIASES: dict[str, list[str]] = {
     "Turkmenistan": [],
     "Uzbekistan": [],
     "Yemen": [],
+    # plan 0078 R53 (tier C): the sibling clusters' countries the table lacked (hand-checked)
+    "Barbados": [],
+    "Bolivia": [],
+    "Ethiopia": [],
+    "Gambia": ["The Gambia"],
+    "Guam": [],
+    "Malta": [],
+    "Moldova": [],
+    "San Marino": [],
 }
 
 # Longer names that are NOT the country but contain one of its forms; their spans hide the
