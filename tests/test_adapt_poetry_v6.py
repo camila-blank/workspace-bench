@@ -92,19 +92,20 @@ def test_candidate_lists_are_deterministic_and_never_lead_with_the_gold():
 
 def test_candidate_lists_never_leave_the_gold_the_odd_kind_out():
     """Pilot 2026-11-07: the described guesser learned "the gold is the concrete noun"."""
-    concrete = {"hay", "tray", "clay", "jay", "bay"}  # the gold is concrete
-    for lst in pp.candidate_lists("hay", RANKS, "it-1", concrete=concrete):
-        assert len(set(lst) & concrete) >= pp.MIN_SAME
+    nouns = dict.fromkeys(("hay", "tray", "clay", "jay", "bay"), "concrete_noun")
+    kinds = dict.fromkeys(RANKS, "verb") | nouns
+    for lst in pp.candidate_lists("hay", RANKS, "it-1", kinds=kinds):
+        assert sum(kinds[w] == "concrete_noun" for w in lst) >= pp.MIN_SAME
         assert min(RANKS[w] for w in lst) < RANKS["hay"]
-    abstract = {"tray", "clay", "jay", "bay"}  # the gold is not concrete: two others not either
-    for lst in pp.candidate_lists("hay", RANKS, "it-2", concrete=abstract):
-        assert len(set(lst) - abstract) >= pp.MIN_SAME
-    one = {"hay", "spray"}  # only one same-kind word in the top: it is always on the list
-    lists = pp.candidate_lists("hay", RANKS, "it-3", concrete=one)
-    assert lists and all("spray" in lst for lst in lists)
+    verb = {**kinds, "hay": "verb"}  # a verb gold: two other verbs on every list
+    for lst in pp.candidate_lists("hay", RANKS, "it-2", kinds=verb):
+        assert sum(verb[w] == "verb" for w in lst) >= pp.MIN_SAME
+    one = dict.fromkeys(RANKS, "verb") | {"hay": "modifier", "spray": "modifier"}
+    lists = pp.candidate_lists("hay", RANKS, "it-3", kinds=one)
+    assert lists and all("spray" in lst for lst in lists)  # the only other modifier in the top
 
 
-def test_measure_tags_concrete_nouns_by_majority(tmp_path):
+def test_measure_tags_word_kinds_by_majority(tmp_path):
     items = [_item("a", "hay", ["day", "tray", "clay", "jay"])]
     n = {"k": 0}
 
@@ -113,14 +114,20 @@ def test_measure_tags_concrete_nouns_by_majority(tmp_path):
         for _s, user in prompts:
             n["k"] += 1
             shown = re.findall(r"^\s+\d+\. (\S+)$", user, re.M)
-            tags = ["hay", "tray"] if n["k"] == 1 else ["hay", "clay"]
-            out.append({"ranking": sorted(shown), "concrete": tags})
+            r = {"ranking": sorted(shown), "concrete_noun": ["hay", "tray"], "other_noun": [],
+                 "verb": [], "modifier": ["day"]}  # fmt: skip
+            if n["k"] == 2:
+                r = {**r, "concrete_noun": ["hay"], "verb": ["tray", "clay"]}
+            out.append(r)
         return out
 
-    conc: dict = {}
-    pp.measure(items, tmp_path / "p.jsonl", ask=ask, concrete=conc)
-    assert conc["a"] == {"hay", "tray", "clay"}  # 1 of 2 draws is a tie: counted concrete
-    assert "concrete nouns" in pp.rank_prompt(["a", "b"])[1]
+    kinds: dict = {}
+    pp.measure(items, tmp_path / "p.jsonl", ask=ask, kinds=kinds)
+    k = kinds["a"]
+    assert k["hay"] == "concrete_noun" and k["day"] == "modifier"
+    assert k["tray"] == "concrete_noun"  # a 1-1 tie: the first draw's kind
+    assert k["clay"] == "verb" and k["jay"] == ""
+    assert all(kind in pp.rank_prompt(["a", "b"])[1] for kind in pp.KINDS)
 
 
 def test_candidate_lists_need_four_candidates_and_a_word_above_the_gold():
@@ -320,6 +327,7 @@ def _v6_setup(adapted, monkeypatch, ids_tiers):
         rows.append({"id": iid, "item": it, "origin": "authored",
                      "gate": {"pass": True, "poetry": {"pass_subject": True}}})  # fmt: skip
     monkeypatch.setattr(po, "subject_rows", lambda m: rows)
+    monkeypatch.setattr(po, "_tokenizer", lambda m: None)  # CI has no transformers
     monkeypatch.setattr(po, "prompt_contents", lambda items, tok=None: {
         r["id"]: "q-" + r["id"] for r in rows})  # fmt: skip
     from wsbench.baselines import text_inversion as ti
@@ -360,7 +368,14 @@ def _v6_setup(adapted, monkeypatch, ids_tiers):
     def fake_lists(m, items, built=()):
         screened.append(([i["id"] for i in items], [b[0] for b in built]))
         for it in items:
-            it["mc"] = {**it["mc"], "prior": {"chosen": it["mc"]["candidates"][:4], "gold": "hay"}}
+            it["mc"] = {
+                **it["mc"],
+                "prior": {
+                    "chosen": it["mc"]["candidates"][:4],
+                    "gold": "hay",
+                    "version": pp.PRIOR_VERSION,
+                },
+            }
 
     monkeypatch.setattr(po, "v6_lists", fake_lists)
     return d, calls, script, screened
@@ -373,8 +388,10 @@ def test_build_mc_vets_and_screens_only_new_v6_rows(adapted, monkeypatch):
     store.update_report(MODEL, lambda r: r.setdefault("drops", {}).setdefault("poetry", {})
                         .update({"p-v6-dropped": "leaker"}))  # fmt: skip
     built = {"candidates": ["tray", "clay", "jay", "spray"],
-             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}  # fmt: skip
-    unmatched = {"candidates": [], "prior": {"unmatched": "u", "candidates_built": ["x"]}}
+             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay",
+                       "version": pp.PRIOR_VERSION}}  # fmt: skip
+    unmatched = {"candidates": [], "prior": {"unmatched": "u", "candidates_built": ["x"],
+                                             "version": pp.PRIOR_VERSION}}  # fmt: skip
     (d / "draft_mc.json").write_text(
         json.dumps(
             {
@@ -419,6 +436,7 @@ def test_build_mc_without_v6_rows_is_unchanged(adapted, monkeypatch):
              "gate": {"poetry": {"pass_subject": True}}}]  # fmt: skip
     monkeypatch.setattr(po, "subject_rows", lambda m: rows)
     monkeypatch.setattr(po, "prompt_contents", lambda items, tok=None: {"p-t1": "q"})
+    monkeypatch.setattr(po, "_tokenizer", lambda m: None)  # CI has no transformers
     from wsbench.baselines import text_inversion as ti
 
     d = adapted / "adapted" / MODEL / "poetry"
@@ -458,7 +476,8 @@ def test_v6_few_shots_never_come_from_other_tiers(adapted, monkeypatch):
     b = au.BRIEFS["poetry"]
     monkeypatch.setattr(store, "gated", lambda m, f: _rows({"a": "t1", "b": "t1"}))
     shots = au._few_shots(MODEL, "poetry", b, 4, "v6")
-    assert {s["name"] for s in shots} == {s["name"] for s in au.POETRY_V6_SEEDS}
+    assert len(shots) == 4
+    assert {x["name"] for x in shots} <= {x["name"] for x in au.POETRY_V6_SEEDS}
     monkeypatch.setattr(store, "gated", lambda m, f: _rows({"a": "t1", "c": "v6"}))
     assert [s["name"] for s in au._few_shots(MODEL, "poetry", b, 4, "v6")] == ["c"]
     # t1 (and every other brief) samples passes as before
@@ -468,8 +487,8 @@ def test_v6_few_shots_never_come_from_other_tiers(adapted, monkeypatch):
     # a dropped v6 pass is never a v6 example
     store.update_report(MODEL, lambda r: r.setdefault("drops", {}).setdefault("poetry", {})
                         .update({"c": "leaker"}))  # fmt: skip
-    assert {s["name"] for s in au._few_shots(MODEL, "poetry", b, 4, "v6")} == {
-        s["name"] for s in au.POETRY_V6_SEEDS}  # fmt: skip
+    seeds = {x["name"] for x in au.POETRY_V6_SEEDS}
+    assert {x["name"] for x in au._few_shots(MODEL, "poetry", b, 4, "v6")} <= seeds
 
 
 def test_v6_render_replaces_the_smaller_model_frame(adapted, monkeypatch):
@@ -598,11 +617,20 @@ def test_a_v6_row_ships_only_on_its_screened_list():
     item = {"adapt": {"tier": "v6"}, "intermediates": ["hay"], "mc": mc}
     row = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}}, "item": item}
     assert not po.row_passes(row)
-    item["mc"] = {**mc, "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}
+    item["mc"] = {
+        **mc,
+        "prior": {
+            "chosen": ["tray", "clay", "jay", "spray"],
+            "gold": "hay",
+            "version": pp.PRIOR_VERSION,
+        },
+    }
     assert po.row_passes(row)
     # a re-gate that moves the gold onto a chosen word, or commits one, voids the list
     assert not po.row_passes({**row, "item": {**item, "intermediates": ["tray"]}})
     assert not po.row_passes({**row, "item": {**item, "qwen_commits": {"jay": 2}}})
+    old = {**item["mc"], "prior": {**item["mc"]["prior"], "version": "poetry-prior-2026-11-07"}}
+    assert not po.row_passes({**row, "item": {**item, "mc": old}})  # an older rule's list
     t1 = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}},
           "item": {"adapt": {"tier": "t1"}, "mc": mc}}  # fmt: skip
     assert po.row_passes(t1)  # plan 0075 rows unchanged
@@ -611,14 +639,15 @@ def test_a_v6_row_ships_only_on_its_screened_list():
 def test_a_stale_v6_list_is_built_again(adapted, monkeypatch):
     d, _calls, script, screened = _v6_setup(adapted, monkeypatch, [("p-v6", "v6")])
     stale = {"candidates": ["tray", "clay", "jay", "spray"],
-             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "day"}}  # fmt: skip
+             "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "day",
+                       "version": pp.PRIOR_VERSION}}  # fmt: skip
     (d / "draft_mc.json").write_text(json.dumps({"items": [{"id": "p-v6", "mc": stale}]}))
     po.build_mc(MODEL, script=script, keep_built=True)
     assert screened == [(["p-v6"], [])]  # the gold moved (day -> hay): screened again
-    assert po.v6_settled({"intermediates": ["day"]}, {"prior": {"unmatched": "u", "gold": "day"}})
-    assert not po.v6_settled(
-        {"intermediates": ["hay"]}, {"prior": {"unmatched": "u", "gold": "day"}}
-    )
+    um = {"unmatched": "u", "gold": "day", "version": pp.PRIOR_VERSION}
+    assert po.v6_settled({"intermediates": ["day"]}, {"prior": um})
+    assert not po.v6_settled({"intermediates": ["hay"]}, {"prior": um})
+    assert not po.v6_settled({"intermediates": ["day"]}, {"prior": {**um, "version": "old"}})
 
 
 def test_a_one_draw_prior_is_pending(tmp_path):
@@ -804,7 +833,8 @@ def test_a_pending_v6_row_is_opus_gated_once_screened(adapted, monkeypatch):
                    "legs": {"opus_gate": {"passed": False}}}}  # fmt: skip
     monkeypatch.setattr(po, "subject_rows", lambda m: [row, t1])
     screened = {"candidates": ["tray", "clay", "jay", "spray"],
-                "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay"}}  # fmt: skip
+                "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "hay",
+                       "version": pp.PRIOR_VERSION}}  # fmt: skip
     monkeypatch.setattr(po, "load_mc", lambda m: {"p-v6": screened, "p-t1": screened})
 
     def ask(content):

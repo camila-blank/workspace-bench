@@ -620,9 +620,11 @@ def v6_current(item: dict, mc: dict | None) -> bool:
     gold and commits) are the chosen list. A re-gate that moves either voids it."""
     from wsbench.evals.poetry.options import distractors, gold_of
 
+    from . import poetry_prior as pp
+
     prior = (mc or {}).get("prior") or {}
     chosen = prior.get("chosen")
-    if not chosen:
+    if not chosen or prior.get("version") != pp.PRIOR_VERSION:  # an older rule's list: rebuilt
         return False
     return fold(gold_of(item)) == prior.get("gold") and distractors({**item, "mc": mc}) == list(
         chosen
@@ -638,7 +640,12 @@ def v6_settled(item: dict, mc: dict | None) -> bool:
     if not prior:
         return False
     if prior.get("unmatched"):
-        return prior.get("gold") in (None, fold(gold_of(item)))
+        from . import poetry_prior as pp
+
+        return prior.get("version") == pp.PRIOR_VERSION and prior.get("gold") in (
+            None,
+            fold(gold_of(item)),
+        )
     return v6_current(item, mc)
 
 
@@ -666,13 +673,13 @@ def v6_lists(model: str, items: list[dict], ask_rank: Any = None, ask_guess: Any
     examples = pp.example_items(shipped)
     if len(examples) < 4:
         examples = pp.example_items(store.original_bank(FAMILY)[1])
-    concrete: dict[str, set[str]] = {}
-    ranks = pp.measure(items, d / "prior.jsonl", concrete=concrete,
+    kinds: dict[str, dict[str, str]] = {}
+    ranks = pp.measure(items, d / "prior.jsonl", kinds=kinds,
                        **({"ask": ask_rank} if ask_rank else {}))  # fmt: skip
     earlier = [pp.guess_item(i, g, (m.get("prior") or {}).get("chosen") or [])
                for i, g, m in built if (m.get("prior") or {}).get("chosen")]  # fmt: skip
     st = pp.build_lists(items, ranks, examples, d / "screen.jsonl", built_v6=earlier,
-                        concrete=concrete,
+                        kinds=kinds,
                         **({"ask": ask_guess} if ask_guess else {}))  # fmt: skip
     for it in items:
         it["mc"] = pp.reorder(it, st.get(it["id"]))
@@ -811,12 +818,12 @@ def opus_gate(model: str, ask: AskText | None = None, judge: Callable[..., Any] 
     rows = subject_rows(model)
     mcs = load_mc(model)
     if new_only:  # plan 0075 §2.5: rows already through opus_gate keep their live row as is
-        # plan 0082: except a v6 row gated while its list was pending (``candidates: []``,
-        # no screened list) whose list has since been screened: it is gated again
-        def retry(r: dict) -> bool:
-            had = ((r["item"] or {}).get("mc") or {}).get("prior") or {}
-            now = (mcs.get(r["id"]) or {}).get("prior") or {}
-            return r["id"] in v6_ids([r]) and not had.get("chosen") and bool(now.get("chosen"))
+        # plan 0082: except a v6 row gated on a list that is not current (pending, stale gold,
+        # an older PRIOR_VERSION) whose draft_mc list now is: it is gated again
+        def retry(r: dict) -> bool:  # its gate row's list is not current, draft_mc's now is
+            it = r["item"] or {}
+            return (r["id"] in v6_ids([r]) and not v6_current(it, it.get("mc"))
+                    and v6_current(it, mcs.get(r["id"])))  # fmt: skip
 
         rows = [r for r in rows if "opus_gate" not in ((r["gate"] or {}).get("legs") or {})
                 or retry(r)]  # fmt: skip
