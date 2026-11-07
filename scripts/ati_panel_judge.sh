@@ -7,7 +7,8 @@
 # its own judged/<answerer>/draw<d>/<family>/ directory.
 # Plan 0079: an adapted set's panel (WSB_BANK_ROOT=adapted/<m> exported) adds the answerer
 # `subject`, and each family is judged at the layer `build` wrote its readouts at (prompts.jsonl
-# `layer`: 44 on the Qwen3.6-27B grid, the grid's middle layer on an adapted one).
+# `layer`: 44 on the Qwen3.6-27B grid, the grid's middle layer on an adapted one); it needs
+# $OUT/prompts.jsonl (stage=build) and exits 2 without it.
 set -euo pipefail
 OUT=${OUT:-outputs/baselines/text_inversion}
 DRAWS=${DRAWS:-3}

@@ -477,7 +477,10 @@ def stored_shas(path: Path) -> set[str]:
     out = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
-            out.add(json.loads(line)["row_sha"])
+            try:
+                out.add(json.loads(line)["row_sha"])
+            except json.JSONDecodeError:  # a line cut by a killed driver: that row is re-read
+                continue
     return out
 
 
@@ -598,7 +601,10 @@ def assemble(args: argparse.Namespace) -> None:
         if src.exists():
             for line in src.read_text(encoding="utf-8").splitlines():
                 if line.strip():
-                    d = json.loads(line)
+                    try:
+                        d = json.loads(line)
+                    except json.JSONDecodeError:  # a line cut by a killed driver
+                        continue
                     cells.setdefault(d["row_sha"], [])
                     if d["row"] is not None:
                         cells[d["row_sha"]].append(d["row"])
