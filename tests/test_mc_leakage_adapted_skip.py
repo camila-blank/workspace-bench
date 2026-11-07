@@ -60,3 +60,26 @@ def test_adapted_build_with_no_short_item_has_no_skip_record(ml, tmp_path):
     bank = ml.build_bank(ml.FAMS["multihop"], {"version": 1}, items[:1], {"ok": st["ok"]}, 0)
     assert [it["name"] for it in bank["items"]] == ["ok"]
     assert "skipped_too_few_distractors" not in bank["mc_leakage"]
+
+
+def test_adapted_freeze_matches_the_measured_round_by_name(ml, tmp_path, monkeypatch):
+    """The round skipped ``short``, so its measured bank lacks it: freeze must not trip its
+    strict zip, and writes the bank without it."""
+    ml.BANK, ml.BANK_OUT = tmp_path / "bank_in.json", tmp_path / "bank_out.json"
+    items, st = _items_and_state()
+    fam = ml.FAMS["multihop"]
+    measured = ml.build_bank(fam, {"version": 1}, items, st, 0)
+    assert [it["name"] for it in measured["items"]] == ["ok"]
+    ml.write_bank(fam, measured, ml.candidate_path(tmp_path, fam, 0))
+    for st_item in st.values():
+        st_item["banned"] = []
+    monkeypatch.setattr(ml, "load", lambda fam, path=None: ({"version": 1}, items))
+    monkeypatch.setattr(ml, "load_state", lambda out, fam: st)
+    for name in ("canon_forms", "screen", "fill_zh", "fill_en", "save_state"):
+        monkeypatch.setattr(ml, name, lambda *a, **k: None)
+    monkeypatch.setattr(ml, "lint", lambda *a, **k: "")
+    monkeypatch.setattr(ml, "same_answer", lambda *a, **k: set())
+    written = {}
+    monkeypatch.setattr(ml, "write_bank", lambda fam, bank, path: written.update(bank=bank))
+    ml.freeze(fam, tmp_path, 0)
+    assert [it["name"] for it in written["bank"]["items"]] == ["ok"]
