@@ -373,11 +373,28 @@ def _jlens_read(backend: Any, filename: str, cells: list[tuple], batch: int) -> 
     ref._b, ref._jac, ref._w_u = backend, jac, w_u
     for ci in range(0, len(cells), max(1, len(cells) // 8))[:8]:
         r = ref.read(cells[ci][5], cells[ci][2])
-        pairs = zip(r.scores, out[ci]["scores"], strict=True)
-        off = any(abs(a - b) > 1e-3 * max(1, abs(a)) for a, b in pairs)
-        if r.tokens != out[ci]["tokens"] or off:
-            raise RuntimeError(f"batched J-lens != JLens.read at cell {ci}")
+        if not same_topk(r.tokens, r.scores, out[ci]["tokens"], out[ci]["scores"]):
+            raise RuntimeError(
+                f"batched J-lens != JLens.read at cell {ci}: {r.tokens} {r.scores} vs "
+                f"{out[ci]['tokens']} {out[ci]['scores']}"
+            )
     return out, {"lens_layers": int(jac.shape[0])}
+
+
+def same_topk(t1: list, s1: list, t2: list, s2: list, tol: float = 1e-3) -> bool:
+    """Two top-k readouts of the same vector agree: scores equal within ``tol`` (relative, floor
+    1) rank by rank, and the token lists differ only where scores tie within ``tol`` (a batched
+    and a per-vector matmul may order near-equal scores differently, or swap the k-th token)."""
+    close = lambda a, b: abs(a - b) <= tol * max(1.0, abs(a))  # noqa: E731
+    if len(s1) != len(s2) or not all(close(a, b) for a, b in zip(s1, s2, strict=True)):
+        return False
+    for i, (a, b) in enumerate(zip(t1, t2, strict=True)):
+        if a != b:
+            tied = [j for j in range(len(s1)) if close(s1[j], s1[i])]
+            k_edge = close(s1[i], s1[-1])  # a token swapped in at the k-th boundary
+            if b not in [t1[j] for j in tied] and not k_edge:
+                return False
+    return True
 
 
 def _load_jacobians_local(path: str, device: str) -> Any:
