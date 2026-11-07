@@ -257,7 +257,7 @@ def _wi_dir(path, rows):
 
 
 def test_wi_generation_is_the_r3_dir_and_counts_its_bank_rows(tmp_path, monkeypatch):
-    r1, r3 = tmp_path / "wrong_bridge", tmp_path / "wrong_bridge_r3"
+    r1, r3 = tmp_path / "wrong_bridge", tmp_path / "wrong_bridge_r4"
     c = {"template": "film_director", "hop2": "birth_year", "leak": False}
     _wi_dir(r1, [{**c, "id": "film_director.Q1.Q2.birth_year", "S": "Q1"}])
     _wi_dir(
@@ -280,7 +280,7 @@ def test_wi_generation_is_the_r3_dir_and_counts_its_bank_rows(tmp_path, monkeypa
                                         "candidate": cand, "gate": {"pass": True}},
     }  # fmt: skip
     monkeypatch.setattr(store, "gated", lambda model, fam: gated)
-    assert wi.pool_generation(MODEL) == {"name": "wi-r3", "tried": 1, "landed": 1, "size": 1,
+    assert wi.pool_generation(MODEL) == {"name": "wi-r4", "tried": 1, "landed": 1, "size": 1,
                                          "unseen": 0}  # fmt: skip
     monkeypatch.setenv(wi.REFILL_POOL_ENV, str(r1))
     assert wi.pool_generation(MODEL) is None
@@ -288,7 +288,7 @@ def test_wi_generation_is_the_r3_dir_and_counts_its_bank_rows(tmp_path, monkeypa
 
 # ============================================================================ ordering + refusals
 def test_wi_wave_screens_the_r3_generation_first(tmp_path, monkeypatch):
-    r1, r3 = tmp_path / "wrong_bridge", tmp_path / "wrong_bridge_r3"
+    r1, r3 = tmp_path / "wrong_bridge", tmp_path / "wrong_bridge_r4"
     c = {"template": "film_director", "hop2": "birth_year", "leak": False}
     _wi_dir(r1, [{**c, "id": f"film_director.Q{i}.Q9.birth_year", "S": f"Q{i}"} for i in (1, 2)])
     _wi_dir(r3, [{**c, "id": f"film_director.Q{i}.Q9.birth_year", "S": f"Q{i}"} for i in (5, 6, 7)])
@@ -315,11 +315,11 @@ def test_wi_wave_screens_the_r3_generation_first(tmp_path, monkeypatch):
 
 def test_wi_refill_pool_refuses_a_missing_default_dir(monkeypatch, tmp_path):
     monkeypatch.delenv(wi.REFILL_POOL_ENV, raising=False)
-    monkeypatch.setattr(wi, "DEFAULT_POOLS", (str(tmp_path), str(tmp_path / "wrong_bridge_r3")))
+    monkeypatch.setattr(wi, "DEFAULT_POOLS", (str(tmp_path), str(tmp_path / "wrong_bridge_r4")))
     with pytest.raises(SystemExit, match="missing"):
         wi.refill_pool()
-    (tmp_path / "wrong_bridge_r3").mkdir()
-    assert wi.refill_pool() == f"{tmp_path},{tmp_path / 'wrong_bridge_r3'}"
+    (tmp_path / "wrong_bridge_r4").mkdir()
+    assert wi.refill_pool() == f"{tmp_path},{tmp_path / 'wrong_bridge_r4'}"
 
 
 def test_mh2_wave_items_put_v3_first_and_pilot_on_its_two_hop_tally(monkeypatch):
