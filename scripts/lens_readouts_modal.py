@@ -155,7 +155,8 @@ if modal is not None:
 
     @app.function(
         image=image,
-        gpu=["H100", "H200", "B200"],
+        # WSB_0079_GPU="H100:2": one PEFT backend per GPU of a container, cells split across them
+        gpu=os.environ.get("WSB_0079_GPU", "H100,H200,B200").split(","),
         timeout=6 * 3600,
         memory=65_536,
         cpu=8.0,
@@ -178,7 +179,7 @@ def _download(repo: str, rev: str, pattern: str) -> str:
     return snapshot_download(repo, revision=rev, allow_patterns=[pattern], cache_dir="/hf/hub")
 
 
-def _load_backend(hf_id: str, rev: str) -> Any:
+def _load_backend(hf_id: str, rev: str, device: str = "cuda:0") -> Any:
     import torch
     from huggingface_hub import snapshot_download
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -187,9 +188,9 @@ def _load_backend(hf_id: str, rev: str) -> Any:
 
     local = snapshot_download(hf_id, revision=rev, cache_dir="/hf/hub")
     tok = AutoTokenizer.from_pretrained(local)
-    model = AutoModelForCausalLM.from_pretrained(local, dtype=torch.bfloat16, device_map="cuda")
+    model = AutoModelForCausalLM.from_pretrained(local, dtype=torch.bfloat16, device_map=device)
     model.eval()
-    return Backend(model=model, tokenizer=tok, device="cuda", model_id=hf_id)
+    return Backend(model=model, tokenizer=tok, device=device, model_id=hf_id)
 
 
 def _olens_card(path: str) -> tuple[dict[str, Any], str]:
@@ -394,6 +395,69 @@ def _load_jacobians_local(path: str, device: str) -> Any:
     return stacked.to(device)
 
 
+def _olens_multi(job, backend, card, adir, cells, batch) -> tuple:
+    """``_olens_read`` over every GPU of the container: device 0 in this process, each other
+    device in a subprocess pinned to it (``CUDA_VISIBLE_DEVICES``; threads race in Triton's
+    autotuner), the cells cut into contiguous chunks (order kept)."""
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+
+    import torch
+
+    n = torch.cuda.device_count()
+    if n < 2 or len(cells) < 2 * batch:
+        return _olens_read(backend, card, cells, batch)
+    k = -(-len(cells) // n)
+    chunks = [cells[i * k : (i + 1) * k] for i in range(n)]
+    tmp = Path(tempfile.mkdtemp(prefix="olens_"))
+    procs = []
+    for i in range(1, n):
+        src = tmp / f"in{i}.pt"
+        torch.save({"job": {k2: v for k2, v in job.items() if k2 != "specs"}, "card": card,
+                    "adir": adir, "batch": batch, "seed": int(job["seed"]) + i,
+                    "cells": [c[:5] for c in chunks[i]],
+                    "h": torch.stack([c[5] for c in chunks[i]])}, src)  # fmt: skip
+        code = (
+            f"import sys; sys.path.insert(0, {str(Path(__file__).parent)!r}); "
+            f"import {Path(__file__).stem} as m; m._worker({str(src)!r})"
+        )
+        env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(i)}
+        procs.append(subprocess.Popen([sys.executable, "-c", code], env=env))
+    try:
+        reads0, info0 = _olens_read(backend, card, chunks[0], batch)
+        parts = [(reads0, info0)]
+        for i, pr in enumerate(procs, start=1):
+            if pr.wait() != 0:
+                raise RuntimeError(f"GPU worker {i} exited {pr.returncode}")
+            res = json.loads((tmp / f"in{i}.pt.out.json").read_text())
+            parts.append((res["reads"], res["info"]))
+    finally:  # a failed job leaves no live worker and no stacked activations on disk
+        for pr in procs:
+            if pr.poll() is None:
+                pr.kill()
+        shutil.rmtree(tmp, ignore_errors=True)
+    reads = [r for part, _ in parts for r in part]
+    if len(reads) != len(cells):
+        raise RuntimeError(f"multi-GPU decode returned {len(reads)} of {len(cells)} cells")
+    return reads, {**info0, "gpus": n, "norms_by_gpu": [p[1]["norms"] for p in parts]}
+
+
+def _worker(src: str) -> None:
+    """One extra GPU of ``_olens_multi`` (its only visible device is cuda:0)."""
+    import torch
+
+    d = torch.load(src, weights_only=False)
+    backend = _load_backend(d["job"]["hf_id"], d["job"]["revision"])
+    _attach_lora(backend, d["adir"])
+    torch.manual_seed(d["seed"])
+    cells = [(*c, h) for c, h in zip(d["cells"], d["h"], strict=True)]
+    reads, info = _olens_read(backend, d["card"], cells, d["batch"])
+    info = json.loads(json.dumps(info, default=str))
+    Path(src + ".out.json").write_text(json.dumps({"reads": reads, "info": info}))
+
+
 def _read_job(job: dict[str, Any]) -> dict[str, Any]:
     import torch
 
@@ -413,7 +477,7 @@ def _read_job(job: dict[str, Any]) -> dict[str, Any]:
     t_cap = time.time() - t0
     torch.manual_seed(int(job["seed"]))
     if job["kind"] == "olens":
-        reads, info = _olens_read(backend, card, cells, int(job.get("batch", 256)))
+        reads, info = _olens_multi(job, backend, card, adir, cells, int(job.get("batch", 256)))
     else:
         reads, info = _jlens_read(backend, job["path"], cells, int(job.get("batch", 512)))
     rows = []
