@@ -505,7 +505,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   excludes it (reason `retired`), and it has no README family entry / Judges row / ATI
   `_not_gated` line. Restore = delete the dict entry and re-add those three (plan 0058 lists them).
 - HallucinationBench index (plan 0040): `wsbench.hbindex` reads the frozen vendored
-  `evals/hallucinationbench/index.json` (hindex-v6 at one HB sha, plans 0040 + 0057; written ONLY by
+  `evals/hallucinationbench/index.json` (hindex-v8 at one HB sha, plans 0040 + 0057 + 0080; joint
+  11-layer rows kept apart under `joint`, never per-layer rows; `final-olens-rl600-x4` is
+  `not_measured` on v8; written ONLY by
   `scripts/vendor_hb_index.py`, which refuses a sha or version mismatch) and `methods.json`
   (WSB arm -> HB method; an unverified checkpoint goes under `not_measured`, never aliased).
   `wsbench report` appends the block after the macro table (`full`, else `matched (no
