@@ -1551,6 +1551,22 @@ def miss_steer(model: str, family: str, wave_ids: set[str], k: int = 12) -> str:
     return "\n".join(out)
 
 
+def fill_tiers(family: str, brief: Any) -> list[str]:
+    """The tiers ``fill`` walks, in order: the brief's tiers minus its ``opt_in`` ones, unless
+    ``ADAPT_FILL_TIERS`` (``family=t1+t2;family2=...``) names this family's tiers (plan 0082:
+    ``poetry=v6``). An unknown tier name exits."""
+    spec = os.environ.get("ADAPT_FILL_TIERS", "")
+    for part in filter(None, (x.strip() for x in spec.split(";"))):
+        fam, _, ts = part.partition("=")
+        if fam.strip() == family:
+            names = [t.strip() for t in ts.split("+") if t.strip()]
+            bad = [t for t in names if t not in brief.tiers]
+            if bad or not names:
+                raise SystemExit(f"ADAPT_FILL_TIERS: {family} has no tier(s) {bad or names}")
+            return names
+    return [t for t in brief.tiers if t not in brief.opt_in]
+
+
 def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves: int = 8,
          runner=None, pilot: bool = False, budget_s: float | None = None,
          claude_budget: int | None = None) -> str:  # fmt: skip
@@ -1582,7 +1598,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
     _h, originals = store.original_bank(family)
     # plan 0075 §2.1: the adapted target (never below the registered size)
     target, quota = rf.adapted_target(family, originals, model), quotas(family, originals)
-    tiers = list(brief.tiers)
+    tiers = fill_tiers(family, brief)
     t_i, low, steer, status, tried, landed, wave = 0, 0, "", "partial", 0, 0, 0
     why, ran, lost_lint, bank_gain, tried_total = "", 0, 0, 0, 0
     yield_est = 0.4
@@ -1631,6 +1647,12 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
               f"{target}; yield {yield_est:.0%})")  # fmt: skip
         have += max(0, gained)
         steer = miss_steer(model, family, new)
+        if family == "poetry" and set(tiers) & set(brief.opt_in):  # plan 0082: rhyme families
+            from .poetry import family_steer
+
+            chosen = select(family, rf.freeze_rows(
+                family, _bank_rows(model, family, originals), model), target, quota)  # fmt: skip
+            steer += family_steer(chosen, target)
         if family in CAPS:  # plan 0075 §2.7: values at their cap would land nothing (no false ooc)
             steer += cap_steer(family, select(family, rf.freeze_rows(
                 family, _bank_rows(model, family, originals), model), target, quota))  # fmt: skip
@@ -1667,6 +1689,24 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         }  # fmt: skip
     elif status == "partial" and wave < max_waves and t_i == len(tiers) - 1:
         upd["refill"] = f"easiest tier yield < {OOC_YIELD:.0%} on >= {OOC_MIN} candidates"
+    opt = [t for t in tiers if t in brief.opt_in]
+    if opt:
+        # plan 0082: a run on an opt-in tier (poetry v6) is a top-up of a family another plan
+        # refilled: its block goes under its own key and it never writes ``status`` (never an
+        # ``ooc``) unless the family is full; the earlier ``refill`` block and status stand
+        block = upd.get("refill")
+        upd = {f"refill_{'+'.join(opt)}": block} if block is not None else {}
+        if status == "ooc":
+            status = "partial"
+        before = store.report_slot(store.read_report(model), "families", family).get("status")
+        if status == "full":
+            upd["status"] = "full"
+        elif before == "ooc" and bank_gain > 0:
+            # an ooc family this run added items to is no longer "under half, nothing lands"
+            upd["status"] = "partial"
+            upd[f"note_{'+'.join(opt)}"] = (
+                f"was ooc; the {'+'.join(opt)} run landed {bank_gain} items ({have}/{target})"
+            )
     store.update_report(model, lambda r: store.report_slot(r, "families", family).update(upd))
     return status
 
