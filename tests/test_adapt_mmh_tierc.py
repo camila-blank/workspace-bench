@@ -481,3 +481,15 @@ def test_epoch_round_two_counts_only_the_failed_draw_for_the_base(ws, tmp_path, 
     sel = [r["id"] for r in mmh.select_rows(MODEL, rows, 283)]
     assert seen["b0"] == {"blind": [0], "described": [0]}
     assert len(sel) > len(base) and mmh._ext(MODEL)["state"] == "open"
+
+
+def test_pass_path_dropping_every_tier_c_item_closes_the_epoch(ws):
+    # unreachable through the subset bar today (a leaker hits >= 3/5), kept as a guard
+    base, tc, _old, rows = _setup(n_tc=2)
+    _open(base)
+    ext = mmh._ext(MODEL)
+    ids = [r["id"] for r in base + tc]
+    ext.update(step="floor", passed={"ids": ids, "tierc_leakers": [r["id"] for r in tc]})
+    store.write_json(mmh.work_dir(MODEL) / "extend.json", ext)
+    assert mmh.select_rows(MODEL, rows, 283) == base
+    assert mmh._ext(MODEL)["state"] == "closed: no tier C items"

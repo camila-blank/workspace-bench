@@ -786,8 +786,8 @@ R55. **The extension epoch: the confirmed base stays shipped and `final`; only t
        passed `retest_of_final` with that round; `state: "closed: passed"`. The passed
        `remeasure` is the union's floor of record (frozen into `floors/`); the epoch `floor`
        before it is not. Audit drops in the epoch apply to tier C items only (base items were
-       audited before; the pinning refuses a base drop); an audit that drops every tier C item
-       closes the epoch `no tier C items`. Every pass-path measurement refuses a frozen bank that
+       audited before; the pinning refuses a base drop); an audit, or the pass path's leaker drops,
+       removing every tier C item closes the epoch `no tier C items`. Every pass-path measurement refuses a frozen bank that
        lacks a base id, has no tier C item, or holds an id the earlier steps dropped. A failed `floor` or `remeasure` counts as a failed epoch
        measurement, like a failed `confirm`.
      - **Fail path:** no re-roll. After the first failed measurement, one R11 round for the
