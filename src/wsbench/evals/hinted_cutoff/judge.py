@@ -106,8 +106,7 @@ def summary_material(col: digest.Collapse, item_id: str, cells: list[Cell]) -> s
 
 
 class _Caller:
-    """``run_calls`` on the family judge, then once on the fallback model for failed keys (as in
-    unverbalized_hint)."""
+    """``run_calls`` on the family judge, then once on the fallback model for failed keys."""
 
     def __init__(self, args: JudgeArgs, cache: Cache, spend: Spend):
         self.args, self.cache, self.spend = args, cache, spend
