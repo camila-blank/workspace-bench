@@ -5,6 +5,10 @@
 #   OUT=outputs/baselines/text_inversion FAMILIES="a b c" scripts/ati_panel_judge.sh
 # Run with ANTHROPIC_API_KEY unset and ANTHROPIC_PROFILE=default (the ant profile). Resumable: each family's judge cache lives in
 # its own judged/<answerer>/draw<d>/<family>/ directory.
+# Plan 0079: an adapted set's panel (WSB_BANK_ROOT=adapted/<m> exported) adds the answerer
+# `subject`, and each family is judged at the layer `build` wrote its readouts at (prompts.jsonl
+# `layer`: 44 on the Qwen3.6-27B grid, the grid's middle layer on an adapted one); it needs
+# $OUT/prompts.jsonl (stage=build) and exits 2 without it.
 set -euo pipefail
 OUT=${OUT:-outputs/baselines/text_inversion}
 DRAWS=${DRAWS:-3}
@@ -12,8 +16,26 @@ JUDGE=${JUDGE:-claude-opus-5-5}
 NATIVE="arithmetic_intermediates buggy_code"
 WSB=${WSB:-wsbench}
 
-answerers=$(cd "$OUT/answers" && ls -d */ 2>/dev/null | tr -d / | grep -E '^(qwen|opus|sonnet|astra|argon)$' || true)
+answerers=$(cd "$OUT/answers" && ls -d */ 2>/dev/null | tr -d / | grep -E '^(qwen|subject|opus|sonnet|astra|argon)$' || true)
 [ -n "$answerers" ] || { echo "no answers/<answerer>/ under $OUT" >&2; exit 2; }
+
+# family -> the layer its readouts were written at (stage=build's `layer`; 44 when absent)
+[ -s "$OUT/prompts.jsonl" ] || { echo "no $OUT/prompts.jsonl (run stage=build)" >&2; exit 2; }
+layer_map=$(python3 -c '
+import json, sys
+seen = {}
+for line in open(sys.argv[1], encoding="utf-8"):
+    if line.strip():
+        r = json.loads(line)
+        seen.setdefault(r["family"], set()).add(r.get("layer", 44))
+bad = {f: sorted(v) for f, v in seen.items() if len(v) > 1}
+if bad:
+    sys.exit(f"families written at more than one layer: {bad}")
+for f, v in seen.items():
+    print(f, *v)
+' "$OUT/prompts.jsonl") || exit 2
+declare -A LAYER
+while read -r fam lay; do LAYER[$fam]=$lay; done <<< "$layer_map"
 
 JOBS=${JOBS:-24}  # concurrent `wsbench run` processes, one per (answerer, draw, family)
 jobs_file=$(mktemp)
@@ -32,7 +54,7 @@ print(" ".join(f for f in sys.argv[3:] if s.get(f, {}).get("slot", "opus") == a)
       [ -s "$root/$f.jsonl" ] || continue
       # one family per process, each in its own out dir (its own judge cache)
       # never leave the line ending in a blank: `xargs -L 1` would join it with the next line
-      if [[ " $NATIVE " == *" $f "* ]]; then lay="native"; else lay="layers=44"; fi
+      if [[ " $NATIVE " == *" $f "* ]]; then lay="native"; else lay="layers=${LAYER[$f]:-44}"; fi
       echo "$f $root $OUT/judged/$a/draw$d/_runs/$f $OUT/judged/$a/draw$d $lay" >> "$jobs_file"
     done
   done
