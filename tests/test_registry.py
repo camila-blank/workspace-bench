@@ -5,6 +5,7 @@ import pytest
 from wsbench import registry
 from wsbench.judge_config import JudgeConfig
 from wsbench.registry import EvalSpec, JudgeArgs, get, load_all, register
+from wsbench.results import FamilyResult, macro
 
 
 def _spec(name="stub"):
@@ -83,25 +84,78 @@ def test_multihop_mt_removed(real_families):
     assert registry.superseded() == {"typo": "typo_mt"}
 
 
-def test_unverbalized_hint_is_retired_not_removed(real_families):
-    # plan 0058 (Camila 2026-10-31: "also get rid of unverbalized hint for now"): reversible, so the
-    # family stays registered and runnable by name with its bank, but `all` skips it
-    assert "unverbalized_hint" in registry.RETIRED_FAMILIES
-    assert "unverbalized_hint" not in registry.REMOVED_FAMILIES
-    assert "unverbalized_hint" in registry.FAMILIES
-    assert registry.bank_path("unverbalized_hint").exists()
-    assert "unverbalized_hint" not in registry.drop_superseded(sorted(registry.FAMILIES))
+def test_unverbalized_hint_is_removed(real_families):
+    # plan 0058 retired it (Camila 2026-10-31: "also get rid of unverbalized hint for now"); plan
+    # 0081 removed it (Camila 2026-11-07: "get rid of the outdated evals like unverbalized_hint")
+    assert "unverbalized_hint" in registry.REMOVED_FAMILIES
+    assert "unverbalized_hint" not in registry.RETIRED_FAMILIES
+    assert "unverbalized_hint" not in registry.FAMILIES
+    assert not (registry.REPO_ROOT / "evals/unverbalized_hint").exists()
+    assert not (registry.REPO_ROOT / "src/wsbench/evals/unverbalized_hint").exists()
     assert "unverbalized_hint" not in registry.superseded()
+    for path in sorted((registry.REPO_ROOT / "evals" / "baselines").glob("*.json")):
+        assert "unverbalized_hint" not in path.read_text(encoding="utf-8"), path.name
+    # a stale results.json of it in an old run dir stays out of the macro, reason "removed"
+    m = macro([_result("unverbalized_hint")])
+    assert m["families"] == []
+    assert [(e["family"], e["reason"]) for e in m["excluded"]] == [("unverbalized_hint", "removed")]
 
 
-def test_retired_family_is_skipped_not_failed_under_ati(real_families):
+def _result(family):
+    return FamilyResult(
+        family=family,
+        metric="pass_rate",
+        value=0.3,
+        ci95=(0.2, 0.4),
+        n_items=10,
+        higher_is_better=True,
+        chance=None,
+        chance_label=None,
+        complete=True,
+        pinned_instrument=True,
+        config={"judge_model": "m", "prompt_version": "v"},
+        counts={},
+    )
+
+
+# plan 0081: RETIRED_FAMILIES is empty since unverbalized_hint, its only user, was removed; the
+# mechanism stays, so its tests retire a registered stand-in family via monkeypatch
+STAND_IN = "association"
+
+
+@pytest.fixture
+def retired_stand_in(real_families, monkeypatch):
+    assert STAND_IN in registry.FAMILIES and STAND_IN not in registry.RETIRED_FAMILIES
+    monkeypatch.setitem(registry.RETIRED_FAMILIES, STAND_IN, "retired (test stand-in)")
+    return STAND_IN
+
+
+def test_retired_family_is_out_of_all_but_registered(retired_stand_in):
+    # plan 0058: reversible, so the family stays registered and runnable by name with its bank,
+    # but `all` skips it
+    assert retired_stand_in not in registry.REMOVED_FAMILIES
+    assert retired_stand_in in registry.FAMILIES
+    assert registry.bank_path(retired_stand_in).exists()
+    assert retired_stand_in not in registry.drop_superseded(sorted(registry.FAMILIES))
+    assert retired_stand_in not in registry.superseded()
+
+
+def test_retired_family_is_skipped_not_failed_under_ati(retired_stand_in):
     # plan 0058 review: out of the ATI file, a by-name anti_text_inversion run skips it
     # (NotInScope) instead of failing with "run the gate first", and the gate refuses it
-    import pytest
-
     from wsbench.baselines import text_inversion as ti
 
     with pytest.raises(ti.NotInScope, match="retired"):
-        ti.subset_entry("unverbalized_hint")
+        ti.subset_entry(retired_stand_in)
     with pytest.raises(ValueError, match="retired"):
-        ti.gate(families=["unverbalized_hint"])
+        ti.gate(families=[retired_stand_in])
+
+
+def test_retired_family_leaves_the_macro(retired_stand_in):
+    # plan 0058: results.macro's ``retired=`` defaults to registry.RETIRED_FAMILIES (reason
+    # "retired"); passing retired={} does not exclude it as retired (the toy row may still fail
+    # a later check, e.g. its judge)
+    m = macro([_result(retired_stand_in)], superseded={}, held_out={}, removed={}, retired={})
+    assert all(e["reason"] != "retired" for e in m["excluded"])
+    m = macro([_result(retired_stand_in)], superseded={}, held_out={}, removed={})
+    assert [(e["family"], e["reason"]) for e in m["excluded"]] == [(retired_stand_in, "retired")]
