@@ -9,9 +9,16 @@ shard to the ``wsb-ati-answers`` volume as each shard finishes and then appended
 pulls the rows already on the volume. Use ``--detach`` for long runs, then rerun to collect.
 
     PYTHONPATH=src modal run scripts/ati_qwen_modal.py [--out ...] [--families a,b] [--shards 8]
+
+``--subject <key>`` (plan 0079, under ``WSB_BANK_ROOT=adapted/<key>``): the adapted set's own
+model answers as panel reader ``subject`` instead of Qwen: its hub id at the Subject's pinned
+revision, prompt ids from ITS tokenizer and chat template, the Subject's vLLM memory / eager
+settings; everything else (sampling, seeds, layout, resume) unchanged. ``WSB_ATI_MAX_CONTAINERS``
+caps the containers (default 8; plan 0079 runs with its shared 4-container budget).
 """
 
 import json
+import os
 from pathlib import Path
 
 import modal
@@ -33,16 +40,23 @@ image = (  # adapt_modal.py's recipe: CUDA devel base (flashinfer JIT needs nvcc
     gpu="H200",
     volumes={"/hf": hf, VOL: answers_vol},
     timeout=6 * 3600,
-    max_containers=8,
+    max_containers=int(os.environ.get("WSB_ATI_MAX_CONTAINERS", "8")),
 )
 def answer_shard(
-    run: str, shard: int, reqs: list[dict], max_model_len: int, max_tokens: int, draws: int
+    run: str,
+    shard: int,
+    reqs: list[dict],
+    max_model_len: int,
+    max_tokens: int,
+    draws: int,
+    answerer: str = "qwen",
+    engine: dict | None = None,
 ) -> int:
     """``reqs`` rows: {family, id, ids, seed}. Writes one row per (item, draw)."""
     from vllm import LLM, SamplingParams
     from vllm.inputs import TokensPrompt
 
-    path = Path(VOL) / run / "qwen" / f"shard{shard}.jsonl"
+    path = Path(VOL) / run / answerer / f"shard{shard}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     done = set()
     if path.exists():
@@ -55,7 +69,8 @@ def answer_shard(
     todo = [r for r in reqs if (r["family"], r["id"], r["prompt_sha"]) not in done]
     if not todo:
         return 0
-    llm = LLM(MODEL, max_model_len=max_model_len, gpu_memory_utilization=0.90, seed=0)
+    eng = {"model": MODEL, "gpu_memory_utilization": 0.90, **(engine or {})}
+    llm = LLM(max_model_len=max_model_len, seed=0, **eng)
     hf.commit()
     params = [
         SamplingParams(
@@ -72,7 +87,7 @@ def answer_shard(
                     "family": r["family"],
                     "id": r["id"],
                     "draw": d,
-                    "answerer": "qwen",
+                    "answerer": answerer,
                     "answer": text,
                     "stop_reason": c.finish_reason,
                     "in_tokens": len(r["ids"]),
@@ -93,27 +108,37 @@ def main(
     shards: int = 8,
     draws: int = 3,
     max_tokens: int = 4096,
+    subject: str = "",
 ) -> None:
     from wsbench.baselines import text_inversion as ti
 
     out_p = Path(out)
     fams = {f for f in families.split(",") if f} or None
     run = ti.run_key(out_p)
-    print(
-        ti.append_answers(out_p, "qwen", ti.download_volume_rows("wsb-ati-answers", f"{run}/qwen"))
-    )
-    reqs = ti.qwen_requests(out_p, draws, fams)
-    print(f"qwen: {len(reqs)} items pending, run key {run}", flush=True)
+    who, tok, engine = "qwen", None, None
+    if subject:  # plan 0079: the adapted set's own model in the Qwen slot
+        from wsbench.adapt.subjects import get
+
+        s = get(subject)
+        if ti.adapted_report()["model"] != s.key:
+            raise SystemExit(f"--subject {subject} but WSB_BANK_ROOT is another set")
+        who, tok = ti.SUBJECT, ti.subject_tokenizer()
+        engine = {"model": s.hf_id, "revision": s.revision,
+                  "gpu_memory_utilization": max(0.90, s.gpu_memory_utilization),
+                  "enforce_eager": s.enforce_eager, **dict(s.modal_engine)}  # fmt: skip
+    print(ti.append_answers(out_p, who, ti.download_volume_rows("wsb-ati-answers", f"{run}/{who}")))
+    reqs = ti.qwen_requests(out_p, draws, fams, tok=tok, answerer=who)
+    print(f"{who}: {len(reqs)} items pending, run key {run}", flush=True)
     if reqs:
         mml = ti.qwen_max_model_len(reqs, max_tokens)
         k = max(1, min(shards, len(reqs)))
         parts = [reqs[i::k] for i in range(k)]
-        args = [(run, i, p, mml, max_tokens, draws) for i, p in enumerate(parts)]
+        args = [(run, i, p, mml, max_tokens, draws, who, engine) for i, p in enumerate(parts)]
         results = list(answer_shard.starmap(args, return_exceptions=True))
         errs = [r for r in results if isinstance(r, BaseException)]
         n = sum(r for r in results if isinstance(r, int))
         print(f"{n} items generated (max_model_len {mml}); {len(errs)} shard(s) failed")
         for e in errs:
             print(f"  shard error: {e!r}"[:500], flush=True)
-    rows = ti.download_volume_rows("wsb-ati-answers", f"{run}/qwen")
-    print(ti.append_answers(out_p, "qwen", rows), flush=True)
+    rows = ti.download_volume_rows("wsb-ati-answers", f"{run}/{who}")
+    print(ti.append_answers(out_p, who, rows), flush=True)
