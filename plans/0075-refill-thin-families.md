@@ -497,7 +497,7 @@ festival / workplace authored again wave after wave) and 4 wedding-role gender g
   authored candidate whose slug topic words (`lint.um_topics`: the words of `name` after
   `um-sd-<attr_label>-<attr>-`) share a word with an authored item of the same gold already in the
   gate log (`run.lint_and_gate`'s `logged`, which for user_modeling holds only gate-passing rows,
-  so a failed or lint-rejected topic may be retried; generic words such as festival / night /
+  so the lint lets a failed or lint-rejected topic through again, while the brief's do-not-reuse list (every logged slug) still discourages it; generic words such as festival / night /
   shift are not topic words), or earlier in the same batch, is rejected before the gate (a lint reject: it never counts in `tried`, so the ooc rule is unchanged). The brief's
   do-not-reuse list for user_modeling becomes the used topic slugs (`Brief.used = ("name",)`; it
   listed values, and every allowed value is reused by design, which made Opus refuse whole calls),
