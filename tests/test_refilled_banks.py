@@ -36,7 +36,7 @@ def frozen(real_families) -> dict:
 
 
 @pytest.mark.parametrize("family", sorted(N0))
-def test_crafted_family_is_whole_bank_ati_on_the_current_bank(family, frozen):
+def test_crafted_family_ati_entry_is_on_the_current_bank(family, frozen):
     e = frozen[family]
     scored = [s.id for s in readplan.plan(family) if ti.ati_scored(s)]
     assert e["gate"] == ti.GATE_VERSION
@@ -48,7 +48,8 @@ def test_crafted_family_is_whole_bank_ati_on_the_current_bank(family, frozen):
             ti.subset(family)
         return
     assert e["n_bank"] == len(scored) == N0[family]
-    assert e["n_ati"] == N0[family] and sorted(e["ids"]) == sorted(scored)
+    # plan 0071 (all-fail rule): a crafted family is no longer whole-bank ATI
+    assert set(e["ids"]) <= set(scored) and e["n_ati"] == len(e["ids"])
     assert e["bank_sha"] == ti.bank_fingerprint(family)
     if e["instrument"] != ti.gate_instrument(family):
         # plan 0032 bumped this family's instrument (basic bank-2026-10-30, introspection

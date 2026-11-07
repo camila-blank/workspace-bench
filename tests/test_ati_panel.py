@@ -1,7 +1,7 @@
-"""ATI panel gate (plan 0019), offline: the per-item min rule, the panel gate over the
-``answers/<answerer>`` + ``judged/<answerer>/draw{d}`` layout (slot, refusal and unverified
-rules, crafted stop-and-report, roots union, candidates), the bank fingerprint guard, the
-per-family bank-file override and the Qwen request encoding."""
+"""ATI panel gate (plan 0019; all-fail item rule since plan 0071), offline: the per-item rule,
+the panel gate over the ``answers/<answerer>`` + ``judged/<answerer>/draw{d}`` layout (slot,
+refusal and unverified rules, crafted stop-and-report, roots union, candidates), the bank
+fingerprint guard, the per-family bank-file override and the Qwen request encoding."""
 
 import json
 from pathlib import Path
@@ -33,18 +33,25 @@ def test_item_status(draws, want):
 @pytest.mark.parametrize(
     ("qwen", "frontier", "want"),
     [
-        ("failed", ["solved", "solved", "solved"], "ati"),  # Qwen cannot read it
-        ("solved", ["failed", "failed", "failed"], "ati"),  # no frontier model can
-        ("undecided", ["failed", "failed", "failed"], "ati"),
-        ("failed", ["undecided", "solved", "failed"], "ati"),
-        ("solved", ["failed", "solved", "failed"], "invertible"),  # Qwen AND one frontier
-        ("solved", ["failed", "failed", "undecided"], "unverified"),
-        ("undecided", ["solved", "failed", "failed"], "unverified"),
-        ("solved", ["undecided", "undecided", "undecided"], "unverified"),
+        ("failed", ["solved", "solved", "solved"], "invertible"),  # a frontier reader reads it
+        ("solved", ["failed", "failed", "failed"], "invertible"),  # Qwen reads it
+        ("undecided", ["failed", "failed", "failed"], "unverified"),
+        ("failed", ["undecided", "solved", "failed"], "invertible"),
+        ("solved", ["failed", "solved", "failed"], "invertible"),
+        ("solved", ["failed", "failed", "undecided"], "invertible"),
+        ("undecided", ["solved", "failed", "failed"], "invertible"),
+        ("solved", ["undecided", "undecided", "undecided"], "invertible"),
+        ("failed", ["failed", "failed", "failed"], "ati"),  # every reader failed
+        ("failed", ["failed", "undecided", "failed"], "unverified"),
     ],
 )
-def test_panel_verdict_is_the_min_rule(qwen, frontier, want):
+def test_panel_verdict_is_the_all_fail_rule(qwen, frontier, want):
     assert ti.panel_verdict(qwen, frontier) == want
+
+
+def test_all_fail_verdict_is_the_panel_verdict():
+    """Plan 0079's adapted-set verdict and the registered gate's are one rule (plan 0071)."""
+    assert ti.all_fail_verdict is ti.panel_verdict
 
 
 # ---------------------------------------------------------------- fixtures
@@ -100,8 +107,9 @@ F, T, N = False, True, None
 
 
 def _standard(out: Path, fam: str = "fam") -> None:
-    # a: Qwen fails -> ATI; b: Qwen + astra solve -> invertible; c: Qwen solves, every frontier
-    # fails -> ATI; d: Qwen solves, frontier undecided -> unverified; e: all fail -> ATI
+    # all-fail rule (plan 0071): a: Qwen fails, opus solves -> invertible; b: Qwen + astra solve
+    # -> invertible; c: Qwen solves, every frontier fails -> invertible; d: Qwen solves, frontier
+    # undecided -> invertible; e: all fail -> ATI
     _write(
         out,
         "qwen",
@@ -128,6 +136,29 @@ def _standard(out: Path, fam: str = "fam") -> None:
     )
 
 
+def _ace(out: Path, fam: str = "fam") -> None:
+    # ``_standard`` with a and c also failed by every reader: ATI a, c, e (b, d invertible)
+    _write(
+        out,
+        "qwen",
+        fam,
+        {"a": [F, F, F], "b": [T, F, F], "c": [F, F, F], "d": [T, T, T], "e": [F, F, F]},
+    )
+    _write(
+        out,
+        "opus",
+        fam,
+        {"a": [F, F, F], "b": [F, F, F], "c": [F, F, F], "d": [F, N, F], "e": [F, F, F]},
+    )
+    _write(
+        out,
+        "astra",
+        fam,
+        {"a": [F, F, F], "b": [F, T, F], "c": [F, F, F], "d": [F, F, F], "e": [F, F, F]},
+    )
+    _write(out, "argon", fam, {i: [F, F, F] for i in "abcde"})
+
+
 # ---------------------------------------------------------------- the panel gate
 
 
@@ -136,8 +167,8 @@ def test_panel_gate_entry(tmp_path, fams):
     _standard(out)
     dst = tmp_path / "ati.json"
     e = ti.gate(out, dst=dst)["fam"]
-    assert e["ids"] == ["a", "c", "e"]
-    assert (e["n_ati"], e["n_invertible"], e["n_unverified"]) == (3, 1, 1)
+    assert e["ids"] == ["e"]
+    assert (e["n_ati"], e["n_invertible"], e["n_unverified"]) == (1, 4, 0)
     assert e["gate"] == ti.GATE_VERSION and e["bank_sha"] == "sha-fam"
     assert e["answerer"] == "panel" and e["claude_slot"] == "opus"
     assert e["panel"]["claude"] == "claude-opus-5-5" and e["panel"]["astra"] == ti.PANEL["astra"]
@@ -153,7 +184,8 @@ def test_panel_gate_entry(tmp_path, fams):
 def test_unusable_answer_makes_the_draw_undecided(tmp_path, fams):
     out = tmp_path / "o"
     _standard(out)
-    # e's Qwen draw 1 had no answer: Qwen is undecided, but every frontier model failed -> ATI
+    # e's Qwen draw 1 had no answer: Qwen is undecided and every frontier model failed -> no
+    # reader solved, one undecided: unverified under the all-fail rule (plan 0071)
     _write(tmp_path / "x", "qwen", "fam", {"e": [F, F, F]})
     lines = ti.answers_file(out, "qwen", 1).read_text().splitlines()
     rows = [json.loads(x) for x in lines]
@@ -163,12 +195,13 @@ def test_unusable_answer_makes_the_draw_undecided(tmp_path, fams):
     ti.answers_file(out, "qwen", 1).write_text("".join(json.dumps(r) + "\n" for r in rows))
     e = ti.gate(out, dst=None)["fam"]
     assert e["draw_pass"]["qwen"]["e"] == [F, N, F]
-    assert e["status"]["e"][0] == "undecided" and "e" in e["ids"]
+    assert e["status"]["e"][0] == "undecided" and "e" not in e["ids"]
+    assert e["n_unverified"] == 1
 
 
 def test_unverified_share_drops_a_regular_family_and_stops_a_crafted_one(tmp_path, fams):
     out = tmp_path / "o"
-    und = {i: [T, T, T] for i in "abcde"}
+    und = {i: [F, F, F] for i in "abcde"}  # Qwen failed, opus undecided, others failed
     _write(out, "qwen", "fam", und)
     _write(out, "opus", "fam", {i: [F, N, F] for i in "abcde"})
     for a in ti.FRONTIER_OTHERS:
@@ -215,8 +248,12 @@ def test_slot_refusals_and_sonnet_slot(tmp_path, fams):
 
 
 def test_crafted_slot_refusal_stops(tmp_path, fams):
+    # opus answers only with refusals on a, b, c (no earlier clean answer for latest_answers to
+    # prefer), so the stop comes from the refused share, not the unverified share (plan 0071 §5)
     out = tmp_path / "o"
-    _standard(out, "wrong_intermediate")
+    for a in PANEL:
+        if a != "opus":
+            _write(out, a, "wrong_intermediate", {i: [F, F, F] for i in "abcde"})
     _write(
         out,
         "opus",
@@ -254,7 +291,7 @@ def test_roots_union_supersede_and_double_decision(tmp_path, fams):
 
 def test_candidates_mode_keeps_per_item_verdicts(tmp_path, fams):
     out = tmp_path / "o"
-    _write(out, "qwen", "wrong_intermediate", {i: [T, T, T] for i in "abcde"})
+    _write(out, "qwen", "wrong_intermediate", {i: [F, F, F] for i in "abcde"})
     _write(out, "opus", "wrong_intermediate", {"a": [F, F, F], **{i: [F, N, F] for i in "bcde"}})
     for a in ti.FRONTIER_OTHERS:
         _write(out, a, "wrong_intermediate", {i: [F, F, F] for i in "abcde"})
@@ -431,6 +468,24 @@ def test_subset_entry_checks_bank_sha_on_panel_entries_only(tmp_path, monkeypatc
         ti.subset("fam", frozen({**panel, "bank_sha": "then"}))
     with pytest.raises(SystemExit, match="bank_sha"):
         ti.subset("fam", frozen({k: v for k, v in panel.items() if k != "bank_sha"}))
+
+
+def test_subset_entry_refuses_a_retired_panel_gate(tmp_path, monkeypatch):
+    """Plan 0071: an entry of a retired panel rule is never scored, even on the current bank."""
+    monkeypatch.setattr(
+        registry, "get", lambda f: SimpleNamespace(judge=SimpleNamespace(prompt_version="v2"))
+    )
+    monkeypatch.setattr(ti, "bank_fingerprint", lambda f: "now")
+    assert "panel-v1" in ti.RETIRED_GATES and ti.GATE_VERSION not in ti.RETIRED_GATES
+    p = tmp_path / "ati.json"
+    entry = {"instrument": "v2", "ids": ["a"], "n_bank": 3, "gate": "panel-v1"}
+    for sha in ("now", "then"):
+        p.write_text(json.dumps({"_not_gated": {}, "fam": {**entry, "bank_sha": sha}}))
+        with pytest.raises(SystemExit, match="retired panel rule"):
+            ti.subset("fam", p)
+    p.write_text(json.dumps({"_not_gated": {}, "fam": {**entry, "gate": ti.GATE_VERSION}}))
+    with pytest.raises(SystemExit, match="bank_sha"):  # no bank_sha on a current entry
+        ti.subset("fam", p)
 
 
 def test_bank_file_override_reaches_plan_and_judges(tmp_path, monkeypatch):
@@ -610,7 +665,7 @@ def test_ati_exclude_ids_absent_from_subset(tmp_path, fams, monkeypatch):
     """A survivor the hand audit marks obvious is dropped (with its reason) and, with <= 5
     items left, the family shows no ATI number (subset_entry: NotInScope)."""
     out = tmp_path / "o"
-    _standard(out)  # ATI: a, c, e
+    _ace(out)  # ATI: a, c, e
     monkeypatch.setattr(ti, "ATI_EXCLUDE", {"fam": {"c": "obvious from the prompt"}})
     monkeypatch.setattr(ti, "ATI_MIN_RULE", frozenset({"fam"}))
     dst = tmp_path / "ati.json"
@@ -629,7 +684,7 @@ def test_ati_exclude_all_covers_new_survivors(tmp_path, fams, monkeypatch):
     """A family excluded by construction (ATI_EXCLUDE_ALL) drops every survivor, including ids
     the hand audit never listed (a new survivor after a re-gate)."""
     out = tmp_path / "o"
-    _standard(out)  # ATI: a, c, e
+    _ace(out)  # ATI: a, c, e
     monkeypatch.setattr(ti, "ATI_EXCLUDE", {"fam": {"c": "obvious from the prompt"}})
     monkeypatch.setattr(ti, "ATI_EXCLUDE_ALL", {"fam": "text-invertible by construction"})
     monkeypatch.setattr(ti, "ATI_MIN_RULE", frozenset({"fam"}))
@@ -659,6 +714,9 @@ def test_multilingual_ati_exclusions_are_applied():
             assert why == ti.ATI_EXCLUDE.get(fam, {}).get(i, ti.ATI_EXCLUDE_ALL.get(fam)), (fam, i)
     for fam, n in sizes.items():
         assert len(ti.ATI_EXCLUDE[fam]) == n
+    # panel-v2 (plan 0071): no audited id survives the all-fail rule, so nothing is recorded
+    for fam in ("multilingual", *sizes):
+        assert frozen[fam]["ati_exclude"] == {} and frozen[fam]["ati_reportable"] is False, fam
 
 
 # ---------------------------------------------------------------- reduced panel (decision R1-ATI)
@@ -694,10 +752,10 @@ def test_reduced_panel_gates_on_qwen_and_the_claude_slot(tmp_path, fams):
     dst = tmp_path / "ati.json"
     dst.write_text(json.dumps({"other": {"ids": ["z"]}, "_not_gated": {}}))
     e = ti.gate(out, dst=dst, families=["fam"], frontier=[], panel_label=LABEL)["fam"]
-    # a, e: Qwen fails; b: Qwen solves, Opus fails every draw -> ATI; c: both solve ->
-    # invertible; d: Qwen solves, Opus undecided -> unverified
-    assert e["ids"] == ["a", "b", "e"]
-    assert (e["n_ati"], e["n_invertible"], e["n_unverified"]) == (3, 1, 1)
+    # all-fail rule (plan 0071): e: both fail -> ATI; a (Opus solves), b, c, d (Qwen solves)
+    # -> invertible
+    assert e["ids"] == ["e"]
+    assert (e["n_ati"], e["n_invertible"], e["n_unverified"]) == (1, 4, 0)
     assert e["panel"] == LABEL and e["provisional"] is True
     assert e["readers"] == {"qwen": ti.PANEL["qwen"], "claude": "claude-opus-5-5"}
     assert e["status_order"] == ["qwen", "opus"]
@@ -714,7 +772,7 @@ def test_reduced_panel_keeps_a_named_frontier_reader(tmp_path, fams):
     # astra solves b: Qwen and a frontier reader both read it -> invertible
     _write(out, "astra", "fam", {i: [T, F, F] if i == "b" else [F, F, F] for i in "abcde"})
     e = ti.gate(out, dst=None, families=["fam"], frontier=["astra"], panel_label="qwen+opus+astra")
-    assert e["fam"]["ids"] == ["a", "e"] and e["fam"]["status_order"] == ["qwen", "opus", "astra"]
+    assert e["fam"]["ids"] == ["e"] and e["fam"]["status_order"] == ["qwen", "opus", "astra"]
     # how the hosted reader was reached (fixture rows carry no route / model)
     assert e["fam"]["reader_routes"] == {"astra": {"unknown": 15}}
 
@@ -748,7 +806,7 @@ def test_subset_entry_accepts_a_provisional_entry(tmp_path, fams):
     _two_readers(out)
     dst = tmp_path / "ati.json"
     ti.gate(out, dst=dst, families=["fam"], frontier=[], panel_label=LABEL)
-    assert ti.subset("fam", dst) == ["a", "b", "e"]
+    assert ti.subset("fam", dst) == ["e"]
 
 
 def test_full_gate_carries_a_provisional_entry_over(tmp_path, fams, monkeypatch):
@@ -760,11 +818,7 @@ def test_full_gate_carries_a_provisional_entry_over(tmp_path, fams, monkeypatch)
     ti.gate(out, dst=dst, families=["wrong_intermediate"], frontier=[], panel_label=LABEL)
     ti.gate(out, dst=dst)  # full gate: wrong_intermediate is skipped (readers missing), not dropped
     written = json.loads(dst.read_text())
-    assert written["wrong_intermediate"]["provisional"] is True and written["fam"]["ids"] == [
-        "a",
-        "c",
-        "e",
-    ]
+    assert written["wrong_intermediate"]["provisional"] is True and written["fam"]["ids"] == ["e"]
 
 
 @pytest.mark.parametrize(
@@ -793,9 +847,9 @@ def _reduced(status: dict[str, list[str]], order=("qwen", "opus", "astra")) -> d
 @pytest.mark.parametrize(
     ("st", "decisive"),
     [
-        (["solved", "failed", "failed"], True),  # argon solving it takes it out
-        (["undecided", "failed", "failed"], True),  # argon solving / undecided takes it out
-        (["failed", "failed", "failed"], False),  # Qwen failed: ATI whatever argon answers
+        (["solved", "failed", "failed"], False),  # Qwen solved: invertible whatever argon says
+        (["undecided", "failed", "failed"], False),  # Qwen undecided: never ATI
+        (["failed", "failed", "failed"], True),  # argon solving / undecided takes it out
         (["solved", "solved", "failed"], False),  # a present frontier reader solved it
         (["solved", "undecided", "failed"], False),  # unverified or invertible, never ATI
         (["undecided", "failed", "undecided"], False),
@@ -806,9 +860,12 @@ def test_decisive_items_rule(st, decisive):
 
 
 def test_decisive_items_two_missing_readers_and_full_panel():
-    # qwen+opus panel (astra and argon missing): Qwen solved, Opus failed -> either can move it
+    # qwen+opus panel (astra and argon missing): a reader solved x and y -> never ATI; z failed
+    # by both -> either missing reader can move it
     e = _reduced({"x": ["solved", "failed"], "y": ["failed", "solved"]}, order=("qwen", "opus"))
-    assert ti.missing_readers(e) == ["astra", "argon"] and ti.decisive_items(e) == ["x"]
+    assert ti.missing_readers(e) == ["astra", "argon"] and ti.decisive_items(e) == []
+    e["status"]["z"] = ["failed", "failed"]
+    assert ti.decisive_items(e) == ["z"]
     assert ti.missing_readers({"status": {}}) == [] and ti.decisive_items({"status": {}}) == []
 
 
