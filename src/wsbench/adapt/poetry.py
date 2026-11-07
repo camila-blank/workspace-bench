@@ -666,10 +666,13 @@ def v6_lists(model: str, items: list[dict], ask_rank: Any = None, ask_guess: Any
     examples = pp.example_items(shipped)
     if len(examples) < 4:
         examples = pp.example_items(store.original_bank(FAMILY)[1])
-    ranks = pp.measure(items, d / "prior.jsonl", **({"ask": ask_rank} if ask_rank else {}))
+    concrete: dict[str, set[str]] = {}
+    ranks = pp.measure(items, d / "prior.jsonl", concrete=concrete,
+                       **({"ask": ask_rank} if ask_rank else {}))  # fmt: skip
     earlier = [pp.guess_item(i, g, (m.get("prior") or {}).get("chosen") or [])
                for i, g, m in built if (m.get("prior") or {}).get("chosen")]  # fmt: skip
     st = pp.build_lists(items, ranks, examples, d / "screen.jsonl", built_v6=earlier,
+                        concrete=concrete,
                         **({"ask": ask_guess} if ask_guess else {}))  # fmt: skip
     for it in items:
         it["mc"] = pp.reorder(it, st.get(it["id"]))
