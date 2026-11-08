@@ -1613,8 +1613,8 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
         from .poetry import family_steer
 
         steer = family_steer(select(family, rf.freeze_rows(
-            family, _bank_rows(model, family, originals), model), target, quota), target).lstrip(
-            "\n")  # fmt: skip
+            family, _bank_rows(model, family, originals), model), target, quota), target).replace(
+            "\n- Do NOT", "- (No wave yet; rhyme families already full.) Do NOT")  # fmt: skip
     while wave < max_waves:
         have = have_now()
         if have >= target:

@@ -532,45 +532,46 @@ def build_mc(
         merged = json.loads(vet.read_text(encoding="utf-8")) if vet.exists() else {}
         merged.update(json.loads(vet_all.read_text(encoding="utf-8")))
         store.write_json(vet_used, merged)
-    # plan 0082: keep the previous draft_mc.json; if screening the v6 lists fails, it is put
-    # back, so a crash never leaves an unscreened (v5-ordered) v6 list behind
+    # plan 0082: keep the previous draft_mc.json; if anything between the rebuild and the final
+    # write fails, it is put back, so a crash never leaves an unscreened v6 list (or an
+    # unrestored keep_built list) behind
     backup = out.read_bytes() if out.exists() else None
-    script(["build", "--draft", str(draft), "--answers", *ans, "--vet", str(vet_used),
-            "--out", str(out)])  # fmt: skip
-    doc = json.loads(out.read_text(encoding="utf-8"))
-    if prior:
+    try:
+        script(["build", "--draft", str(draft), "--answers", *ans, "--vet", str(vet_used),
+                "--out", str(out)])  # fmt: skip
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        if prior:
+            for it in doc["items"]:
+                # a v6 id never takes its stored list here: a settled one is restored below, a
+                # voided one (moved gold, new commit, old PRIOR_VERSION) is screened on this build
+                if mc_ok(prior.get(it["id"])) and it["id"] not in v6:
+                    it["mc"] = prior[it["id"]]
         for it in doc["items"]:
-            # a v6 id never takes its stored list here: a settled one is restored just below, a
-            # voided one (moved gold, new commit, old PRIOR_VERSION) is screened on this build
-            if mc_ok(prior.get(it["id"])) and it["id"] not in v6:
-                it["mc"] = prior[it["id"]]
-    for it in doc["items"]:
-        if it["id"] in v6_built:
-            it["mc"] = v6_built[it["id"]]
-    if v6_new:
-        golds = {it["id"]: (it.get("intermediates") or [""])[0] for it in doc["items"]}
-        live = example_v6_ids(model, rows)
-        new_ids = {x["id"] for x in v6_new}
-        # a v6 item whose vet failed (no common rhymes vetted) is pending, never screened on a
-        # thin pool: its vet entry is dropped so the next build asks again
-        vetted = json.loads(vet_all.read_text(encoding="utf-8")) if vet_all.exists() else {}
-        unvetted = {i for i in new_ids if i not in vetted}  # a failed call leaves no entry
-        if unvetted:
-            store.write_json(vet_all, {k: v for k, v in vetted.items() if k not in unvetted})
-        try:
+            if it["id"] in v6_built:
+                it["mc"] = v6_built[it["id"]]
+        if v6_new:
+            golds = {it["id"]: (it.get("intermediates") or [""])[0] for it in doc["items"]}
+            live = example_v6_ids(model, rows)
+            new_ids = {x["id"] for x in v6_new}
+            # a v6 item whose vet failed (no common rhymes vetted) is pending, never screened on
+            # a thin pool: its vet entry is dropped so the next build asks again
+            vetted = json.loads(vet_all.read_text(encoding="utf-8")) if vet_all.exists() else {}
+            unvetted = {i for i in new_ids if i not in vetted}  # a failed call leaves no entry
+            if unvetted:
+                store.write_json(vet_all, {k: v for k, v in vetted.items() if k not in unvetted})
             v6_lists(model, [it for it in doc["items"] if it["id"] in new_ids - unvetted],
                      built=[(i, golds.get(i, ""), m) for i, m in v6_built.items()
                             if i in live])  # fmt: skip
-        except BaseException:
-            if backup is None:
-                out.unlink(missing_ok=True)
-            else:
-                out.write_bytes(backup)
-            raise
-        for it in doc["items"]:
-            if it["id"] in unvetted:
-                it["mc"] = {"candidates": [], "prior_pending": "vet failed (no common rhymes)"}
-    store.write_json(out, doc)
+            for it in doc["items"]:
+                if it["id"] in unvetted:
+                    it["mc"] = {"candidates": [], "prior_pending": "vet failed (no common rhymes)"}
+        store.write_json(out, doc)
+    except BaseException:
+        if backup is None:
+            out.unlink(missing_ok=True)
+        else:
+            out.write_bytes(backup)
+        raise
     return load_mc(model)
 
 
