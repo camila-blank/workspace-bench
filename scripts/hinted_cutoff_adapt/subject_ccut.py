@@ -4,7 +4,9 @@
         out_dir=<dir> stage=<stage> [...]
 
 cwd = a gw source tree (``evals/chint_cutoff/bank_v2.json``); PYTHONPATH = gw ``src`` + the
-cf_influence scripts dir + workspace-bench ``src``. Two substitutions, nothing else:
+cf_influence scripts dir + workspace-bench ``src``. The cwd must be a scratch copy holding only
+``evals/chint_cutoff/`` (``bank`` and ``freeze`` write into it), never a gw checkout. The
+substitutions, nothing else:
 - ``ccut_stages._TOK`` = the subject's tokenizer with its pinned thinking-off template
   (``subjects.load_tokenizer``), so prompt lengths, the re-render check against the generated
   ``prompt_token_ids``, the reply-token count and every read position index the SUBJECT's
@@ -28,6 +30,12 @@ import sys
 
 def main() -> None:
     mod_name = sys.argv.pop(1)
+    from pathlib import Path
+
+    cwd = Path.cwd()
+    assert not (cwd / ".git").exists() and not (cwd / "src/global_workspace").exists(), (
+        f"{cwd}: run in a scratch gw cwd, not a gw checkout (bank / freeze write into it)"
+    )
     from global_workspace.olens_suite.cf_influence import ccut
 
     from wsbench.adapt import subjects

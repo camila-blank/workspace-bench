@@ -56,6 +56,7 @@ def _frozen():
                                                  "share_I_later", "cell_excess", "pass")}},
         "reference_results": {},
         "prompt_only_baseline": {},
+        "leak_checks": {"pass": True},
     }  # fmt: skip
 
 
@@ -103,5 +104,19 @@ def test_judge_input_probe_and_pair_count():
     )
     assert ji._p_hc_positions({**good, "input_ids": good["input_ids"][:-1]}, {}, False)
     items = [b["items"][0], {**b["items"][1], "positions": b["items"][1]["positions"][1:]}]
-    assert all(v[0].startswith("hazard") for v in ji._bank_pairs(items).values())
+    assert all(v[0].startswith("exit") for v in ji._bank_pairs(items).values())
     assert ji._bank_pairs(b["items"]) == {}
+
+
+def test_install_refuses_a_set_that_failed_the_leak_checks(tmp_path, monkeypatch):
+    import json
+
+    from wsbench.adapt import subjects
+
+    f = _frozen()
+    f["leak_checks"] = {"pass": False, "predict_single": {"share_diff": 0.3}}
+    p = tmp_path / "frozen.json"
+    p.write_text(json.dumps(f))
+    monkeypatch.setattr(subjects, "get", lambda _m: type("S", (), {"hf_id": "org/Model"})())
+    with pytest.raises(SystemExit, match="leak checks did not pass"):
+        hc.run("m", str(p), gw_commit="c0")

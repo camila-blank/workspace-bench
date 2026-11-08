@@ -2230,7 +2230,7 @@ def _bank_pairs(items: list[Mapping[str, Any]]) -> dict[str, list[str]]:
         elif len({len(m.get("positions") or []) for m in members}) != 1:
             for m in members:  # plan 0084: the length-equalized twins read the same count
                 out[item_id(m)] = [
-                    f"hazard: pair {pid!r} twins read {[len(m.get('positions') or []) for m in members]} "
+                    f"exit: pair {pid!r} twins read {[len(m.get('positions') or []) for m in members]} "
                     "positions; equalization (gw render.equalize) gives both the same count"
                 ]
     return out
