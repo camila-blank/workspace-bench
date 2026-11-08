@@ -535,17 +535,17 @@
      "aggregate": "native"
     },
     "basic_readout_mt": {
-     "rate": 0.9722222222222222,
+     "rate": 0.9714285714285714,
      "ci95": [
-      0.9351851851851852,
+      0.9333333333333333,
       1.0
      ],
      "metric": "pass_rate",
      "layer": 12,
      "judge_model": "claude-opus-5-5",
-     "n_items": 108,
+     "n_items": 105,
      "counts": {
-      "n_expected_cells": 108,
+      "n_expected_cells": 105,
       "n_missing_cells": 0,
       "n_unjudged_cells": 0,
       "n_empty_cells": 0,
