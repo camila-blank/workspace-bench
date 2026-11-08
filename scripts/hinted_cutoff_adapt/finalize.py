@@ -58,6 +58,9 @@ def leak_verdict(scores: dict, gate: dict, n_pairs: int, part: dict | None = Non
     day, cell = gate["day_auroc"], gate["cell_excess"]
     out["day_auroc"], out["cell_excess"] = day, cell
     ok = ok and abs(day - 0.5) <= BAR_AUROC and cell <= BAR_AUROC
+    if "guess_auroc" in gate:  # plan 0084 R18: the matched guessability rating must be balanced
+        out["guess_auroc"] = gate["guess_auroc"]
+        ok = ok and abs(gate["guess_auroc"] - 0.5) <= BAR_AUROC
     if part is not None:  # reported only (plan 0084 round-2 review)
         out["source_part"] = part
     if "stratified" in scores:  # v2's predict_single I - N by month / before-after (reported)
