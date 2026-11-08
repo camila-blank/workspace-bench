@@ -31,11 +31,13 @@ def original_bank(family: str) -> tuple[dict[str, Any], list[dict]]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, list):
         return {}, raw
+    # the registered bank's own plan lineage (plan 0083) describes that file, never a set's plan
+    own = ("items", READ_PLAN_BANK, "plan_lineage")
     if raw.get("items") and "name" not in raw["items"][0]:
-        header = {k: v for k, v in raw.items() if k not in ("items", READ_PLAN_BANK)}
+        header = {k: v for k, v in raw.items() if k not in own}
         return header, raw["items"]
     header, items = load_wrapped(path)
-    return {k: v for k, v in header.items() if k != READ_PLAN_BANK}, items
+    return {k: v for k, v in header.items() if k not in own}, items
 
 
 def _read_jsonl(path: Path) -> list[dict]:

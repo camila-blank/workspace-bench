@@ -20,7 +20,10 @@
     "skipped_rows": 18546,
     "spend_usd": 0.0
    },
-   "complete": false
+   "complete": false,
+   "plan_0083": {
+    "stale": "measured on the pre-0083 bank including 116 frac items; no per-item record, not recomputed"
+   }
   },
   "association": {
    "rate": 0.76,
