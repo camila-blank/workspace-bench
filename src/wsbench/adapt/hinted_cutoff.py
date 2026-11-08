@@ -136,6 +136,9 @@ def run(model: str, frozen_path: str, gw_commit: str = "", note: str = "") -> di
     audit_drops = frozen["date_leak"].get("audit_drops") or {}  # drop_pairs.py (plan 0084 R20)
 
     def mutate(rep: dict[str, Any]) -> None:
+        # a re-install REPLACES the family's entry and its drops (nothing stale survives)
+        drops = rep.setdefault("drops", {})
+        drops.pop(store.report_key(drops, FAMILY), None)
         if audit_drops:  # both twins of every dropped pair, with the audit's reason
             store.report_slot(rep, "drops", FAMILY).update(  # ids: gw ccut.read_label
                 {
@@ -144,12 +147,10 @@ def run(model: str, frozen_path: str, gw_commit: str = "", note: str = "") -> di
                     for k in pid.split("~")
                 }
             )
-        e = store.report_slot(rep, "families", FAMILY)
-        for k in ("absent_auto", "exclude_from_macro"):
-            e.pop(k, None)
-        if e.get("note") == store.ABSENT_NOTE:
-            e.pop("note")
-        e.update(entry)
+        fams = rep.setdefault("families", {})
+        old = fams.pop(store.report_key(fams, FAMILY), {})
+        keep = {k: old[k] for k in ("plan_lineage",) if k in old}
+        store.report_slot(rep, "families", FAMILY).update({**keep, **entry})
 
     store.update_report(model, mutate)
     print(f"[hinted_cutoff] {model}: {n_pairs} pairs -> {store.bank_file(model, FAMILY)}")

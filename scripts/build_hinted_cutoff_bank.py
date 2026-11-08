@@ -65,7 +65,11 @@ def _adapted_header(frozen: dict, items: list, sha: str, gw_commit: str, adapt: 
             abs(leak["final"]["day_auroc"] - 0.5) <= ADAPTED_DATE_TOL
             and leak["final"]["cell_excess"] <= ADAPTED_DATE_TOL
         ),
-        "date_leak": {k: leak["final"][k] for k in GATE_KEYS},
+        # every gate rating's AUROC (plan 0084 R18 adds the guessability caliper's)
+        "date_leak": {
+            **{k: leak["final"][k] for k in GATE_KEYS},
+            **{k: v for k, v in leak["final"].items() if k.endswith("_auroc")},
+        },
         "gw_judge_prompts_sha256": m["judge_prompts_sha256"],
         "reference_results": frozen["reference_results"],
         "prompt_only_baseline": frozen["prompt_only_baseline"],

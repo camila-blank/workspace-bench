@@ -4,7 +4,10 @@ recomputed on the kept pairs (``ccut.date_leak``, as ``pair`` computes it); the 
 reasons are kept under ``date_leak.audit_drops``. Then re-run read_jobs -> freeze -> score ->
 finalize (the predictor calls are cached by pair id).
 
-    python subject_ccut.py drop_pairs out_dir=<dir> drops=<json {pair_id: reason}>
+    HC_SUBJECT=<m> HC_GUESS_GAP=<the build's caliper, e.g. 20> \
+        python subject_ccut.py drop_pairs out_dir=<dir> drops=<json {pair_id: reason}>
+
+(without HC_GUESS_GAP the recomputed gate silently lacks the guessability rating)
 """
 
 import json
