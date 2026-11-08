@@ -646,9 +646,15 @@ def test_a_stale_v6_list_is_built_again(adapted, monkeypatch):
              "prior": {"chosen": ["tray", "clay", "jay", "spray"], "gold": "day",
                        "version": pp.PRIOR_VERSION}}  # fmt: skip
     (d / "draft_mc.json").write_text(json.dumps({"items": [{"id": "p-v6", "mc": stale}]}))
+    seen_mc: list = []
+    monkeypatch.setattr(po, "v6_lists", lambda m, items, built=(): seen_mc.extend(
+        it["mc"] for it in items))  # fmt: skip
     po.build_mc(MODEL, script=script, keep_built=True)
-    assert screened == [(["p-v6"], [])]  # the gold moved (day -> hay): screened again
+    # the gold moved (day -> hay): screened again, on the FRESH build, never the stale list
+    assert [m["candidates"] for m in seen_mc] == [["tray", "clay", "jay", "spray", "bay"]]
+    assert "prior" not in seen_mc[0]
     um = {"unmatched": "u", "gold": "day", "version": pp.PRIOR_VERSION}
+    assert screened == []  # (the recording fake above replaced _v6_setup's)
     assert po.v6_settled({"intermediates": ["day"]}, {"prior": um})
     assert not po.v6_settled({"intermediates": ["hay"]}, {"prior": um})
     assert not po.v6_settled({"intermediates": ["day"]}, {"prior": {**um, "version": "old"}})

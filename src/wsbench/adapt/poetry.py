@@ -540,7 +540,9 @@ def build_mc(
     doc = json.loads(out.read_text(encoding="utf-8"))
     if prior:
         for it in doc["items"]:
-            if mc_ok(prior.get(it["id"])):
+            # a v6 id never takes its stored list here: a settled one is restored just below, a
+            # voided one (moved gold, new commit, old PRIOR_VERSION) is screened on this build
+            if mc_ok(prior.get(it["id"])) and it["id"] not in v6:
                 it["mc"] = prior[it["id"]]
     for it in doc["items"]:
         if it["id"] in v6_built:
@@ -578,13 +580,14 @@ def example_v6_ids(model: str, rows: list[dict]) -> set[str]:
     bank (shipped items are the first pool already)."""
     from . import store
 
-    dropped = set((store.read_report(model).get("drops") or {}).get(FAMILY, {}))
+    dropped = set(store.report_entry(store.read_report(model).get("drops") or {}, FAMILY) or {})
     path = store.bank_file(model, FAMILY)
     shipped: set[str] = set()
     if path.is_file():
         raw = json.loads(path.read_text(encoding="utf-8"))
         shipped = {store.item_id(it) for it in (raw["items"] if isinstance(raw, dict) else raw)}
-    return {r["id"] for r in rows if r["id"] in v6_ids(rows) and (r.get("gate") or {}).get("pass")
+    v6 = v6_ids(rows)
+    return {r["id"] for r in rows if r["id"] in v6 and (r.get("gate") or {}).get("pass")
             and r["id"] not in dropped | shipped}  # fmt: skip
 
 
@@ -593,10 +596,10 @@ FAMILY_CAP = 0.20  # plan 0082: no rhyme family (line one's rhyme) over 20% of t
 
 def rhyme_family(item: dict) -> str:
     """Line one's rhyme (the CMU rhyming part of its end word, e.g. ``EY1``), else the word."""
-    from .rhyme import _parts
+    from .rhyme import rhyming_parts
 
     end = fold(item.get("line_one_end") or line_one_end(item.get("prompt", "")))
-    parts = sorted(_parts(end)) if end else []
+    parts = sorted(rhyming_parts(end)) if end else []
     return parts[0] if parts else end
 
 

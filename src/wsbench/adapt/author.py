@@ -1444,7 +1444,7 @@ def _few_shots(model: str, family: str, brief: Brief, k: int = 4, tier: str = ""
         return (it.get("adapt") or {}).get("tier") or ""
 
     if tier in brief.tier_shots:  # plan 0082: its own passes that were not dropped, else seeds
-        dropped = set((store.read_report(model).get("drops") or {}).get(family, {}))
+        dropped = set(store.report_entry(store.read_report(model).get("drops") or {}, family) or {})
         pool = [it for it in passed if ok(it) and tier_of(it) == tier
                 and store.item_id(it) not in dropped] or list(brief.tier_shots[tier])  # fmt: skip
     else:  # an opt-in tier's rows are never another tier's examples
