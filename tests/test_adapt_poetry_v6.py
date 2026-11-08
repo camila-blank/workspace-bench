@@ -612,7 +612,7 @@ def test_an_out_of_range_pick_never_passes_a_list(tmp_path):
     assert st["x1"]["chosen"] is None and "pending" in st["x1"]
 
 
-def test_a_v6_row_ships_only_on_its_screened_list():
+def test_a_v6_row_ships_only_on_its_screened_list(monkeypatch):
     mc = {"candidates": ["tray", "clay", "jay", "spray"]}
     item = {"adapt": {"tier": "v6"}, "intermediates": ["hay"], "mc": mc}
     row = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}}, "item": item}
@@ -631,6 +631,10 @@ def test_a_v6_row_ships_only_on_its_screened_list():
     assert not po.row_passes({**row, "item": {**item, "qwen_commits": {"jay": 2}}})
     old = {**item["mc"], "prior": {**item["mc"]["prior"], "version": "poetry-prior-2026-11-07"}}
     assert not po.row_passes({**row, "item": {**item, "mc": old}})  # an older rule's list
+    # a version that shipped stays accepted after a bump: the shipped list is never voided
+    monkeypatch.setattr(pp, "ACCEPTED_PRIOR_VERSIONS",
+                        frozenset({pp.PRIOR_VERSION, "poetry-prior-2026-11-07"}))  # fmt: skip
+    assert po.row_passes({**row, "item": {**item, "mc": old}})
     t1 = {"origin": "authored", "gate": {"legs": {"opus_gate": {}}},
           "item": {"adapt": {"tier": "t1"}, "mc": mc}}  # fmt: skip
     assert po.row_passes(t1)  # plan 0075 rows unchanged

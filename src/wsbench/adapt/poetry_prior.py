@@ -12,6 +12,10 @@ from typing import Any
 from .gate import fold
 
 PRIOR_VERSION = "poetry-prior-2026-11-08b"  # v2: word-kind tags, kind-matched lists
+# a v6 list stands (ships, is never rebuilt) only under one of these versions; a later bump
+# keeps every version that has SHIPPED on any set here, so shipped lists are never voided
+# (plan 0082 §2.2.7); round-1 pilot versions (2026-11-07, 2026-11-08) never shipped
+ACCEPTED_PRIOR_VERSIONS = frozenset({PRIOR_VERSION})
 RANK_MODEL = "claude-opus-5-5"
 RANK_DRAWS = 2
 N_DISTRACTORS = 4

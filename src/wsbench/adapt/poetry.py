@@ -624,7 +624,7 @@ def v6_current(item: dict, mc: dict | None) -> bool:
 
     prior = (mc or {}).get("prior") or {}
     chosen = prior.get("chosen")
-    if not chosen or prior.get("version") != pp.PRIOR_VERSION:  # an older rule's list: rebuilt
+    if not chosen or prior.get("version") not in pp.ACCEPTED_PRIOR_VERSIONS:  # rebuilt
         return False
     return fold(gold_of(item)) == prior.get("gold") and distractors({**item, "mc": mc}) == list(
         chosen
@@ -642,7 +642,7 @@ def v6_settled(item: dict, mc: dict | None) -> bool:
     if prior.get("unmatched"):
         from . import poetry_prior as pp
 
-        return prior.get("version") == pp.PRIOR_VERSION and prior.get("gold") in (
+        return prior.get("version") in pp.ACCEPTED_PRIOR_VERSIONS and prior.get("gold") in (
             None,
             fold(gold_of(item)),
         )
