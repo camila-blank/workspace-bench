@@ -166,7 +166,12 @@ one. The counts are verified by the script and stated in the PR:
 | qwen3.5-4b | 463 | 54 | 409 |
 | qwen3.5-9b | 513 | 49 | 464 |
 | qwen3.6-35b-a3b | 547 | 116 | 431 |
-| qwen3.5-2b / qwen3.5-0.8b | 44 / 0 | 0 | unchanged (already ooc) |
+| qwen3.5-2b / qwen3.5-0.8b | 44 / 0 | 0 | unchanged (already ooc); header entry only |
+
+qwen3.5-2b and qwen3.5-0.8b shipped no frac item. Their header still lists the variant (0
+items), so only the header moves: `frac` goes to `removed_variants`, `report.json` gets `target`
+480 and a `plan_0083` note with `dropped_frac` 0. The plan is unchanged, so no lineage step is
+recorded and no floor changes.
 
 For each set with frac items:
 
@@ -214,6 +219,11 @@ edited to pass: this plan is amended first.
     `pick["fracadd"]`, with the expectations unchanged.
   - `test_arith_plan_full_is_grid_lite_is_56_60`: `596` -> `480`.
   - `test_arith_lite_file_is_complete_over_the_bank`: `n_calls == 596` -> `480`.
+  - `test_registered_readme_and_dry_run`: `n_items_without_readouts == 592` -> `476`. This is
+    the bank size minus the 4 example items, and it was found on the first full run.
+- `tests/golden/capable_questions.json`: the `arithmetic_intermediates.n` count `596` -> `480`.
+  The question text, the first id, the ask and the golds are unchanged. This was found on the
+  first full run, and the golden pins the number of items `wsbench capable` asks.
 - `examples/readouts/arithmetic_intermediates.jsonl`: the three `frac-000` rows become rows of
   the kept item `fracadd-000` (variant cell L56 −8, which they already include), with their
   sample text unchanged. They remain the undecided case.
@@ -254,9 +264,9 @@ edited to pass: this plan is amended first.
 
 ## 9. Implementation shape
 
-One idempotent script, `scripts/drop_frac_0083.py`, performs §1, §2, §4, §5 and §6 from the
-main-branch state and prints the per-set counts. It refuses to run twice: if the old bank is
-gone, it exits. Code, tests and docs are edited by hand.
+One re-runnable script, `scripts/drop_frac_0083.py`, does §1, §2, §4, §5 and §6 and prints the
+per-set counts. Each part runs only while its input still has the variant: the registered part
+while `items.json` exists, and each set while its header lists `frac`. Code, tests and docs are edited by hand.
 
 ## 10. Coordination
 
