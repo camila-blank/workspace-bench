@@ -85,6 +85,7 @@ def registered() -> dict[str, Any]:
     kept, gone = split(raw["items"])
     new = {k: v for k, v in raw.items() if k != "items"}
     drop_header(new)
+    new["source"] = f"{new['source']}; 13 since plan 0083 removed frac (2026-11-08)"
     new["bank_version"] = 2
     new["items"] = kept
     dump(V2, new, indent_of(V1))
@@ -139,8 +140,8 @@ def ati(gone: set[str]) -> None:
                 e["reader_routes"][a] = {i: v for i, v in r.items() if i not in gone}
     e["bank_sha"] = ti.bank_fingerprint(FAM)
     e["rederived_from"] = (
-        "panel-v2 over the 596-item bank (plan 0083: 116 frac items dropped; kept items' "
-        "verdicts unchanged)"
+        f"{e.get('rederived_from')} -> panel-v2 over the 596-item bank -> plan 0083: the 116 "
+        "frac items dropped (kept items' verdicts unchanged)"
     )
     out = rederive(data)
     for k, v in out.items():
@@ -241,8 +242,13 @@ def adapted(model_dir: Path, k_reg: int) -> dict[str, Any] | None:
         rep_path = model_dir / "report.json"
         rep = json.loads(rep_path.read_text(encoding="utf-8"))
         n = len(raw["items"])
-        rep["families"][FAM]["target"] = k_reg
-        rep["families"][FAM]["plan_0083"] = {"dropped_frac": 0, "before": n, "after": n}
+        e = rep["families"][FAM]
+        before = {k: e.get(k) for k in ("target", "n_original", "n_original_gated")}
+        e["target"] = k_reg
+        for key in ("n_original", "n_original_gated"):
+            if isinstance(e.get(key), int):
+                e[key] = k_reg
+        e["plan_0083"] = {"dropped_frac": 0, "before": n, "after": n, "fields_before": before}
         dump(rep_path, rep, indent_of(rep_path))
         return {"before": n, "after": n, "frac": 0, "floors": [], "header_only": True}
     old_rows = plan_rows_under(model_dir, FAM)
@@ -265,19 +271,58 @@ def adapted(model_dir: Path, k_reg: int) -> dict[str, Any] | None:
     rep = json.loads(rep_path.read_text(encoding="utf-8"))
     e = rep["families"][FAM]
     e[reads.LINEAGE_KEY] = [*(e.get(reads.LINEAGE_KEY) or []), step]
+    n_gen = sum(
+        1 for it in raw["items"]
+        if it["name"] in gone and (it.get("adapt") or {}).get("origin") == "generated"
+    )  # fmt: skip
+    before = {k: e.get(k) for k in ("n_items", "target", "n_new", "n_original",
+                                    "n_original_gated", "n_original_pass")}  # fmt: skip
     e["n_items"] = len(kept)
     e["target"] = k_reg
+    if isinstance(e.get("n_new"), int):
+        e["n_new"] -= n_gen
+    for key in ("n_original", "n_original_gated"):  # every registered original was gated
+        if isinstance(e.get(key), int):
+            e[key] = k_reg
     if "bank" in e:
         e["bank"] = f"evals/{FAM}/items_v2.json"
     if "bank_version" in e:
         e["bank_version"] = 2
-    e["plan_0083"] = {"dropped_frac": len(gone), "before": len(raw["items"]), "after": len(kept)}
+    e["plan_0083"] = {
+        "dropped_frac": len(gone),
+        "dropped_generated": n_gen,
+        "dropped_original": len(gone) - n_gen,
+        "before": len(raw["items"]),
+        "after": len(kept),
+        "fields_before": before,
+        "n_original_pass": "still counts the frac originals that passed the subject's gate (the "
+        "gate logs are box-local, so it is not recomputed)",
+    }
     dump(rep_path, rep, indent_of(rep_path))
     fl = []
     for rel in FLOOR_FILES:
         fl += floors(model_dir / rel, gone, len(gone))
     return {"before": len(raw["items"]), "after": len(kept), "frac": len(gone), "floors": fl,
             "status": e.get("status"), "plan_sha": step["to"]}  # fmt: skip
+
+
+OLD_PV = "arith-free-2026-10-30+exact-int+keys-union+generic-r7"
+
+
+def restamp(path: Path) -> None:
+    """The recomputed stock summary floor carries the bank-v2 result stamp (``PROMPT_VERSION``
+    gained ``+bank-v2``), so it is drawn beside bank-v2 rows only."""
+    from wsbench.evals.arithmetic_intermediates.prompts import PROMPT_VERSION
+
+    if not PROMPT_VERSION.startswith(OLD_PV + "+bank-v2"):
+        raise SystemExit(f"unexpected PROMPT_VERSION {PROMPT_VERSION!r}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    e = data[FAM]
+    if not str(e.get("instrument", "")).startswith(OLD_PV + "+digest"):
+        raise SystemExit(f"unexpected floor instrument {e.get('instrument')!r}")
+    e["instrument"] = PROMPT_VERSION + e["instrument"][len(OLD_PV) :]
+    dump(path, data, indent_of(path))
+    print("  stock floor restamped", e["instrument"])
 
 
 def main() -> None:
@@ -288,6 +333,7 @@ def main() -> None:
         for name in ("prompt_only_summary.json", "prompt_only.json"):
             for line in floors(base / name, reg["gone"], len(reg["gone"])):
                 print("  stock floor", line)
+        restamp(base / "prompt_only_summary.json")
     else:  # registered part applied: only sets still carrying the variant are processed
         reg = {"n_after": len(json.loads(V2.read_text(encoding="utf-8"))["items"])}
     summary = {}

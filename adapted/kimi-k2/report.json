@@ -14,8 +14,8 @@
   },
   "arithmetic_intermediates": {
    "target": 480,
-   "n_original": 596,
-   "n_original_gated": 596,
+   "n_original": 480,
+   "n_original_gated": 480,
    "n_original_pass": 591,
    "n_items": 443,
    "n_new": 0,
@@ -152,8 +152,19 @@
    ],
    "plan_0083": {
     "dropped_frac": 116,
+    "dropped_generated": 0,
+    "dropped_original": 116,
     "before": 559,
-    "after": 443
+    "after": 443,
+    "fields_before": {
+     "n_items": 559,
+     "target": 596,
+     "n_new": 0,
+     "n_original": 596,
+     "n_original_gated": 596,
+     "n_original_pass": 591
+    },
+    "n_original_pass": "still counts the frac originals that passed the subject's gate (the gate logs are box-local, so it is not recomputed)"
    }
   },
   "association": {

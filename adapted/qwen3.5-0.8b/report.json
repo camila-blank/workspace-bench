@@ -18,8 +18,8 @@
   "arithmetic_intermediates": {
    "status": "ooc",
    "target": 480,
-   "n_original": 596,
-   "n_original_gated": 596,
+   "n_original": 480,
+   "n_original_gated": 480,
    "n_original_pass": 0,
    "n_items": 0,
    "n_new": 0,
@@ -32,7 +32,12 @@
    "plan_0083": {
     "dropped_frac": 0,
     "before": 0,
-    "after": 0
+    "after": 0,
+    "fields_before": {
+     "target": 596,
+     "n_original": 596,
+     "n_original_gated": 596
+    }
    }
   },
   "relational_multihop": {

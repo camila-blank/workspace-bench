@@ -3,11 +3,11 @@
   "arithmetic_intermediates": {
    "status": "partial",
    "target": 480,
-   "n_original": 596,
-   "n_original_gated": 596,
+   "n_original": 480,
+   "n_original_gated": 480,
    "n_original_pass": 585,
    "n_items": 449,
-   "n_new": 15,
+   "n_new": 11,
    "n_candidates_gated": 84,
    "change": "new items from t0; structural role: 55% -> 58%; first step >= 100: 24% -> 25%",
    "freeze_notes": [
@@ -140,8 +140,19 @@
    ],
    "plan_0083": {
     "dropped_frac": 116,
+    "dropped_generated": 4,
+    "dropped_original": 112,
     "before": 565,
-    "after": 449
+    "after": 449,
+    "fields_before": {
+     "n_items": 565,
+     "target": 596,
+     "n_new": 15,
+     "n_original": 596,
+     "n_original_gated": 596,
+     "n_original_pass": 585
+    },
+    "n_original_pass": "still counts the frac originals that passed the subject's gate (the gate logs are box-local, so it is not recomputed)"
    }
   },
   "chain_intermediates": {
