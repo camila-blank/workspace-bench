@@ -2,6 +2,7 @@
 the generator, select / freeze and every adapted set (with each set's drop-only lineage)."""
 
 import json
+import os
 import random
 from pathlib import Path
 
@@ -66,7 +67,7 @@ def test_adapted_sets_have_no_frac(d, monkeypatch, real_families):
     assert note["before"] - note["dropped_frac"] == note["after"]
     if note["dropped_frac"] == 0:  # the variant was in the header only: plan unchanged
         return
-    for k in list(__import__("os").environ):
+    for k in list(os.environ):
         if k.startswith(registry.BANK_FILE_ENV_PREFIX):
             monkeypatch.delenv(k)
     monkeypatch.setenv(registry.BANK_ROOT_ENV, str(d))

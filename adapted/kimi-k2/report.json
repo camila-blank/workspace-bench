@@ -16,7 +16,7 @@
    "target": 480,
    "n_original": 480,
    "n_original_gated": 480,
-   "n_original_pass": 591,
+   "n_original_pass": 475,
    "n_items": 443,
    "n_new": 0,
    "n_candidates_gated": 0,
@@ -164,7 +164,7 @@
      "n_original_gated": 596,
      "n_original_pass": 591
     },
-    "n_original_pass": "still counts the frac originals that passed the subject's gate (the gate logs are box-local, so it is not recomputed)"
+    "n_original_pass": "minus the frac originals this set shipped (every shipped original passed), capped at n_original: an upper bound, since frac originals that passed but did not ship are not known here (box-local gate logs)"
    }
   },
   "association": {

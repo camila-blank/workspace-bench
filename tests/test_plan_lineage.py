@@ -5,6 +5,7 @@ dropped items' cells removed. Everything else refuses as before."""
 
 import copy
 import json
+import os
 
 import pytest
 
@@ -21,7 +22,7 @@ FAM = "association"
 @pytest.fixture
 def mdir(tmp_path, monkeypatch, real_families):
     monkeypatch.setattr(store, "model_dir", lambda model, root=None: tmp_path / model)
-    for k in list(__import__("os").environ):
+    for k in list(os.environ):
         if k.startswith(registry.BANK_FILE_ENV_PREFIX):
             monkeypatch.delenv(k)
     monkeypatch.delenv(registry.BANK_ROOT_ENV, raising=False)
@@ -235,7 +236,7 @@ def _arith_readouts(tmp_path, ids, sha):
 
 @pytest.fixture
 def noroot(monkeypatch, real_families):
-    for k in list(__import__("os").environ):
+    for k in list(os.environ):
         if k.startswith(registry.BANK_FILE_ENV_PREFIX):
             monkeypatch.delenv(k)
     monkeypatch.delenv(registry.BANK_ROOT_ENV, raising=False)

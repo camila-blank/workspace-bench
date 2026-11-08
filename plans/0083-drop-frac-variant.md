@@ -224,8 +224,11 @@ For each set with frac items:
   - Count fields:
     - `n_new` decreases by the generated frac items.
     - `n_original` and `n_original_gated` become 480: every registered original was gated.
-    - `n_original_pass` cannot be recomputed, because the gate logs are box-local. It is kept,
-      and the `plan_0083` note says that it still counts the frac originals that passed.
+    - `n_original_pass` loses the frac originals the set shipped (every shipped original
+      passed), capped at 480. This is an upper bound: frac originals that passed but did not
+      ship are unknown, because the gate logs are box-local. It is exact for deepseek-v4-pro
+      (all 596 passed). It keeps `n_original_pass <= n_original` for the viewer's percentage
+      (review 1).
     - The note records `dropped_generated`, `dropped_original` and every changed field's value
       before the change (`fields_before`).
 - **Floor check (report-only, no refill):** plan 0066's ooc bound is `have < target / 2` = 240.
