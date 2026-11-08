@@ -558,7 +558,8 @@ def stored_shas(path: Path) -> set[str]:
     if not path.exists():
         return set()
     out = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # split on "\n" only, never splitlines(): a sample may hold a raw U+2028 (valid inside JSON)
+    for line in path.read_text(encoding="utf-8").split("\n"):
         if line.strip():
             try:
                 out.add(json.loads(line)["row_sha"])
@@ -695,7 +696,7 @@ def assemble(args: argparse.Namespace) -> None:
         src = store_path(Path(args.store), args.subject, args.arm, fam)
         cells: dict[str, list[dict[str, Any]]] = {}
         if src.exists():
-            for line in src.read_text(encoding="utf-8").splitlines():
+            for line in src.read_text(encoding="utf-8").split("\n"):
                 if line.strip():
                     try:
                         d = json.loads(line)
