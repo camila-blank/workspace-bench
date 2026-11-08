@@ -17,6 +17,14 @@
     "St Mark's Campanile"
    ]
   },
+  "basic-au-t1-w100c0-brh-ent-bldg-utzon-venue": {
+   "readout": [
+    "Oslo Opera House",
+    "Copenhagen Opera House",
+    "Guangzhou Opera House",
+    "Royal Opera House"
+   ]
+  },
   "basic-au-t1-w100c0-brh-ent-law-boyle": {
    "readout": [
     "Charles's law",
@@ -32,6 +40,21 @@
     "Gottfried Wilhelm Leibniz"
    ]
   },
+  "basic-au-t1-w100c0-brh-ent-physics-fermion-rule": {
+   "readout": [
+    "Hund's rule",
+    "Aufbau principle",
+    "Le Chatelier's principle"
+   ]
+  },
+  "basic-au-t1-w100c0-brh-ent-physics-siren-pitch": {
+   "readout": [
+    "Compton effect",
+    "Zeeman effect",
+    "Coriolis effect",
+    "photoelectric effect"
+   ]
+  },
   "basic-au-t1-w100c0-brh-ent-synd-trisomy": {
    "readout": [
     "Edwards syndrome",
@@ -44,6 +67,284 @@
    "readout": [
     "Treaty of Trianon",
     "Treaty of Sèvres"
+   ]
+  },
+  "basic-au-t1-w100c0-brh-ent-waterway-atlantic-med": {
+   "readout": [
+    "Strait of Messina",
+    "Strait of Bonifacio",
+    "Strait of Otranto"
+   ]
+  },
+  "basic-au-t1-w100c1-brh-ent-phys-current-voltage-law": {
+   "readout": [
+    "Faraday's law",
+    "Ampère's law",
+    "Lenz's law"
+   ]
+  },
+  "basic-au-t1-w100c1-brh-ent-uscw-pennsylvania-1863": {
+   "readout": [
+    "Battle of Chancellorsville",
+    "Battle of Shiloh"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-agincourt-1415": {
+   "readout": [
+    "Battle of Crécy",
+    "Battle of Poitiers",
+    "Battle of Verneuil",
+    "Battle of Bosworth"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-arizona-gorge": {
+   "readout": [
+    "Bryce Canyon",
+    "Glen Canyon",
+    "Hells Canyon",
+    "Black Canyon"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-charles-gas-law": {
+   "readout": [
+    "Avogadro's law",
+    "Graham's law",
+    "Henry's law"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-eiffel-landmark": {
+   "readout": [
+    "Sacré-Cœur",
+    "Montparnasse Tower"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-h2so4": {
+   "readout": [
+    "nitric acid",
+    "hydrochloric acid",
+    "phosphoric acid",
+    "acetic acid"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-heliocentric-astronomer": {
+   "readout": []
+  },
+  "basic-au-t1-w101c0-brh-ent-hooke-elasticity": {
+   "readout": [
+    "Snell's law",
+    "Faraday's law"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-lowest-lake": {
+   "readout": [
+    "Red Sea",
+    "Black Sea"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-mona-lisa-painter": {
+   "readout": [
+    "Michelangelo Buonarroti",
+    "Sandro Botticelli",
+    "Raffaello Sanzio",
+    "Andrea del Verrocchio"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-origin-of-species-author": {
+   "readout": [
+    "Gregor Mendel",
+    "Thomas Huxley",
+    "Joseph Hooker",
+    "Richard Owen"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-quantum-position-momentum": {
+   "readout": [
+    "Fermat's principle",
+    "Mach's principle",
+    "Huygens–Fresnel principle",
+    "Bohr complementarity principle"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-romanov-house": {
+   "readout": [
+    "House of Rurik",
+    "House of Hohenzollern"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-trafalgar-1805": {
+   "readout": [
+    "Battle of the Nile",
+    "Battle of Copenhagen",
+    "Battle of Cape St Vincent",
+    "Battle of Camperdown"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-turner-monosomy": {
+   "readout": [
+    "Noonan syndrome",
+    "Marfan syndrome"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-waitangi-1840": {
+   "readout": [
+    "Treaty of Kanagawa",
+    "Treaty of Guadalupe Hidalgo",
+    "Treaty of Fort Laramie"
+   ]
+  },
+  "basic-au-t1-w101c0-brh-ent-westphalia-1648": {
+   "readout": [
+    "Peace of Augsburg",
+    "Peace of Prague",
+    "Peace of Nijmegen",
+    "Peace of the Pyrenees"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-archimedes-principle": {
+   "readout": [
+    "Pascal's principle",
+    "Huygens' principle",
+    "Fermat's principle"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-austrian-imperial-family": {
+   "readout": [
+    "House of Hohenzollern",
+    "House of Wittelsbach",
+    "House of Bourbon",
+    "House of Luxembourg"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-babur-founded-state": {
+   "readout": [
+    "Delhi Sultanate",
+    "Maratha Empire",
+    "Vijayanagara Empire",
+    "Sur Empire"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-bartholdi-harbor-colossus": {
+   "readout": [
+    "Christ the Redeemer",
+    "The Motherland Calls",
+    "Mount Rushmore"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-chukotka-alaska-passage": {
+   "readout": [
+    "Davis Strait",
+    "Hudson Strait",
+    "Cook Strait",
+    "Bass Strait"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-continental-congress-1776-document": {
+   "readout": [
+    "Bill of Rights",
+    "Federalist Papers"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-ecuador-tortoise-archipelago": {
+   "readout": [
+    "Marquesas Islands",
+    "Juan Fernández Islands",
+    "Falkland Islands",
+    "Revillagigedo Islands"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-genoese-navigator-1492": {
+   "readout": [
+    "Amerigo Vespucci",
+    "John Cabot",
+    "Bartolomeu Dias"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-h2o2-bleach-compound": {
+   "readout": [
+    "potassium permanganate",
+    "calcium hypochlorite",
+    "chlorine dioxide"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-han-chinese-ruling-house": {
+   "readout": [
+    "Sui dynasty",
+    "Song dynasty"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-hubble-recession-law": {
+   "readout": [
+    "Planck's law",
+    "Wien's law",
+    "Kirchhoff's law",
+    "Titius–Bode law"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-khufu-wonder-monument": {
+   "readout": [
+    "Pyramid of Menkaure"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-marfan-fibrillin-disorder": {
+   "readout": [
+    "Ehlers–Danlos syndrome",
+    "Loeys–Dietz syndrome",
+    "Klinefelter syndrome",
+    "Stickler syndrome"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-mexican-american-war-peace": {
+   "readout": [
+    "Treaty of Velasco",
+    "Treaty of Córdoba",
+    "Treaty of Fort Laramie"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-nahco3-leavening-agent": {
+   "readout": [
+    "sodium carbonate",
+    "calcium carbonate",
+    "magnesium hydroxide",
+    "ammonium carbonate"
+   ]
+  },
+  "basic-au-t1-w101c1-brh-ent-thermopylae-pass-stand": {
+   "readout": []
+  },
+  "basic-au-t1-w101c2-brh-ent-athenian-victory-490bc": {
+   "readout": [
+    "Battle of Mycale",
+    "Battle of Artemisium"
+   ]
+  },
+  "basic-au-t1-w101c2-brh-ent-avogadro-gas-law": {
+   "readout": [
+    "Gay-Lussac's law",
+    "Dalton's law",
+    "Graham's law",
+    "Henry's law"
+   ]
+  },
+  "basic-au-t1-w101c2-brh-ent-khmer-temple-on-flag": {
+   "readout": [
+    "Preah Vihear",
+    "Banteay Srei",
+    "Ta Prohm",
+    "Preah Khan"
+   ]
+  },
+  "basic-au-t1-w101c2-brh-ent-manchu-imperial-house": {
+   "readout": [
+    "Song dynasty",
+    "Sui dynasty",
+    "Jin dynasty"
+   ]
+  },
+  "basic-au-t1-w101c2-brh-ent-soviet-exit-ww1-agreement": {
+   "readout": [
+    "Treaty of Trianon",
+    "Treaty of Sèvres",
+    "Treaty of Neuilly"
    ]
   }
  }
