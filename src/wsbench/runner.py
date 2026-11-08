@@ -142,6 +142,8 @@ def judge_family(
         result.extras["ati_n_ids"] = len(ati["ids"])  # the macro's ATI count (plan 0071 §1a)
         result.extras["ati_judge_model"] = ati.get("judge_model")
         result.extras["ati_gate"] = ati.get("gate", "plan-0014")
+        if result.extras["ati_gate"] == text_inversion.GATE_VERSION:  # plan 0085: registered only
+            result.extras["ati_subset"] = text_inversion.SUBSET_VERSION
         if ati.get("provisional"):  # a reduced-panel gate (decision R1-ATI): say which readers
             result.extras["ati_provisional"] = True
         if ati.get("provisional") or ati.get("status_order"):  # reduced panel, even if cleared
