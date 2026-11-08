@@ -1553,6 +1553,7 @@ def author(model: str, family: str, tier: str, n: int, steer: str = "", wave: in
     for call in range((n + per - 1) // per):
         k = min(per, n - wrote)
         brief = render_brief(model, family, tier, k, steer, made)
+        effort: str | None = None  # the model default first
         while True:
             seen = session.pushed
             try:
@@ -1560,7 +1561,22 @@ def author(model: str, family: str, tier: str, n: int, steer: str = "", wave: in
                     model=AUTHOR_MODEL,
                     max_tokens=32000,
                     messages=[{"role": "user", "content": brief}],
+                    **(
+                        {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+                        if effort
+                        else {}
+                    ),
                 )
+                # a hard brief (multihop t2) can spend all 32k tokens thinking and write no text;
+                # ask once more at low effort instead of keeping an empty call (2026-11-08)
+                has_text = any(blk.type == "text" and blk.text.strip() for blk in msg.content)
+                if effort is None and msg.stop_reason == "max_tokens" and not has_text:
+                    usage = getattr(msg, "usage", None)  # the empty call is still spend
+                    tok_in += int(getattr(usage, "input_tokens", 0) or 0)
+                    tok_out += int(getattr(usage, "output_tokens", 0) or 0)
+                    print(f"  call {call}: no text after max_tokens of thinking; low-effort retry")
+                    effort = "low"
+                    continue
                 break
             except anthropic.AuthenticationError as e:
                 if not session.refresh(seen):  # no newer token in the Dict
