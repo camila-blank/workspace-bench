@@ -46,7 +46,8 @@ Decisions (Camila, 2026-11-08):
   iff every reader failed every draw. That run's template, ids and statuses never reached the repo.
 
 Verified before writing this plan (no API calls): `text_inversion._gate_panel` on main, run over
-that run's stored `judged/<reader>/draw{d}` with the `mmh_bridge` template registered, returns
+that run's stored `judged/<reader>/draw{d}` (box-local `/root/tmp/wsb-out/ati4-mmh/ti`; the ids
+and summary are in `final64/ati4/mmh_extra`) with the `mmh_bridge` template registered, returns
 exactly the 22 ids in the same order. It reports `n_bank` 283, `n_invertible` 261,
 `n_unverified` 0, `instrument` `mmh-2026-11-06+mmh-forms-v3+bank-v2` and `bank_sha` `b0ec05ce...`.
 Both of the last two equal main's current values; the bank is unchanged since 64fef706.

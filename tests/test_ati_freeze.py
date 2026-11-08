@@ -151,6 +151,7 @@ def test_adapted_rows_are_never_stale_by_subset_version():
     """The definition is Qwen's: an adapted set's row is not checked against it."""
     r = _row("poetry", 40, ti.ADAPTED_GATE_VERSION, ati_subset="ati-subset-v1")
     assert macro([r])["families"] == ["poetry"]
+    assert "ati_subset" not in macro([r])  # an adapted report names no Qwen definition
 
 
 def test_full_bank_macro_carries_no_subset_version():

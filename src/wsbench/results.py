@@ -396,7 +396,7 @@ def macro(
     ``"n<20 (ATI)"`` (plan 0071), unless it is an ``ATI_MACRO_EXCEPTIONS`` row (plan 0085). An
     ATI-scoped row stamped with another subset definition (``extras.ati_subset`` present and not
     ``text_inversion.SUBSET_VERSION``) is excluded, reason ``"stale ATI subset (<v>)"``; with any
-    ATI-scoped row the result carries ``ati_subset``."""
+    registered-panel ATI row the result carries ``ati_subset``."""
     if superseded is None or held_out is None or removed is None:
         from wsbench import registry  # lazy: registry imports this module
 
@@ -463,9 +463,14 @@ def macro(
             included.append(r)
     value = sum(r.value for r in included) / len(included) if included else None  # type: ignore[misc]
     out = {"value": value, "families": [r.family for r in included], "excluded": excluded}
-    if any(r.config.get("scope") == ATI_SCOPE for r in results):
-        from wsbench.baselines import text_inversion  # lazy: text_inversion imports registry
+    from wsbench.baselines import text_inversion  # lazy: text_inversion imports registry
 
+    # the definition is Qwen3.6-27B's: named only beside a registered-panel ATI row
+    if any(
+        r.config.get("scope") == ATI_SCOPE
+        and r.extras.get("ati_gate") == text_inversion.GATE_VERSION
+        for r in results
+    ):
         out["ati_subset"] = text_inversion.SUBSET_VERSION
     return out
 
