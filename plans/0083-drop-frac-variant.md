@@ -45,9 +45,11 @@ Every other variant stays, including the fraction variants that are healthy (`fr
     `CALL_VERSION_SUMMARY`, `CALL_VERSION_BATCH` or the digest fingerprint, all unchanged. The
     kept items' judge prompts are byte-identical, so cached calls are reused: a re-score is
     cache-only.
-  - A pre-0083 `results.json` (596 items) now carries a stamp that is not the registered one,
-    so it is not `pinned_instrument` and no bank-v2 floor is drawn beside it. Old and new
-    results therefore cannot mix silently (critique 1, issue 2).
+  - A pre-0083 `results.json` (596 items) now carries a different stamp from a bank-v2 one.
+    The summary floor matchers, `results.alt_judge_matches` and `scripts/summary_mode_compare.py`
+    therefore never pair it with bank-v2 rows or floors (critique 1, issue 2). The native
+    frozen-cell stamp is kept for the ATI gate, so only `n_items` tells a 596-item frozen-cell
+    result from a 480-item one.
   - `NATIVE_PROMPT_VERSION` (native frozen cell = `text_inversion.gate_instrument`) is **not**
     changed. Otherwise the ATI entry's instrument check would exit 2 before reaching
     `NotInScope`; the entry's `bank_sha` already guards the bank.
@@ -197,7 +199,8 @@ script and stated in the PR:
 
 qwen3.5-2b and qwen3.5-0.8b shipped no frac item. Their header still lists the variant (0
 items), so only the header moves: `frac` goes to `removed_variants`, `report.json` gets `target`
-480 and a `plan_0083` note with `dropped_frac` 0. The plan is unchanged, so no lineage step is
+480, `bank` / `bank_version` -> `items_v2.json` / 2 and a `plan_0083` note with `dropped_frac`
+0. The plan is unchanged, so no lineage step is
 recorded and no floor changes.
 
 For each set with frac items:

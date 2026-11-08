@@ -248,6 +248,10 @@ def adapted(model_dir: Path, k_reg: int) -> dict[str, Any] | None:
         for key in ("n_original", "n_original_gated"):
             if isinstance(e.get(key), int):
                 e[key] = k_reg
+        for key, val in (("bank", f"evals/{FAM}/items_v2.json"), ("bank_version", 2)):
+            if key in e:
+                before[key] = e[key]
+                e[key] = val
         e["plan_0083"] = {"dropped_frac": 0, "before": n, "after": n, "fields_before": before}
         dump(rep_path, rep, indent_of(rep_path))
         return {"before": n, "after": n, "frac": 0, "floors": [], "header_only": True}
