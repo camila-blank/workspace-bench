@@ -24,6 +24,7 @@ READER_KEYS = (
     "olens_v2@rand1", "mlnla@rand1", "jlens@rand1",
     "yesno_olens@rand1", "yesno_mlnla@rand1", "yesno_jlens@rand1",
 )  # fmt: skip
+ADAPTED_DATE_TOL = 0.10  # gw ccut.V2_GATE_TOL
 GATE_KEYS = ("n_pairs", "day_auroc", "obscurity_auroc", "expected_auroc", "prior_fame_auroc",
              "share_I_later", "cell_excess", "pass")  # fmt: skip
 KEEP = (
@@ -58,14 +59,16 @@ def _adapted_header(frozen: dict, items: list, sha: str, gw_commit: str, adapt: 
         "metric": m["definition"],
         "flag": m["flag"],
         "read_span": "prompt",
-        "date_matched": frozen["date_matched"],
+        # plan 0084 R19: date-matched = the date checks (day AUROC, cell excess within the gw v2
+        # tolerance); the gate's rating AUROCs stay in ``date_leak`` as measurements
+        "date_matched": bool(
+            abs(leak["final"]["day_auroc"] - 0.5) <= ADAPTED_DATE_TOL
+            and leak["final"]["cell_excess"] <= ADAPTED_DATE_TOL
+        ),
         "date_leak": {k: leak["final"][k] for k in GATE_KEYS},
         "gw_judge_prompts_sha256": m["judge_prompts_sha256"],
         "reference_results": frozen["reference_results"],
         "prompt_only_baseline": frozen["prompt_only_baseline"],
-        # the subject's ship bar (prompt-only predictors, date checks) and per-stage funnel
-        "leak_checks": {k: v for k, v in (frozen.get("leak_checks") or {}).items()
-                        if k not in ("stratified", "ratings")},
         "funnel": frozen.get("funnel"),
         "adapt": adapt,
     }

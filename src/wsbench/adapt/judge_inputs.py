@@ -1820,11 +1820,20 @@ _add(
         (
             _NAME,
             _req("pair_id", COPY, "hinted_cutoff/judge.py:pairs_of"),
-            _req("role", SUBJECT, "hinted_cutoff/judge.py:pairs_of",
-                 "I/N from the subject's behaviour (plan 0084: gw ccut v2 re-run on it)"),
+            _req(
+                "role",
+                SUBJECT,
+                "hinted_cutoff/judge.py:pairs_of",
+                "I/N from the subject's behaviour (plan 0084: gw ccut v2 re-run on it)",
+            ),
             _req("cluster", COPY, "hinted_cutoff/judge.py:pairs_of", "I-twin event cluster"),
-            _req("positions", SUBJECT, "hinted_cutoff/judge.py:run",
-                 "the subject's prompt token indices", probe=_p_hc_positions),
+            _req(
+                "positions",
+                SUBJECT,
+                "hinted_cutoff/judge.py:run",
+                "the subject's prompt token indices",
+                probe=_p_hc_positions,
+            ),
             _req("text", COPY, "readplan.py hinted_cutoff branch"),
             _req("input_ids", SUBJECT, "readplan.py hinted_cutoff branch", "prompt-only ids"),
             _req("n_prompt", SUBJECT, "readplan.py hinted_cutoff branch"),
@@ -2228,10 +2237,11 @@ def _bank_pairs(items: list[Mapping[str, Any]]) -> dict[str, list[str]]:
                     "(hinted_cutoff/judge.py:pairs_of fail)"
                 ]
         elif len({len(m.get("positions") or []) for m in members}) != 1:
+            counts = [len(m.get("positions") or []) for m in members]
             for m in members:  # plan 0084: the length-equalized twins read the same count
                 out[item_id(m)] = [
-                    f"exit: pair {pid!r} twins read {[len(m.get('positions') or []) for m in members]} "
-                    "positions; equalization (gw render.equalize) gives both the same count"
+                    f"exit: pair {pid!r} twins read {counts} positions; equalization "
+                    "(gw render.equalize) gives both the same count"
                 ]
     return out
 

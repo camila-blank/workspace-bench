@@ -72,8 +72,15 @@ def main() -> None:
         for (n, temp, top_p, mt), rs in groups.items():
             for i in range(0, len(rs), a.batch):
                 part = rs[i : i + a.batch]
-                asks = [Ask(item_id=r["key"], leg="ccut", max_tokens=mt,
-                            messages=({"role": "user", "content": r["user"]},)) for r in part]  # fmt: skip
+                asks = [
+                    Ask(
+                        item_id=r["key"],
+                        leg="ccut",
+                        max_tokens=mt,
+                        messages=({"role": "user", "content": r["user"]},),
+                    )
+                    for r in part
+                ]
                 # one seed per batch: the runner's seed + the row offset (RemoteRunner.sample)
                 runner.seed = int(part[0]["seed"]) % (2**31)
                 t0 = time.time()
@@ -82,13 +89,26 @@ def main() -> None:
                     samples = []
                     for t in texts:
                         ids = list(tok(t, add_special_tokens=False)["input_ids"])
-                        samples.append({"text": t, "finish": finish_of(len(ids), mt),
-                                        "token_ids": ids})  # fmt: skip
-                    f.write(json.dumps({"key": r["key"], "prompt_token_ids": runner.prompt_ids(ask),
-                                        "samples": samples}, ensure_ascii=False) + "\n")  # fmt: skip
+                        samples.append(
+                            {"text": t, "finish": finish_of(len(ids), mt), "token_ids": ids}
+                        )
+                    f.write(
+                        json.dumps(
+                            {
+                                "key": r["key"],
+                                "prompt_token_ids": runner.prompt_ids(ask),
+                                "samples": samples,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
                 f.flush()
-                print(f"[gen] n={n} batch {i // a.batch + 1}: {len(part)} rows in "
-                      f"{time.time() - t0:.0f}s", flush=True)  # fmt: skip
+                print(
+                    f"[gen] n={n} batch {i // a.batch + 1}: {len(part)} rows in "
+                    f"{time.time() - t0:.0f}s",
+                    flush=True,
+                )
 
 
 if __name__ == "__main__":

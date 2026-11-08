@@ -41,7 +41,9 @@ def _add_guess(ccut, gap: float) -> None:
     from pathlib import Path
 
     out = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("out_dir="))
-    table = {q: r.get("guess") for q, r in json.loads((Path(out) / "obscure.json").read_text()).items()}
+    table = {
+        q: r.get("guess") for q, r in json.loads((Path(out) / "obscure.json").read_text()).items()
+    }
 
     @dataclasses.dataclass(frozen=True)
     class Cand(ccut.Cand):
@@ -82,16 +84,19 @@ def main() -> None:
     if gap := os.environ.get("HC_GUESS_GAP"):
         _add_guess(ccut, float(gap))
     s = subjects.get(os.environ.get("HC_SUBJECT", "glm-5.3"))
-    tok = subjects.load_tokenizer(s.hf_id, s.revision, s.tokenizer_dir, s.chat_template,
-                                  s.trust_remote_code)  # fmt: skip
+    tok = subjects.load_tokenizer(
+        s.hf_id, s.revision, s.tokenizer_dir, s.chat_template, s.trust_remote_code
+    )
     import ccut_stages
 
     ccut_stages._TOK = tok
     if os.environ.get("HC_CONFIRM_ALL") == "1":
 
-        def confirm_all(cfg, d, bnk, passed, keys, lens):  # noqa: ARG001
-            return ([k for k in keys if passed[k]["kind"] == "I"],
-                    [k for k in keys if passed[k]["kind"] == "N"])  # fmt: skip
+        def confirm_all(cfg, d, bnk, passed, keys, lens):
+            return (
+                [k for k in keys if passed[k]["kind"] == "I"],
+                [k for k in keys if passed[k]["kind"] == "N"],
+            )
 
         ccut_stages._confirm_pick_v2 = confirm_all
     mod = importlib.import_module(mod_name)

@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 import ccut_stages as cs
-
 from global_workspace.olens_suite.cf_influence import ccut
 
 
@@ -35,8 +34,13 @@ def main() -> None:
             continue
         if r["unknown"] > ccut.BASE_MAX_UNKNOWN:
             continue
-        kind = ("I" if r["correct"] <= ccut.BASE_I_MAX_CORRECT
-                else "N" if r["correct"] >= ccut.V2_BASE_N_MIN_CORRECT else None)  # fmt: skip
+        kind = (
+            "I"
+            if r["correct"] <= ccut.BASE_I_MAX_CORRECT
+            else "N"
+            if r["correct"] >= ccut.V2_BASE_N_MIN_CORRECT
+            else None
+        )
         if kind and (c := cs._v2_cand(q, obs)) is not None:
             by[kind].append(c)
     pi, pn = ccut.pairable_qids(by["I"], by["N"], ccut.V2Match(), template=False)
@@ -44,17 +48,24 @@ def main() -> None:
     n = int(a.get("n", 150))
     rng = random.Random(20261108)
     # every base-pairable candidate first, then the rest of each kind (seeded) up to n, half I
-    keep: dict[str, str] = {q: "I" for q in pi} | {q: "N" for q in pn}
+    keep: dict[str, str] = dict.fromkeys(pi, "I") | dict.fromkeys(pn, "N")
     rest = {k: sorted({c.qid for c in by[k]} - set(keep)) for k in ("I", "N")}
     for k in ("I", "N"):
         rng.shuffle(rest[k])
     while len(keep) < n and (rest["I"] or rest["N"]):
-        k = "I" if (sum(v == "I" for v in keep.values()) <= len(keep) / 2 and rest["I"]) or not rest["N"] else "N"
+        k = (
+            "I"
+            if (sum(v == "I" for v in keep.values()) <= len(keep) / 2 and rest["I"])
+            or not rest["N"]
+            else "N"
+        )
         keep[rest[k].pop()] = k
     cands = {q: {"kind": k, "base_correct": items[q]["correct"]} for q, k in sorted(keep.items())}
     cs._dump(out / "base_cands.json", cands)
-    print(f"[pilot] kept {sum(k == 'I' for k in keep.values())} I, "
-          f"{sum(k == 'N' for k in keep.values())} N")  # fmt: skip
+    print(
+        f"[pilot] kept {sum(k == 'I' for k in keep.values())} I, "
+        f"{sum(k == 'N' for k in keep.values())} N"
+    )
 
 
 if __name__ == "__main__":
