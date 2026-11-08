@@ -151,3 +151,14 @@ def test_install_refuses_a_set_that_failed_the_leak_checks(tmp_path, monkeypatch
     monkeypatch.setattr(subjects, "get", lambda _m: type("S", (), {"hf_id": "org/Model"})())
     with pytest.raises(SystemExit, match="leak checks did not pass"):
         hc.run("m", str(p), gw_commit="c0")
+
+
+def test_stock_floor_reads_every_hinted_cutoff_position():
+    """Plan 0084: an unflagged twin with a missing read cell is undecided, so the stock floor of
+    hinted_cutoff reads every read position (registered spans <= 62)."""
+    from wsbench.adapt import floors
+
+    assert floors.FAMILY_MAX_POS["hinted_cutoff"] >= 62
+    assert floors.subsample(list(range(60)), cap=floors.FAMILY_MAX_POS["hinted_cutoff"]) == list(
+        range(60)
+    )
