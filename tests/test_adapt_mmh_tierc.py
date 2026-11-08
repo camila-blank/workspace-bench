@@ -492,7 +492,7 @@ def test_epoch_round_two_counts_only_the_failed_draw_for_the_base(ws, tmp_path, 
 
     monkeypatch.setattr(mmh, "bar_prefix", spy)
     sel = [r["id"] for r in mmh.select_rows(MODEL, rows, 283)]
-    assert seen["b0"] == {"blind": [0], "described": [0]}
+    assert seen["b0"] == {"blind": [0] * mmh.RUNS, "described": [0] * mmh.RUNS}
     assert len(sel) > len(base) and mmh._ext(MODEL)["state"] == "open"
 
 

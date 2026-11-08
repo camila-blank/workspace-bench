@@ -46,3 +46,20 @@ def test_epoch_measurement_is_five_runs_and_drops_only_two_run_leakers(tmp_path,
     assert rec["pass"] and rec["leak_rule"] == "r58-runs" and rec["runs"] == 5
     assert rec["tierc_leakers"] == ["c1iv0000"] and rec["kept_one_run"] == ["c1iv0001"]
     assert len(rec["run_rates"]) == 5 and rec["n"] == len(ids)
+
+
+def test_confirm_keeps_the_base_rule_for_final_leakers(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(store, "model_dir", lambda model, root=None: tmp_path / model)
+    base, _tc, _old, _rows = tc_tests._setup(n_tc=0)
+    tc_tests._freeze([r["item"] for r in base])
+    lk = json.loads((mmh.work_dir(MODEL) / "lucky_screen.json").read_text())
+    lk.pop("final")
+    store.write_json(mmh.work_dir(MODEL) / "lucky_screen.json", lk)
+    hits = {r["id"]: dict(ZERO) for r in base}
+    hits["b0"] = dict(LEAK)  # one run, the per-run test: a base confirm leaker as before (R10)
+    _write_baseline(tmp_path / "c1", hits)
+    rec = mmh.confirm(MODEL, str(tmp_path / "c1"))
+    lk = json.loads((mmh.work_dir(MODEL) / "lucky_screen.json").read_text())
+    assert rec["leakers"] == ["b0"] and lk["final"]["leakers"] == ["b0"]
