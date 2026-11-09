@@ -181,7 +181,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `adapted-panel-v1+qwen27b`); an adapted entry's `macro_exception` (stamped
   `extras.ati_macro_exception`) admits it below 20 on an adapted gate; `OPT_IN_ENTRIES`
   (nyt_connections) are served only with `ati_opt_in=`; `gate_adapted` refuses a file whose
-  `_source` records `gate_deviations`. Layout:  carries it over. Layout: `answers/<answerer>/draw{d}`, `readouts/<answerer>/draw{d}`,
+  `_source` records `gate_deviations`. Layout: `answers/<answerer>/draw{d}`, `readouts/<answerer>/draw{d}`,
   `judged/<answerer>/draw{d}`; the flat plan-0014 layout is still gated by its own rule
   (`_gate_legacy`). `anti_text_inversion=True` sets each family's `items` to it with
   `JudgeArgs.scope`, which `is_subset` ignores; ungated / empty families are skipped
