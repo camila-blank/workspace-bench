@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from wsbench import digest, llm, mc, mcjudge, reads, registry
 from wsbench.baselines import text_inversion
@@ -87,6 +87,17 @@ def warn_mode_change(out: Path, aggregate: str, family: str) -> None:
         )
 
 
+def ati_entry(args: Any, family: str) -> dict[str, Any]:
+    """``text_inversion.subset_entry`` of ``family`` from the ``ati_variant=`` file, with the
+    ``ati_opt_in=`` families (plan 0088)."""
+    variant = getattr(args, "ati_variant", "") or ""
+    opt_in = getattr(args, "ati_opt_in", None) or ()
+    if not variant and not opt_in:  # the default: exactly the pre-0088 call
+        return text_inversion.subset_entry(family)
+    dst = text_inversion.frozen_path(variant)
+    return text_inversion.subset_entry(family, dst, opt_in=opt_in)
+
+
 def judge_family(
     spec: EvalSpec,
     args: Options,
@@ -104,7 +115,7 @@ def judge_family(
     if spec.name not in digest.NATIVE_ONLY:  # those run native under either mode
         warn_mode_change(out, opts.get("aggregate", "native"), spec.name)
     if getattr(args, "anti_text_inversion", False):
-        ati = text_inversion.subset_entry(spec.name)
+        ati = ati_entry(args, spec.name)
         items, scope = list(ati["ids"]), text_inversion.SCOPE
     # v1.1.0: a multi-layer summary run of a non-numbers family defaults to summ_layers=layered
     if (
@@ -150,6 +161,11 @@ def judge_family(
             result.extras["ati_panel"] = ati.get("panel")
         if "argon_decisive_items" in ati:  # cleared: argon could move no item (R1-ATI argon)
             result.extras["ati_argon_decisive_items"] = ati["argon_decisive_items"]
+        # plan 0088: an opted-in family, an adapted set's macro exception
+        if spec.name in (getattr(args, "ati_opt_in", None) or ()):
+            result.extras["ati_opt_in"] = True
+        if ati.get("macro_exception") and ati.get("gate") != text_inversion.GATE_VERSION:
+            result.extras["ati_macro_exception"] = ati["macro_exception"]
     path = write_results(out, result)
     spend = result.counts.get("spend_usd", 0.0) or 0.0
     print(
@@ -381,7 +397,7 @@ def run_families(
             # checked before any preflight: an out-of-scope family is skipped, a stale or
             # missing subset entry fails (re-gate); neither spends a call
             try:
-                text_inversion.subset_entry(s.name)
+                ati_entry(args, s.name)
             except text_inversion.NotInScope as e:
                 print(f"{s.name}: skipped ({e.code})")
                 outcomes[s.name] = FamilyOutcome(s.name, "skipped", error=str(e.code))
