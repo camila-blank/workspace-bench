@@ -696,7 +696,7 @@
  "adapt": {
   "model": "qwen3.5-2b",
   "hf_id": "Qwen/Qwen3.5-2B",
-  "frozen": "2026-11-05"
+  "frozen": "2026-11-09"
  },
  "items": []
 }
