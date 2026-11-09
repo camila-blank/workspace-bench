@@ -394,3 +394,20 @@ def test_gate_guard_rejects_an_unscreened_adapted_list():
     orig = json.loads(json.dumps(MH)) | {"adapt": {"origin": "original"}}
     assert onecue.unscreened("multihop", orig) == []  # originals keep the registered list
     assert onecue.unscreened("typo_mt", MH) == []
+
+
+def test_gate_guard_spares_a_regate_of_logged_rows(mdir, monkeypatch):
+    """Round-4 critique: a regate (items=) re-lints pre-0087 gated rows; the guard applies to new
+    pending candidates only, so no shipped authored row is lint-retired by it."""
+    from wsbench.adapt import lint
+    from wsbench.adapt import run as arun
+
+    m = "qwen3.5-4b"
+    monkeypatch.setattr(lint, "lint", lambda f, it: [])
+    monkeypatch.setattr(lint, "lint_pairs", lambda f, c, logged: {})
+    monkeypatch.setattr(arun, "_gate_rows", lambda m, f, ok, *a: [store.item_id(c) for c in ok])
+    passed, _bad = arun.lint_and_gate(m, "multihop", None, 1, None, None, items=[MH])
+    assert passed == ["mh-au-nobel"]
+    store.add_candidates(m, "multihop", [MH])
+    passed, bad = arun.lint_and_gate(m, "multihop", None, 1, None, None)
+    assert passed == [] and bad == {"mc": 1}

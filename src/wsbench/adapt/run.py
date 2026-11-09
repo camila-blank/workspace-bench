@@ -267,7 +267,8 @@ def lint_and_gate(
     for c in cands:
         iid = store.item_id(c)
         problems = lint(family, c) + natural.get(iid, []) + pairs.get(iid, [])
-        problems += onecue.unscreened(family, c)  # plan 0087 A3: every pre-gate route
+        if items is None:  # plan 0087 A3: a NEW candidate from any route; a regate (items=) keeps
+            problems += onecue.unscreened(family, c)  # pre-0087 gated rows (A4 covers them)
         if problems:
             for p in problems:
                 bad[p.split(":")[0]] += 1
