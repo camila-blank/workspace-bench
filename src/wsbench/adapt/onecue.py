@@ -605,15 +605,18 @@ def repair_pending(model: str, family: str, *, ask=None) -> dict[str, int]:
         return zero
     try:
         new, n_rep, n_drop = _screen_batch(model, family, todo, ask)
-    except SystemExit:  # a call keeps failing: one candidate at a time, the failing ones rejected
-        new, n_rep, n_drop = {}, 0, 0
+    except SystemExit as first:  # a call keeps failing: one candidate at a time
+        new, n_rep, n_drop, failed = {}, 0, 0, 0
         for c in todo:
             try:
                 one, r, d = _screen_batch(model, family, [c], ask)
             except SystemExit as e:
                 one, r, d = {store.item_id(c): _reject(c, {"failed": str(e)[:300]})}, 0, 1
+                failed += 1
             new.update(one)
             n_rep, n_drop = n_rep + r, n_drop + d
+        if failed == len(todo):  # an outage, not a bad candidate: stop the wave, reject nothing
+            raise first
     mcstage._rewrite_cands(model, family, new)
     print(f"{family}: one-cue screen {len(todo)} candidates, {n_rep} repaired, {n_drop} dropped")
     return {"screened": len(todo), "repaired": n_rep, "dropped": n_drop}

@@ -484,3 +484,12 @@ def test_regate_never_readmits_a_row_the_guard_rejected(mdir, monkeypatch):
     assert arun.lint_and_gate(m, "multihop", None, 1, None, None) == ([], {"mc": 1})
     passed, bad = arun.lint_and_gate(m, "multihop", None, 1, None, None, items=[raw])
     assert passed == [] and bad == {"mc": 1}  # regate=all: still rejected
+
+
+def test_an_outage_rejects_no_candidate(mdir):
+    m = "qwen3.5-4b"
+    store.add_candidates(m, "multihop", [MH])
+    with pytest.raises(SystemExit):
+        onecue.repair_pending(m, "multihop", ask=lambda tasks, *a, **k: dict.fromkeys(tasks))
+    (row,) = store._read_jsonl(store.cand_path(m, "multihop"))
+    assert row["mc"] == MH["mc"] and "onecue" not in row["adapt"]["mc_build"]
