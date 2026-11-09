@@ -210,12 +210,14 @@ def test_fine_facts_and_labels_cache(tmp_store):
 
 # ============================================================================ stability
 def _finer(it, ds, forms=None):
+    g, c = it["intermediates"][0], it["true_intermediates"][0]
+    order = [g, c, *ds]
     return {
-        "gold": it["intermediates"][0],
-        "contrast": it["true_intermediates"][0],
+        "gold": g,
+        "contrast": c,
         "distractors": list(ds),
-        "order": [],
-        "forms": forms or {},
+        "order": order,
+        "forms": {n: [n] for n in order} | (forms or {}),
         "pool": f"{wb.MC_POOL}; distractors: kind-matched (Q1); finer (j1/1): era 1-2",
     }
 
@@ -411,8 +413,10 @@ def test_round_trip_patch_undrop_bank_freeze_rebuild(tmp_store, tmp_path, capsys
     first = by[x]["item"]["mc"]
     run.drop(MODEL, wb.FAMILY, [x], "lucky-guessing leaker, wimc1")
     pool, by = _real_bank(tmp_path, ents)
-    mc = {**first, "distractors": ["Zed One Music", "Zed Two Music",
-                                                 "Zed Tri Music", "Zed For Music"]}  # fmt: skip
+    zed = ["Zed One Music", "Zed Two Music", "Zed Tri Music", "Zed For Music"]
+    gold_contrast = [first["gold"], first["contrast"]]
+    forms = {n: first["forms"][n] for n in gold_contrast} | {n: [n] for n in zed}
+    mc = {**first, "distractors": zed, "order": [*gold_contrast, *zed], "forms": forms}
     mc["pool"] += "; finer (j1/1): era 1950-1980"
     _patch(x, {"mc": mc}, "plan 0086")
     run.undrop(MODEL, wb.FAMILY, [x])
@@ -425,7 +429,7 @@ def test_round_trip_patch_undrop_bank_freeze_rebuild(tmp_store, tmp_path, capsys
     (wb.work_dir(MODEL) / "wikidata_extra.json").write_text(json.dumps({"entities": {}}))
     assert wb.rebuild_mc(MODEL, pool=pool, registered=[], wd={}, r4={}) == ({}, [], [])
     # a later patch puts a distractor's name in the prompt: warned, never redrawn
-    bad = {**mc, "distractors": [*mc["distractors"][:3], "Zq0"]}
+    bad = {**mc, "forms": {**mc["forms"], "Zed For Music": ["Zed For Music", "Zq0"]}}
     _patch(x, {"mc": bad, "prompt": shipped[x]["prompt"]})
     shipped[x]["mc"] = bad
     (tmp_store / f"{wb.FAMILY}.json").write_text(json.dumps({"items": list(shipped.values())}))

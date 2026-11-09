@@ -39,7 +39,23 @@ def build(model: str, ids: list[str], pool: str | None, grow: bool) -> dict[str,
     rows = store.gated(model, wb.FAMILY)
     if missing := [i for i in ids if (rows.get(i) or {}).get("origin") != "generated"]:
         raise SystemExit(f"not generated gate-log rows: {missing[:5]}")
-    drops = store.report_entry(store.read_report(model).get("drops"), wb.FAMILY)
+    report = store.read_report(model)
+    drops = store.report_entry(report.get("drops"), wb.FAMILY)
+    patches = store.report_entry(report.get("patches"), wb.FAMILY)
+    # the list each id was last measured with: its last gate-log record carrying an mc, else a
+    # patched mc (a drop row is written without one)
+    old_mc: dict[str, dict] = {}
+    for line in store.gate_path(model, wb.FAMILY).read_text("utf-8").split("\n"):
+        if (
+            line.strip()
+            and (r := json.loads(line))["id"] in ids
+            and isinstance((r.get("item") or {}).get("mc"), dict)
+        ):
+            old_mc[r["id"]] = r["item"]["mc"]
+    for i in ids:
+        pmc = ((patches.get(i) or {}).get("set") or {}).get("mc")
+        if i not in old_mc and isinstance(pmc, dict):
+            old_mc[i] = pmc
     registered, wd, r4 = wb._registered_inputs(None, None, None)
     extra, _c = wb.load_extra_labels(model, wd)
     if not extra.exists():
@@ -59,7 +75,9 @@ def build(model: str, ids: list[str], pool: str | None, grow: bool) -> dict[str,
     pre: dict[str, tuple] = {}
     need: set[str] = set()
     for iid in ids:
-        it = copy.deepcopy(rows[iid]["item"])
+        # the item as freeze ships it: an earlier patch's other fields applied (never its mc)
+        prior = {k: v for k, v in ((patches.get(iid) or {}).get("set") or {}).items() if k != "mc"}
+        it = {**copy.deepcopy(rows[iid]["item"]), **copy.deepcopy(prior)}
         got = wb.kind_eligible(it, opts, wd, kinds, ents, reg)
         if got is None or isinstance(got, str):
             pre[iid] = (it, "no category" if got is None else "no kind key", None)
@@ -88,8 +106,7 @@ def build(model: str, ids: list[str], pool: str | None, grow: bool) -> dict[str,
     labels = wb.fine_labels(model, dim_q)
     out: dict[str, dict] = {}
     for iid, (it, st, elig) in pre.items():
-        row = rows[iid]
-        rec = {"status": st, "drop": drops.get(iid), "old_mc": (row["item"].get("mc") or None),
+        rec = {"status": st, "drop": drops.get(iid), "old_mc": old_mc.get(iid),
                "n_kind": len(elig or [])}  # fmt: skip
         if st == "ok":
             topic = topics.get(wb._mc_category(it, kinds) or "", "")
