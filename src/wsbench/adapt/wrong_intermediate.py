@@ -2121,6 +2121,9 @@ def bank(
                         and mc_reusable(item, old_mc, opts, wd, kinds)):  # fmt: skip
                     mc = copy.deepcopy(old_mc)  # a measured kind-matched list stays as it is
                 elif make_mc is build_mc:
+                    if old is not None and is_finer(old_mc):  # plan 0086: never silent
+                        print(f"[wb bank] WARNING {name}: its finer list no longer fits the item "
+                              "(finer_belongs); redrawn here, re-patch or audit it")  # fmt: skip
                     mc = build_mc(item, opts, wd, topics.get(cat or "", ""), kinds, ents=ents,
                                   reg=reg_opts)  # fmt: skip
                 else:
