@@ -215,9 +215,11 @@ facts seeded into `wikidata_fine.json` (the pilot fetched no extra labels: its l
 the shared `wd`). Every list must equal the pilot's measured list (distractors, order, forms; only
 the `mc.pool` text differs). A mismatch stops the GLM ship, and the option pool is then compared
 with the pilot's `ctx.pkl.gz` `opts` to tell a pool difference from a draw difference. The
-re-bank's diff against the previous gate-log state is read per id:
-`album_performer-Q5327201-formed_year` is in main's `drops` while its last gate-log record still
-passes (a catch-up record, not a 0086 change; it does not ship either way).
+re-bank's diff against the previous gate-log state is read per id. Besides the 23 flips to pass,
+it wrote catch-up records for three ids that were already in main's `drops` while their last
+gate-log record still passed (`namesake-Q14929723-birth_year`,
+`painting_creator-Q26899274-death_city`, `painting_creator-Q17493299-birth_year`). None ships
+either way, so they are not 0086 changes.
 
 ## 3. Tests (offline, fakes only; new file `tests/test_wi_finer.py`)
 
