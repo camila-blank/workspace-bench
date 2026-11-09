@@ -413,6 +413,16 @@ def macro(
     modes = sorted({str(r.config.get("reads", "full")) for r in results})
     if len(modes) > 1:  # plan 0032 §2.6.8: a macro never blends reads=full and reads=lite rows
         raise SystemExit(f"macro: results mix reads modes {modes}; report one mode at a time")
+    ati_gates = sorted(
+        {
+            str(r.extras.get("ati_gate"))
+            for r in results
+            if r.config.get("scope") == ATI_SCOPE
+            and r.extras.get("ati_gate") in _adapted_ati_gates()
+        }
+    )
+    if len(ati_gates) > 1:  # plan 0088: one adapted macro is one ATI subset definition
+        raise SystemExit(f"macro: ATI rows mix adapted gates {ati_gates}; report one at a time")
     # a summary-mode run (plan 0020) averages summary rows only, never a blend with native ones
     summary_run = any(r.config.get("aggregate") == "summary" for r in results)
     for r in results:
@@ -472,19 +482,31 @@ def macro(
         for r in results
     ):
         out["ati_subset"] = text_inversion.SUBSET_VERSION
+    if ati_gates:  # plan 0088: which adapted subset (A vs a variant such as +qwen27b)
+        out["ati_gate"] = ati_gates[0]
     return out
+
+
+def _adapted_ati_gates() -> tuple[str, ...]:
+    from wsbench.baselines import text_inversion  # lazy: text_inversion imports registry
+
+    return text_inversion.ADAPTED_GATES
 
 
 def _ati_exception(r: FamilyResult) -> bool:
     """Plan 0085: an ``ATI_MACRO_EXCEPTIONS`` row on the registered panel gate that judged every
-    gated id (a limit= smoke run, or an adapted set's row, is not one)."""
+    gated id (a limit= smoke run, or an adapted set's row, is not one); plan 0088: or an adapted
+    gate's row stamped ``extras.ati_macro_exception`` that judged every gated id."""
     from wsbench.baselines import text_inversion  # lazy: text_inversion imports registry
 
-    return (
-        r.family in ATI_MACRO_EXCEPTIONS
-        and r.extras.get("ati_gate") == text_inversion.GATE_VERSION
-        and r.n_items >= r.extras.get("ati_n_ids", r.n_items)
-    )
+    if r.n_items < r.extras.get("ati_n_ids", r.n_items):
+        return False  # a limit= smoke run is never an exception
+    gate = r.extras.get("ati_gate")
+    if r.family in ATI_MACRO_EXCEPTIONS and gate == text_inversion.GATE_VERSION:
+        return True
+    # plan 0088: an adapted set's exceptions come from its own ATI file (``macro_exception`` on
+    # the entry, stamped by the runner); never on the registered gate
+    return gate in text_inversion.ADAPTED_GATES and bool(r.extras.get("ati_macro_exception"))
 
 
 def _stale_ati_subset(r: FamilyResult) -> str | None:
@@ -502,7 +524,8 @@ def _stale_ati_subset(r: FamilyResult) -> str | None:
 def _stale_ati_gate(r: FamilyResult) -> str | None:
     """The ``extras.ati_gate`` of an ATI-scoped row gated under no current panel gate (absent,
     ``plan-0014`` or a retired panel rule), else None. Current = ``text_inversion.BANK_SHA_GATES``:
-    the registered ``GATE_VERSION`` and an adapted set's ``ADAPTED_GATE_VERSION`` (plan 0079)."""
+    the registered ``GATE_VERSION``, an adapted set's ``ADAPTED_GATE_VERSION`` (plan 0079) and
+    its ``ADAPTED_QWEN27B_GATE_VERSION`` variant (plan 0088)."""
     from wsbench.baselines import text_inversion  # lazy: text_inversion imports registry
 
     gate = r.extras.get("ati_gate")
@@ -662,6 +685,8 @@ def markdown_table(
         pad = " — |" * (len(cols) + (alt_judge is not None))
         # plan 0085: which strict-ATI subset definition the macro applied
         sub = f" ({macro_row['ati_subset']})" if macro_row.get("ati_subset") else ""
+        if macro_row.get("ati_gate"):  # plan 0088: an adapted set's subset definition
+            sub += f" ({macro_row['ati_gate']})"
         lines.append(
             f"| **macro** | pass_rate | {_fmt(macro_row.get('value'))} | — | {n_fam} families{sub} "
             f"| — |{pad} — | — | excluded: {excl or 'none'} |"
