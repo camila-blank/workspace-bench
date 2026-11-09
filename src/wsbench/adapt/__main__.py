@@ -13,6 +13,7 @@ refill    refill until target / ooc (plan 0066)  families= [waves=8 claude_budge
           pilot=true llm=]
 note      status + reason (+ macro exclusion)   family= [status=] [text=] [exclude_from_macro=]
 drop      audited drop: ids leave the bank (reason recorded)  family= ids=a,b reason=
+undrop    re-admit audited drops (plan 0086)                 family= ids=a,b
 patch     audited field fix on one item of the adapted copy   family= id= set='{json}' note=
 status    one line per family
 native_langs  the subject's native languages, which freeze needs   [stage=measure card=en,..
@@ -107,6 +108,7 @@ KEYS: dict[str, set[str]] = {
     "refill": {"families", "waves", "claude_budget", "gpu_minutes", "pilot", "llm"},
     "note": {"family", "status", "text", "exclude_from_macro", "refill"},
     "drop": {"family", "ids", "reason"},
+    "undrop": {"family", "ids"},
     "patch": {"family", "id", "set", "note"},
     "status": set(),
     "native_langs": {"stage", "langs", "evidence", "thinking", "families", "card", "readouts"},
@@ -268,6 +270,8 @@ def main(argv: list[str] | None = None) -> None:
                  _json_arg("refill", a.get("refill")))  # fmt: skip
     elif cmd == "drop":
         run.drop(model, a["family"], [i for i in a["ids"].split(",") if i], a["reason"])
+    elif cmd == "undrop":
+        run.undrop(model, a["family"], [i for i in a["ids"].split(",") if i])
     elif cmd == "patch":
         run.patch(model, a["family"], a["id"], json.loads(a["set"]), a["note"])
     elif cmd == "native_langs":

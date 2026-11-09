@@ -1461,6 +1461,22 @@ def drop(model: str, family: str, ids: list[str], reason: str) -> None:
         dict.fromkeys(ids, reason)))  # fmt: skip
 
 
+def undrop(model: str, family: str, ids: list[str]) -> None:
+    """Plan 0086: re-admit audited drops (the ids leave ``report.json`` ``drops[family]``); an id
+    not dropped exits and nothing is written. Record why in the item's patch note; re-bank and
+    re-run ``freeze``."""
+    dropped = store.report_entry(store.read_report(model).get("drops"), family)
+    if unknown := [i for i in ids if i not in dropped]:
+        raise SystemExit(f"undrop: not in drops[{family}]: {unknown[:5]}")
+
+    def _rm(r: dict) -> None:
+        slot = store.report_slot(r, "drops", family)
+        for i in ids:
+            slot.pop(i, None)
+
+    store.update_report(model, _rm)
+
+
 def _agentic_drop_ids(model: str, ids: list[str]) -> list[str]:
     """The ids to drop for agentic_misalignment: each must be in ``agentic/rollouts.json`` or the
     shipped ``agentic_misalignment.json``; every pair is expanded to both members (pairs atomic)."""
