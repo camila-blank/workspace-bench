@@ -97,6 +97,10 @@ and the build script asserts this.
    deviation is therefore recorded on the data the subset rests on, not only in `_source`
    (critique 1).
 
+B's wrong_intermediate, model_multihop and nyt_connections entries were merged by the
+2026-11-09 extension script and carry no `qwen_judged_complete` field (the other 18 do). Their
+`n_qwen_undecided` is 0, so nothing is lost; the field is left as gated (critique round 2).
+
 The build is a one-off script that is not committed. It is kept in the PR description as a
 summary of the steps above.
 
