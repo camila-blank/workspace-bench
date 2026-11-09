@@ -244,11 +244,12 @@ def main(argv: list[str] | None = None) -> None:
     elif cmd == "onecue":  # plan 0087
         from . import onecue
 
-        if not families or "out" not in a or "cache" not in a:
+        pend = a.get("stage") == "pending"  # the hook keeps its own cache under mc/<family>/
+        if not families or (not pend and ("out" not in a or "cache" not in a)):
             raise SystemExit(
                 f"onecue: families=, out= and cache= are required ({', '.join(onecue.FAMILIES)})"
             )
-        onecue.run(model, names, a.get("stage", "screen"), a["out"], a.get("cache"))
+        onecue.run(model, names, a.get("stage", "screen"), a.get("out", ""), a.get("cache", "-"))
     elif cmd == "nyt_connections":  # plan 0060 Phase E
         from . import nyt_connections
 

@@ -101,6 +101,7 @@ class Row:
     gold: str
     distractors: tuple[str, ...]
     gold_forms: tuple[str, ...] = ()  # every other accepted form of the gold (lint only)
+    option_forms: dict = dataclasses.field(default_factory=dict, compare=False, hash=False)
 
 
 def rows_of(family: str, item: dict[str, Any]) -> list[Row]:
@@ -121,7 +122,10 @@ def rows_of(family: str, item: dict[str, Any]) -> list[Row]:
     for role, b in lists.items():
         gold, dis = str(b.get("gold") or ""), tuple(str(d) for d in b.get("distractors") or [])
         if gold and dis:
-            out.append(Row(family, iid, role, text, gold, dis, _gold_forms(family, item, role, b)))
+            al = b.get("distractor_aliases") or {}
+            forms = {d: tuple(map(str, al.get(d) or ())) for d in dis}
+            out.append(Row(family, iid, role, text, gold, dis, _gold_forms(family, item, role, b),
+                           forms))  # fmt: skip
     return out
 
 
@@ -420,7 +424,8 @@ def repair(
     got = complete(ask, tasks, PROPOSE_SCHEMA, cache_dir / "propose.jsonl", model)
     pool: dict[Row, list[list[str]]] = {}
     for row, key in zip(rows, tasks, strict=True):
-        kept = [[d] for d in row.distractors]  # the flagged originals too: never re-proposed
+        # the flagged originals too (never re-proposed), each with its own listed forms
+        kept = [[d, *row.option_forms.get(d, ())] for d in row.distractors]
         cands: list[list[str]] = []
         for c in (got.get(key) or {}).get("candidates") or []:
             forms = [str(c.get("option") or "").strip()]
@@ -642,20 +647,23 @@ def shared_forms(cache: Path) -> dict[str, list[str]]:
 
 
 def run(model: str, families: list[str], stage: str, out: Path, cache: Path | None = None) -> None:
-    """``adapt onecue model=<m> families=<f,..> stage=screen|repair|patch out=<dir>``: the sweep
-    of a SHIPPED bank (plan 0087 A4). ``cache`` (default ``out``) holds the content-keyed calls,
-    so one cache shared across sets repairs a shared list identically."""
+    """``adapt onecue model=<m> families=<f,..> stage=screen|repair|patch out=<dir> cache=<dir>``:
+    the sweep of a SHIPPED bank (plan 0087 A4); ``cache`` (required, one for every set) holds the
+    content-keyed calls, so a shared list repairs identically. ``stage=pending`` runs the pre-gate
+    hook on pending candidates instead (no out / cache)."""
     from . import run as adapt_run
 
-    if not cache:  # plan 0087 critique: one cache for every set, so a shared list repairs alike
+    if stage == "pending":  # the pre-gate hook by hand (an `adapt mc` -> `adapt gate` route)
+        for f in families:
+            repair_pending(model, f)
+        return
+    if (
+        not cache or str(cache) == "-"
+    ):  # plan 0087 critique: one cache for every set, so a shared list repairs alike
         raise SystemExit("onecue: cache=<dir> is required (one shared cache for every set)")
     out, cache = Path(out), Path(cache)
     out.mkdir(parents=True, exist_ok=True)
     fams = [f for f in families if f in FAMILIES]
-    if stage == "pending":  # the pre-gate hook by hand (an `adapt mc` -> `adapt gate` route)
-        for f in fams:
-            repair_pending(model, f)
-        return
     if stage == "screen":
         rows = [r for f in fams for it in _shipped(model, f) for r in rows_of(f, it)]
         found = flags(rows, cache / "screen.jsonl")
@@ -714,7 +722,9 @@ def run(model: str, families: list[str], stage: str, out: Path, cache: Path | No
                     for o, nw in x["replaced"].items())  # fmt: skip
                 notes.append(f"{x['role']}: {pairs}")
             note = f"plan 0087 one-cue repair ({VERSION}): " + " | ".join(notes)
-            if prev := ((earlier.get(f) or {}).get(iid) or {}).get("note"):
+            prev = ((earlier.get(f) or {}).get(iid) or {}).get("note") or ""
+            prev = prev.split(" | plan 0087 one-cue repair")[0]  # a re-run never chains twice
+            if prev and not prev.startswith("plan 0087 one-cue repair"):
                 note = f"{prev} | {note}"  # an earlier audited patch's note is kept
             adapt_run.patch(model, f, iid, {"mc": it["mc"]}, note)
             n += 1

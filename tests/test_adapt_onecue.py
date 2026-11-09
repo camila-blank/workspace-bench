@@ -411,3 +411,19 @@ def test_gate_guard_spares_a_regate_of_logged_rows(mdir, monkeypatch):
     store.add_candidates(m, "multihop", [MH])
     passed, bad = arun.lint_and_gate(m, "multihop", None, 1, None, None)
     assert passed == [] and bad == {"mc": 1}
+
+
+def test_screen_prompt_is_pinned_to_its_version():
+    """The screen's cache key carries VERSION, not the prompt text: editing SYSTEM without a
+    VERSION bump would serve old verdicts as new ones (round-5 critique). Pin the pair."""
+    import hashlib
+
+    pinned = {"onecue-v3": "3404cacce5"}
+    h = hashlib.sha256(onecue.SYSTEM.encode()).hexdigest()[:10]
+    assert pinned.get(onecue.VERSION) == h, "bump onecue.VERSION (and this pin) with SYSTEM"
+
+
+def test_lint_reads_kept_options_aliases():
+    (row,) = onecue.rows_of("multihop", MH)
+    assert onecue.lint_candidate(row, ["爱因斯坦"], [["Albert Einstein", "爱因斯坦"]])
+    assert row.option_forms["Carl Scheele"] == ("舍勒",)
