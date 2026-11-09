@@ -260,6 +260,7 @@ def lint_and_gate(
     logged = [r["item"] for r in store.gated(model, family).values()
               if family != "user_modeling" or r["gate"].get("pass")]  # fmt: skip
     pairs = lint_pairs(family, cands, logged)
+    logged_by_id = store.gated(model, family) if items is not None else {}
     if llm is not None and cands:  # Claude available: the everyday-name screen (MT families)
         from . import natural as nat
 
@@ -267,8 +268,11 @@ def lint_and_gate(
     for c in cands:
         iid = store.item_id(c)
         problems = lint(family, c) + natural.get(iid, []) + pairs.get(iid, [])
-        if items is None:  # plan 0087 A3: a NEW candidate from any route; a regate (items=) keeps
-            problems += onecue.unscreened(family, c)  # pre-0087 gated rows (A4 covers them)
+        # plan 0087 A3: a NEW candidate from any route; a regate (items=) keeps the pre-0087
+        # gated rows (A4 covers them) but never re-admits a row this guard rejected
+        prev = ((logged_by_id.get(iid) or {}).get("gate") or {}).get("lint") or []
+        if items is None or any("not one-cue screened" in p for p in prev):
+            problems += onecue.unscreened(family, c)
         if problems:
             for p in problems:
                 bad[p.split(":")[0]] += 1

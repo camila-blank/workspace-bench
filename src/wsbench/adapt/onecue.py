@@ -1,6 +1,7 @@
 """The one-cue screen (plan 0087): a shown wrong option that ONE cue of the text the subject reads
 rules out on its own (the text names it, or a stated kind / attribute it plainly lacks)."""
 
+import copy
 import dataclasses
 import hashlib
 import json
@@ -533,8 +534,6 @@ def repair(
 def new_block(family: str, item: dict[str, Any], role: str, rep: Repair) -> dict[str, Any]:
     """The item's whole ``mc`` block with ``role``'s distractors replaced (multihop: and its
     ``distractor_aliases``, new options' forms added, replaced options' entries removed)."""
-    import copy
-
     block = copy.deepcopy(item.get("mc") or {})
     if family == "multihop":
         block["distractors"] = list(rep.distractors)
@@ -561,27 +560,79 @@ def unscreened(family: str, item: dict[str, Any]) -> list[str]:
     """The gate's guard (``run.lint_and_gate``): an adapted-only candidate of a one-cue family
     whose list never went through :func:`repair_pending` is rejected, whatever route built it."""
     ad = item.get("adapt") or {}
-    if (family in FAMILIES and ad.get("origin", "original") != "original" and item.get("mc")
-            and "onecue" not in (ad.get("mc_build") or {})):  # fmt: skip
-        return ["mc: not one-cue screened (plan 0087: `adapt onecue stage=pending` or `fill`)"]
+    screened = "onecue" in (ad.get("mc_build") or {}) and _built(family, item)
+    adapted = ad.get("origin", "original") != "original"
+    if family in FAMILIES and adapted and item.get("mc") and not screened:
+        return [
+            "mc: not one-cue screened (plan 0087: `adapt mc`, then `adapt onecue "
+            "stage=pending`, or `fill`)"
+        ]
     return []
+
+
+def _built(family: str, item: dict[str, Any]) -> bool:
+    """The family's own MC builders ran on this candidate (``adapt mc``), where it has any."""
+    from .mcstage import FAMILIES as BUILT
+
+    return family not in BUILT or bool(((item.get("adapt") or {}).get("mc_build") or {})
+                                       .get("builders"))  # fmt: skip
 
 
 def repair_pending(model: str, family: str, *, ask=None) -> dict[str, int]:
     """Screen and repair every pending ADAPTED-ONLY candidate's lists before the gate (plan 0087
-    A3); a list that cannot be repaired loses the item's ``mc``, so lint rejects it (the
-    ``mcstage`` "builder dropped it" route). Returns ``{"screened", "repaired", "dropped"}``."""
-    import datetime as dt
-
+    A3); a list that cannot be repaired (or has none to screen, or whose calls keep failing)
+    loses the item's ``mc``, so lint rejects it. A builder family's candidate waits for ``adapt
+    mc`` first. Returns ``{"screened", "repaired", "dropped"}``."""
     from . import mcstage, store
 
+    zero = {"screened": 0, "repaired": 0, "dropped": 0}
     if family not in FAMILIES:
-        return {"screened": 0, "repaired": 0, "dropped": 0}
-    todo = [c for c in store.pending(model, family)
-            if (c.get("adapt") or {}).get("origin", "original") != "original" and c.get("mc")
-            and "onecue" not in ((c.get("adapt") or {}).get("mc_build") or {})]  # fmt: skip
+        return zero
+    todo, waiting = [], 0
+    for c in store.pending(model, family):
+        ad = c.get("adapt") or {}
+        if ad.get("origin", "original") == "original" or not c.get("mc"):
+            continue
+        if "onecue" in (ad.get("mc_build") or {}):
+            continue
+        if not _built(family, c):
+            waiting += 1  # never screen a provisional list: `adapt mc` builds it first
+            continue
+        todo.append(c)
+    if waiting:
+        print(f"{family}: {waiting} candidates wait for `adapt mc` before the one-cue screen")
     if not todo:
-        return {"screened": 0, "repaired": 0, "dropped": 0}
+        return zero
+    try:
+        new, n_rep, n_drop = _screen_batch(model, family, todo, ask)
+    except SystemExit:  # a call keeps failing: one candidate at a time, the failing ones rejected
+        new, n_rep, n_drop = {}, 0, 0
+        for c in todo:
+            try:
+                one, r, d = _screen_batch(model, family, [c], ask)
+            except SystemExit as e:
+                one, r, d = {store.item_id(c): _reject(c, {"failed": str(e)[:300]})}, 0, 1
+            new.update(one)
+            n_rep, n_drop = n_rep + r, n_drop + d
+    mcstage._rewrite_cands(model, family, new)
+    print(f"{family}: one-cue screen {len(todo)} candidates, {n_rep} repaired, {n_drop} dropped")
+    return {"screened": len(todo), "repaired": n_rep, "dropped": n_drop}
+
+
+def _reject(c: dict[str, Any], rec: dict[str, Any]) -> dict[str, Any]:
+    it = copy.deepcopy(c)
+    it.pop("mc", None)
+    mb = it.setdefault("adapt", {}).setdefault("mc_build", {})
+    mb["dropped"] = True  # lint rejects it (the `adapt mc` "builder dropped it" route)
+    mb["onecue"] = {"version": VERSION, "dropped": True, **rec}
+    return it
+
+
+def _screen_batch(model: str, family: str, todo: list[dict], ask) -> tuple[dict, int, int]:
+    import datetime as dt
+
+    from . import store
+
     cache = store.model_dir(model) / "mc" / family / "onecue"
     rows = [r for c in todo for r in rows_of(family, {**c, "id": store.item_id(c)})]
     found = flags(rows, cache / "screen.jsonl", ask=ask)
@@ -591,34 +642,31 @@ def repair_pending(model: str, family: str, *, ask=None) -> dict[str, int]:
     new, n_rep, n_drop = {}, 0, 0
     grouped = by_item(rows)
     for c in todo:
-        import copy
-
         iid = store.item_id(c)
+        mine = grouped.get((family, iid), [])
+        if not mine:  # an mc with no screenable list (no gold, no distractors, no role)
+            new[iid], n_drop = _reject(c, {"at": at, "no_rows": True}), n_drop + 1
+            continue
         it = copy.deepcopy(c)
         rec: dict[str, Any] = {"version": VERSION, "at": at, "flagged": {}}
         dead = False
-        for r in grouped.get((family, iid), []):
+        for r in mine:
             if not hit[r]:
                 continue
             rec["flagged"][r.role] = sorted(hit[r])
-            rep = reps.get(r)
-            if rep is None:
+            rep_ = reps.get(r)
+            if rep_ is None:
                 dead = True
                 continue
-            it["mc"] = new_block(family, it, r.role, rep)
-            rec.setdefault("replaced", {})[r.role] = rep.replaced
+            it["mc"] = new_block(family, it, r.role, rep_)
+            rec.setdefault("replaced", {})[r.role] = rep_.replaced
         if dead:
-            it.pop("mc", None)
-            rec["dropped"] = True
-            it.setdefault("adapt", {}).setdefault("mc_build", {})["dropped"] = True  # lint rejects
-            n_drop += 1
-        elif rec["flagged"]:
-            n_rep += 1
+            new[iid], n_drop = _reject(c, rec), n_drop + 1
+            continue
+        n_rep += bool(rec["flagged"])
         it.setdefault("adapt", {}).setdefault("mc_build", {})["onecue"] = rec
         new[iid] = it
-    mcstage._rewrite_cands(model, family, new)
-    print(f"{family}: one-cue screen {len(todo)} candidates, {n_rep} repaired, {n_drop} dropped")
-    return {"screened": len(todo), "repaired": n_rep, "dropped": n_drop}
+    return new, n_rep, n_drop
 
 
 # ---------------------------------------------------------------- the sweep CLI (A4)
@@ -629,7 +677,7 @@ def _shipped(model: str, family: str) -> list[dict[str, Any]]:
 
     path = store.model_dir(model) / f"{family}.json"
     if not path.exists():
-        return []
+        raise SystemExit(f"onecue: {model} ships no {family} bank ({path})")
     raw = json.loads(path.read_text(encoding="utf-8"))
     items = raw if isinstance(raw, list) else raw.get("items") or []
     return [{**it, "id": it.get("id") or it.get("name")} for it in items]
@@ -663,7 +711,10 @@ def run(model: str, families: list[str], stage: str, out: Path, cache: Path | No
         raise SystemExit("onecue: cache=<dir> is required (one shared cache for every set)")
     out, cache = Path(out), Path(cache)
     out.mkdir(parents=True, exist_ok=True)
-    fams = [f for f in families if f in FAMILIES]
+    cache.mkdir(parents=True, exist_ok=True)
+    if bad := [f for f in families if f not in FAMILIES]:
+        raise SystemExit(f"onecue: no option lists for {bad} (have {', '.join(FAMILIES)})")
+    fams = list(families)
     if stage == "screen":
         rows = [r for f in fams for it in _shipped(model, f) for r in rows_of(f, it)]
         found = flags(rows, cache / "screen.jsonl")
@@ -692,8 +743,10 @@ def run(model: str, families: list[str], stage: str, out: Path, cache: Path | No
             for r, rep in reps.items() if rep is not None
         ]  # fmt: skip
         bad = sorted([r.family, r.id, r.role] for r, rep in reps.items() if rep is None)
-        (out / "repairs.json").write_text(json.dumps(good, ensure_ascii=False, indent=1) + "\n")
-        (out / "no_list.json").write_text(json.dumps(bad, ensure_ascii=False, indent=1) + "\n")
+        (out / "repairs.json").write_text(json.dumps(good, ensure_ascii=False, indent=1) + "\n",
+                                          encoding="utf-8")  # fmt: skip
+        (out / "no_list.json").write_text(json.dumps(bad, ensure_ascii=False, indent=1) + "\n",
+                                          encoding="utf-8")  # fmt: skip
         print(f"{model}: {len(good)} lists repaired, {len(bad)} lists not repairable")
     elif stage == "patch":
         # a list with no same-frame replacement keeps its shipped options (Camila 2026-11-09);
@@ -706,13 +759,14 @@ def run(model: str, families: list[str], stage: str, out: Path, cache: Path | No
         earlier = store.read_report(model).get("patches") or {}
         grouped: dict[tuple[str, str], list[dict]] = {}
         for x in reps:
-            if (x["family"], x["id"], x["role"]) not in bad:
+            if (x["family"], x["id"], x["role"]) not in bad and x["replaced"]:
                 grouped.setdefault((x["family"], x["id"]), []).append(x)
         n = 0
         for (f, iid), group in grouped.items():
             if (f, iid) not in items:
                 continue
-            it = dict(items[(f, iid)])
+            prev_set = copy.deepcopy(((earlier.get(f) or {}).get(iid) or {}).get("set") or {})
+            it = {**items[(f, iid)], **prev_set}  # an earlier audited patch's fields stay
             notes = []
             for x in group:
                 rep = Repair(x["distractors"], x["aliases"], x["replaced"])
@@ -726,7 +780,7 @@ def run(model: str, families: list[str], stage: str, out: Path, cache: Path | No
             prev = prev.split(" | plan 0087 one-cue repair")[0]  # a re-run never chains twice
             if prev and not prev.startswith("plan 0087 one-cue repair"):
                 note = f"{prev} | {note}"  # an earlier audited patch's note is kept
-            adapt_run.patch(model, f, iid, {"mc": it["mc"]}, note)
+            adapt_run.patch(model, f, iid, {**prev_set, "mc": it["mc"]}, note)
             n += 1
         print(f"{model}: {n} items patched; {len(bad)} lists kept as shipped (no same-frame list)")
     else:

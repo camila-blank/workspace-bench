@@ -20,7 +20,7 @@ MH = {
         "distractors": ["Albert Einstein", "Jöns Jacob Berzelius", "Isaac Newton", "Carl Scheele"],
         "distractor_aliases": {"Albert Einstein": ["爱因斯坦"], "Carl Scheele": ["舍勒"]},
     },
-    "adapt": {"origin": "authored"},
+    "adapt": {"origin": "authored", "mc_build": {"builders": ["build_multihop_mc"]}},
 }
 # a screen reply flags these options, citing these cues ("Mars" is never in the text)
 BAD = {"Albert Einstein": "Swedish", "Isaac Newton": "Swedish", "Pierre Curie": "Mars"}
@@ -290,7 +290,12 @@ def test_patch_stage_records_whole_mc_block(mdir, monkeypatch, tmp_path):
         store.model_dir(m) / "report.json",
         {
             "patches": {
-                "multihop": {"mh-au-nobel": {"set": {"mc": {}}, "note": "mcleak-r5 earlier"}}
+                "multihop": {
+                    "mh-au-nobel": {
+                        "set": {"mc": MH["mc"], "hidden_rivals": {"bridge": ["x"]}},
+                        "note": "mcleak-r5 earlier",
+                    }
+                }
             }
         },
     )
@@ -301,6 +306,7 @@ def test_patch_stage_records_whole_mc_block(mdir, monkeypatch, tmp_path):
     assert (model, fam, iid) == (m, "multihop", "mh-au-nobel")
     assert fields["mc"]["distractors"][0] == "Svante Arrhenius"
     assert fields["mc"]["gold"] == "Alfred Nobel" and fields["mc"]["bridge_type"] == "person"
+    assert fields["hidden_rivals"] == {"bridge": ["x"]}  # an earlier patch's other field stays
     assert "Albert Einstein -> Svante Arrhenius (cue 'Swedish')" in note
     assert note.startswith("mcleak-r5 earlier | plan 0087")  # the earlier patch's note is kept
     with pytest.raises(SystemExit):
@@ -389,7 +395,7 @@ def test_a_failed_call_never_passes(tmp_path):
 def test_gate_guard_rejects_an_unscreened_adapted_list():
     assert onecue.unscreened("multihop", MH)  # adapted-only, has mc, never screened
     screened = json.loads(json.dumps(MH))
-    screened["adapt"]["mc_build"] = {"onecue": {"flagged": {}}}
+    screened["adapt"]["mc_build"]["onecue"] = {"flagged": {}}
     assert onecue.unscreened("multihop", screened) == []
     orig = json.loads(json.dumps(MH)) | {"adapt": {"origin": "original"}}
     assert onecue.unscreened("multihop", orig) == []  # originals keep the registered list
@@ -427,3 +433,54 @@ def test_lint_reads_kept_options_aliases():
     (row,) = onecue.rows_of("multihop", MH)
     assert onecue.lint_candidate(row, ["爱因斯坦"], [["Albert Einstein", "爱因斯坦"]])
     assert row.option_forms["Carl Scheele"] == ("舍勒",)
+
+
+def test_builder_family_waits_for_adapt_mc(mdir):
+    """Review of #454: a multihop / basic_readout_mt candidate is screened only after `adapt mc`
+    built its list; the gate rejects it until then."""
+    m = "qwen3.5-4b"
+    raw = json.loads(json.dumps(MH)) | {"id": "mh-au-raw", "adapt": {"origin": "authored"}}
+    store.add_candidates(m, "multihop", [raw])
+    assert onecue.repair_pending(m, "multihop", ask=Fake())["screened"] == 0
+    assert onecue.unscreened("multihop", raw)
+    ml = {
+        "id": "m",
+        "prompt": "q",
+        "mc_roles": ["concept"],
+        "mc": {"concept": {"gold": "g", "distractors": ["x"]}},
+        "adapt": {"origin": "authored", "mc_build": {"onecue": {}}},
+    }
+    assert onecue.unscreened("multilingual_mt", ml) == []  # no builder family: none needed
+
+
+def test_failing_calls_reject_only_that_candidate(mdir):
+    m = "qwen3.5-4b"
+    ok = json.loads(json.dumps(MH)) | {"id": "mh-au-ok"}
+    sick = json.loads(json.dumps(MH)) | {"id": "mh-au-sick", "prompt": TEXT + " (x)"}
+    store.add_candidates(m, "multihop", [ok, sick])
+    base = Fake(propose=["Svante Arrhenius", "Martin Klaproth"], bad={"Albert Einstein": "Swedish"})
+
+    def ask(tasks, *a, **k):
+        got = base(tasks, *a, **k)
+        return {t: (None if "(x)" in tasks[t][1] else v) for t, v in got.items()}
+
+    got = onecue.repair_pending(m, "multihop", ask=ask)
+    assert got == {"screened": 2, "repaired": 1, "dropped": 1}
+    rows = {store.item_id(c): c for c in store._read_jsonl(store.cand_path(m, "multihop"))}
+    assert "mc" in rows["mh-au-ok"] and "mc" not in rows["mh-au-sick"]
+    assert rows["mh-au-sick"]["adapt"]["mc_build"]["dropped"] is True
+
+
+def test_regate_never_readmits_a_row_the_guard_rejected(mdir, monkeypatch):
+    from wsbench.adapt import lint
+    from wsbench.adapt import run as arun
+
+    m = "qwen3.5-4b"
+    monkeypatch.setattr(lint, "lint", lambda f, it: [])
+    monkeypatch.setattr(lint, "lint_pairs", lambda f, c, logged: {})
+    monkeypatch.setattr(arun, "_gate_rows", lambda m, f, ok, *a: [store.item_id(c) for c in ok])
+    raw = json.loads(json.dumps(MH)) | {"adapt": {"origin": "authored"}}  # never screened
+    store.add_candidates(m, "multihop", [raw])
+    assert arun.lint_and_gate(m, "multihop", None, 1, None, None) == ([], {"mc": 1})
+    passed, bad = arun.lint_and_gate(m, "multihop", None, 1, None, None, items=[raw])
+    assert passed == [] and bad == {"mc": 1}  # regate=all: still rejected
