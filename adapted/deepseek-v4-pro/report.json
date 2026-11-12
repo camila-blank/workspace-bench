@@ -2112,7 +2112,19 @@
  "label": "DeepSeek-V4-Pro-0813",
  "hf_id": "deepseek-ai/DeepSeek-V4-Pro-0813",
  "n_layers": 61,
- "read_band": [],
+ "read_band": [
+  19,
+  23,
+  27,
+  31,
+  34,
+  38,
+  42,
+  46,
+  50,
+  53,
+  57
+ ],
  "gate": {
   "rule": "greedy right AND >= 8/10 (10/10 chain)"
  },

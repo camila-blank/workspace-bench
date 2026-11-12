@@ -9,6 +9,10 @@ TEMPLATES = Path(__file__).parent / "data" / "templates"  # pinned chat template
 DEFAULT_MODAL_APP = "adapt-subject-llm"  # the shared H200 app any hub-cached subject can use
 
 
+# the global-workspace xaff DeepSeek-V4-Pro reader's lens layers (gw PR #723)
+V4PRO_READ_BAND: tuple[int, ...] = (19, 23, 27, 31, 34, 38, 42, 46, 50, 53, 57)
+
+
 @dataclass(frozen=True)
 class Subject:
     key: str
@@ -271,8 +275,9 @@ SUBJECTS: dict[str, Subject] = {
             # native_langs thinking=on refuses until a thinking_template is pinned
             thinking_mode=True,
         ),
-        # plan 0060 new subjects (2026-11-03; every pin = hub main that day). No J-lens for any
-        # of the three yet: read_band=() (depth remap, no snap) until one is fitted.
+        # plan 0060 new subjects (2026-11-03; every pin = hub main that day). Kimi-K3 and Muse have
+        # no fitted lens yet: read_band=() (depth remap, no snap). DeepSeek-V4-Pro snaps to the
+        # gw xaff reader's layers (V4PRO_READ_BAND).
         # DeepSeek-V4-Pro-0813: Flash's tokenizer files byte for byte; its encoding_dsv4.py
         # differs from Flash's only in thinking-mode reasoning-effort prompts, so the chat-mode
         # render (Flash's pinned template) is identical (tests/test_adapt_new_subjects.py).
@@ -297,6 +302,9 @@ SUBJECTS: dict[str, Subject] = {
             "72e1d3230f6c080a530b0a1d46f8eb4602340597",
             modal_engine=(("moe_backend", "marlin"), ("generation_config", "vllm")),
             thinking_mode=True,  # as Flash: no thinking render pinned yet
+            # the global-workspace xaff V4-Pro reader's 11 layers (its V4PRO_TABLE: the 27B grid
+            # at the same depth, floor(+1/2)): snaps the depth remap's 30 -> 31 and 60 -> 57
+            read_band=V4PRO_READ_BAND,
         ),
         # Kimi-K3: the remote-code tokenizer overrides apply_chat_template with an XTML render
         # (encoding_k3.py), switched by ``thinking`` (enable_thinking is ignored). thinking=False
