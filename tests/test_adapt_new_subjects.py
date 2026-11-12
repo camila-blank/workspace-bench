@@ -23,7 +23,7 @@ import pytest
 from test_adapt_v4 import SYNTHETIC, FakeTok, _jinja_render, _msgs, bank_renders, ref_encode
 
 from wsbench.adapt import subjects, template
-from wsbench.adapt.subjects import SUBJECTS, TEMPLATES, modal_spec, remap_layer
+from wsbench.adapt.subjects import SUBJECTS, TEMPLATES, modal_spec, remap_layer, remap_layers
 
 ROOT = Path(__file__).resolve().parents[1]
 PRO, K3, MUSE = SUBJECTS["deepseek-v4-pro"], SUBJECTS["kimi-k3"], SUBJECTS["muse-spark-open"]
@@ -44,8 +44,12 @@ def test_registry_entries():
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4", MUSE_REV, 62, "muse")  # fmt: skip
     for s in (PRO, K3, MUSE):
         assert s.backend == "modal" and s.modal_built and s.tokenizer_dir is None
-        assert s.read_band == ()  # no J-lens yet: depth remap, no band snap
-        assert remap_layer(63, s.n_layers, s.read_band) == s.n_layers - 1
+        if s is PRO:  # the gw xaff reader's layers: the depth remap snaps onto them
+            assert s.read_band == subjects.V4PRO_READ_BAND
+            assert remap_layer(63, s.n_layers, s.read_band) == 57
+        else:
+            assert s.read_band == ()  # no fitted lens yet: depth remap, no band snap
+            assert remap_layer(63, s.n_layers, s.read_band) == s.n_layers - 1
         assert subjects.subject_for(s.hf_id, s.revision) is s
         json.dumps(modal_spec(s))
     # thinking switch and reply end: only Kimi-K3 differs from the default
@@ -621,3 +625,15 @@ def test_adapt_modal_builds_the_new_apps(monkeypatch):
     assert kw["model"] == "/vol/hf/meta-models__Muse-Spark-Open-816B-A42B-NVFP4"
     assert kw["revision"] is None and kw["tensor_parallel_size"] == 8
     assert kw["gpu_memory_utilization"] == 0.90
+
+
+def test_v4pro_read_band_snaps_the_depth_remap():
+    """32 -> round-half-even 30 -> 31, and 63 -> 60 -> 57: the 27B grid lands on the V4-Pro
+    reader's 11 layers; the frozen set's report.json carries the same band."""
+    band = subjects.V4PRO_READ_BAND
+    assert remap_layer(32, PRO.n_layers) == 30 and remap_layer(32, PRO.n_layers, band) == 31
+    assert remap_layer(63, PRO.n_layers, band) == 57
+    grid = [20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
+    assert remap_layers(grid, PRO.n_layers, band) == list(band)
+    report = json.loads((ROOT / "adapted" / "deepseek-v4-pro" / "report.json").read_text())
+    assert tuple(report["read_band"]) == band
