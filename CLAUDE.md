@@ -160,6 +160,10 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   model (`po._floor_match_key` keeps only the fallback mode), so the Sonnet 5 floors still draw
   beside Sonnet 5.5 rows. A `read_plan_bank` bank is asked and gated on its own ids only
   (`text_inversion.judged_bank_ids` / `gated_ids`).
+  `logit_lens` (plan 0071): the frozen logit-lens final-layer (L63) floor `evals/baselines/logit_lens.json`
+  (summary prompt-only entry schema + `protocol` + `ati`), written by `wsbench freeze
+  kind=logit_lens` from `layers=63` summary runs (refused otherwise; registered banks only) and
+  drawn as the report's third column by the summary prompt-only row-match rule; never a gate.
   `text_inversion` builds the anti-text-inversion subset (`evals/baselines/anti_text_inversion.json`,
   plan 0019 panel gate, which replaced plan 0014's Opus-only gate): Qwen3.6-27B + the frontier
   group (Claude slot opus/sonnet, `openai/gpt-6-astra`, `google/gemini-4-argon`) x 3 draws, each

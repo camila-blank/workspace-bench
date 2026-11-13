@@ -170,7 +170,8 @@ ATI_SCOPE = "anti_text_inversion"
 SUMMARY_LEGEND = (
     "† summarize-then-judge (one judged summary per item; the default since plan 0024). Its "
     "prompt-only floor is the summary-mode one, drawn only beside a row with the same summary "
-    "instrument and digest settings; its lucky-guessing floor is the per-item one."
+    "instrument and digest settings, as is the logit-lens L63 floor (plan 0071); its "
+    "lucky-guessing floor is the per-item one."
 )
 # a summary-floor cell: the frozen entry it rests on (None: a lucky-guessing cell, model-free of
 # the digest) and the cell text
@@ -290,8 +291,9 @@ NO_SHARED_BRACKET = frozenset({"hinted_cutoff"})
 
 
 def shared_floor_text(r: FamilyResult, entry: Mapping[str, Any] | None, text: str) -> str:
-    """A prompt-only floor cell with the floor re-taken on the ids decided by BOTH the row and
-    the floor (the frozen entry's ``decided``), and the row's own rate on them."""
+    """A summary floor cell (prompt-only or logit lens) with the floor re-taken on the ids
+    decided by BOTH the row and the floor (the frozen entry's ``decided``), and the row's own
+    rate on them."""
     if r.family in NO_SHARED_BRACKET:
         return text
     if not entry or not isinstance(entry.get("decided"), dict):
@@ -309,8 +311,8 @@ def shared_floor_text(r: FamilyResult, entry: Mapping[str, Any] | None, text: st
 OVERRIDE_LEGEND = (
     "Floors are drawn only beside rows judged by the family's current judge at its prompt version "
     "(regex-scored families excepted: their floors are regex-scored and always drawn). Summary "
-    "rows (†) draw a prompt-only floor only when the row's prompt_version, digest settings "
-    "(minus concurrency / timeout) and judge model match the frozen summary floor."
+    "rows (†) draw a prompt-only or logit-lens floor only when the row's prompt_version, digest "
+    "settings (minus concurrency / timeout) and judge model match the frozen summary floor."
 )
 
 
