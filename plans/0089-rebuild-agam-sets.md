@@ -67,6 +67,10 @@ Camila reviewed and approved these diffs before push (2026-11-15).
 
 ## Per-set build (data PRs, one per set)
 
+The build runs in a local run tree with Agam's October dirs moved aside first. So no old row is
+carried over, `run.shipped_ids` starts empty, and freeze notes list only this build's rows. Each
+data PR then replaces the whole `adapted/<m>/` dir.
+
 The order follows the 0060 phase scripts, the 0075 cycle drivers and plans 0077 / 0078 / 0084 /
 0087. It is written down in the run tree.
 

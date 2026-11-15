@@ -170,15 +170,13 @@ SUBJECTS: dict[str, Subject] = {
             backend="modal",
             thinking_mode=True,  # hub template: enable_thinking opens <think>
         ),
-        # normal-bank OLens subjects (>= 32B, 2026-10-23): gated + re-golded on the 27B bank only.
-        # model-parallel HF generation on Modal: gw-olens scripts/ola/port/adapt_mp_subject_modal.py
-        # kimi-k2: the hub tokenizer at the pinned revision (tiktoken remote code; needs the
+        # kimi-k2 (rebuilt under plan 0089): the hub tokenizer at the pinned revision (tiktoken remote code; needs the
         # ``tiktoken`` package, in the gpu extra), no longer Agam's converted
         # /workspace/agam/hf_tok/kimi-k2. Its official hub template is used as-is (no thinking),
         # so EVERY Kimi render opens with the template's default system turn ("You are Kimi, an
         # AI assistant created by Moonshot AI.") unless the ask brings its own system message;
         # sets are built fresh, so this need not match Agam's earlier gate renders. Generation:
-        # our B300:8 at TP8 (plan 0060 D2); the first load writes ~1 TB into adapt-hf-cache.
+        # vLLM on our B300:8 at TP8 (plan 0060 D2), weights from the kimi-k2 volume (as kimi-k3).
         Subject(
             "kimi-k2",
             "moonshotai/Kimi-K2-Instruct-0905",
