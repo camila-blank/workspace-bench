@@ -48,7 +48,7 @@ def _subject_from_argv(argv: list[str]) -> str:
 
 
 SUBJECT = _subject_from_argv(sys.argv) if modal.is_local() else os.environ["WSB_MP_SUBJECT"]
-SUPPORTED = ("glm-5.3", "deepseek-v4-pro", "muse-spark-open", "kimi-k3")
+SUPPORTED = ("glm-5.3", "deepseek-v4-pro", "deepseek-v4-flash", "muse-spark-open", "kimi-k3")
 
 # ------------------------------------------------------------------ Modal (per subject)
 
@@ -276,6 +276,90 @@ elif SUBJECT == "deepseek-v4-pro":
 
     def preflight_check() -> dict:
         from global_workspace.xaff.backends import v4pro  # noqa: F401
+
+        cfg = json.loads((Path(MODEL_DIR) / "config.json").read_text())
+        return {"num_hidden_layers": cfg.get("num_hidden_layers"),
+                "hc_mult": cfg.get("hc_mult"), "hidden_size": cfg.get("hidden_size")}  # fmt: skip
+
+
+elif SUBJECT == "deepseek-v4-flash":
+    # the xaff V4-Flash reader (global-workspace PR #723, xaff.backends.v4flash.load_v4_model):
+    # scripts/v4_flash/common.load_model's bf16 dequant (FineGrainedFP8 dequantize=True,
+    # device_map=auto layer-sharded, eager attention, grouped_mm experts), at FULL depth
+    # (43 blocks + hc_head + norm + lm_head), forward-only; the checkpoint Camila's s3don O-lens
+    # was trained on
+    XAFF = Path(os.environ.get("WSB_GW_XAFF", str(GW)))
+    WEIGHTS = "/vol"
+    weights_vol = modal.Volume.from_name("v4-flash")
+    REVISION = "60d8d70770c6776ff598c94bb586a859a38244f1"
+    MODEL_DIR = f"{WEIGHTS}/hf/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/{REVISION}"
+    EPHEMERAL_DISK_MB = 524_288  # Modal minimum; weights are read in place from the volume
+    GPU = ["H200:8"]  # ~531 GiB bf16 at load_v4_model's 78 GiB/GPU cap; one type per run
+    BUDGET = HIDDEN_BUDGET = 32768  # V4-Pro's (64k left GPU 0 without room for a micro-batch)
+    GW_COMMIT = (_git_commit(XAFF, ["src/global_workspace/xaff/backends"])
+                 if modal.is_local() else "")  # fmt: skip
+    _GWS = XAFF / "src/global_workspace"
+    _APP = "/root/app/src/global_workspace"
+    image = (
+        modal.Image.debian_slim(python_version="3.12")
+        .uv_pip_install(
+            "torch==2.11.0",
+            "transformers==5.11.0",
+            "kernels>=0.13,<0.14",
+            "accelerate>=1.0",
+            "safetensors>=0.8.0",
+            "huggingface_hub>=0.35",
+            "numpy>=2.3",
+            "einops>=0.8",
+        )
+        .env(
+            {
+                "PYTHONPATH": "/root/app/src",
+                "PYTHONUNBUFFERED": "1",
+                "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+                "TOKENIZERS_PARALLELISM": "false",
+                "TRANSFORMERS_DISABLE_DEEPGEMM_LINEAR": "1",
+            }
+        )
+        .add_local_file(_GWS / "__init__.py", f"{_APP}/__init__.py")
+        .add_local_file(_GWS / "xaff/__init__.py", f"{_APP}/xaff/__init__.py")
+        .add_local_file(_GWS / "xaff/backends/__init__.py", f"{_APP}/xaff/backends/__init__.py")
+        .add_local_file(_GWS / "xaff/backends/v4flash.py", f"{_APP}/xaff/backends/v4flash.py")
+        .add_local_python_source("wsbench", ignore=["**/__pycache__"])
+    )
+
+    def make_stack(extra_stops: list[int] | None = None) -> Any:
+        """``load_v4_model`` at full depth; the steer and the read are hooks on the decoder
+        block's raw mHC output ``[B, S, 4, 4096]``, whose flat 16,384-d view is the vector space
+        (``mhc_raw_flat_16384``), as V4-Pro's ``mhc_raw_flat_28672``."""
+        from global_workspace.xaff.backends.v4flash import load_v4_model
+
+        _deterministic()
+        stops, gen_check = _generation(MODEL_DIR, extra_stops)
+        model = load_v4_model(MODEL_DIR, n_layers=None)
+        cfg = json.loads((Path(MODEL_DIR) / "config.json").read_text())
+        pad = cfg.get("pad_token_id") or cfg.get("eos_token_id")
+        pad = int(pad[0] if isinstance(pad, list) else pad)
+        from transformers.cache_utils import DynamicCache
+
+        def fresh_cache() -> dict[str, Any]:  # V4-Pro's validated loop (a fresh cache per forward)
+            return {"use_cache": True, "past_key_values": DynamicCache(config=model.config)}
+
+        stack = HookStack(model, model.model.layers, stops, pad, forward_kwargs=fresh_cache)
+        f = f"{_APP}/xaff/backends/v4flash.py"
+        stack.record = {
+            "stack": "xaff V4-Flash reader (load_v4_model: bf16 dequant, grouped_mm experts, "
+            "eager attention), full depth, forward hooks on the decoder block output",
+            "subject_revision": f"deepseek-ai/DeepSeek-V4-Flash@{REVISION}",
+            "residual": "mhc_raw_flat_16384", "stop_ids": stops,
+            "generation_config_check": gen_check, "pad_id": pad,
+            "loader_sha256": {f: _sha256(f)}, "gw_commit": os.environ.get("WSB_GW_COMMIT", ""),
+            "n_blocks": len(model.model.layers), "forward": "model.model with a fresh DynamicCache",
+        }  # fmt: skip
+        return stack
+
+    def preflight_check() -> dict:
+        from global_workspace.xaff.backends import v4flash  # noqa: F401
 
         cfg = json.loads((Path(MODEL_DIR) / "config.json").read_text())
         return {"num_hidden_layers": cfg.get("num_hidden_layers"),

@@ -708,4 +708,4 @@ def test_spawned_engine_worker_reads_the_baked_spec(monkeypatch):
     m = _load_script(
         monkeypatch, ""
     )  # ADAPT_SUBJECT unset: the local path would give the shared app
-    assert m.SPEC == baked and m.PAD == 300 and m.app.name == "adapt-v4-flash"
+    assert baked == m.SPEC and m.PAD == 300 and m.app.name == "adapt-v4-flash"
