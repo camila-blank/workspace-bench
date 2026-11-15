@@ -85,7 +85,7 @@ EXTERNAL: dict[str, str] = {
     "deepseek-v4-flash": "deepseek-ai/DeepSeek-V4-Flash (284B MoE, 43 blocks, 4 mHC residual "
     "streams): scripts/adapt_introspection_mp_modal.py (plan 0067) on the xaff V4-Flash reader "
     "(global-workspace xaff.backends.v4flash.load_v4_model = scripts/v4_flash/common.py "
-    "load_model, bf16 dequant, full depth, H200:8), raw flat 16,384-d stream mode; the render is "
+    "load_model, bf16 dequant, full depth, B300:8), raw flat 16,384-d stream mode; the render is "
     "encode_messages(thinking_mode='chat'), not an HF chat template; the engine must choose "
     "the stream mode (raw 16,384-d flat vs stream sum) and record it. The earlier port under "
     "this rule was NO-GO at blocks 6/8/10 (global-workspace docs/project/experiments/"

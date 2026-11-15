@@ -5,7 +5,8 @@ sharded over containers; ``finish`` merges the shards and replays them into the 
 ``stage=measure result=`` ingests.
 
 Subjects (plan 0067 §3): ``glm-5.3`` (the vendored ``Glm53Text`` of global-workspace
-``scripts/glm53_aff``, 78 blocks + head, H200:8), ``deepseek-v4-pro`` / ``muse-spark-open`` /
+``scripts/glm53_aff``, 78 blocks + head, H200:8), ``deepseek-v4-flash`` (the xaff V4-Flash
+reader, 43 blocks + head, B300:8), ``deepseek-v4-pro`` / ``muse-spark-open`` /
 ``kimi-k3`` (the xaff readers of global-workspace PR #723 at full depth, ``WSB_GW_XAFF``; H200:8,
 H200:8, B300:8). The subject is fixed at import (Modal builds decorators then): pass
 ``--subject`` on the ``modal run`` line (or ``WSB_MP_SUBJECT``).
@@ -285,7 +286,8 @@ elif SUBJECT == "deepseek-v4-pro":
 elif SUBJECT == "deepseek-v4-flash":
     # the xaff V4-Flash reader (global-workspace PR #723, xaff.backends.v4flash.load_v4_model):
     # scripts/v4_flash/common.load_model's bf16 dequant (FineGrainedFP8 dequantize=True,
-    # device_map=auto layer-sharded, eager attention, grouped_mm experts), at FULL depth
+    # device_map=auto layer-sharded, eager attention; grouped_mm experts as the forward-only
+    # HfV4Flash reader, eager = the fallback if the load fails), at FULL depth
     # (43 blocks + hc_head + norm + lm_head), forward-only; the checkpoint Camila's s3don O-lens
     # was trained on
     XAFF = Path(os.environ.get("WSB_GW_XAFF", str(GW)))
@@ -294,8 +296,10 @@ elif SUBJECT == "deepseek-v4-flash":
     REVISION = "60d8d70770c6776ff598c94bb586a859a38244f1"
     MODEL_DIR = f"{WEIGHTS}/hf/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/{REVISION}"
     EPHEMERAL_DISK_MB = 524_288  # Modal minimum; weights are read in place from the volume
-    GPU = ["H200:8"]  # ~531 GiB bf16 at load_v4_model's 78 GiB/GPU cap; one type per run
-    BUDGET = HIDDEN_BUDGET = 32768  # V4-Pro's (64k left GPU 0 without room for a micro-batch)
+    # Camila 2026-10-11: V4-Flash always 8xB300 (~531 GiB bf16, load_v4_model's 100 GiB/GPU cap,
+    # balanced ~66-78 GiB used); one type per run
+    GPU = ["B300:8"]
+    BUDGET = HIDDEN_BUDGET = 32768  # V4-Pro's value; Flash has more headroom per GPU
     GW_COMMIT = (_git_commit(XAFF, ["src/global_workspace/xaff/backends"])
                  if modal.is_local() else "")  # fmt: skip
     _GWS = XAFF / "src/global_workspace"
