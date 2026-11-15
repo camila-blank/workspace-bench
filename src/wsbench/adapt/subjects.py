@@ -170,8 +170,8 @@ SUBJECTS: dict[str, Subject] = {
             backend="modal",
             thinking_mode=True,  # hub template: enable_thinking opens <think>
         ),
-        # kimi-k2 (rebuilt under plan 0089): the hub tokenizer at the pinned revision (tiktoken remote code; needs the
-        # ``tiktoken`` package, in the gpu extra), no longer Agam's converted
+        # kimi-k2 (rebuilt under plan 0089): the hub tokenizer at the pinned revision (tiktoken
+        # remote code; needs the ``tiktoken`` package, in the gpu extra), no longer Agam's converted
         # /workspace/agam/hf_tok/kimi-k2. Its official hub template is used as-is (no thinking),
         # so EVERY Kimi render opens with the template's default system turn ("You are Kimi, an
         # AI assistant created by Moonshot AI.") unless the ask brings its own system message;
