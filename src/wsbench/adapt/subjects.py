@@ -191,8 +191,20 @@ SUBJECTS: dict[str, Subject] = {
             trust_remote_code=True,
             modal_gpu=("B300:8",),
             modal_tp=8,
+            # plan 0089: the pinned snapshot (~1.03 TB, block FP8 as shipped) on its own volume,
+            # mounted at the default recipe's /hf (as kimi-k3), so no B300 container downloads it
+            modal_volume="kimi-k2",
+            modal_weights="hf/hub/models--moonshotai--Kimi-K2-Instruct-0905/snapshots/"
+            "ac6c49f04883bd0a0598b790693a72061c676629",
             modal_engine=(("trust_remote_code", True),),
         ),
+        # GLM-5.3-Flash (plan 0089: Agam's set rebuilt): 320B MoE (KDA linear attention + DSA
+        # sparse layers, mHC), ~328 GB FP8 as shipped. vLLM 0.31.0 serves
+        # Glm5NextForConditionalGeneration; text only (language_model_only). Tokenizer from the hub
+        # at the pinned revision; the upstream template always opens <think> at effort max, so the
+        # pinned data/templates/glm53_flash_nothink.jinja makes the same two edits as GLM-5.3's
+        # (effort low, generation prompt <|assistant|><think></think>). Weights on volume
+        # glm53-flash (hub-cache layout under /hf, as kimi-k3), TP4 on B200:4 (H200:4 fallback).
         Subject(
             "glm-5.3-flash",
             "zai-org/GLM-5.3-Flash",
@@ -201,11 +213,14 @@ SUBJECTS: dict[str, Subject] = {
             "glm5",
             "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
             backend="modal",
-            modal_app="adapt-mp-glm-5.3-flash",
-            modal_built=False,  # Agam's text-only app; not rebuilt (plan 0060 D1: GLM-5.3 instead)
-            tokenizer_dir="/workspace/agam/hf_tok/glm-5.3-flash",
-            # gw-olens' template: the upstream one always opens <think>
-            chat_template="/workspace/agam/hf_tok/glm-5.3-flash/glm5_chat_nothink.jinja",
+            modal_app="adapt-glm-5.3-flash",
+            chat_template=str(TEMPLATES / "glm53_flash_nothink.jinja"),
+            modal_gpu=("B200:4", "H200:4"),
+            modal_tp=4,
+            modal_volume="glm53-flash",
+            modal_weights="hf/hub/models--zai-org--GLM-5.3-Flash/snapshots/"
+            "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+            modal_engine=(("language_model_only", True),),
             thinking_mode=True,  # the upstream template always opens <think> (see above)
         ),
         # GLM-5.3 non-Flash (plan 0060 D1): the glm53 lens work's checkpoint, 754B MoE, d 6144.
