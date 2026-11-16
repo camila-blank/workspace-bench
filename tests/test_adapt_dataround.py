@@ -177,6 +177,35 @@ def test_class_caps_drop_the_newest_rows(mdir):
     assert "Country" not in caps
 
 
+def test_class_caps_recheck_after_the_other_cap(mdir):
+    """Country at the cap, Gender over it: Gender's drops shrink the family, so Country is
+    re-capped (20/100 would end at 20/87 = 23% after a single pass)."""
+    items = [{"name": f"c{i}", "attr_class": "Country"} for i in range(20)]
+    items += [{"name": f"g{i}", "attr_class": "Gender"} for i in range(30)]
+    items += [{"name": f"o{i}", "attr_class": "Occupation"} for i in range(50)]
+    _bank(mdir, "user_modeling", items)
+    _report(mdir)
+    caps = dr.class_caps(M)
+    n_after = 100 - len(caps["Country"]["ids"]) - len(caps["Gender"]["ids"])
+    for c in ("Country", "Gender"):
+        left = int(caps[c]["after"].split("/")[0])
+        assert left <= 0.2 * n_after and caps[c]["after"].endswith(f"/{n_after}")
+
+
+def test_role_bound_and_suffixed_keys_end_to_end(mdir, tmp_path):
+    """Per-item keys may carry a ``#<list>`` suffix; role_bound drops take both twins."""
+    items = [{"id": f"rb{i}-{t}"} for i in range(5) for t in ("ab", "ba")]
+    _bank(mdir, "role_bound_association", items)
+    _report(mdir)
+    hits = {f"rb{i}-ab#0": {} for i in range(5)}
+    hits["rb0-ab#0"] = {"blind": 5, "described": 5}
+    out = tmp_path / "out"
+    for r in ("c1_1", "c1_2"):
+        _measure(out / r, "role_bound_association", hits)
+    d = dr.decide(M, "role_bound_association", out / "c1_2" / "role_bound_association", out)
+    assert d["drop_ids"] == ["rb0-ab", "rb0-ba"]
+
+
 def _fake_stream(answer):
     def stream(prompts, *, schema, model, on_result, concurrency):
         for i, (_s, u) in enumerate(prompts):
@@ -317,7 +346,8 @@ case "$*" in
   *"--json name"*) echo {n_checks};;
   *--watch*) exit {watch_rc};;
   *"--json bucket"*) echo {green};;
-  *"pr merge"*) exit 0;;
+  *"pr view"*) echo {"a" * 40};;
+  *"pr merge"*) case "$*" in *"--match-head-commit {"a" * 40}"*) exit 0;; *) exit 9;; esac;;
 esac
 """)
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)

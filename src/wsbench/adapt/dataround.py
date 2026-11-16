@@ -119,8 +119,9 @@ def run_flags(fd: Path) -> set[str]:
     return {k for k, h in hits.items() if _flag(h, failing, blind_only)}
 
 
-# the driver's measurement dirs (plan 0075: every earlier ``c*`` / ``final*`` run counts); a
-# report-only or debug run elsewhere under the root never confirms a drop
+# the driver's measurement dirs (plan 0075: every earlier ``c*`` / ``final*`` run counts, the
+# driver's report-only ``final_report_*`` measures included); a run under any other name (an ad
+# hoc or debug measurement) never confirms a drop unless ``history=`` names it
 HISTORY = ("c*", "final*")
 
 
@@ -288,22 +289,37 @@ def _age(pos_item: tuple[int, dict]) -> tuple:
 
 def class_caps(model: str, cap: float = 0.20) -> dict[str, dict]:
     """D7: user_modeling Country and Gender at most ``cap`` of the shipped family each; the
-    newest rows above a cap drop (authored by wave, then bank order; originals last)."""
+    newest rows above a cap drop (authored by wave, then bank order; originals last). One cap's
+    drops shrink the family and can push the other class over, so it repeats until stable."""
     items = list(enumerate(shipped(model, "user_modeling")))
-    out: dict[str, dict] = {}
-    n = len(items)
-    for cls in ("Country", "Gender"):
-        rows = [x for x in items if x[1].get("attr_class") == cls]
-        # k rows leave: (g - k) / (n - k) <= cap
-        k = max(0, math.ceil((len(rows) - cap * n) / (1 - cap) - 1e-9))
-        if k:
-            gone = sorted(rows, key=_age, reverse=True)[:k]
-            ids = sorted(store.item_id(it) for _, it in gone)
-            after = f"{len(rows) - k}/{n - k}"
-            out[cls] = {"ids": ids, "before": f"{len(rows)}/{n}", "after": after}
-            items = [x for x in items if store.item_id(x[1]) not in set(ids)]
+    n0 = len(items)
+    before = {
+        c: sum(1 for _, it in items if it.get("attr_class") == c) for c in ("Country", "Gender")
+    }
+    gone: dict[str, set[str]] = {"Country": set(), "Gender": set()}
+    changed = True
+    while changed:
+        changed = False
+        for cls in ("Country", "Gender"):
             n = len(items)
-    return out
+            rows = [x for x in items if x[1].get("attr_class") == cls]
+            # k rows leave: (g - k) / (n - k) <= cap
+            k = max(0, math.ceil((len(rows) - cap * n) / (1 - cap) - 1e-9))
+            if k:
+                ids = {store.item_id(it) for _, it in sorted(rows, key=_age, reverse=True)[:k]}
+                gone[cls] |= ids
+                items = [x for x in items if store.item_id(x[1]) not in ids]
+                changed = True
+    n = len(items)
+    return {
+        c: {
+            "ids": sorted(ids),
+            "before": f"{before[c]}/{n0}",
+            "after": f"{before[c] - len(ids)}/{n}",
+        }
+        for c, ids in gone.items()
+        if ids
+    }
 
 
 D4_FAMILIES = ("multihop", "multilingual_multihop")

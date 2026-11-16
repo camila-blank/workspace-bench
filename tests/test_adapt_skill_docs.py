@@ -24,6 +24,15 @@ def test_every_documented_adapt_subcommand_exists():
     assert sorted(cmds - set(KEYS)) == []
 
 
+def test_documented_adapt_commands_take_key_value_args():
+    """The adapt CLI takes only key=value pairs: a positional ``$A <cmd> $M`` is an error."""
+    bad = re.findall(
+        r"(?:python -m wsbench\.adapt|\$A) [a-z_]+ (?!model=)\$?[A-Za-z<][^\s`|]*", _text()
+    )
+    bad = [b for b in bad if "=" not in b.split()[-1]]
+    assert bad == []
+
+
 def test_every_documented_script_exists():
     """Every ``scripts/...`` path of this repo the skills name exists (a path under a scripts/
     subdirectory this repo does not have is a global-workspace path, GW in families.md)."""

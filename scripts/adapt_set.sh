@@ -10,7 +10,8 @@
 #   loop <first> <last>  back-fill the short families, then a cycle; stops early once a cycle drops
 #                      nothing and the back-fill landed nothing (plan 0075's convergence rule)
 #   mmh <tag>          model_multihop confirm (plan 0078): one fresh lucky run + stage=confirm
-#   final [tag]        strict freeze (every family named), then one report-only lucky measure
+#   final [tag]        strict freeze (every item family named; the side-built five install
+#                      themselves), then one report-only lucky measure
 #   status             adapt status
 #
 # Environment (or ADAPT_ENV_FILE=<file> to source first):
@@ -22,9 +23,9 @@
 #   DRY_RUN=1 prints every command and runs nothing (DRY_SHORT / DRY_COUNTS / DRY_LUCKY stand in
 #   for the report-reading queries).
 set -u
-[ $# -ge 2 ] || { sed -n '2,23p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,24p' "$0"; exit 2; }
 M=$1; PHASE=$2; shift 2
-[ -n "${ADAPT_ENV_FILE:-}" ] && [ -z "${DRY_RUN:-}" ] && source "$ADAPT_ENV_FILE"
+[ -n "${ADAPT_ENV_FILE:-}" ] && source "$ADAPT_ENV_FILE"
 if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ -z "${DRY_RUN:-}" ]; then
   echo "refusing: ANTHROPIC_API_KEY is set (use WSB_ANTHROPIC_AUTH=sdk + ANTHROPIC_PROFILE)" >&2; exit 2
 fi
@@ -35,7 +36,7 @@ LOGS=${ADAPT_LOGS:-logs/adapt/$M}
 OUT=${ADAPT_OUT:-outputs/adapt/$M}
 FILL_WAVES=${FILL_WAVES:-16}; MAX_WAVES=${MAX_WAVES:-40}; LUCKY_RUNS=${LUCKY_RUNS:-2}
 ONECUE_CACHE=${ONECUE_CACHE:-$OUT/onecue_cache}
-mkdir -p "$LOGS" "$OUT" 2>/dev/null || true
+[ -z "${DRY_RUN:-}" ] && { mkdir -p "$LOGS" "$OUT" || exit 2; }
 ST="$LOGS/$PHASE.status"
 
 PROFILE_FAMS=typo_mt,relational_multihop,arithmetic_intermediates,directed_modulation,multihop,multilingual,multilingual_mt,multilingual_typo,multilingual_multihop,user_modeling,buggy_code,basic_readout,chain_intermediates,association,conjunctive_association,role_bound_association,basic_readout_mt
@@ -47,7 +48,8 @@ AU="allow_untried=mid-cycle freeze of the plan 0091 driver; the final freeze is 
 UM_STEER="Write ONLY items whose attr_class is Occupation or Religion: NO Country and NO Gender items at all. Never name a city, town, suburb or any place. Prefer Occupation and Religion values not yet used; vary topics widely (no repeated scene for one value)."
 AUTH_RACE="invalid_grant\|WorkloadIdentityError\|OAuth access token has been revoked\|'type': 'authentication_error'"
 
-say() { echo "$(date -u +%FT%TZ) $*" >> "$ST"; [ -n "${DRY_RUN:-}" ] && echo "$*"; return 0; }
+say() { if [ -n "${DRY_RUN:-}" ]; then echo "$*"; else echo "$(date -u +%FT%TZ) $*" >> "$ST"; fi; }
+BF_FAIL=0  # a failed back-fill step: the loop never calls that round converged
 
 # step <name> <cmd...>: skip if already ok; log to $LOGS/<name>.log; retry only the Claude OAuth
 # refresh race; record ok / FAIL. Returns the command's exit code (0 when skipped).
@@ -66,7 +68,8 @@ step() {
     echo "$(date -u +%FT%TZ) FAIL  $name (exit $rc, $log)" >> "$ST"; return $rc
   done
 }
-must() { step "$@" || { say "ABORT at $1"; exit 1; }; }  # a failed freeze stops the phase
+must() { step "$@" || { say "ABORT at $1"; exit 1; }; }  # freezes, onecue, screens, lucky, leakers
+bf() { step "$@" || BF_FAIL=1; }
 
 DRY_SHORT0='{"refill": [], "max_waves": [], "final": []}'
 DRY_COUNTS0='{"families": {}, "drops": 0}'
@@ -78,12 +81,12 @@ query() {  # query <short|counts|lucky>: the dataround report queries (stand-ins
       counts) echo "${DRY_COUNTS:-$DRY_COUNTS0}";;
       lucky) echo "${DRY_LUCKY:-$DRY_LUCKY0}";;
     esac
-  else $A dataround model="$M" stage="$1"; fi
+  else $A dataround model="$M" stage="$1" || { say "ABORT: dataround stage=$1 failed"; exit 1; }; fi
 }
 field() { python3 -c "import json,sys; v=json.loads(sys.argv[1])$2; print(v if isinstance(v,(int,str)) else ' '.join(v) if isinstance(v,list) else json.dumps(v, sort_keys=True))" "$1"; }
 
 lucky() {  # lucky <out dir> <step name>: blind+described (blind only under 4 items) under WSB_BANK_ROOT
-  local q both bo; q=$(query lucky); both=$(field "$q" '["both"]' | tr ' ' ,); bo=$(field "$q" '["blind_only"]' | tr ' ' ,)
+  local q both bo; q=$(query lucky) || exit 1; both=$(field "$q" '["both"]' | tr ' ' ,); bo=$(field "$q" '["blind_only"]' | tr ' ' ,)
   [ -n "$both" ] && must "$2" env WSB_BANK_ROOT="adapted/$M" $PY -m wsbench baseline kind=lucky_guessing variant=blind,described draws=5 "families=$both" "out=$1"
   [ -n "$bo" ] && must "$2-blind" env WSB_BANK_ROOT="adapted/$M" $PY -m wsbench baseline kind=lucky_guessing variant=blind draws=5 "families=$bo" "out=$1"
   return 0
@@ -92,17 +95,17 @@ lucky() {  # lucky <out dir> <step name>: blind+described (blind only under 4 it
 backfill() {  # backfill <tag> <family> <waves>: plan 0075's back-fill route of one family
   local t=$1 f=$2 w=$3 i
   case $f in
-    poetry) step "$t-poetry" env ADAPT_FILL_TIERS=poetry=v6 $A refill model="$M" families=poetry waves="$w" "$O"
-            step "$t-poetry-settle" $A poetry model="$M" stage=settle;;
-    role_bound_association) step "$t-$f" env ADAPT_ROLE_BOUND_STRICT=1 $A refill model="$M" families="$f" waves="$w" "$O";;
-    basic_readout) step "$t-$f" $A fill model="$M" families=basic_readout "$O"
-                   step "$t-$f-subject" $A mc model="$M" families=basic_readout stage=subject;;
+    poetry) bf "$t-poetry" env ADAPT_FILL_TIERS=poetry=v6 $A refill model="$M" families=poetry waves="$w" "$O"
+            bf "$t-poetry-settle" $A poetry model="$M" stage=settle;;
+    role_bound_association) bf "$t-$f" env ADAPT_ROLE_BOUND_STRICT=1 $A refill model="$M" families="$f" waves="$w" "$O";;
+    basic_readout) bf "$t-$f" $A fill model="$M" families=basic_readout "$O"
+                   bf "$t-$f-subject" $A mc model="$M" families=basic_readout stage=subject;;
     user_modeling)  # D7 back-fill: Occupation / Religion only, no places
       for i in 1 2 3; do
-        step "$t-um-author$i" $A author model="$M" family=user_modeling tier=t1 n=30 "steer=$UM_STEER" "wave=$((300 + 10 * ${t//[^0-9]/} + i))"
-        step "$t-um-gate$i" $A gate model="$M" families=user_modeling "$O"
+        bf "$t-um-author$i" $A author model="$M" family=user_modeling tier=t1 n=30 "steer=$UM_STEER" "wave=$((300 + 10 * ${t//[^0-9]/} + i))"
+        bf "$t-um-gate$i" $A gate model="$M" families=user_modeling "$O"
       done;;
-    *) step "$t-$f" $A refill model="$M" families="$f" waves="$w" "$O";;
+    *) bf "$t-$f" $A refill model="$M" families="$f" waves="$w" "$O";;
   esac
 }
 
@@ -160,7 +163,8 @@ refill)
   for f in $FILL_FAMS; do step "$f" $A refill model="$M" families="$f" waves="$FILL_WAVES" "$O"; done
   for f in $POOL_FAMS; do step "$f" $A refill model="$M" families="$f" "$O"; done
   # a family that stopped on refill's own wave cap is not an objective stop: run it again, longer
-  for f in $(field "$(query short)" '["max_waves"]'); do
+  sh=$(query short) || exit 1
+  for f in $(field "$sh" '["max_waves"]'); do
     step "$f-w$MAX_WAVES" $A refill model="$M" families="$f" waves="$MAX_WAVES" "$O"
   done
   step status $A status model="$M"
@@ -170,20 +174,26 @@ cycle)
   cycle "$1";;
 loop)
   [ $# -ge 2 ] || { echo "loop <first> <last>" >&2; exit 2; }
+  # the counts are saved the first time, so a resumed round compares the same three snapshots
+  snap() {  # snap <file>: the saved counts, else query now and save them
+    if [ -n "${DRY_RUN:-}" ] || [ ! -s "$1" ]; then local q; q=$(query counts) || exit 1
+      [ -z "${DRY_RUN:-}" ] && echo "$q" > "$1"; echo "$q"; else cat "$1"; fi; }
   for c in $(seq "$1" "$2"); do
-    c0=$(query counts); sh=$(query short)
+    BF_FAIL=0
+    c0=$(snap "$LOGS/L$c.counts0") || exit 1; sh=$(query short) || exit 1
     mw=" $(field "$sh" '["max_waves"]') "
     for f in $(field "$sh" '["refill"]'); do
       case "$mw" in *" $f "*) w=$MAX_WAVES;; *) w=$FILL_WAVES;; esac
       backfill "L$c" "$f" "$w"
     done
     must "L$c-freeze" $A freeze model="$M" families=$FREEZE_FAMS "$AU"
-    c1=$(query counts)
+    c1=$(snap "$LOGS/L$c.counts1") || exit 1
     cycle "$c"
-    c2=$(query counts)
+    c2=$(snap "$LOGS/L$c.counts2") || exit 1
     landed=$(python3 -c "import json,sys; a,b=(json.loads(x)['families'] for x in sys.argv[1:]); print(sum(max(0,b.get(f,0)-a.get(f,0)) for f in b))" "$c0" "$c1")
     dropped=$(( $(field "$c2" '["drops"]') - $(field "$c1" '["drops"]') ))
     say "LOOP $c: back-fill landed $landed, cycle dropped $dropped"
+    if [ "$BF_FAIL" = 1 ]; then say "LOOP $c: a back-fill step FAILED (see the status file); not converged"; continue; fi
     if [ "$landed" = 0 ] && [ "$dropped" = 0 ]; then say "CONVERGED at $c"; break; fi
   done
   say "LOOP DONE";;

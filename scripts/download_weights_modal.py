@@ -34,7 +34,7 @@ VOLUME = os.environ.get("WSB_DL_VOLUME", "") if modal.is_local() else os.environ
 SECRET = os.environ.get("WSB_DL_SECRET", "hf-camila")
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("huggingface_hub[hf_transfer]>=0.35")
+    .pip_install("huggingface_hub[hf_transfer]>=0.35,<1")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "WSB_DL_VOLUME": VOLUME})
 )
 app = modal.App("adapt-weights-download")
@@ -47,7 +47,7 @@ vol = (
 
 @app.function(image=image, volumes={"/vol": vol} if vol else {},
               secrets=[modal.Secret.from_name(SECRET)], timeout=24 * 3600, cpu=16,
-              memory=65536, ephemeral_disk=1_500_000)  # fmt: skip
+              memory=65536)  # fmt: skip
 def download(repo: str, revision: str) -> str:
     from huggingface_hub import snapshot_download
 
