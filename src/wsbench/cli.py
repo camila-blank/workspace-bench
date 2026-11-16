@@ -1454,6 +1454,8 @@ def _write_summary(
     out: Path, results: list[FamilyResult], notes: list[FamilyOutcome] | None = None
 ) -> str:
     text = markdown_table(results, macro(results))
+    if any(r.config.get("scope") == fast.SCOPE for r in results):  # plan 0090
+        text = fast_header() + "\n\n" + text
     if notes:
         text += "\n## skipped / failed\n"
         text += "".join(f"- {o.family}: {o.status} — {o.error}\n" for o in notes)

@@ -243,8 +243,13 @@ def rescore(family: str, result: FamilyResult) -> None:
     result.extras["fast_n_scored"] = len(wanted) - len(missing)
     result.extras["fast_units_missing"] = missing
     result.extras["fast_ci"] = "unit-bootstrap"
-    result.value = value_of(kept, sign)
-    result.ci95 = unit_bootstrap(kept, sign)
+    # a family that reports no value (a dry run, one kind of readouts only) keeps none
+    result.value = None if family_value is None else value_of(kept, sign)
+    result.ci95 = None if result.value is None else unit_bootstrap(kept, sign)
     result.n_items = len(wanted) - len(missing)
+    # the undecided count in the fast units too (results.undecided_share, the report's n cell)
+    if "n_items_undecided" in result.extras:
+        result.extras["fast_family_n_items_undecided"] = result.extras["n_items_undecided"]
+    result.extras["n_items_undecided"] = len(missing)
     if len(missing) > MAX_MISSING_SHARE * len(wanted):
         result.complete = False
