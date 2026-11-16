@@ -92,7 +92,7 @@ change.
 
 ### 2. `scripts/adapt_set.sh` (new): the stage driver
 
-`scripts/adapt_set.sh <model> <phase> [...]`, where `phase` is `build | refill | cycle <tag> |
+`scripts/adapt_set.sh <model> <phase> [...]`, where `phase` is `build | refill | cycle <tag> | mmh <tag> |
 loop <first> <last> | final | status`. It runs the plan-0089 order:
 
 - **`build`:** the native_langs decision record, profile, the basic_readout subject golds, the
@@ -110,10 +110,14 @@ loop <first> <last> | final | status`. It runs the plan-0089 order:
   2. a named freeze;
   3. onecue screen / repair / patch, in the first cycle only;
   4. `dataround stage=screens apply=true`, then a freeze;
-  5. `LUCKY_RUNS` (default 2) separate lucky runs on the MC families;
-  6. `dataround stage=leakers apply=true`, then a freeze;
-  7. the model_multihop lucky + confirm.
-- **`mmh <tag>`:** model_multihop's FRESH confirm run. It is its own phase, because plan 0078
+  5. `LUCKY_RUNS` (default 2) separate lucky runs on the MC families. Two runs per cycle let one
+     cycle confirm a drop on its own: a deliberate choice that matches the v4f run tree, while
+     plan 0075 counted one run per cycle. Each run is still a separate measurement, so the
+     two-run rule itself does not change; `LUCKY_RUNS=1` gives 0075's cadence;
+  6. `dataround stage=leakers apply=true`, then a freeze (no model_multihop confirm: that is the
+     `mmh` phase).
+- **`mmh <tag>`:** model_multihop's FRESH confirm run, after the freeze and the item audit, as
+  plan 0078 orders. It is its own phase, because plan 0078
   blocks the family after 3 failed confirms, so the driver never re-confirms on every cycle.
 - **`loop`:**
   - Each round first back-fills the families `stage=short` names. The routes are
