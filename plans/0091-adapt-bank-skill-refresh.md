@@ -28,11 +28,19 @@ make new workspacebenches for models".
 This module ports plan 0075's "Data round rules" from the run-tree scripts. The rules do not
 change.
 
-- **`stage=leakers run=<dir> [root=<dir>] [apply=true]`** implements D1-D3 (`dec.py`).
+- **`stage=leakers run=<dir> [root=<dir>] [history=c*,final*] [apply=true]`** implements D1-D3
+  (`dec.py`).
   - Inputs: `run` is one lucky-guessing measurement, `wsbench baseline kind=lucky_guessing
     variant=blind,described draws=5 out=<run>`, with one `<family>/{blind,described}.json` per
-    family. `root` defaults to `run`'s parent. Every other directory under `root` that holds a
-    measurement of the family is an earlier, separate run.
+    family. `root` defaults to `run`'s parent.
+  - **Earlier runs:** as in `dec.py` and plan 0075, these are the other directories under `root`
+    whose names match `c*` / `final*`, the driver's cycle and final measurements. Each one holds
+    a measurement of the family. A report-only or ad hoc run elsewhere never confirms a drop,
+    and a directory reached twice through a symlink counts once. `history=` widens the patterns
+    explicitly.
+  - **Only `run`'s own flags can drop.** The driver's cycle makes two lucky runs, `c<T>_1` and
+    `c<T>_2`, and passes the second as `run`, so the first is its earlier run: a cycle can
+    confirm on its own. An item flagged only in `c<T>_1` stays.
   - Family bar: chance + 5 points per guesser, with chance = the run's `analytic_floor`.
   - Per-run test (D1-D2): a guesser that fails the family bar gets >= 3/5 on the item, AND
     blind + described together reach >= 4/10.
@@ -52,7 +60,10 @@ change.
   - D5, capitals: `capscan.py`'s multilingual regex over the prompt-side text of the 15 text
     families. It keeps the two figurative typo_mt rows.
   - D7, user_modeling Country and Gender caps: each class is capped at 20%, and the newest rows
-    over the cap drop first. This is `gcap.py`'s rule; Country now gets it too, as D7 states.
+    over the cap drop first. This is `gcap.py`'s rule. The run trees scripted only the Gender
+    cap; they kept Country under the cap through the authoring steer and printed its share.
+    Plan 0075's written D7 caps both, so the port applies both. Checked on every merged
+    plan-0075 set: zero Country or Gender drops, so the shipped practice does not change.
   - D4, bridge shortcuts: an Opus check of multihop / multilingual_multihop (`mhcheck.py`'s
     prompt). It keeps `*firstname*` ids, as every run tree did.
   - D6 / D6b, places in the gold country: Opus checks of user_modeling Country rows
@@ -60,6 +71,8 @@ change.
   - LLM answers are cached in `<out>`, so a re-run only pays for new items.
   - Output: `<out>/screens.json`; `apply=true` drops through `run.drop` with the decision's
     reason.
+- **`stage=counts`** (shipped units per family plus the drop total) and **`stage=lucky`** (the
+  MC families, split into blind+described or blind-only) are the driver's queries.
 - **`stage=short`** prints the families that are below target and still have a refill route
   (`refill.POLICY`, `refill.FILL_POLICY`) and whose status is not an objective `ooc` or
   `blocked`. It also prints the families whose last refill stopped on `max waves`. The driver
@@ -100,14 +113,22 @@ loop <first> <last> | final | status`. It runs the plan-0089 order:
   5. `LUCKY_RUNS` (default 2) separate lucky runs on the MC families;
   6. `dataround stage=leakers apply=true`, then a freeze;
   7. the model_multihop lucky + confirm.
+- **`mmh <tag>`:** model_multihop's FRESH confirm run. It is its own phase, because plan 0078
+  blocks the family after 3 failed confirms, so the driver never re-confirms on every cycle.
 - **`loop`:**
   - Each round first back-fills the families `stage=short` names. The routes are
     plan 0075's: poetry `ADAPT_FILL_TIERS=poetry=v6` + settle, role_bound
     `ADAPT_ROLE_BOUND_STRICT=1`, basic_readout `fill` + `mc stage=subject`, and user_modeling
     authored as Occupation / Religion only.
   - It then runs a cycle.
-  - It stops when a cycle drops nothing and nothing refillable is short.
-- **`final`:** the strict freeze, every family named.
+  - It stops on plan 0075's own rule: the cycle dropped nothing (the `report.json` drop total
+    did not move) AND the back-fill landed nothing (no family's shipped count rose across the
+    back-fill freeze). `<last>` bounds it.
+- **`final [tag]`:** the strict freeze with every family named, then one report-only lucky
+  measure (`final_report_<tag>`), so the shipped lists are measured ones (§2.7).
+  - The steps after it are the audit's, and the skill's Quickstart lists them: the independent
+    audit, its must-drops with no new authoring, `final 2` (the re-freeze back-fills from
+    rows already passing), an addendum for those rows, then the floors.
 - **Every step:**
   - logs to `$ADAPT_LOGS/<step>.log` and records ok / FAIL in `<phase>.status`;
   - is skipped when already ok (resumable);
@@ -118,7 +139,7 @@ loop <first> <last> | final | status`. It runs the plan-0089 order:
   a temporary fixture set and checks the command lines (`bash -n` plus the expected
   sequence).
 
-### 3. `scripts/gated_merge.sh` (new)
+### 3. `scripts/gated_merge.sh` and `scripts/download_weights_modal.py` (new)
 
 The merge gate that plan 0089 and the skill require, which so far lived only in run trees.
 
@@ -127,6 +148,22 @@ The merge gate that plan 0089 and the skill require, which so far lived only in 
 - It merges with `--squash` from outside the caller's checkout.
 - A pytest runs it against a stub `gh` on PATH and covers: no checks, a failing check, all
   green.
+
+`download_weights_modal.py` is the CPU download of a pinned snapshot into a subject's Modal volume.
+It generalizes the plan-0089 run tree's script. Its `cache_subdir` / `check_revision` helpers are
+tested.
+
+`scripts/wd_add_leaves.py` gets two small fixes:
+- a usage guard, because `--help` used to create a table file named `--help`;
+- the merged class count is written to `meta.n_classes` (the plan-0089 follow-up nit).
+
+### 3b. `tests/test_adapt_skill_docs.py` (new)
+
+This test keeps the skills from going stale again. It checks that:
+- every `python -m wsbench.adapt <cmd>` / `$A <cmd>` the skills name is a real subcommand;
+- every repo `scripts/...` path they name exists;
+- the registered-bank table in `references/families.md` equals `registry.bank_path`;
+- the driver's family lists plus the side builds are exactly the 30 families.
 
 ### 4. Skills and CLAUDE.md
 
