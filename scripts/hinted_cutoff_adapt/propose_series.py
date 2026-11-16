@@ -2,7 +2,7 @@
 disjoint from the existing series files, for v2's ``bank_draft`` -> ``bank_verify`` -> ``bank``.
 
     python propose_series.py dir=<cwd>/evals/chint_cutoff lo=2025-05-01 hi=2026-01-31 \
-        [per_call=30 rounds=3 out=series_v2_extra3.json]
+        [per_call=30 rounds=3 out=series_v2_extra3.json force=1]
 """
 
 import json
@@ -118,7 +118,10 @@ def accept(
     """The usable, new series of one reply in the series.json schema (``group`` from the slice);
     ``ids`` / ``descs`` (normalised) are the ones already taken and grow with each kept series."""
     kept = []
-    for s in (raw or {}).get("series") or []:
+    if raw is None:  # a failed or refused call
+        drops["failed_call"] += 1
+        return kept
+    for s in raw.get("series") or []:
         fields = ("id", "desc", "family", "event_root")
         if not isinstance(s, dict) or not all(isinstance(s.get(k), str) and s[k] for k in fields):
             drops["bad"] += 1
@@ -167,6 +170,9 @@ def propose(
 def main() -> None:
     a = dict(x.split("=", 1) for x in sys.argv[1:])
     d = Path(a["dir"])
+    out = d / a.get("out", "series_v2_extra3.json")
+    if out.exists() and a.get("force") != "1":
+        raise SystemExit(f"{out} exists: pass force=1 to overwrite it")
     existing = [s for f in EXISTING for s in json.loads((d / f).read_text())["series"]]
     new, drops = propose(existing, a["lo"], a["hi"], int(a.get("per_call", 30)),
                          int(a.get("rounds", 3)))  # fmt: skip
@@ -175,7 +181,6 @@ def main() -> None:
         "densify precedent), disjoint from " + ", ".join(EXISTING) + ". Same schema.",
         "series": new,
     }
-    out = d / a.get("out", "series_v2_extra3.json")
     out.write_text(json.dumps(obj, ensure_ascii=False, indent=1))
     print(f"[propose] {len(new)} new series -> {out}; drops {dict(drops)}")
 

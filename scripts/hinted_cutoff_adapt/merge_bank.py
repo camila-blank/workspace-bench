@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -22,41 +23,51 @@ def merge(
     raw_new: bytes,
     lo: str,
     hi: str,
-    pre: list[tuple[bytes, str, str]] = (),
-    extra: list[bytes] = (),
-    exclude: list[str] = (),
+    pre: Sequence[tuple[bytes, str, str]] = (),
+    extra: Sequence[bytes] = (),
+    exclude: Sequence[str] = (),
 ) -> tuple[dict[str, Any], int]:
     """The merged bank and the count of new items inside the v2 range (dropped). Without
     ``pre`` / ``extra`` / ``exclude`` the result is the plan-0084 merge, byte for byte.
     ``pre``: (bank bytes, lo, hi) parts that must predate the v2 bank (an earlier-window pool
     extension); ``extra``: densify parts, items at any date in [lo, hi] (new series, disjoint
-    qids); ``exclude``: qids dropped from every part (web-check / audit-verified defects)."""
+    qids); ``exclude``: qids dropped from every part (web-check / audit-verified defects); each
+    must match an item the merge would keep, and joins ``retired_qids`` with the parts' own."""
     v2, new = json.loads(raw_v2), json.loads(raw_new)
     assert v2.get("variant") == new.get("variant") == "v2"
     excl = set(exclude)
-    old = [q for q in v2["items"] if lo <= q["event_date"] <= hi and q["qid"] not in excl]
+    old = [q for q in v2["items"] if lo <= q["event_date"] <= hi]
     v2_end = max(q["event_date"] for q in v2["items"])
-    add = [q for q in new["items"] if v2_end < q["event_date"] <= hi and q["qid"] not in excl]
+    add = [q for q in new["items"] if v2_end < q["event_date"] <= hi]
     late = sum(q["event_date"] <= v2_end for q in new["items"])
-    parts, more = [], []
+    parts, more, part_retired = [], [], set()
     if pre:
         v2_start = min(q["event_date"] for q in v2["items"])
         for raw, plo, phi in pre:
-            part = [q for q in json.loads(raw)["items"]
-                    if plo <= q["event_date"] <= phi and q["qid"] not in excl]  # fmt: skip
+            bank = json.loads(raw)
+            part = [q for q in bank["items"] if plo <= q["event_date"] <= phi]
             assert all(q["event_date"] < v2_start for q in part), "a pre part must predate v2"
-            more += part
-            parts.append({"kind": "pre", "sha256": hashlib.sha256(raw).hexdigest(),
-                          "kept": len(part), "range": [plo, phi]})  # fmt: skip
+            more.append(("pre", raw, [plo, phi], part))
+            part_retired |= set(bank.get("retired_qids", []))
     for raw in extra:
-        part = [q for q in json.loads(raw)["items"]
-                if lo <= q["event_date"] <= hi and q["qid"] not in excl]  # fmt: skip
-        more += part
-        parts.append({"kind": "densify", "sha256": hashlib.sha256(raw).hexdigest(),
-                      "kept": len(part), "range": [lo, hi]})  # fmt: skip
-    ids = [q["qid"] for q in old + add + more]
+        bank = json.loads(raw)
+        part = [q for q in bank["items"] if lo <= q["event_date"] <= hi]
+        more.append(("densify", raw, [lo, hi], part))
+        part_retired |= set(bank.get("retired_qids", []))
+    seen = {q["qid"] for q in old + add} | {q["qid"] for *_, part in more for q in part}
+    if unmatched := sorted(excl - seen):
+        raise AssertionError(f"--exclude-qid matches no merged item: {unmatched}")
+    old = [q for q in old if q["qid"] not in excl]
+    add = [q for q in add if q["qid"] not in excl]
+    extra_items = []
+    for kind, raw, rng, part in more:
+        kept = [q for q in part if q["qid"] not in excl]
+        extra_items += kept
+        parts.append({"kind": kind, "sha256": hashlib.sha256(raw).hexdigest(),
+                      "kept": len(kept), "range": rng})  # fmt: skip
+    ids = [q["qid"] for q in old + add + extra_items]
     assert len(ids) == len(set(ids)), "qid collision between the merged parts"
-    items = sorted(old + add + more, key=lambda q: q["qid"])
+    items = sorted(old + add + extra_items, key=lambda q: q["qid"])
     out: dict[str, Any] = {
         "variant": "v2",
         "plan": "workspace-bench plans/0084-hinted-cutoff-adapted.md (gw ccut v2 bank stages)",
@@ -80,9 +91,8 @@ def merge(
         out["sources"]["parts"] = parts
     if excl:
         out["excluded_qids"] = sorted(excl)
-    out["retired_qids"] = sorted(
-        set(v2.get("retired_qids", [])) | set(new.get("retired_qids", [])) - set(ids)
-    )
+    retired = set(v2.get("retired_qids", [])) | set(new.get("retired_qids", [])) - set(ids)
+    out["retired_qids"] = sorted(retired | (part_retired - set(ids)) | excl)
     out["items"] = items
     return out, late
 
