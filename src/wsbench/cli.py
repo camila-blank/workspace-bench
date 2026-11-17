@@ -272,12 +272,16 @@ class JudgeFamily(JudgeOptions):
         self.family = pydra.REQUIRED
         self.readouts = pydra.REQUIRED
         self.out = ""
+        self.outcome = ""  # written for `run`: a JSON file of this family's status and exit code
 
     def finalize(self) -> None:
         super().finalize()
         self.family = _family(str(self.family))
         self.readouts = _path(self.readouts)
         self.out = _path(self.out) if self.out else None
+        self.outcome = _path(self.outcome) if self.outcome else None
+        if self.outcome is not None and self.each:
+            raise ValueError("outcome= does not take layers=each")
 
     def execute(self) -> int:
         if self.family not in registry.FAMILIES:
@@ -285,6 +289,11 @@ class JudgeFamily(JudgeOptions):
         spec = registry.get(self.family)
         out = self.out or registry.family_dir(Path("outputs") / self.readouts.stem, spec.name)
         self._prepare()
+        if self.outcome is not None:  # plan 0092 §5: one family of a `run`, as its own process
+            runner.die_with_parent()
+            oc = runner._one(spec, self, self.readouts, out)
+            runner.write_outcome(self.outcome, oc)
+            return oc.exit_code
         try:
             opts = parse_opts(self.opt)
             judge = resolve(spec.judge, flag=self.judge_model, env=os.environ)
@@ -320,7 +329,8 @@ class RunFamilies(JudgeOptions):
         self.families = None
         self.readouts_root = pydra.REQUIRED
         self.out = pydra.REQUIRED
-        self.family_workers = 8  # 0 = every family at once (one process, one core: see the README)
+        self.family_workers = 8  # families judged at once (one judge process each); 0 = all
+        self.procs = None  # one judge process per family; unset = $WSB_RUN_PROCS (0 / 1), else on
         self.wait = 0.0  # plan 0092: seconds to wait for readouts that are not ready yet
         self.settle = 0.0  # with wait: a sidecar-less file this many seconds old is ready
         self.json = False
@@ -345,6 +355,16 @@ class RunFamilies(JudgeOptions):
             )
         if self.wait > 0 and self.each:
             raise ValueError("wait= does not take layers=each")
+        if self.procs is None or self.procs == "":  # the key wins, then the environment, else on
+            raw = os.environ.get(runner.RUN_PROCS_ENV, "")
+            try:
+                self.procs = _bool(raw) if raw else True
+            except ValueError:
+                raise ValueError(f"{runner.RUN_PROCS_ENV} must be 0 or 1, got {raw!r}") from None
+        else:
+            self.procs = _bool(self.procs)
+        if self.dry_run or self.each:  # prompts print in order; layers=each runs serially
+            self.procs = False
         self.json = _bool(self.json)
         if self.all == (self.families is not None):
             raise ValueError("pass exactly one of all=True or families=a,b")
@@ -392,6 +412,7 @@ class RunFamilies(JudgeOptions):
                 "macro": macro(results),
                 "statuses": manifest["families"],
             }
+            sys.stdout.flush()
             print(json.dumps(payload, ensure_ascii=False))
         else:
             print(text, end="")

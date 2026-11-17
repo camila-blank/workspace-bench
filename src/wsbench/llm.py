@@ -15,8 +15,10 @@ import asyncio
 import contextlib
 import contextvars
 import json
+import math
 import os
 import random
+import struct
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -128,49 +130,94 @@ def _now() -> float:
     return time.monotonic()
 
 
+PACER_ENV = "WSB_PACER"  # a directory: the pacers of every process using it share one budget
+
+
 class _Pacer:
-    """Process-wide next-slot time behind a lock: shared by every loop, thread and Spend."""
+    """Process-wide next-slot time behind a lock: shared by every loop, thread and Spend. With
+    ``$WSB_PACER`` set (``wsbench run`` sets it for its judge processes, plan 0092 §5) the
+    next-slot time lives in one small file of that directory instead, read and advanced under an
+    exclusive ``flock``, so ``rpm=`` stays the budget of the whole run."""
+
+    _FILE = "rpm"
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._next = 0.0
+        self._shared: tuple[str, int] | None = None  # (directory, descriptor) of the shared file
 
     def reset(self) -> None:
         with self._lock:
             self._next = 0.0
+            d = os.environ.get(PACER_ENV, "")
+            if d:
+                os.ftruncate(self._fd(d), 0)
+            elif self._shared is not None:
+                os.close(self._shared[1])
+                self._shared = None
+
+    def _fd(self, d: str) -> int:
+        """The descriptor of this pacer's file in ``d``, opened once and kept."""
+        if self._shared is not None and self._shared[0] == d:
+            return self._shared[1]
+        if self._shared is not None:
+            os.close(self._shared[1])
+            self._shared = None
+        os.makedirs(d, exist_ok=True)
+        fd = os.open(os.path.join(d, self._FILE), os.O_CREAT | os.O_RDWR, 0o644)
+        self._shared = (d, fd)
+        return fd
+
+    def _advance(self, step: float) -> float:
+        """Take the next slot and move it ``step`` seconds on; return the wait for it. Called
+        with ``self._lock`` held."""
+        d = os.environ.get(PACER_ENV, "")
+        if not d:
+            now = _now()
+            slot = max(now, self._next)
+            self._next = slot + step
+            return slot - now
+        import fcntl
+
+        fd = self._fd(d)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            now = _now()
+            slot = max(now, _stored_next(os.pread(fd, 8, 0)))
+            os.pwrite(fd, struct.pack("<d", slot + step), 0)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        return slot - now
 
     def reserve(self, rpm: float) -> float:
         """Reserve the next slot; return how long the caller must wait for it (seconds)."""
         with self._lock:
-            now = _now()
-            slot = max(now, self._next)
-            self._next = slot + 60.0 / rpm
-            return slot - now
+            return self._advance(60.0 / rpm)
+
+
+def _stored_next(raw: bytes) -> float:
+    """The next-slot time a shared pacer file holds; an empty or torn file reads as 0."""
+    if len(raw) != 8:
+        return 0.0
+    (v,) = struct.unpack("<d", raw)
+    return v if math.isfinite(v) and v > 0 else 0.0
 
 
 _PACER = _Pacer()
 
 
-class _TokenPacer:
+class _TokenPacer(_Pacer):
     """Process-wide input-token budget (plan 0092): a call's start slot is ``max(now, next)`` and
     ``next`` advances by the time its estimated tokens take at ``itpm`` tokens a minute. One
-    budget for every model, FIFO; a call larger than a whole minute's budget still runs."""
+    budget for every model, FIFO; a call larger than a whole minute's budget still runs. Shared
+    across processes under ``$WSB_PACER`` like ``_Pacer``."""
 
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._next = 0.0
+    _FILE = "itpm"
 
-    def reset(self) -> None:
-        with self._lock:
-            self._next = 0.0
-
-    def reserve(self, tokens: int, itpm: float) -> float:
+    def reserve(self, tokens: int, itpm: float) -> float:  # type: ignore[override]
         """Reserve ``tokens``; return how long the caller must wait for its slot (seconds)."""
         with self._lock:
-            now = _now()
-            slot = max(now, self._next)
-            self._next = slot + max(0, tokens) * 60.0 / itpm
-            return slot - now
+            return self._advance(max(0, tokens) * 60.0 / itpm)
 
 
 _TOKEN_PACER = _TokenPacer()

@@ -32,6 +32,14 @@ def _reset_pacer():
 
 
 @pytest.fixture(autouse=True)
+def _run_in_threads(monkeypatch):
+    """Plan 0092 §5: ``wsbench run`` judges one process per family by default; tests call
+    ``main(["run", ...])`` against families registered or patched in this process, so they run
+    the thread mode (``procs=True`` on the command line still wins)."""
+    monkeypatch.setenv("WSB_RUN_PROCS", "0")
+
+
+@pytest.fixture(autouse=True)
 def _no_box_pools(monkeypatch, tmp_path_factory):
     """Plan 0077: the refill driver reads the newest pinned pool generation from the box pool dirs
     (``WSB_POOL_DIR``, ``WSB_WI_POOL``), so every test starts with empty ones (a test that builds a

@@ -1,9 +1,15 @@
 """``wsbench run``: judge several families concurrently, fail-soft, one preflight per model."""
 
+import contextlib
 import json
 import os
 import re
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed
@@ -19,7 +25,7 @@ from wsbench.family import fail
 from wsbench.judge_config import ResolvedJudge, resolve
 from wsbench.llm import JudgeConfigError
 from wsbench.registry import EvalSpec, JudgeArgs
-from wsbench.results import FamilyResult, write_results
+from wsbench.results import FamilyResult, read_results, write_results
 
 Status = Literal["ok", "skipped", "failed"]
 
@@ -51,7 +57,8 @@ class Options(Protocol):
 
 class RunOptions(Options, Protocol):
     """``wsbench run``'s options: the judge options plus the thread count (0 = every family at
-    once). ``wait`` / ``settle`` (plan 0092) are read with ``getattr``, default 0."""
+    once). ``wait`` / ``settle`` (plan 0092) are read with ``getattr``, default 0, and ``procs``
+    (one judge process per family, plan 0092 §5) with default False."""
 
     family_workers: int
 
@@ -417,12 +424,18 @@ def _one(
     args: Options,
     readouts: Path,
     out: Path,
-    judge: ResolvedJudge,
-    opts: Mapping[str, str],
+    judge: ResolvedJudge | None = None,
+    opts: Mapping[str, str] | None = None,
 ) -> FamilyOutcome:
     """One family, fail-soft: ``JudgeConfigError`` -> failed/3, ``SystemExit`` (missing cells,
-    refused input) -> failed/2. Anything else propagates."""
+    refused input) -> failed/2. Anything else propagates. Without ``opts`` / ``judge`` (``judge
+    outcome=``, a ``run``'s child process) the option parsing and the judge resolution happen
+    here, under the same rule."""
     try:
+        if opts is None:
+            opts = parse_opts(args.opt)
+        if judge is None:
+            judge = resolve(spec.judge, flag=args.judge_model, env=os.environ)
         result = judge_family(spec, args, readouts, out, judge=judge, opts=opts)
     except JudgeConfigError as e:
         print(f"{spec.name}: judge config error: {e}", file=sys.stderr)
@@ -432,6 +445,230 @@ def _one(
         print(f"{spec.name}: failed ({text})", file=sys.stderr)
         return FamilyOutcome(spec.name, "failed", error=text, exit_code=2)
     return FamilyOutcome(spec.name, "ok", result=result)
+
+
+# ---------------------------------------------------------------- process mode (plan 0092 §5)
+
+RUN_PROCS_ENV = "WSB_RUN_PROCS"  # 0 / 1: the default of `run procs=` (the key wins; unset = on)
+PACER_ENV = llm.PACER_ENV
+RUN_SLOTS = 1500  # API calls in flight across a run's judge processes (about a 15M OTPM account)
+OUTCOME = "outcome.json"  # <out>/<family>/outcome.json: a child's status, read and deleted
+
+
+def write_outcome(path: Path, oc: FamilyOutcome) -> None:
+    """``judge outcome=PATH``: the family's ``{family, status, error, exit_code}``, atomically."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"family": oc.family, "status": oc.status, "error": oc.error, "exit_code": oc.exit_code}
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _read_outcome(path: Path) -> dict[str, Any] | None:
+    """A child's outcome file, None when there is none or it is not one."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ok = isinstance(data, dict) and data.get("status") in ("ok", "skipped", "failed")
+    return data if ok else None
+
+
+def die_with_parent() -> None:
+    """Linux: have the kernel send this process SIGTERM when the thread that started it exits
+    (``PR_SET_PDEATHSIG``), so a ``run``'s judge processes do not outlive it; best effort."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        ctypes.CDLL(None, use_errno=True).prctl(1, int(signal.SIGTERM), 0, 0, 0)
+    except (OSError, AttributeError, ImportError, ValueError):
+        pass
+
+
+def judge_argv(name: str, args: Any, readouts: Path, dest: Path) -> list[str]:
+    """The ``wsbench judge`` command of one family of a ``run``: the judge keys that are set,
+    never the run-only ones (``all``, ``families``, ``readouts_root``, ``family_workers``,
+    ``wait``, ``settle``, ``json``, ``hb_method``, ``include_superseded``, ``dry_run``,
+    ``procs``)."""
+    cmd = [sys.executable, "-m", "wsbench", "judge", f"family={name}", f"readouts={readouts}"]
+    cmd += [f"out={dest}", f"outcome={dest / OUTCOME}"]
+    cmd += [f"concurrency={args.concurrency}", f"rpm={args.rpm}"]
+    if (itpm := getattr(args, "itpm", None)) is not None:
+        cmd.append(f"itpm={itpm}")
+    if args.judge_model:
+        cmd.append(f"judge_model={args.judge_model}")
+    if args.layers is not None:
+        cmd.append("layers=" + ",".join(str(k) for k in args.layers))
+    if args.items is not None:
+        cmd.append("items=" + ",".join(args.items))
+    if args.limit:
+        cmd.append(f"limit={args.limit}")
+    if args.allow_missing:
+        cmd.append("allow_missing=True")
+    if getattr(args, "anti_text_inversion", False):
+        cmd.append("anti_text_inversion=True")
+    if variant := getattr(args, "ati_variant", ""):
+        cmd.append(f"ati_variant={variant}")
+    if opt_in := getattr(args, "ati_opt_in", None):
+        cmd.append("ati_opt_in=" + ",".join(opt_in))
+    if getattr(args, "fast", False):
+        cmd.append("fast=True")
+    if args.opt:  # carries reads= / sampling= already
+        cmd.append("opts=" + ",".join(args.opt))
+    return cmd
+
+
+class _Child(subprocess.Popen):
+    """A judge process in its own session; ``terminate`` / ``kill`` signal its whole group."""
+
+    def _signal_group(self, sig: int) -> None:
+        if self.poll() is not None:
+            return
+        try:
+            os.killpg(self.pid, sig)
+        except OSError:
+            self.send_signal(sig)
+
+    def terminate(self) -> None:
+        self._signal_group(signal.SIGTERM)
+
+    def kill(self) -> None:
+        self._signal_group(signal.SIGKILL)
+
+
+def _spawn(cmd: Sequence[str], env: Mapping[str, str]) -> Any:
+    """Start one judge process (stdout / stderr inherited, its own session). A seam: tests
+    return a Popen-like object (``wait``, ``poll``, ``terminate``, ``kill``)."""
+    return _Child(list(cmd), env=dict(env), start_new_session=True)
+
+
+def _probe_flock(d: Path) -> None:
+    """Take and release one ``flock`` in ``d``; raises ``OSError`` where locks do not work."""
+    import fcntl
+
+    fd = os.open(d / "probe", os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _on_signal(signum: int, _frame: Any) -> None:
+    raise SystemExit(128 + signum)  # SIGTERM / SIGHUP: unwind through run_families' cleanup
+
+
+class _Procs:
+    """Process mode of ``run_families``: one ``wsbench judge`` child per family, a run-private
+    local directory holding the slots and the pacer files the children share, and the cleanup
+    (signal handlers, children still alive, the directory)."""
+
+    def __init__(self, args: Any) -> None:
+        self.args = args
+        self.stop = threading.Event()  # no new child is started
+        self.killed = threading.Event()  # the children were terminated: theirs is no result
+        self.lock = threading.Lock()
+        self.children: dict[str, Any] = {}
+        self.tmp: Path | None = None
+        self.env: dict[str, str] = {}
+        self._handlers: dict[int, Any] = {}
+
+    def start(self) -> str | None:
+        """Make the directory, probe ``flock`` there, build the children's environment and
+        install the SIGTERM / SIGHUP handlers; returns the problem when locks do not work."""
+        self.tmp = Path(tempfile.mkdtemp(prefix="wsb-run-"))
+        slots, pacer = self.tmp / "slots", self.tmp / "pacer"
+        try:
+            slots.mkdir()
+            pacer.mkdir()
+            _probe_flock(slots)
+        except (OSError, ImportError) as e:
+            return (
+                f"file locks do not work in {self.tmp} ({e}); the judge processes share their "
+                f"budgets through them. Set TMPDIR to a local directory, or pass procs=False"
+            )
+        self.env = dict(os.environ)  # the parent's own environment is never changed
+        self.env["PYTHONUNBUFFERED"] = "1"
+        if not self.env.get(llm.SLOTS_ENV):  # an operator's value is inherited as is
+            self.env[llm.SLOTS_ENV] = f"{slots}:{RUN_SLOTS}"
+        self.env[PACER_ENV] = str(pacer)
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            # (not in the main thread: no handler; the caller's finally still cleans up)
+            with contextlib.suppress(ValueError, OSError):
+                self._handlers[sig] = signal.signal(sig, _on_signal)
+        return None
+
+    def terminate(self) -> None:
+        """Terminate every tracked child still alive; none is started afterwards."""
+        self.stop.set()
+        self.killed.set()
+        with self.lock:
+            for child in self.children.values():
+                if child.poll() is None:
+                    child.terminate()
+
+    def close(self) -> None:
+        """The ``finally`` of a run: kill what is still alive, restore the handlers, remove the
+        directory."""
+        self.stop.set()
+        with self.lock:
+            alive = [c for c in self.children.values() if c.poll() is None]
+        if alive:
+            self.terminate()
+            for child in alive:
+                try:
+                    child.wait(timeout=10)
+                except Exception:  # still there after SIGTERM
+                    child.kill()
+                    child.wait()
+        for sig, old in self._handlers.items():
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, old)
+        self._handlers.clear()
+        if self.tmp is not None:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+def _one_proc(procs: _Procs, spec: EvalSpec, readouts: Path, dest: Path) -> FamilyOutcome:
+    """One family as a child ``wsbench judge`` process: spawn it, wait, map its outcome file
+    (written by ``_one`` in the child) or, without one, its exit code. Exit 2 / 3 and a signal
+    are a failed family; any other exit terminates the other children and raises."""
+    name = spec.name
+    interrupted = FamilyOutcome(name, "skipped", error="interrupted")
+    if procs.stop.is_set():
+        return interrupted
+    path = dest / OUTCOME
+    path.unlink(missing_ok=True)  # a stale one of an earlier run
+    cmd = judge_argv(name, procs.args, readouts, dest)
+    with procs.lock:
+        if procs.stop.is_set():
+            return interrupted
+        sys.stdout.flush()
+        child = _spawn(cmd, procs.env)
+        procs.children[name] = child
+    code = child.wait()
+    data = _read_outcome(path)
+    path.unlink(missing_ok=True)
+    if code < 0 and procs.killed.is_set():
+        return interrupted
+    if data is not None:
+        if data["status"] == "ok":  # an unreadable results.json raises
+            return FamilyOutcome(name, "ok", result=read_results(dest))
+        return FamilyOutcome(
+            name, data["status"], error=data.get("error"), exit_code=int(data.get("exit_code") or 0)
+        )
+    if code in (2, 3):
+        error, exit_code = f"judge process exited {code}", code
+    elif code < 0:  # e.g. the OOM killer: this family failed, the others go on
+        error, exit_code = f"judge process killed by signal {-code}", 2
+    else:
+        procs.terminate()
+        raise RuntimeError(f"{name}: judge process exited {code} without an outcome")
+    print(f"{name}: failed ({error})", file=sys.stderr)
+    return FamilyOutcome(name, "failed", error=error, exit_code=exit_code)
 
 
 def _seed_preflights(judges: Mapping[str, ResolvedJudge]) -> None:
@@ -475,7 +712,13 @@ def run_families(
     Returns the outcomes in ``specs`` order and the exit code: 130 if interrupted, else 3 if
     any family hit a ``JudgeConfigError``, else 2 if any raised ``SystemExit``, else 0.
     ``KeyboardInterrupt`` cancels unstarted families (``skipped``, "interrupted") and waits for
-    in-flight ones to finish their current batch (they are recorded normally)."""
+    in-flight ones to finish their current batch (they are recorded normally).
+
+    Process mode (plan 0092 §5: ``args.procs`` true and no ``env`` passed): the same loop submits
+    ``_one_proc``, one ``wsbench judge`` child per family, after the same parent-side checks and
+    preflight; the children share ``rpm`` / ``itpm`` and a cap on calls in flight through a
+    run-private directory. A second ``KeyboardInterrupt`` terminates the children."""
+    procs = _Procs(args) if getattr(args, "procs", False) and env is None else None
     env = os.environ if env is None else env
     opts = parse_opts(args.opt)
     judges = {s.name: resolve(s.judge, flag=args.judge_model, env=env) for s in specs}
@@ -560,10 +803,17 @@ def run_families(
 
     def submit(s: EvalSpec, readouts: Path) -> None:
         dest = out_of(s.name) if out_of is not None else registry.family_dir(out, s.name)
-        fut = executor.submit(_one, s, args, readouts, dest, judges[s.name], opts)
+        if procs is not None:
+            fut = executor.submit(_one_proc, procs, s, readouts, dest)
+        else:
+            fut = executor.submit(_one, s, args, readouts, dest, judges[s.name], opts)
         futures[fut] = s.name
 
     try:
+        if procs is not None and (problem := procs.start()) is not None:
+            print(f"run: {problem}", file=sys.stderr)
+            executor.shutdown(wait=False)
+            return [], 3
         for s, readouts in runnable:
             submit(s, readouts)
         collected: set[Future[FamilyOutcome]] = set()
@@ -607,7 +857,16 @@ def run_families(
         interrupted = True
         print("interrupted: cancelling unstarted families", file=sys.stderr)
         # unstarted families are cancelled; in-flight ones cannot be and finish their batch
-        executor.shutdown(wait=True, cancel_futures=True)
+        if procs is None:
+            executor.shutdown(wait=True, cancel_futures=True)
+        else:  # no new child; the running ones finish, unless interrupted again
+            procs.stop.set()
+            try:
+                executor.shutdown(wait=True, cancel_futures=True)
+            except KeyboardInterrupt:
+                print("interrupted again: terminating the judge processes", file=sys.stderr)
+                procs.terminate()
+                executor.shutdown(wait=True)
         for fut, name in futures.items():
             if fut.done() and not fut.cancelled() and fut.exception() is None:
                 outcomes[name] = fut.result()
@@ -616,10 +875,15 @@ def run_families(
     except BaseException:
         # an unexpected worker exception propagates (plan), but must not leave the other
         # families spending in the background
+        if procs is not None:
+            procs.stop.set()
         executor.shutdown(wait=False, cancel_futures=True)
         raise
     else:
         executor.shutdown(wait=True)
+    finally:
+        if procs is not None:  # children still alive, the signal handlers, the directory
+            procs.close()
     for name, t in waited.items():
         if name in outcomes:
             outcomes[name].waited_s = t

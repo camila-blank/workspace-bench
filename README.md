@@ -90,14 +90,26 @@ keys, `--show` the resolved config.
 
 Throughput defaults of `judge` and `run` (plan 0092): `concurrency=256` calls in flight per
 family, `rpm=30000` requests a minute and `itpm=60000000` estimated input tokens a minute, the
-last two shared by the whole process (`itpm=0` turns the token budget off; a call is estimated at
-its prompt's characters / 3 and is never refused for its size). `run` judges eight families at a time (`family_workers=8`; `family_workers=0` = all at once, `N` caps it). A `run` is one Python process, so its families share one CPU core: 24 families at once at `concurrency=256` saturated it and dropped connections (2026-11-17), while one `wsbench judge` process per family does not. None of these
+last two shared by the whole run (`itpm=0` turns the token budget off; a call is estimated at
+its prompt's characters / 3 and is never refused for its size). `run` judges eight families at a time (`family_workers=8`; `family_workers=0` = all at once, `N` caps it). None of these
 enters a cache key, a prompt version or a score; `concurrency` and `rpm` are recorded in
 `config`. On a rate-limited key lower `rpm=` first, then `itpm=`, then `concurrency=`. Both
 commands raise the process's soft open-file limit to the hard limit (at most 65536). When calls
 of a family fail after their retries, one stderr line says how many
 (`<family>: N judge call(s) failed after retries; ...`); a rerun into the same `out=` asks only
 those again.
+
+`run` judges each family in its own `wsbench judge` process (`procs=True`, the default;
+`procs=False` or `WSB_RUN_PROCS=0` judges them in threads of one process, as do `dry_run=True` and
+`layers=each`). One Python process is one CPU core, and eight families at `concurrency=256` in one
+process dropped connections (2026-11-17). The run checks the files and the ATI / `--fast` scope
+and preflights each judge model itself, then starts the processes; each one preflights its own
+models again (one or two tiny calls per family) and prints its own lines, so the families' output
+interleaves. `rpm=` and `itpm=` stay budgets of the whole run, and at most 1,500 API calls are in
+flight across the processes (`WSB_SLOTS=<dir>:<n>` in the environment replaces that cap): the run
+keeps the lock files for this in a private directory under the system temporary directory, which
+must be on a local disk that supports `flock`, and removes it at the end. Ctrl-C lets the running
+families finish and exits 130; a second Ctrl-C terminates them.
 
 `run wait=SECONDS` judges while a producer is still writing: a family whose readouts are not
 ready is waited for instead of skipped, and is judged as soon as they are. Ready means the
