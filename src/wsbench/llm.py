@@ -238,6 +238,12 @@ def _note_error(spend: Spend) -> None:
         tally.add()
 
 
+def _cause(e: BaseException) -> str:
+    """The transport error under an SDK connection error (" [ConnectError: ...]"), else ""."""
+    c = e.__cause__
+    return f" [{type(c).__name__}: {str(c)[:120]}]" if c is not None else ""
+
+
 def _backoff(attempt: int, status: int | None) -> float:
     cap = 90.0 if status == 429 else 30.0
     return min(cap, 2.0 * 2**attempt) * (0.5 + random.random())
@@ -535,7 +541,7 @@ async def _one(
                 spend.errors += 1  # re-asked in halves by the digest: not a lost call
             else:
                 _note_error(spend)
-            print(f"  llm error: {name}: {str(e)[:200]}")
+            print(f"  llm error: {name}: {str(e)[:200]}{_cause(e)}")
             if too_long:
                 return TOO_LONG_JSON
             return None
@@ -855,7 +861,7 @@ async def _one_text(
                 await _sleep(_backoff(attempt, status))
                 continue
             _note_error(spend)
-            print(f"  llm error: {name}: {str(e)[:200]}")
+            print(f"  llm error: {name}: {str(e)[:200]}{_cause(e)}")
             return None
     return None
 

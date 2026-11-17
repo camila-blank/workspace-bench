@@ -322,7 +322,7 @@ class RunFamilies(JudgeOptions):
         self.families = None
         self.readouts_root = pydra.REQUIRED
         self.out = pydra.REQUIRED
-        self.family_workers = 0  # 0 = every family at once
+        self.family_workers = 8  # 0 = every family at once (one process, one core: see the README)
         self.wait = 0.0  # plan 0092: seconds to wait for readouts that are not ready yet
         self.settle = 0.0  # with wait: a sidecar-less file this many seconds old is ready
         self.json = False

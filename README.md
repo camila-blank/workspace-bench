@@ -91,8 +91,7 @@ keys, `--show` the resolved config.
 Throughput defaults of `judge` and `run` (plan 0092): `concurrency=256` calls in flight per
 family, `rpm=30000` requests a minute and `itpm=60000000` estimated input tokens a minute, the
 last two shared by the whole process (`itpm=0` turns the token budget off; a call is estimated at
-its prompt's characters / 3 and is never refused for its size). `run` judges every family at once
-(`family_workers=0`; `family_workers=N` caps the number of families in flight). None of these
+its prompt's characters / 3 and is never refused for its size). `run` judges eight families at a time (`family_workers=8`; `family_workers=0` = all at once, `N` caps it). A `run` is one Python process, so its families share one CPU core: 24 families at once at `concurrency=256` saturated it and dropped connections (2026-11-17), while one `wsbench judge` process per family does not. None of these
 enters a cache key, a prompt version or a score; `concurrency` and `rpm` are recorded in
 `config`. On a rate-limited key lower `rpm=` first, then `itpm=`, then `concurrency=`. Both
 commands raise the process's soft open-file limit to the hard limit (at most 65536). When calls

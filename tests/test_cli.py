@@ -361,7 +361,7 @@ def test_show_and_help(stub, capsys):
     assert "usage: wsbench" in capsys.readouterr().out
     assert main(["run", "opts=aggregate=native", "-h"]) == 0
     out = capsys.readouterr().out
-    assert "readouts_root=<required>" in out and "family_workers=0" in out
+    assert "readouts_root=<required>" in out and "family_workers=8" in out
 
 
 @pytest.mark.parametrize(

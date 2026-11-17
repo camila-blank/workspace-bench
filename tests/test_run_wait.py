@@ -138,7 +138,7 @@ def test_defaults():
     for cmd in (cli.RunFamilies(), cli.JudgeFamily()):
         assert cmd.concurrency == 256 and cmd.rpm == 30000.0 and cmd.itpm == 60_000_000
     run = cli.RunFamilies()
-    assert run.family_workers == 0 and run.wait == 0 and run.settle == 0
+    assert run.family_workers == 8 and run.wait == 0 and run.settle == 0
     # commands with their own defaults are not touched
     assert cli.Baseline().concurrency == 64 and cli.Baseline().rpm == 240.0
     assert cli.Capable().concurrency == 64 and cli.Capable().rpm == 240.0
