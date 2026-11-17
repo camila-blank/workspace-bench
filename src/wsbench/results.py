@@ -178,7 +178,8 @@ ATI_SCOPE = "anti_text_inversion"
 SUMMARY_LEGEND = (
     "† summarize-then-judge (one judged summary per item; the default since plan 0024). Its "
     "prompt-only floor is the summary-mode one, drawn only beside a row with the same summary "
-    "instrument and digest settings, as is the logit-lens L63 floor (plan 0071); its "
+    "instrument and digest settings, as is the logit-lens L63 floor (plan 0071, the logit-lens "
+    "floor plan; registered-bank rows only); its "
     "lucky-guessing floor is the per-item one."
 )
 # a summary-floor cell: the frozen entry it rests on (None: a lucky-guessing cell, model-free of
@@ -350,8 +351,12 @@ def summary_floor_applies(r: FamilyResult, entry: dict | None) -> bool:
     instrument (``prompt_only.summary_floor_applies``); a lucky-guessing cell (``entry`` None) is
     a per-item floor, drawn when the row is regex-scored or on the family's judge."""
     if entry is not None:
-        from wsbench.baselines import prompt_only  # lazy: prompt_only imports this module
+        # lazy: both modules import this one
+        from wsbench.baselines import logit_lens, prompt_only
 
+        if entry.get("protocol") == logit_lens.PROTOCOL:
+            # plan 0071 (logit-lens floor): one subject's activations, registered-bank rows only
+            return logit_lens.floor_applies(entry, r.config)
         return prompt_only.summary_floor_applies(entry, r.config)
     spec = _family_spec(r.family)
     return bool(spec is not None and spec.scorer) or on_family_judge(r)

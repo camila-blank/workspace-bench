@@ -1,5 +1,6 @@
-"""Plan 0071: the frozen logit-lens L63 floor (``evals/baselines/logit_lens.json``): freeze checks,
-the entry schema, the report column beside a matching summary row, and the committed file."""
+"""Plan 0071 (logit-lens floor): the frozen logit-lens L63 floor
+(``evals/baselines/logit_lens.json``): freeze checks, the entry schema, the report column beside a
+matching summary row, and the committed file."""
 
 import json
 from pathlib import Path
@@ -17,7 +18,8 @@ SUMM = {"model": "claude-opus-5-5", "max_items": 10, "concurrency": 256, "timeou
 
 
 def _spv(family: str) -> str:
-    return f"{po.instrument_versions()[family]}+digest-v5-task-extractive+sj-v10"
+    """The full stamp a live single-layer summary row of ``family`` carries (the judge's own)."""
+    return ll.live_instrument(family)
 
 
 def _result(family: str, pv: str, *, value: float = 0.3, **cfg_extra: object) -> FamilyResult:
@@ -91,15 +93,37 @@ def test_freeze_entry_schema_ati_and_source(tmp_path, real_families):
     assert ll.floors(dst) == {"association": e}
 
 
-def test_freeze_keeps_other_families(tmp_path, real_families):
+def test_freeze_partial_src_is_refused_or_keeps_provenance(tmp_path, real_families):
+    """``_source`` describes the run being frozen: a ``src`` that leaves an existing entry in
+    place is refused, and with ``partial=True`` the kept entry stays under the generation record
+    it was frozen with (``_source.kept_from``), through any number of partial re-freezes."""
     dst = tmp_path / "ll.json"
     a = _run(tmp_path, "a", _result("association", _spv("association")))
     ll.freeze(a, None, dst, source=_source(tmp_path, producer="p1", measured="d1"))
     b = _run(tmp_path, "b", _result("multihop", _spv("multihop")))
-    got = ll.freeze(b, None, dst, source=_source(tmp_path, measured="d2"))
+    before = dst.read_text()
+    with pytest.raises(ValueError, match=r"does not re-measure \(association\)"):
+        ll.freeze(b, None, dst, source=_source(tmp_path, measured="d2"))
+    assert dst.read_text() == before
+    got = ll.freeze(b, None, dst, source=_source(tmp_path, measured="d2"), partial=True)
     assert set(ll.floors(dst)) == {"association", "multihop"}
-    # provenance is the latest record's only, never a merge with the previous run's
+    # the new record is the latest run's only, never a merge with the previous run's
     assert got["_source"]["measured"] == "d2" and "producer" not in got["_source"]
+    (kept,) = got["_source"]["kept_from"]
+    assert kept["families"] == ["association"]
+    assert (kept["source"]["producer"], kept["source"]["measured"]) == ("p1", "d1")
+    c = _run(tmp_path, "c", _result("poetry", _spv("poetry")))
+    got = ll.freeze(c, None, dst, source=_source(tmp_path, measured="d3"), partial=True)
+    by_fam = {
+        f: k["source"]["measured"] for k in got["_source"]["kept_from"] for f in k["families"]
+    }
+    assert by_fam == {"association": "d1", "multihop": "d2"}
+    # a src that re-measures every entry needs no flag and leaves no kept_from
+    both = _run(
+        tmp_path, "all", *(_result(f, _spv(f)) for f in ("association", "multihop", "poetry"))
+    )
+    got = ll.freeze(both, None, dst, source=_source(tmp_path, measured="d4"))
+    assert got["_source"]["measured"] == "d4" and "kept_from" not in got["_source"]
 
 
 @pytest.mark.parametrize(
@@ -116,6 +140,7 @@ def test_freeze_keeps_other_families(tmp_path, real_families):
         ({"reader": "jlens-public"}, "logit-lens floor needs"),
         ({"reader": None}, "logit-lens floor needs"),
         ({"reads_checked": "no_sidecar"}, "logit-lens floor needs"),
+        ({"dry_run": True}, "dry run"),
     ],
 )
 def test_freeze_refuses(tmp_path, real_families, override, msg):
@@ -157,9 +182,63 @@ def test_freeze_checks_readouts_sidecar(tmp_path, real_families, monkeypatch):
 
 
 def test_cell_text_marks_incomplete():
+    """A missing cell (no readout) and an unjudged one (a readout the judge left undecided) are
+    different gaps, and the cell names each."""
     e = {"rate": 0.29, "complete": False, "counts": {"n_unjudged_cells": 1}}
     assert ll.cell_text(e) == "0.290 (incomplete: 1 unjudged)"
+    e = {"rate": 0.29, "complete": False, "counts": {"n_missing_cells": 3}}
+    assert ll.cell_text(e) == "0.290 (incomplete: 3 missing)"
+    e = {"rate": 0.29, "complete": False, "counts": {"n_missing_cells": 3, "n_unjudged_cells": 2}}
+    assert ll.cell_text(e) == "0.290 (incomplete: 3 missing, 2 unjudged)"
+    assert ll.cell_text({"rate": 0.29, "complete": False, "counts": {}}) == "0.290 (incomplete)"
     assert ll.cell_text({"rate": 0.5, "complete": True}) == "0.500"
+
+
+def test_freeze_keeps_an_incomplete_run_and_labels_it(tmp_path, real_families):
+    """An incomplete run stays freezable (scored on its judged items): the entry says
+    ``complete: false`` and its report cell names the gap."""
+    r = _result("association", _spv("association"))
+    r.complete = False
+    r.counts.update(n_missing_cells=2, n_unjudged_cells=1)
+    got = ll.freeze(_run(tmp_path, "inc", r), None, tmp_path / "ll.json", source=_source(tmp_path))
+    e = got["association"]
+    assert e["complete"] is False
+    assert ll.cell_text(e) == "0.300 (incomplete: 2 missing, 1 unjudged)"
+
+
+def test_live_instrument_is_the_judges_full_stamp(real_families):
+    """The live stamp comes from the family's own judge (a dry run, no call), so it carries the
+    segments no prefix rule knows: the registered base alone is not the instrument."""
+    live = ll.live_instrument("conjunctive_association")
+    assert live == "comp-v5+maj+digest-v5-task-extractive+sj-v10"
+    cfg = ll.live_config("conjunctive_association")
+    assert cfg["aggregate"] == "summary" and cfg["layers_judged"] == [63]
+    assert cfg["sampling"] == "tokens10" and cfg["dry_run"] is True
+
+
+@pytest.mark.parametrize(
+    "stale",
+    [
+        "comp-v5+maj-noinv+digest-v5-task-extractive+sj-v10",  # the 2026-11-05 entry's stamp
+        "comp-v5+digest-v5-task-extractive+sj-v10",  # the registered base with no rule segment
+        "comp-v5+maj+digest-v5-task-extractive-layered-v1x4+sj-v10",  # another digest tail
+    ],
+)
+def test_freeze_refuses_a_stale_middle_segment(tmp_path, real_families, stale):
+    """Regression (review of the 2026-11-17 port): the guard compared only the stamp's base
+    prefix and digest tail, so a run on conjunctive_association's retired ``+maj-noinv`` rule
+    froze. The FULL live stamp is compared; the same run on the live stamp freezes."""
+    fam = "conjunctive_association"
+    assert stale.startswith(f"{po.instrument_versions()[fam]}+")  # the old rule let it through
+    bad = _run(tmp_path, "bad", _result(fam, stale))
+    with pytest.raises(ValueError, match="re-judge first"):
+        ll.freeze(bad, None, tmp_path / "ll.json", source=_source(tmp_path))
+    ok = _run(tmp_path, "ok", _result(fam, _spv(fam)))
+    assert fam in ll.freeze(ok, None, tmp_path / "ll.json", source=_source(tmp_path))
+    # the ATI run is held to the same full stamp
+    ati = _run(tmp_path, "ati", _result(fam, stale, scope=ATI_SCOPE, items=["i0"]))
+    with pytest.raises(ValueError, match="re-judge first"):
+        ll.freeze(ok, ati, tmp_path / "ll.json", source=_source(tmp_path))
 
 
 def test_freeze_refuses_ati_without_scope_or_entry(tmp_path, real_families):
@@ -263,7 +342,8 @@ def test_freeze_accepts_a_recorded_drop_only_plan_lineage(tmp_path, real_familie
         return ["dropped-id"] if have == "v1-sha" else None
 
     monkeypatch.setattr(reads, "lineage_drops", drops)
-    run = _run(tmp_path, "ok", _result(fam, _spv(fam)))
+    step = {"from": "v1-sha", "to": "main-sha", "n_dropped_items": 1, "n_dropped_cells": 0}
+    run = _run(tmp_path, "ok", _result(fam, _spv(fam), plan_lineage=step))
     ro = tmp_path / "readouts"
     ro.mkdir()
     meta = ro / f"{fam}.jsonl.meta.json"
@@ -274,6 +354,20 @@ def test_freeze_accepts_a_recorded_drop_only_plan_lineage(tmp_path, real_familie
     meta.write_text(json.dumps({"reader": "logitlens-L63", "plan_sha": "other-sha"}))
     with pytest.raises(ValueError, match="plan_sha"):
         ll.freeze(run, None, tmp_path / "b.json", source=_source(tmp_path), readouts=ro)
+    # the judged run itself must record the accepted step (reads guard iii writes it): a run
+    # with no record, or judged from another plan or onto another plan, is not these readouts'
+    meta.write_text(json.dumps({"reader": "logitlens-L63", "plan_sha": "v1-sha"}))
+    for i, lineage in enumerate(
+        (None, {**step, "from": "v0-sha"}, {**step, "to": "older-main-sha"})
+    ):
+        cfg = {} if lineage is None else {"plan_lineage": lineage}
+        other = _run(tmp_path, f"other{i}", _result(fam, _spv(fam), **cfg))
+        with pytest.raises(ValueError, match="not judged from these readouts"):
+            ll.freeze(other, None, tmp_path / "c.json", source=_source(tmp_path), readouts=ro)
+    # and a run that went through a lineage does not belong to readouts already on main's plan
+    meta.write_text(json.dumps({"reader": "logitlens-L63", "plan_sha": "main-sha"}))
+    with pytest.raises(ValueError, match="judged through a plan lineage"):
+        ll.freeze(run, None, tmp_path / "d.json", source=_source(tmp_path), readouts=ro)
 
 
 _COMMITTED = sorted(k for k in json.loads(ll.FROZEN.read_text(encoding="utf-8")) if k[0] != "_")
@@ -283,44 +377,23 @@ _COMMITTED = sorted(k for k in json.loads(ll.FROZEN.read_text(encoding="utf-8"))
 def test_every_committed_entry_matches_its_live_row(family, real_families):
     """Every committed logit-lens entry is on the instrument a live single-layer summary row of
     its family carries on this branch, so ``report`` draws it and ``freeze`` would accept it (the
-    prompt-only twin is ``test_po_floors_r3.test_every_committed_floor_matches_its_live_row``):
-    the family is registered under this key and not superseded, the stamp starts with the
-    family's current summary base and ends with the live digest tail, and the digest settings
-    (from ``digest.config``, not copied from the entry) and judge model match. A family whose
+    prompt-only twin is ``test_po_floors_r3.test_every_committed_floor_matches_its_live_row``).
+    The live row is the family's own judge, dry-run (:func:`logit_lens.live_config`), so the
+    WHOLE stamp is compared (base, every family segment, bank tag, digest tail), with the digest
+    settings and the judge model; the key is registered and not superseded. A family whose
     instrument or digest moves must be re-judged and re-frozen in the same PR."""
-    from wsbench import digest, registry
-    from wsbench.registry import JudgeArgs
+    from wsbench import registry
 
     e = json.loads(ll.FROZEN.read_text(encoding="utf-8"))[family]
     assert family in registry.FAMILIES, f"{family}: not a registered family key (renamed?)"
     spec = registry.get(family)
     assert not spec.superseded_by, family
-    args = JudgeArgs(
-        readouts=Path("x"),
-        out=Path("y"),
-        judge=None,
-        layers=None,
-        items=None,
-        limit=0,
-        allow_missing=False,
-        concurrency=256,
-        rpm=0.0,
-        dry_run=False,
-        aux_models=dict(spec.judge.aux_models),
-        extra=digest.resolve_layer_mode(family, {}, 1),
-    )
-    inst = e["instrument"]
-    bases = po.summary_bases(family, spec.judge.prompt_version)
-    assert any(inst.startswith(f"{b}+") for b in bases), (family, inst, bases)
-    assert inst.endswith(digest.prompt_version("", args, family)), (family, inst)
-    cfg = {
-        **digest.config(args, None, family),
-        "prompt_version": inst,
-        "judge_model": spec.judge.model,
-    }
-    assert ll.floor_applies(e, cfg), (family, e["summarizer"], cfg["summarizer"])
+    cfg = ll.live_config(family)
+    assert e["instrument"] == ll.live_instrument(family), family
+    assert e["judge_model"] == cfg["judge_model"], family
+    assert ll.floor_applies(e, cfg), (family, e["summarizer"], cfg.get("summarizer"))
     if "ati" in e:
-        assert e["ati"]["instrument"] == inst, family
+        assert e["ati"]["instrument"] == e["instrument"], family
 
 
 # two plans render from pinned network sources the test suite replaces with synthetic text
@@ -336,3 +409,74 @@ def test_every_committed_entry_is_on_the_registered_plan(family, real_families):
 
     e = json.loads(ll.FROZEN.read_text(encoding="utf-8"))[family]
     assert e["plan_sha"] == reads.plan_sha(family), family
+
+
+def _adapted_like(family: str, **cfg: object) -> FamilyResult:
+    return _result(family, _spv(family), value=0.5, **cfg)
+
+
+def test_floor_is_not_drawn_beside_an_adapted_subject(tmp_path, monkeypatch, real_families):
+    """The floor is Qwen3.6-27B's own final-layer activations, so it is never drawn beside
+    another subject's row, even one whose stamp, digest settings and judge model equal the
+    entry's (a real case: an adapted arithmetic_intermediates row carries the registered stamp
+    byte for byte). The signals are ``$WSB_BANK_ROOT`` at report time, the row's
+    ``config.bank_root`` and a re-stamped row's ``config.registered_prompt_version``. The
+    prompt-only floor beside the same rows is unchanged."""
+    fam = "association"
+    spv = _spv(fam)
+    dst = tmp_path / "ll.json"
+    ll.freeze(_run(tmp_path, "f", _result(fam, spv, value=0.25)), None, dst,
+              source=_source(tmp_path))  # fmt: skip
+    monkeypatch.setattr(ll, "FROZEN", dst)
+    entry = ll.floors(dst)[fam]
+    registered = _result(fam, spv, value=0.5)
+    rooted = _adapted_like(fam, bank_root="deepseek-v4-flash")
+    restamped = _adapted_like(fam, registered_prompt_version=spv)
+    restamped.config["prompt_version"] = spv.replace("+bank-v5", "+bank-v9")
+    assert ll.floor_applies(entry, registered.config)
+    for row in (rooted, restamped):
+        assert not ll.floor_applies(entry, row.config)
+    # prompt-only's own rule is untouched: the same entry matches all three rows
+    for row in (registered, rooted, restamped):
+        assert po.summary_floor_applies(entry, row.config)
+    # the report: a registered row draws the column, an adapted-stamped row hides it
+    reg_dir = _run(tmp_path, "reg", registered)
+    assert main(["report", f"dir={reg_dir}"]) == 0
+    assert f"| {ll.COLUMN} |" in (reg_dir / "summary.md").read_text()
+    for name, row in (("rooted", rooted), ("restamped", restamped)):
+        d = _run(tmp_path, name, row)
+        assert main(["report", f"dir={d}"]) == 0
+        assert ll.COLUMN not in (d / "summary.md").read_text(), name
+    # a mixed table keeps the column for the registered row and shows a dash for the other
+    md = markdown_table(
+        [registered, _adapted_like("multihop", bank_root="kimi-k3")],
+        None,
+        floors=floor_columns(),
+        summary_floors={
+            **summary_floor_columns(),
+            ll.COLUMN: {fam: (entry, "0.250"), "multihop": ({**entry}, "0.111")},
+        },
+    )
+    assert "0.250" in md and "0.111" not in md
+    # $WSB_BANK_ROOT at report time: no column at all, whatever the rows say
+    monkeypatch.setenv("WSB_BANK_ROOT", str(REPO / "adapted" / "deepseek-v4-flash"))
+    assert ll.COLUMN not in floor_columns() and ll.COLUMN not in summary_floor_columns()
+    assert not ll.floor_applies(entry, registered.config)
+    assert main(["report", f"dir={reg_dir}"]) == 0
+    assert ll.COLUMN not in (reg_dir / "summary.md").read_text()
+
+
+def test_adapted_runs_record_their_bank_root(monkeypatch):
+    """``runner.stamp_adapted_bank`` records the root's directory name on every result judged
+    under ``$WSB_BANK_ROOT`` (and nothing without one), the row-level signal
+    ``on_registered_bank`` reads."""
+    from wsbench import runner
+
+    r = _result("association", "x+digest-v5-task-extractive+sj-v10")
+    runner.stamp_adapted_bank("association", r)
+    assert "bank_root" not in r.config and ll.on_registered_bank(r.config)
+    monkeypatch.setenv("WSB_BANK_ROOT", "adapted/deepseek-v4-flash")
+    runner.stamp_adapted_bank("association", r)
+    assert r.config["bank_root"] == "deepseek-v4-flash"
+    monkeypatch.delenv("WSB_BANK_ROOT")
+    assert not ll.on_registered_bank(r.config)

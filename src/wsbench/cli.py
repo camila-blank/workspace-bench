@@ -28,6 +28,7 @@ from wsbench.results import (
     markdown_table,
     on_family_judge,
     read_results,
+    summary_floor_applies,
 )
 from wsbench.runner import FamilyOutcome, parse_opts
 
@@ -520,10 +521,13 @@ class ReportRuns(Command):
         floors = floor_columns() if self.floors and not ati and not fast_rows else None
         summ_floors = summary_floor_columns() if self.floors and not ati and not fast_rows else None
         if floors and summ_floors and logit_lens.COLUMN in floors:
-            # plan 0071: the logit-lens column only when some row can draw it
+            # plan 0071 (logit-lens floor): the column only when some row can draw it, by the
+            # predicate the table itself draws a cell with (results.summary_floor_applies)
             ll_cells = summ_floors.get(logit_lens.COLUMN, {})
             if not any(
-                (cell := ll_cells.get(r.family)) and logit_lens.floor_applies(cell[0], r.config)
+                (cell := ll_cells.get(r.family))
+                and r.config.get("aggregate") == "summary"
+                and summary_floor_applies(r, cell[0])
                 for r in results
             ):
                 floors.pop(logit_lens.COLUMN)
@@ -809,7 +813,9 @@ def floor_columns() -> dict[str, dict[str, str]]:
             note += f" ({e['metric']})"
         po[fam] = f(e.get("rate")) + note
     cols = {"lucky guess (blind / described)": lucky, "prompt-only": po}
-    if logit_lens.floors():  # plan 0071: summary-mode only, so no native-row cell
+    # plan 0071 (logit-lens floor): summary-mode only, so no native-row cell; Qwen3.6-27B's own
+    # activations, so no column at all for an adapted subject's report ($WSB_BANK_ROOT)
+    if logit_lens.floors() and _adapted_root() is None:
         cols[logit_lens.COLUMN] = {}
     return cols
 
@@ -840,7 +846,7 @@ def summary_floor_columns() -> dict[str, dict[str, tuple[dict | None, str]]]:
     lucky = {fam: (None, text) for fam, text in native[lucky_col].items()}
     po = {fam: (e, _po_text(fam, e)) for fam, e in prompt_only.summary_floors().items()}
     cols = {lucky_col: lucky, po_col: po}
-    if logit_lens.COLUMN in native:  # plan 0071: the logit-lens L63 floor, same row match
+    if logit_lens.COLUMN in native:  # plan 0071 (logit-lens floor): L63, same row match
         cols[logit_lens.COLUMN] = {
             fam: (e, logit_lens.cell_text(e)) for fam, e in logit_lens.floors().items()
         }
@@ -1273,9 +1279,11 @@ class Freeze(Command):
     ``kind=lucky_guessing``: ``src`` holds ``<family>/<variant>.json`` from ``wsbench baseline``.
     ``kind=prompt_only``: ``src`` holds ``<family>/results.json`` from ``wsbench run`` on the
     prompt-only readouts; ``source`` is the generation's ``run_config.json``.
-    ``kind=logit_lens`` (plan 0071): ``src`` holds the ``layers=63`` summary runs on the
+    ``kind=logit_lens`` (plan 0071 (logit-lens floor)): ``src`` holds the ``layers=63`` summary
+    runs on the
     logit-lens readouts, ``ati_src`` the same with ``anti_text_inversion=True``, ``readouts`` the
-    readouts dir (sidecar reader and plan_sha checks), ``source`` the generation record."""
+    readouts dir (sidecar reader and plan_sha checks), ``source`` the generation record;
+    ``partial=True`` keeps the entries ``src`` does not re-measure (refused otherwise)."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1285,12 +1293,14 @@ class Freeze(Command):
         self.source = ""
         self.ati_src = ""
         self.readouts = ""
+        self.partial = False  # kind=logit_lens: keep the entries src does not re-measure
 
     def finalize(self) -> None:
         self.kind = str(self.kind)
         self.src = _path(self.src) if self.src else None
         self.ati_src = _path(self.ati_src) if self.ati_src else None
         self.readouts = _path(self.readouts) if self.readouts else None
+        self.partial = _bool(self.partial)
         self.dst = _path(self.dst) if self.dst else None
         self.source = _path(self.source) if self.source else None
 
@@ -1328,7 +1338,12 @@ class Freeze(Command):
                     return EXIT_USAGE
                 dst = self.dst or logit_lens.FROZEN
                 frozen = logit_lens.freeze(
-                    self.src, self.ati_src, dst, source=self.source, readouts=self.readouts
+                    self.src,
+                    self.ati_src,
+                    dst,
+                    source=self.source,
+                    readouts=self.readouts,
+                    partial=self.partial,
                 )
             else:
                 print(
