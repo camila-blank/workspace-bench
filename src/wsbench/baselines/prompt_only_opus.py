@@ -210,6 +210,27 @@ def require_cut(prompts: list[dict[str, Any]], path: Path) -> None:
         )
 
 
+def require_cut_srcs(prompts: list[dict[str, Any]], srcs: list[Path]) -> None:
+    """:func:`require_cut` over the merged prompts of ``srcs`` (:func:`primary`), naming the
+    prompts file each stale family's rows came from: the LAST dir that holds the family."""
+    stale = {r["family"] for r in prompts if r.get("prompt_cut") != PROMPT_CUT}
+    if not stale:
+        return
+    owner: dict[str, Path] = {}
+    for src in srcs:
+        path = Path(src) / "prompts.jsonl"
+        for fam in {p["family"] for p in ti.load_jsonl(path)} & stale:
+            owner[fam] = path
+    by_path: dict[Path, list[str]] = {}
+    for fam in sorted(stale):
+        by_path.setdefault(owner[fam], []).append(fam)
+    where = "; ".join(f"{path}: rows of {fams}" for path, fams in by_path.items())
+    raise SystemExit(
+        f"{where} were built without prompt_cut={PROMPT_CUT} and may hold reply text; rebuild "
+        "with stage=build"
+    )
+
+
 def client() -> Any:
     """The Anthropic client through ``llm._make_client`` (OAuth ``ANTHROPIC_AUTH_TOKEN`` from
     ``ant auth print-credentials --access-token``; never a bare SDK client)."""
@@ -354,7 +375,7 @@ def latest_fallback(
 
 async def _ask_fallback(out: Path, srcs: list[Path], concurrency: int) -> int:
     prompts, ans = primary(srcs)
-    require_cut(prompts, Path(srcs[-1]))
+    require_cut_srcs(prompts, srcs)
     todo = [p for p in prompts if (a := ans.get((p["family"], p["id"]))) and ti.is_refusal(a)]
     out.mkdir(parents=True, exist_ok=True)
     path = out / FALLBACK_ANSWERS
@@ -394,7 +415,7 @@ def write_fallback_readouts(out: Path, srcs: Iterable[Path]) -> dict[str, dict[s
 
     srcs = [Path(s) for s in srcs]
     prompts, ans = primary(srcs)
-    require_cut(prompts, srcs[-1])
+    require_cut_srcs(prompts, srcs)
     fb = latest_fallback(out / FALLBACK_ANSWERS, prompt_shas(prompts))
     root = out / "readouts"
     root.mkdir(parents=True, exist_ok=True)

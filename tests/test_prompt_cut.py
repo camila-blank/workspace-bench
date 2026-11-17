@@ -327,3 +327,174 @@ def test_freeze_requires_the_cut_on_any_po_opus_protocol(tmp_path):
     (tmp_path / "cfg.json").write_text(json.dumps({"protocol": "po-opus-v1+other", "families": {}}))
     with pytest.raises(ValueError, match="prompt_cut"):
         pof.freeze(tmp_path / "run", tmp_path / "dst.json", source=tmp_path / "cfg.json")
+
+
+# ------------------------------------------------- review of the port (2026-11-17)
+
+
+class MergeTok(CharTok):
+    """A BPE-like ChatML tokenizer: two newlines in a row are ONE token (as under OLMo-3 and
+    Qwen3-8B), and the template neither strips content nor adds a think block. A reply that
+    starts with a newline therefore merges with the header's newline, so the full header
+    ``<|im_start|>assistant\\n`` is not in the turn's ids. CharTok cannot show this."""
+
+    def __init__(self):
+        super().__init__("qwen")
+
+    def encode(self, text: str) -> list[int]:
+        out, i = [], 0
+        while i < len(text):
+            piece = next((s for s in [*self.specials, "\n\n"] if text.startswith(s, i)), text[i])
+            out.append(self._id(piece))
+            i += len(piece)
+        return out
+
+    def render(self, messages, add_generation_prompt):
+        text = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
+        return text + ("<|im_start|>assistant\n" if add_generation_prompt else "")
+
+
+def _merge_marks(tok):
+    m = pc.turn_marks(tok)
+    return pc.TurnMarks(
+        m.header,
+        m.think,
+        m.end,
+        m.user,
+        frozenset(tok.vocab[s] for s in tok.specials),
+        m.header_core,
+        m.user_core,
+    )
+
+
+@pytest.mark.parametrize("reply", ["\nParis SECRET.", "\n\nParis SECRET.", "\n\n\nParis SECRET."])
+def test_reply_starting_with_a_newline_is_cut_when_it_merges_with_the_header(reply):
+    tok = MergeTok()
+    m = _merge_marks(tok)
+    assert tok.decode(m.header) == "<|im_start|>assistant\n"
+    assert tok.decode(m.hcore) == "<|im_start|>assistant"
+    msgs = [*U, {"role": "assistant", "content": reply}, {"role": "user", "content": "And Spain?"}]
+    ids = chat(tok, msgs)
+    # the premise: the turn's full header is not in the ids (only the generation prompt's is)
+    assert pc._find(ids, m.header) == len(ids) - len(m.header)
+    out = pc.prompt_only_ids(ids, len(ids) - 1, m, tok)
+    text = tok.decode(out)
+    assert "SECRET" not in text and "Paris" not in text
+    assert "France" in text and text.endswith("And Spain?<|im_end|>\n<|im_start|>assistant\n")
+    pc.assert_no_reply(out, m, tok)
+    with pytest.raises(AssertionError, match="reply tokens"):
+        pc.assert_no_reply(ids, m, tok)
+    # a site inside that reply ends at the generation prompt
+    turn = pc.assistant_turns(ids, m)[0]
+    assert pc.prompt_only_ids(ids, turn.content + 2, m, tok) == chat(tok, U)
+
+
+def test_final_turn_prefill_starting_with_a_newline_is_cut():
+    tok = MergeTok()
+    m = _merge_marks(tok)
+    ids = tok.encode(tok.render(U, True) + "\nMy one-word answer is:")
+    assert pc._find(ids, m.header) < 0
+    assert pc.prompt_only_ids(ids, len(ids) - 1, m, tok) == chat(tok, U)
+
+
+def test_assert_no_reply_does_not_share_the_token_detector_blind_spot():
+    """Marks without the header core search the FULL header, as the first version did: the
+    token-level detector misses the merged turn, the decoded-text check still raises."""
+    tok = MergeTok()
+    m = _merge_marks(tok)
+    blind = pc.TurnMarks(m.header, m.think, m.end, m.user, m.specials)
+    msgs = [
+        *U,
+        {"role": "assistant", "content": "\nParis SECRET."},
+        {"role": "user", "content": "And Spain?"},
+    ]
+    ids = chat(tok, msgs)
+    assert pc.reply_tokens(ids, blind, tok) == 0  # the blind spot
+    assert pc.reply_text(ids, blind, tok) == "Paris SECRET."
+    with pytest.raises(AssertionError, match="decoded-text check"):
+        pc.assert_no_reply(ids, blind, tok)
+    assert pc.reply_text(chat(tok, U), blind, tok) == ""
+
+
+@pytest.mark.parametrize("make", [lambda: CharTok("qwen"), MergeTok])
+def test_site_on_the_first_end_marker_token_cuts_back_to_the_generation_prompt(make):
+    """The end marker is two tokens (``<|im_end|>`` + newline); a read site on the first one is
+    the end of that reply, not an ambiguous turn boundary."""
+    tok = make()
+    m = _merge_marks(tok)  # the marks with the fake tokenizer's control tokens as specials
+    assert len(m.end) == 2
+    msgs = [*U, {"role": "assistant", "content": "Paris."}, {"role": "user", "content": "And?"}]
+    ids = chat(tok, msgs)
+    turn = pc.assistant_turns(ids, m)[0]
+    site = turn.stop  # the <|im_end|> token that closes the reply
+    assert tok.decode(ids[site : site + 1]) == "<|im_end|>"
+    out = pc.prompt_only_ids(ids, site, m, tok)
+    assert out == chat(tok, U)
+    pc.assert_no_reply(out, m, tok)
+    # an empty assistant turn closed there holds no reply: unchanged
+    empty = chat(tok, [*U, {"role": "assistant", "content": ""}, {"role": "user", "content": "x"}])
+    t0 = pc.assistant_turns(empty, m)[0]
+    assert t0.stop == t0.content
+    assert pc.prompt_only_ids(empty, t0.stop, m, tok) == empty[: t0.stop + 1]
+
+
+@pytest.mark.parametrize("style", ["qwen", "glm", "gemma"])
+def test_whitespace_only_assistant_turn_is_a_reply(style):
+    """Decision (review of #350): an assistant turn that holds only whitespace is still a reply
+    and is dropped like any other; an EMPTY turn (no content token) is not."""
+    tok = CharTok(style)
+    m = pc.turn_marks(tok)
+    msgs = [*U, {"role": "assistant", "content": " \n"}, {"role": "user", "content": "And Spain?"}]
+    ids = chat(tok, msgs)
+    assert pc.reply_tokens(ids, m, tok) == 2
+    last = len(ids) - len(m.gen) - 3  # inside the last user turn
+    text = tok.decode(pc.prompt_only_ids(ids, last, m, tok))
+    assert tok.decode(m.hcore) not in text and "France" in text and "And Sp" in text
+    assert pc.reply_tokens(chat(tok, U), m, tok) == 0  # the generation prompt alone: no reply
+
+
+def test_fallback_stale_prompts_name_the_dir_they_came_from(tmp_path):
+    """Several ``src=`` dirs: the refusal names the prompts file that holds the stale rows (the
+    last dir with that family), not simply the last dir."""
+    row = {"id": "a", "prefix": "P", "token": "?", "pos": 0, "n_tokens": 1}
+    old, new = tmp_path / "old", tmp_path / "new"
+    for d, fam, stamp in ((old, "moral_rationale", None), (new, "association", po.PROMPT_CUT)):
+        d.mkdir()
+        r = {**row, "family": fam, **({"prompt_cut": stamp} if stamp else {})}
+        (d / "prompts.jsonl").write_text(json.dumps(r) + "\n")
+    with pytest.raises(SystemExit) as exc:
+        po.write_fallback_readouts(tmp_path / "fb", [old, new])
+    msg = str(exc.value)
+    assert str(old / "prompts.jsonl") in msg and "moral_rationale" in msg
+    assert str(new / "prompts.jsonl") not in msg and "rebuild" in msg
+    # a later dir that re-builds the family on the current cut replaces the stale rows
+    r = {**row, "family": "moral_rationale", "prompt_cut": po.PROMPT_CUT}
+    (new / "prompts.jsonl").write_text(json.dumps(r) + "\n")
+    po.write_fallback_readouts(tmp_path / "fb", [old, new])
+
+
+def test_adapted_poetry_chat_prefill_prefix_stops_at_the_generation_prompt():
+    """Pins ``adapt.poetry.read_prefix`` (plan 0070 3b): a ``chat_prefill`` item's prompt-only
+    input is the chat prompt through the generation prompt and holds nothing of line one, so it
+    is the SAME for every chat_prefill item (the Opus text-leak gate cannot tell them apart; an
+    open decision recorded in the plan). ``plain`` / ``plain_fewshot`` items still show line one."""
+    from wsbench.adapt import poetry
+    from wsbench.readplan import POETRY_PREFILL_USER
+
+    tok = CharTok("qwen")
+    m = pc.turn_marks(tok)
+    a = {"prompt": "A rhyming couplet:\nHe saw a carrot and had to grab it,\n"}
+    b = {"prompt": "A rhyming couplet:\nThe silver moon rose over the hill,\n"}
+    gen = tok.render([{"role": "user", "content": POETRY_PREFILL_USER}], True)
+    for it in (a, b):
+        prefix, token = poetry.read_prefix({**it, "gate_variant": "chat_prefill"}, tok)
+        assert prefix == gen and prefix.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        assert "carrot" not in prefix and "silver moon" not in prefix
+        assert token == "\n"  # the prefix's own last token (CharTok: one newline)
+        assert pc.reply_tokens(tok.encode(prefix), m, tok) == 0
+        pc.assert_no_reply(tok.encode(prefix), m, tok)
+    plain, _ = poetry.read_prefix({**a, "gate_variant": "plain"}, tok)
+    fewshot, _ = poetry.read_prefix({**a, "gate_variant": "plain_fewshot"}, tok)
+    assert "carrot" in plain and "carrot" in fewshot
+    with pytest.raises(SystemExit, match="tokenizer"):
+        poetry.read_prefix({**a, "gate_variant": "chat_prefill"})

@@ -555,6 +555,44 @@ def test_committed_cut_stamps_are_the_current_cut(real_families):
     assert all("prompt_cut" in fams[f] for f in REPLY_FREE_FAMILIES)
 
 
+def test_freeze_without_source_never_replaces_a_stamped_floor(tmp_path, real_families):
+    """Review of the port: ``source=`` is optional, and without it ``freeze`` cannot tell an
+    old-cut run from a current one. It then refuses to overwrite an entry that carries
+    ``prompt_cut`` (the unstamped entry would still draw); a stamped run config replaces it, and
+    an unstamped entry is replaced as before."""
+    dst = tmp_path / "po_summary.json"
+    spv = _spv("association")
+    stamped = {"rate": 0.5, "protocol": po.PO_OPUS, "prompt_cut": poo.PROMPT_CUT}
+    dst.write_text(json.dumps({"association": stamped}))
+    before = dst.read_text()
+    run = _po_run(tmp_path, "association", spv, "judged")
+    with pytest.raises(ValueError, match="source="):
+        po.freeze(run, dst)
+    assert dst.read_text() == before
+    # another reader's run config (no prompt_cut) does not replace it either
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({"base_model": "Qwen", "template_version": "t"}))
+    with pytest.raises(ValueError, match="source="):
+        po.freeze(run, dst, source=other)
+    assert dst.read_text() == before
+    # the run's own stamped config does
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "protocol": po.PO_OPUS,
+                "prompt_cut": poo.PROMPT_CUT,
+                "families": {"association": {"n_ids": 10, "refused": []}},
+            }
+        )
+    )
+    got = po.freeze(run, dst, source=cfg)["association"]
+    assert got["prompt_cut"] == poo.PROMPT_CUT and got["rate"] != 0.5
+    # an entry without the stamp is replaced without source=, as before plan 0070
+    dst.write_text(json.dumps({"association": {"rate": 0.5, "protocol": po.PO_OPUS}}))
+    assert "prompt_cut" not in po.freeze(run, dst)["association"]
+
+
 def test_unaffected_family_floor_matches_the_live_row(real_families):
     e = json.loads(FROZEN.read_text(encoding="utf-8"))["association"]
     cfg = _live_config("association", e)

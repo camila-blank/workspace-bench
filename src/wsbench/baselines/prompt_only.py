@@ -189,6 +189,29 @@ def _require_cut(source: Path | None) -> None:
         )
 
 
+def _never_downgrade(
+    frozen: dict[str, Any], merged: dict[str, Any], cfg: dict[str, Any], run_dir: Path, dst: Path
+) -> None:
+    """A run whose config does not carry the current ``prompt_cut`` (no ``source=`` at all, or
+    the run config of another reader) never replaces an entry that does (plan 0070, review of
+    #350): without the run config ``freeze`` cannot tell an old-cut run from a current one, and
+    the unstamped entry it would write still draws beside live rows."""
+    from wsbench.baselines.prompt_only_opus import PROMPT_CUT
+
+    if cfg.get("prompt_cut") == PROMPT_CUT:
+        return
+    stamped = sorted(
+        f for f in frozen if isinstance(merged.get(f), dict) and merged[f].get("prompt_cut")
+    )
+    if stamped:
+        raise ValueError(
+            f"freeze: {dst} holds prompt_cut-stamped floors of {stamped}; {run_dir} comes with "
+            f"no run config stamped prompt_cut={PROMPT_CUT!r} and would replace them with "
+            "unstamped entries. Pass source=<the run's readouts/run_config.json> (built on the "
+            "current cut)"
+        )
+
+
 def freeze(
     run_dir: Path,
     dst: Path | None = None,
@@ -206,7 +229,9 @@ def freeze(
     entry also recording ``aggregate``, ``summarizer`` (:func:`summarizer_key`) and its
     ``instrument`` = the summary ``prompt_version`` as run. A ``run_dir`` mixing modes is
     refused. Plan 0070: a ``po-opus-v1*`` run whose ``source`` lacks the current ``prompt_cut``,
-    or any legacy Sonnet 5 fallback run, is refused before anything is read."""
+    or any legacy Sonnet 5 fallback run, is refused before anything is read; a run given without
+    ``source`` (or with another reader's) is frozen as before, except that it never replaces an
+    entry of ``dst`` that carries ``prompt_cut`` (:func:`_never_downgrade`)."""
     _require_cut(source)
     versions = instrument_versions()
     frozen: dict[str, Any] = {}
@@ -310,6 +335,7 @@ def freeze(
     if protocol == PO_OPUS and summary and Path(dst).resolve() == FROZEN_SUMMARY.resolve():
         archive_qwen_summary()
     merged = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
+    _never_downgrade(frozen, merged, cfg, run_dir, dst)
     if protocol == PO_OPUS:
         _po_opus_entries(frozen, cfg)
         # the entries of another reader (stock Qwen; archived above) are never kept beside the
