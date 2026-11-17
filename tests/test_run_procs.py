@@ -868,3 +868,27 @@ def test_without_the_variable_the_pacers_are_in_memory(monkeypatch, tmp_path):
     assert [t.reserve(10, 600), t.reserve(10, 600)] == [0.0, 1.0] and t._shared is None
     a.reset()
     assert a._next == 0.0 and [p.name for p in tmp_path.iterdir()] == ["rundirs"]
+
+
+def test_run_refuses_an_empty_items_list(tmp_path):
+    """A child judge would read ``items=`` as "no restriction", so ``run`` refuses it."""
+    cfg = cli.RunFamilies()
+    cfg.all, cfg.readouts_root, cfg.out, cfg.items = True, str(tmp_path), str(tmp_path / "o"), ","
+    with pytest.raises(ValueError, match="items= is empty"):
+        cfg.finalize()
+
+
+def test_a_hangup_the_launcher_ignores_stays_ignored():
+    """Under nohup SIGHUP is ignored: the run must not replace that with its own handler."""
+    old = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    procs = runner._Procs(SimpleNamespace())
+    try:
+        assert procs.start() is None
+        assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+        assert signal.SIGHUP not in procs._handlers and signal.SIGTERM in procs._handlers
+        tmp = procs.tmp
+    finally:
+        procs.close()
+        still_ignored = signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+        signal.signal(signal.SIGHUP, old)
+    assert still_ignored and tmp is not None and not tmp.exists()

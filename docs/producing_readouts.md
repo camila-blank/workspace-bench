@@ -126,7 +126,7 @@ per family at the same settings dropped none.
   readouts check (and the waiting of `wait=`), the ATI scope check and one preflight per judge and
   digest model; a failure there exits before any process starts. Each judge process then
   preflights its own models again (one or two tiny calls per family). Results, messages, per-family
-  outcomes, `summary.md`, `run.json` and the exit code are those of the one-process run; only the
+  outcomes, `summary.md`, `run.json` and the exit code are those of the one-process run (plus two failure messages of its own, `judge process exited N` and `killed by signal N`, and an unexpected error in one family stops the others at once); only the
   order in which the families' lines reach the terminal differs.
 - `rpm=` and `itpm=` stay budgets of the whole run, and at most 1,500 API calls are in flight
   across the processes (about what a 15M output-tokens-a-minute limit carries). The run makes a

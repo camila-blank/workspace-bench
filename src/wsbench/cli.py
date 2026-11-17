@@ -366,6 +366,9 @@ class RunFamilies(JudgeOptions):
         if self.dry_run or self.each:  # prompts print in order; layers=each runs serially
             self.procs = False
         self.json = _bool(self.json)
+        if self.items is not None and not self.items:
+            # a child judge would read "items=" as "no restriction" (plan 0092 §5)
+            raise ValueError("items= is empty: name at least one item, or drop the key")
         if self.all == (self.families is not None):
             raise ValueError("pass exactly one of all=True or families=a,b")
 

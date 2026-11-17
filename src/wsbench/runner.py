@@ -598,6 +598,8 @@ class _Procs:
         for sig in (signal.SIGTERM, signal.SIGHUP):
             # (not in the main thread: no handler; the caller's finally still cleans up)
             with contextlib.suppress(ValueError, OSError):
+                if signal.getsignal(sig) is signal.SIG_IGN:
+                    continue  # e.g. under nohup: the run keeps ignoring the hangup
                 self._handlers[sig] = signal.signal(sig, _on_signal)
         return None
 
@@ -614,22 +616,28 @@ class _Procs:
         """The ``finally`` of a run: kill what is still alive, restore the handlers, remove the
         directory."""
         self.stop.set()
-        with self.lock:
-            alive = [c for c in self.children.values() if c.poll() is None]
-        if alive:
-            self.terminate()
-            for child in alive:
-                try:
-                    child.wait(timeout=10)
-                except Exception:  # still there after SIGTERM
-                    child.kill()
-                    child.wait()
-        for sig, old in self._handlers.items():
-            with contextlib.suppress(ValueError, OSError):
-                signal.signal(sig, old)
-        self._handlers.clear()
-        if self.tmp is not None:
-            shutil.rmtree(self.tmp, ignore_errors=True)
+        try:
+            for sig in self._handlers:  # a second signal must not abort the cleanup
+                with contextlib.suppress(ValueError, OSError, TypeError):
+                    signal.signal(sig, signal.SIG_IGN)
+            with self.lock:
+                alive = [c for c in self.children.values() if c.poll() is None]
+            if alive:
+                self.terminate()
+                for child in alive:
+                    try:
+                        child.wait(timeout=10)
+                    except Exception:  # still there after SIGTERM
+                        child.kill()
+                        child.wait()
+        finally:
+            for sig, old in self._handlers.items():
+                # a handler installed from C reads back as None: restore the default
+                with contextlib.suppress(ValueError, OSError, TypeError):
+                    signal.signal(sig, signal.SIG_DFL if old is None else old)
+            self._handlers.clear()
+            if self.tmp is not None:
+                shutil.rmtree(self.tmp, ignore_errors=True)
 
 
 def _one_proc(procs: _Procs, spec: EvalSpec, readouts: Path, dest: Path) -> FamilyOutcome:
