@@ -1237,8 +1237,9 @@ def _report(
 ) -> None:
     """Merge ``entry`` into the family's report entry; ``stale_no_go`` (a GO build) first drops
     the note of an earlier NO-GO record (status ooc / blocked), which no longer describes it.
-    ``keep_hand_note`` (a NO-GO build, issue #289) keeps an existing note that is neither the
-    generic NO-GO text nor the automatic absent note, instead of ``entry``'s."""
+    ``keep_hand_note`` (a NO-GO build, issue #289) keeps, instead of ``entry``'s note, the
+    existing note of an entry that was already a NO-GO (status ooc / blocked) when that note is
+    neither the generic NO-GO text nor the automatic absent note."""
 
     def mutate(r: dict[str, Any]) -> None:
         e = r.setdefault("families", {}).setdefault(FAMILY, {})
@@ -1246,7 +1247,10 @@ def _report(
             e.pop("note", None)
         new = dict(entry)
         old = e.get("note")
-        if (keep_hand_note and isinstance(old, str) and old.strip()
+        # only a note on an entry that was ALREADY a NO-GO is a hand-written NO-GO reason; on a
+        # GO -> NO-GO transition the measured reason replaces whatever note the GO entry had
+        if (keep_hand_note and e.get("status") in ("ooc", "blocked")
+                and isinstance(old, str) and old.strip()
                 and not old.startswith(NO_GO_PREFIX) and old != store.ABSENT_NOTE):  # fmt: skip
             new.pop("note", None)
         e.update(new)

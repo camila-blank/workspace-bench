@@ -510,27 +510,45 @@ def change_text(block: dict, measured: str = "") -> str:
     return "; ".join(parts)
 
 
-NOTE_MARK = "refill_note_sha"  # the note standing when the refill block was written (R1, #289)
+NOTE_MARK = "refill_note_sha"  # the hand note as it stood before the last refill that gated any
+# note segments (" | "-joined) code writes: kcutoff's shipped mix and mhmt2's mc tally (rewritten
+# inside their waves) and freeze's allow_untried stamp. They are never the "hand note".
+ROUTE_NOTE_PREFIXES = ("refill mix:", "mc over gate:", "freeze guard overridden")
+
+
+def hand_note(entry: dict) -> str:
+    """The family's ``note`` without the segments code writes (``ROUTE_NOTE_PREFIXES``)."""
+    segs = (s for s in str(entry.get("note") or "").split(" | ") if s.strip())
+    return " | ".join(s for s in segs if not s.startswith(ROUTE_NOTE_PREFIXES))
 
 
 def note_sha(entry: dict) -> str:
-    return hashlib.sha256(str(entry.get("note") or "").encode()).hexdigest()[:16]
+    return hashlib.sha256(hand_note(entry).encode()).hexdigest()[:16]
 
 
 def stale_note(entry: dict) -> bool:
-    """True when the family's ``note`` is byte-identical to the one that stood when its refill
-    block was written (``write_block``): the refill is newer than the note, which may describe
-    the pre-refill family. An entry without the mark (older blocks) is never flagged."""
+    """True when the family's hand note (``hand_note``) is byte-identical to the one that stood
+    BEFORE its last refill that gated candidates (``write_block(note_before=)``): the refill is
+    newer than the note, which may describe the pre-refill family (R1, #289). Never flagged: an
+    entry without the mark (older blocks), a note only the refill route wrote, a note rewritten
+    since (a later no-op resume does not move the mark)."""
     mark = entry.get(NOTE_MARK)
-    return bool(mark and entry.get("note") and entry.get("refill") and mark == note_sha(entry))
+    return bool(mark and entry.get("refill") and hand_note(entry) and mark == note_sha(entry))
 
 
-def write_block(model: str, family: str, block: dict, status: str) -> None:
+def write_block(
+    model: str, family: str, block: dict, status: str, note_before: str | None = None
+) -> None:
+    """Write the family's refill block and status. ``note_before``: ``note_sha`` of the entry as
+    it stood before this call's waves, given ONLY when the call gated candidates; it becomes
+    the entry's ``NOTE_MARK``. A call that gated none leaves the mark as it is."""
+
     def _set(report: dict) -> None:
         entry = store.report_slot(report, "families", family)
         entry["refill"] = block
         entry["status"] = status
-        entry[NOTE_MARK] = note_sha(entry)
+        if note_before is not None:
+            entry[NOTE_MARK] = note_before
 
     store.update_report(model, _set)
 
@@ -568,6 +586,20 @@ def _wave_fn(family: str) -> Callable[..., dict]:
     return fn
 
 
+def _pool_state(family: str, model: str) -> tuple[int, str] | None:
+    """``(size, identity)`` of the pool the family's waves read now (the module's optional
+    ``pool_state(model)`` hook: size as its waves report ``pool_size``, identity = the pool's
+    name and pinned sha), or None (no hook, or no readable pool)."""
+    hook = _hook(family, "pool_state")
+    if hook is None:
+        return None
+    try:
+        size, ident = hook(model)
+    except SystemExit:  # unpinned / missing pool file: its loader refuses
+        return None
+    return int(size), str(ident)
+
+
 def _refill_family(
     model: str, family: str, waves: int, claude_budget: int | None, gpu_minutes: float | None,
     pilot: bool, llm: str, runner: Any,
@@ -575,6 +607,7 @@ def _refill_family(
     pol = POLICY[family]
     entry = store.report_entry(store.read_report(model).get("families"), family)
     hold = entry.get("refill_hold")
+    note0 = note_sha(entry)  # before any wave: kcutoff / mhmt2 waves rewrite their note segment
     prev = refill_block(entry) or {}
     target = pol.target
     tried, landed = prior_tally(model, family)
@@ -586,10 +619,17 @@ def _refill_family(
     exhausted, pool_size, pool_used = False, prev.get("pool_size"), prev.get("pool_used")
     # S1 (#289): the previous block's pool state, used ONLY to label a stop this call makes
     # before its first wave (a resume would else relabel a "pool exhausted" stop "low yield above
-    # half"); it never stops a call that would have run a wave
+    # half"); it never stops a call that would have run a wave. Trusted only for the SAME pool:
+    # the module's `pool_state` must report the size and identity the previous block recorded
+    # (a swapped or extended pool, a block without `pool_id`, or a family with no such hook
+    # keeps the label this call computes itself).
+    pool_now = _pool_state(family, model)
     prev_exhausted = (
-        isinstance(pool_size, int) and isinstance(pool_used, int) and pool_used >= pool_size
-    )
+        pool_now is not None
+        and isinstance(pool_size, int) and isinstance(pool_used, int)
+        and (pool_size, prev.get("pool_id")) == pool_now
+        and pool_used >= pool_size
+    )  # fmt: skip
     status, why = None, ""
     levels_hook = _hook(family, "untried_levels")
     gen_hook = _hook(family, "pool_generation")
@@ -660,7 +700,16 @@ def _refill_family(
         "pilot": pilot,
         "untried_levels": untried,
     }  # fmt: skip
-    write_block(model, family, block, status)
+    # the pool that `pool_size` / `pool_used` describe, when the module can name it: this call's
+    # waves read the pool as it is now; a call that ran none carries the previous block's
+    # numbers, so it keeps that block's identity only while the pool is still that one
+    now = _pool_state(family, model)
+    if now is not None and now[0] == pool_size and (done or now[1] == prev.get("pool_id")):
+        block["pool_id"] = now[1]
+    # the mark moves only when this call gated candidates (a resume whose wave finds the pool
+    # used up tried nothing, so a note written since the real refill is not flagged)
+    ran = tried > tally0["tried"]
+    write_block(model, family, block, status, note_before=note0 if ran else None)
     return status
 
 

@@ -1400,7 +1400,10 @@ def unfinished(model: str, elicited: Mapping[str, Any] | None = None) -> list[st
     """Elicited candidate ids with no gate record: a wave that crashed after ``elicit`` and
     before ``build`` (#289). Empty after any wave that ran to its end, since ``build`` records
     every elicited candidate it is given; an elicited id that is no candidate under the ext pool
-    (``_by_id`` reports those) is never built, so it is not unfinished."""
+    (``_by_id`` reports those) is never built, so it is not unfinished. They are finished by
+    the next ``refill_wave`` that RUNS (also one with nothing new to elicit); until then, e.g.
+    when a resumed refill stops before its first wave, they stay here and are reported as
+    untried (``prior_tally``) and unseen (``pool_generation``), never as tried."""
     elicited = _load(model, "elicit.json") if elicited is None else elicited
     rows = store.gated(model, FAMILY)
     todo = [i for i in elicited if i not in rows]
@@ -1429,6 +1432,16 @@ def prior_tally(model: str) -> tuple[int, int]:
     return tried, sum(refill.row_passes(FAMILY, rows[i]) for i in elicited if i in rows)
 
 
+def pool_state(model: str) -> tuple[int, str]:
+    """refill hook: the ext pool's size as a wave reports it (``pool_size``) and its identity
+    (name + pinned sha), so the driver can tell a previous block describes this very pool."""
+    from . import refill
+
+    name = pool_name()
+    size = sum(1 for o, _it in candidates("ext") if o == REFILL)
+    return size, f"{name}:{refill.POOL_SHA256.get(name)}"
+
+
 def pool_generation(model: str, cutoff: str | None = None) -> dict[str, Any] | None:
     """Plan 0077 §1: the funded generation's tally (``kc2``: rows of ``NEW_BATCHES``) while pool
     v2 is the pool read; None on pool v1. tried = its elicited ids, landed = their passes. The
@@ -1446,10 +1459,13 @@ def pool_generation(model: str, cutoff: str | None = None) -> dict[str, Any] | N
     rows = store.gated(model, FAMILY)
     done = [it["id"] for it in new if it["id"] in elicited]
     landed = sum(refill.row_passes(FAMILY, rows[i]) for i in done if i in rows)
-    # tried = built ids only (#289: a crashed wave's elicited ids are finished by the next wave,
-    # and are not unseen either); equal to len(done) after any wave that ran to its end
-    return {"name": GENERATION, "tried": sum(i in rows for i in done), "landed": landed,
-            "size": len(new), "unseen": len(new) - len(done)}  # fmt: skip
+    # tried = built ids only (#289). Ids a crashed wave elicited but never built are still
+    # ahead of the driver, so they count as unseen (the next wave that runs builds them; a call
+    # that stops before its first wave leaves them unseen, never silently "tried"). After any
+    # wave that ran to its end tried == len(done), as before.
+    tried = sum(i in rows for i in done)
+    return {"name": GENERATION, "tried": tried, "landed": landed, "size": len(new),
+            "unseen": len(new) - tried}  # fmt: skip
 
 
 def refill_wave(model: str, *, wave: int, runner=None, llm: str | None = None,
@@ -1482,7 +1498,8 @@ def refill_wave(model: str, *, wave: int, runner=None, llm: str | None = None,
     # also by a wave with nothing new to elicit, and counted in this wave's tally
     # (``prior_tally`` leaves them out). Empty on a run that never crashed, where this is the
     # old `if new:`.
-    left = [i for i in unfinished(model, elicited) if i not in set(new)]
+    fresh = set(new)
+    left = [i for i in unfinished(model, elicited) if i not in fresh]
     if new or left:
         canon(model, counted, workers, pool="ext")
         verify(model, counted, cutoff, workers, pool="ext")

@@ -440,6 +440,7 @@ TOO_LONG_JSON: dict[str, Any] = {"\x00too_long": True}
 # internal to stream_json_async(overflow_max_tokens=): a max_tokens stop it re-asks with a larger
 # cap; never handed to a caller
 TRUNCATED_JSON: dict[str, Any] = {"\x00truncated": True}
+OVERFLOW_ATTEMPTS = 3  # attempts of that re-ask (first call: the caller's `attempts`)
 # key a structured result carries when a server-side refusal fallback served it (the model id)
 SERVED_BY = "\x00served_by"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -698,8 +699,14 @@ async def stream_json_async(
     ``overflow_max_tokens`` (Anthropic route): a call of ``model`` that stops at ``max_tokens``
     is re-asked ONCE, same request, with this larger output cap (and the timeout scaled by the
     same factor); a second ``max_tokens`` stop is the call's outcome (``None``, one counted
-    error). Ignored unless it is above ``max_tokens``. The refusal model's re-run keeps the
-    larger cap once the primary needed it, and is itself never re-asked."""
+    error). Ignored unless it is above ``max_tokens``. The re-ask's retry budget is at most
+    :data:`OVERFLOW_ATTEMPTS` attempts (3; fewer when ``attempts`` is lower), so a re-ask that
+    times out holds its slot for at most 3 scaled timeouts; the first call keeps ``attempts``.
+    Every other outcome of the re-ask is handled as the first call's would be: under
+    ``mark_refusals`` a ``model_context_window_exceeded`` stop comes back as
+    :data:`TOO_LONG_JSON` (the digest then halves the bundle), a refusal as
+    :data:`REFUSED_JSON`. The refusal model's re-run keeps the larger cap, scaled timeout and
+    bounded budget once the primary needed them, and is itself never re-asked."""
     spend = spend or Spend()
     if not prompts:
         return spend
@@ -748,6 +755,8 @@ async def stream_json_async(
             if grow and res == TRUNCATED_JSON:
                 kw["timeout"] = timeout * overflow_max_tokens / max_tokens
                 kw["max_tokens"] = overflow_max_tokens
+                # a long call at a doubled timeout must not also keep the full retry budget
+                kw["attempts"] = min(attempts or _ATTEMPTS, OVERFLOW_ATTEMPTS)
                 res = await _one(
                     route_,
                     client,

@@ -1743,3 +1743,12 @@ def test_align_drops_non_object_verdicts_with_a_flag():
     assert judge._align(good, ["r1", "r2"], flags) == [(0, good["verdicts"][0]),
                                                       (1, good["verdicts"][1])]  # fmt: skip
     assert flags == []
+    # a "verdicts" value that is no list at all (it raised TypeError / AttributeError): no
+    # verdict, one flag, never one per character
+    for bad, kind in (("noise", "str"), (3, "int"), ({"index": 1}, "dict")):
+        flags = []
+        assert judge._align({"verdicts": bad}, ["r1"], flags) == []
+        assert flags == [f"non_list_verdicts:{kind}"]
+    for empty in (None, [], "", 0):  # as before: nothing to align, nothing flagged
+        flags = []
+        assert judge._align({"verdicts": empty}, ["r1"], flags) == [] and flags == []

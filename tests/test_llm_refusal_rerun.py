@@ -202,6 +202,57 @@ def test_overflow_reask_keeps_the_refusal_rerun(client):
     ]  # fmt: skip
 
 
+def test_overflow_reask_has_a_bounded_retry_budget(client):
+    """A re-ask that keeps timing out is tried ``OVERFLOW_ATTEMPTS`` times, not the full 12 (at
+    a doubled timeout that held a slot for hours); the first call's budget is unchanged."""
+
+    class APITimeoutError(Exception):
+        pass
+
+    def reask_times_out(model, kw):
+        if kw["max_tokens"] == 100:
+            return _resp('{"a":', "max_tokens")
+        raise APITimeoutError("timed out")
+
+    fake, res, spend = _json_once(reask_times_out, client, max_tokens=100, overflow_max_tokens=200)
+    caps = [c["max_tokens"] for c in fake.calls]
+    assert res is None and caps == [100] + [200] * llm.OVERFLOW_ATTEMPTS == [100, 200, 200, 200]
+    assert spend.errors == 1 and spend.retries == llm.OVERFLOW_ATTEMPTS - 1
+    # a caller's lower budget still wins on the re-ask
+    fake, _res, _ = _json_once(
+        reask_times_out, client, max_tokens=100, overflow_max_tokens=200, attempts=2
+    )
+    assert [c["max_tokens"] for c in fake.calls] == [100, 200, 200]
+    # the first call keeps the full budget: 11 timeouts, then the answer, with no re-ask
+    left = [11]
+
+    def first_times_out(model, kw):
+        if left[0]:
+            left[0] -= 1
+            raise APITimeoutError("timed out")
+        return _resp('{"a": 3}')
+
+    fake, res, spend = _json_once(first_times_out, client, max_tokens=100, overflow_max_tokens=200)
+    assert res == {"a": 3} and len(fake.calls) == 12 and spend.retries == 11
+    assert {c["max_tokens"] for c in fake.calls} == {100}
+
+
+def test_overflow_reask_too_long_is_the_too_long_marker_under_mark_refusals(client):
+    """A re-ask that stops with ``model_context_window_exceeded`` is a context overflow like
+    any other: ``TOO_LONG_JSON`` for a caller asking for markers (the digest halves the bundle;
+    before the re-ask existed the item stayed unsummarized), ``None`` otherwise."""
+
+    def answer(model, kw):
+        stop = "max_tokens" if kw["max_tokens"] == 100 else "model_context_window_exceeded"
+        return _resp('{"a":', stop)
+
+    kw = {"max_tokens": 100, "overflow_max_tokens": 200}
+    fake, res, spend = _json_once(answer, client, mark_refusals=True, **kw)
+    assert res == llm.TOO_LONG_JSON and len(fake.calls) == 2 and spend.errors == 1
+    _fake, res, _ = _json_once(answer, client, **kw)
+    assert res is None
+
+
 def test_refusal_model_must_differ(client):
     client(lambda m, kw: _resp('{"a": 1}'))
     with pytest.raises(llm.JudgeConfigError):

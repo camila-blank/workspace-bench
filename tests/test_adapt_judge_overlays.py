@@ -440,6 +440,13 @@ def test_check_item_exonyms_warning_only_for_an_unlisted_adapted_id(tmp_path, mo
     # a registered item never gets it, with or without the overlay
     reg = _brmt_items()[0]
     assert not [p for p in ji.check_item(BRMT, reg, None) if "exonyms.json" in p]
+    # an overlay that redefines a registered entry is reported as a problem, never an exit
+    exo_file = registry.resource_path(BRMT, "exonyms.json")
+    reg_id = next(iter(json.loads(exo_file.read_text(encoding="utf-8"))["items"]))
+    clash = {"items": {reg_id: {"readout": {"ru": ["Другое"]}}, "brh-ad-new": {}}}
+    _root(tmp_path / "d", monkeypatch, {f"{BRMT}/exonyms.json": clash})
+    (problem,) = exo()
+    assert problem.startswith("exit: the set's basic_readout_mt/exonyms.json cannot be merged")
 
 
 # -------------------------------------------------------------------- agentic_misalignment

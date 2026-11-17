@@ -191,6 +191,9 @@ def _align(
     out-of-range index comes back as ``None``: the caller drops it, flagged
     ``bad_index:<index>`` in verdict order (:func:`_bad_index`)."""
     raw = verdict.get("verdicts") or []
+    if not isinstance(raw, list):  # a bare string / number: no verdict to align, flagged once
+        flags.append(f"non_list_verdicts:{type(raw).__name__}")
+        raw = []
     # a non-object entry (a judge listing bare strings) is dropped and flagged like a bad index,
     # never a crash (it raised AttributeError and failed the run: judge sweep, gpt-oss-20b)
     flags.extend(f"non_object_verdict:{v!s:.20}" for v in raw if not isinstance(v, dict))
