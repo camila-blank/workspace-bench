@@ -419,7 +419,10 @@ async def _anthropic_once(
         print(f"  llm refusal: {model}")
         return REFUSED_JSON if mark_refusals else None
     if stop in ("max_tokens", "model_context_window_exceeded"):
-        _note_error(spend)
+        if mark_refusals and stop == "model_context_window_exceeded":
+            spend.errors += 1  # a too-long bundle is re-asked in halves: not a lost call
+        else:
+            _note_error(spend)
         print(f"  llm error: {model} stop_reason={stop}")
         if mark_refusals and stop == "model_context_window_exceeded":
             return TOO_LONG_JSON
@@ -527,9 +530,13 @@ async def _one(
                 spend.retries += 1
                 await _sleep(_backoff(attempt, status))
                 continue
-            _note_error(spend)
+            too_long = mark_refusals and status == 400 and "prompt is too long" in str(e).lower()
+            if too_long:
+                spend.errors += 1  # re-asked in halves by the digest: not a lost call
+            else:
+                _note_error(spend)
             print(f"  llm error: {name}: {str(e)[:200]}")
-            if mark_refusals and status == 400 and "prompt is too long" in str(e).lower():
+            if too_long:
                 return TOO_LONG_JSON
             return None
     return None

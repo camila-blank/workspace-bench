@@ -246,3 +246,16 @@ def test_error_tally_counts_exhausted_retries_once(clock, monkeypatch):
         got, spend = _json(monkeypatch, fake, [PROMPT])
     assert got == {0: None} and fake.n == llm._ATTEMPTS
     assert spend.errors == 1 and spend.retries == llm._ATTEMPTS - 1 and tally.n == 1
+
+
+def test_error_tally_skips_a_too_long_bundle(clock, monkeypatch):
+    """A "prompt is too long" 400 under ``mark_refusals`` is re-asked in halves by the digest: it
+    is counted in ``Spend.errors`` but is not a lost call, so the 2b line stays quiet."""
+    fake = FakeOpenRouter([BadRequestError("Prompt is too long: 250000 tokens")])
+    with llm.error_tally() as tally:
+        got, spend = _json(monkeypatch, fake, [PROMPT], mark_refusals=True)
+    assert got == {0: llm.TOO_LONG_JSON} and spend.errors == 1 and tally.n == 0
+    fake = FakeOpenRouter([BadRequestError("Prompt is too long: 250000 tokens")])
+    with llm.error_tally() as tally:  # without mark_refusals it IS a lost call
+        got, spend = _json(monkeypatch, fake, [PROMPT])
+    assert got == {0: None} and spend.errors == 1 and tally.n == 1
