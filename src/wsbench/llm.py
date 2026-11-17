@@ -3,7 +3,8 @@
 * ``claude-*`` model ids go to the Anthropic SDK (structured outputs via ``output_config``);
   everything else goes to OpenRouter through the OpenAI SDK (``response_format`` json_schema).
 * Requests are paced under a process-wide requests-per-minute cap shared by every event loop
-  and thread (``_PACER``), so several families judged concurrently share one budget.
+  and thread (``_PACER``), so several families judged concurrently share one budget; an optional
+  input-token budget (``set_itpm``, ``_TOKEN_PACER``) paces each call's estimated size as well.
 * Transient failures (408/409/429/5xx, timeouts, connection errors, garbled bodies) are
   retried with jittered backoff; any other per-call failure yields ``None`` (an unjudged cell,
   never a clean one). Problems that would fail every call raise :class:`JudgeConfigError`.
@@ -11,12 +12,14 @@
 """
 
 import asyncio
+import contextlib
+import contextvars
 import json
 import os
 import random
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -148,6 +151,38 @@ class _Pacer:
 _PACER = _Pacer()
 
 
+class _TokenPacer:
+    """Process-wide input-token budget (plan 0092): a call's start slot is ``max(now, next)`` and
+    ``next`` advances by the time its estimated tokens take at ``itpm`` tokens a minute. One
+    budget for every model, FIFO; a call larger than a whole minute's budget still runs."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._next = 0.0
+
+    def reserve(self, tokens: int, itpm: float) -> float:
+        """Reserve ``tokens``; return how long the caller must wait for its slot (seconds)."""
+        with self._lock:
+            now = _now()
+            slot = max(now, self._next)
+            self._next = slot + max(0, tokens) * 60.0 / itpm
+            return slot - now
+
+
+_TOKEN_PACER = _TokenPacer()
+_ITPM = 0.0  # input tokens per minute; 0 = off (the library default)
+
+
+def set_itpm(tokens_per_minute: float) -> None:
+    """Set the process-wide input-token budget ``_pace_tokens`` paces under; 0 turns it off."""
+    global _ITPM
+    _ITPM = max(0.0, float(tokens_per_minute or 0))
+
+
 _sleep = asyncio.sleep  # seam: tests patch this instead of the global asyncio.sleep
 
 
@@ -155,6 +190,52 @@ async def _pace(rpm: float) -> None:
     delay = _PACER.reserve(rpm)
     if delay > 0:
         await _sleep(delay)
+
+
+async def _pace_tokens(est: int) -> None:
+    """Wait for ``est`` input tokens' slot under ``set_itpm``; returns at once when it is off."""
+    itpm = _ITPM
+    if itpm <= 0:
+        return
+    delay = _TOKEN_PACER.reserve(est, itpm)
+    if delay > 0:
+        await _sleep(delay)
+
+
+class ErrorTally:
+    """Calls that ended in an error (retries exhausted, a non-transient error, a ``max_tokens``
+    stop) while the tally was active; thread-safe."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.n = 0
+
+    def add(self) -> None:
+        with self._lock:
+            self.n += 1
+
+
+_ERRORS: contextvars.ContextVar[ErrorTally | None] = contextvars.ContextVar(
+    "wsbench_llm_errors", default=None
+)
+
+
+@contextlib.contextmanager
+def error_tally() -> Iterator[ErrorTally]:
+    """Count the failed calls made in this context (``asyncio.run`` and its tasks inherit it), so
+    ``runner`` can report them per family without a ``Spend`` crossing the family boundary."""
+    tally = ErrorTally()
+    token = _ERRORS.set(tally)
+    try:
+        yield tally
+    finally:
+        _ERRORS.reset(token)
+
+
+def _note_error(spend: Spend) -> None:
+    spend.errors += 1
+    if (tally := _ERRORS.get()) is not None:
+        tally.add()
 
 
 def _backoff(attempt: int, status: int | None) -> float:
@@ -338,7 +419,7 @@ async def _anthropic_once(
         print(f"  llm refusal: {model}")
         return REFUSED_JSON if mark_refusals else None
     if stop in ("max_tokens", "model_context_window_exceeded"):
-        spend.errors += 1
+        _note_error(spend)
         print(f"  llm error: {model} stop_reason={stop}")
         if mark_refusals and stop == "model_context_window_exceeded":
             return TOO_LONG_JSON
@@ -396,6 +477,7 @@ async def _one(
     system = system.encode("utf-8", "replace").decode("utf-8")
     user = user.encode("utf-8", "replace").decode("utf-8")
     n_attempts = _ATTEMPTS if attempts is None else max(1, min(attempts, _ATTEMPTS))
+    await _pace_tokens((len(system) + len(user)) // 3)  # once per call, not per retry
     for attempt in range(n_attempts):
         await _pace(rpm)
         try:
@@ -445,7 +527,7 @@ async def _one(
                 spend.retries += 1
                 await _sleep(_backoff(attempt, status))
                 continue
-            spend.errors += 1
+            _note_error(spend)
             print(f"  llm error: {name}: {str(e)[:200]}")
             if mark_refusals and status == 400 and "prompt is too long" in str(e).lower():
                 return TOO_LONG_JSON
@@ -735,6 +817,7 @@ async def _one_text(
 ) -> str | None:
     """Same backoff / fatal classification as :func:`_one`, for one free-text call."""
     user = user.encode("utf-8", "replace").decode("utf-8")
+    await _pace_tokens(len(user) // 3)  # once per call, not per retry
     for attempt in range(_ATTEMPTS):
         await _pace(rpm)
         try:
@@ -764,7 +847,7 @@ async def _one_text(
                 spend.retries += 1
                 await _sleep(_backoff(attempt, status))
                 continue
-            spend.errors += 1
+            _note_error(spend)
             print(f"  llm error: {name}: {str(e)[:200]}")
             return None
     return None

@@ -23,8 +23,12 @@ def _reset_preflighted():
 @pytest.fixture(autouse=True)
 def _reset_pacer():
     llm._PACER.reset()
+    llm.set_itpm(0)  # plan 0092: main([...]) turns the token budget on; off for the next test
+    llm._TOKEN_PACER.reset()
     yield
     llm._PACER.reset()
+    llm.set_itpm(0)
+    llm._TOKEN_PACER.reset()
 
 
 @pytest.fixture(autouse=True)
