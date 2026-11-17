@@ -89,6 +89,23 @@ would still be 230M. So the guard becomes a token budget:
   their `summ_timeout=1800`, `summ_fallback` and (agentic) `summ_max` / `summ_rare` defaults are
   retained*. `FAMILY_DEFAULT_KEYS` keeps `summ_concurrency`.
 
+### 2a. A cross-process cap on calls in flight (`llm.py`; amended 2026-11-17)
+
+Measured on the full bench (mlnla11-rl600, 29 families, one `wsbench judge` process each, 256
+slots each): 10,523 calls failed after their retries with "would exceed your organization's rate
+limit of 15,000,000 output tokens per minute". Output tokens cannot be paced up front (a call's
+length is unknown), and per-process settings cannot see the other processes. So:
+
+- `WSB_SLOTS=<dir>:<n>` (environment, read per call; unset = off, nothing changes): at most `n`
+  API attempts in flight across every process that shares the directory. One attempt holds one
+  `flock`ed slot file (`<dir>/<i>.slot`, random probes, jittered polling sleep through `_sleep`;
+  the kernel frees a dead process's slots). The slot is taken inside the retry loop, after the
+  rpm slot, around the API call only, in `_one` and `_one_text`. A malformed value is a
+  `JudgeConfigError`.
+- Not a CLI option and not stamped: it is an operator setting of the machine, like the key.
+- Tests: off without the variable; two slots admit two holders and a third only after a release;
+  a call waits for a slot, runs, and releases it; a bad value raises.
+
 ### 2b. Failed calls are reported loudly (`runner.py`); completeness is NOT changed
 
 Known and pre-existing: a per-layer digest lost to a failed call (retries exhausted) leaves the

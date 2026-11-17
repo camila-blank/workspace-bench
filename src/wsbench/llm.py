@@ -202,6 +202,60 @@ async def _pace_tokens(est: int) -> None:
         await _sleep(delay)
 
 
+# ---------------------------------------------------------------- cross-process slots
+
+SLOTS_ENV = "WSB_SLOTS"  # "<dir>:<n>": at most n API calls in flight across every process using it
+
+
+def _slots_config() -> tuple[str, int] | None:
+    raw = os.environ.get(SLOTS_ENV, "")
+    if not raw:
+        return None
+    d, _, n = raw.rpartition(":")
+    try:
+        count = int(n)
+    except ValueError:
+        count = 0
+    if not d or count < 1:
+        raise JudgeConfigError(f"{SLOTS_ENV}={raw!r}: expected <dir>:<n> with n >= 1")
+    return d, count
+
+
+def _try_slot(d: str, n: int, tries: int = 8) -> int | None:
+    """Lock one free slot file of ``d`` (``flock``, released by the kernel if the process dies)
+    and return its descriptor, or None when the ``tries`` random probes were all taken."""
+    import fcntl
+
+    os.makedirs(d, exist_ok=True)
+    for _ in range(tries):
+        fd = os.open(os.path.join(d, f"{random.randrange(n)}.slot"), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            os.close(fd)
+    return None
+
+
+@contextlib.asynccontextmanager
+async def _slot() -> Any:
+    """Hold one of the ``WSB_SLOTS`` slots for one API attempt (plan 0092: the account's output
+    tokens per minute bound how many calls may generate at once, across the per-family judge
+    processes); a no-op without the variable. A waiting call polls with jittered sleeps."""
+    cfg = _slots_config()
+    if cfg is None:
+        yield
+        return
+    fd = _try_slot(*cfg)
+    while fd is None:
+        await _sleep(0.05 + 0.2 * random.random())
+        fd = _try_slot(*cfg)
+    try:
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the lock
+
+
 class ErrorTally:
     """Calls that ended in an error (retries exhausted, a non-transient error, a ``max_tokens``
     stop) while the tally was active; thread-safe."""
@@ -490,32 +544,33 @@ async def _one(
     for attempt in range(n_attempts):
         await _pace(rpm)
         try:
-            if route_ == "anthropic":
-                return await _anthropic_once(
+            async with _slot():
+                if route_ == "anthropic":
+                    return await _anthropic_once(
+                        client,
+                        system,
+                        user,
+                        schema=schema,
+                        model=model,
+                        max_tokens=max_tokens,
+                        timeout=timeout,
+                        spend=spend,
+                        reasoning=reasoning,
+                        mark_refusals=mark_refusals,
+                        fallbacks=fallbacks,
+                    )
+                return await _openrouter_once(
                     client,
                     system,
                     user,
                     schema=schema,
                     model=model,
+                    reasoning=reasoning,
+                    temperature=temperature,
                     max_tokens=max_tokens,
                     timeout=timeout,
                     spend=spend,
-                    reasoning=reasoning,
-                    mark_refusals=mark_refusals,
-                    fallbacks=fallbacks,
                 )
-            return await _openrouter_once(
-                client,
-                system,
-                user,
-                schema=schema,
-                model=model,
-                reasoning=reasoning,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                spend=spend,
-            )
         except Exception as e:
             name = type(e).__name__
             status = getattr(e, "status_code", None)
@@ -834,16 +889,17 @@ async def _one_text(
     for attempt in range(_ATTEMPTS):
         await _pace(rpm)
         try:
-            return await _anthropic_text_once(
-                client,
-                user,
-                model=model,
-                thinking=thinking,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                spend=spend,
-                mark_refusals=mark_refusals,
-            )
+            async with _slot():
+                return await _anthropic_text_once(
+                    client,
+                    user,
+                    model=model,
+                    thinking=thinking,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    spend=spend,
+                    mark_refusals=mark_refusals,
+                )
         except Exception as e:
             name = type(e).__name__
             status = getattr(e, "status_code", None)

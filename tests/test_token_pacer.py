@@ -259,3 +259,50 @@ def test_error_tally_skips_a_too_long_bundle(clock, monkeypatch):
     with llm.error_tally() as tally:  # without mark_refusals it IS a lost call
         got, spend = _json(monkeypatch, fake, [PROMPT])
     assert got == {0: None} and spend.errors == 1 and tally.n == 1
+
+
+# ---------------------------------------------------------------- cross-process slots
+
+
+def test_slots_off_without_the_variable(clock, monkeypatch):
+    monkeypatch.delenv(llm.SLOTS_ENV, raising=False)
+    got, _ = _json(monkeypatch, FakeOpenRouter([_ok()]), [PROMPT])
+    assert got == {0: {"a": 1}} and clock == []
+
+
+def test_slots_bound_calls_in_flight_and_are_released(tmp_path, monkeypatch):
+    d = tmp_path / "slots"
+    monkeypatch.setenv(llm.SLOTS_ENV, f"{d}:2")
+    a, b = llm._try_slot(str(d), 2, tries=64), llm._try_slot(str(d), 2, tries=64)
+    assert a is not None and b is not None
+    assert llm._try_slot(str(d), 2, tries=64) is None  # both taken (flock is per open file)
+    import os
+
+    os.close(a)
+    c = llm._try_slot(str(d), 2, tries=64)
+    assert c is not None
+    os.close(b), os.close(c)
+
+
+def test_a_call_waits_for_a_slot_then_runs(clock, tmp_path, monkeypatch):
+    d = tmp_path / "slots"
+    monkeypatch.setenv(llm.SLOTS_ENV, f"{d}:1")
+    held = llm._try_slot(str(d), 1)
+    import os
+
+    async def sleep_then_free(delay):
+        clock.append(delay)
+        if held in fds:
+            os.close(fds.pop())
+
+    fds = [held]
+    monkeypatch.setattr(llm, "_sleep", sleep_then_free)
+    got, _ = _json(monkeypatch, FakeOpenRouter([_ok()]), [PROMPT])
+    assert got == {0: {"a": 1}} and len(clock) == 1 and fds == []
+    assert llm._try_slot(str(d), 1) is not None  # the call released its slot
+
+
+def test_bad_slots_value_is_a_config_error(monkeypatch):
+    monkeypatch.setenv(llm.SLOTS_ENV, "nodir")
+    with pytest.raises(llm.JudgeConfigError):
+        llm._slots_config()
