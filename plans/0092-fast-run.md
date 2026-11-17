@@ -283,74 +283,119 @@ If the gate fails on agentic or jailbreak, lower `itpm` and re-run; if it still 
 bounded family default (`summ_concurrency` 32, the value three full in-house arms ran at) and
 record why. The same run with `--fast` gives the fast-subset judge time.
 
-## 5. `run` judges one process per family (amended 2026-11-17)
+## 5. `run` judges one process per family (amended 2026-11-17, revised after review)
 
-Why: the validation above failed. One in-process `wsbench run all=True` of the full bench at the
-new defaults (8 families at a time, 256 slots each) lost hundreds of calls to
+Why: the in-process validation failed. One `wsbench run all=True` of the full bench at the new
+defaults (8 families at a time, 256 slots each) lost hundreds of calls to
 `APIConnectionError [ReadError / ConnectError]` within 17 minutes; a `run` is one Python process
 on one core. One `wsbench judge` process per family at the same settings (with `WSB_SLOTS`) lost
-none. So `run` spawns a child per family.
+none. So `run` spawns a child per family. This supersedes three statements above: "the
+process-wide pacer bounds the whole run" (true per process; across children the shared pacer
+below does it), "process-per-family judging is a follow-up" (§1), and `WSB_SLOTS` "unset = off"
+(§2a: still true for `judge`; `run` in process mode sets one). With `wait=0` the families'
+results, messages, outcomes and exit codes are as before; stdout interleaving and the number of
+preflight calls (each child preflights its own judge and digest model again, one or two tiny
+calls per family) differ.
 
 ### Mode switch
 - `RunFamilies.procs` (tri-state): the explicit key wins, else env `WSB_RUN_PROCS` (`0` / `1`),
-  else ON. Forced off under `dry_run=True` and `layers=each`.
-- `runner.run_families` uses processes only when `getattr(args, "procs", False)` is true, so
-  hand-built namespaces keep threads.
+  else ON. Forced off in `RunFamilies.finalize` under `dry_run=True` and `layers=each`
+  (`_run_each` copies the config before calling `run_families`).
+- `runner.run_families` uses processes only when `getattr(args, "procs", False)` is true AND its
+  `env` parameter is None (a caller-supplied env mapping keeps threads), so hand-built namespaces
+  keep threads.
 - `tests/conftest.py`: an autouse fixture sets `WSB_RUN_PROCS=0` (21 test files call
   `main(["run", ...])` against families registered or patched in-process). A fixture addition, no
   assertion change.
 
 ### Supervisor (`runner.py`)
-- The existing `ThreadPoolExecutor` loop stays; in process mode it submits `_one_proc` in place
-  of `_one`. `_one_proc` spawns the child, waits for it, and returns the `FamilyOutcome`.
-  Pending / `wait=` logic, `specs` order, `waited_s` and the exit-code rule (130 > 3 > 2 > 0) are
-  unchanged.
-- Every parent-side check stays in the parent, in today's order: fast membership, the readiness
-  / missing-file check, the ATI scope check, `_seed_preflights` (a failure exits 3 before any
+- The `ThreadPoolExecutor` loop stays; in process mode it submits `_one_proc` in place of `_one`
+  with the same `dest` the loop already computes (so `out_of` is honoured). `_one_proc` checks a
+  stop flag, spawns the child, waits for it, and returns the `FamilyOutcome`. Pending / `wait=`
+  logic, `specs` order, `waited_s` and the exit-code rule (130 > 3 > 2 > 0) are unchanged.
+- Parent-side checks stay in the parent, in today's order: fast membership, the readiness /
+  missing-file check, the ATI scope check, `_seed_preflights` (a failure exits 3 before any
   spawn).
-- `family_workers` stays "families at once" (default 8; 0 = all).
+- `family_workers` stays "families at once" (default 8; 0 = all; fix the comment at its
+  declaration). The parent flushes its stdout before each spawn and before the final JSON
+  payload.
 
 ### Child
 - Command: `[sys.executable, "-m", "wsbench", "judge", "family=<name>", "readouts=<found path>",
-  "out=<registry.family_dir(out, name)>", "outcome=<that dir>/outcome.json"]` plus, when set:
-  `judge_model`, `layers`, `items`, `limit`, `allow_missing`, `concurrency`, `rpm`, `itpm`,
-  `anti_text_inversion`, `ati_variant`, `ati_opt_in`, `fast=True`, and
-  `opts=",".join(args.opt)` (`args.opt` already carries `reads=` / `sampling=`). Never forwarded:
-  `all`, `families`, `readouts_root`, `family_workers`, `wait`, `settle`, `json`, `hb_method`,
-  `include_superseded`, `dry_run`, `procs`. A spawn seam (`runner._spawn`) lets tests fake it.
-- Env inherited plus `PYTHONUNBUFFERED=1`; stdout / stderr inherited, so the per-family result
-  line and the failed-call line appear as today.
-- New internal `judge` key `outcome=PATH` (not documented as user-facing): `JudgeFamily.execute`
-  runs the same fail-soft function `run` uses (`runner._one`) and atomically writes
-  `{family, status, error, exit_code}` there; its own exit code is unchanged.
-- The parent deletes a stale outcome file before spawning. On `status == "ok"` it loads
-  `results.read_results(dest)` into the `FamilyOutcome` (so `run_manifest`, `_write_summary`,
-  the macro and the `json=True` payload are unchanged). No outcome file with exit 2 or 3: failed
-  with that code and the message `judge process exited <code>`. Any other exit without an outcome
-  file: terminate the other children and raise (today's "other exceptions propagate").
+  "out=<dest>", "outcome=<dest>/outcome.json", "concurrency=<n>", "rpm=<x>", "itpm=<n>"]` plus,
+  when set: `judge_model`, `layers`, `items`, `limit`, `allow_missing`, `anti_text_inversion`,
+  `ati_variant`, `ati_opt_in`, `fast=True`, and `opts=",".join(args.opt)` (`args.opt` already
+  carries `reads=` / `sampling=`). Never forwarded: `all`, `families`, `readouts_root`,
+  `family_workers`, `wait`, `settle`, `json`, `hb_method`, `include_superseded`, `dry_run`,
+  `procs`. A spawn seam (`runner._spawn(cmd, env) -> Popen-like`) lets tests fake it.
+- Child env: the parent's environment plus `PYTHONUNBUFFERED=1`, `WSB_SLOTS` and `WSB_PACER`
+  (below), passed through `env=` only; the parent never mutates `os.environ`. stdout / stderr are
+  inherited.
+- New `judge` key `outcome=PATH` (it shows in `--help`; documented as "written for `run`"). With
+  it, `JudgeFamily.execute` runs option parsing, judge resolution and the family inside the same
+  fail-soft function `run` uses (`runner._one`), atomically writes `{family, status, error,
+  exit_code}` to PATH, and exits with that `exit_code` (0 / 2 / 3). Without `outcome=`, `judge`
+  is untouched.
+- Parent: deletes a stale outcome file before spawning and deletes it again after reading. An
+  outcome with `status == "ok"` loads `results.read_results(dest)` into the `FamilyOutcome` (an
+  unreadable `results.json` then raises). No outcome file: exit 2 or 3 -> failed with that code,
+  error `judge process exited <code>`; a negative return code -> failed, exit code 2, error
+  `judge process killed by signal <N>` (one OOM-killed family must not discard the others); any
+  other exit (an uncaught traceback, exit 1) -> terminate the other children and raise, today's
+  "other exceptions propagate".
 - `run.json` gains no key (`tests/test_runner.py:105` pins the set).
-- Interrupt: children start in their own session (`start_new_session=True`); on
-  `KeyboardInterrupt` the parent stops spawning, lets in-flight children finish their work as
-  today's threads do, and exits 130; the `except BaseException` path terminates tracked children.
+
+### Interrupts and cleanup
+- Children start in their own session (`start_new_session=True`) and, on Linux, set
+  `PR_SET_PDEATHSIG(SIGTERM)` (best effort) so they die with the parent.
+- First `KeyboardInterrupt`: set the stop flag (no new spawn; a future that has started but not
+  spawned returns `skipped ("interrupted")`), wait for in-flight children to finish, exit 130.
+  A second `KeyboardInterrupt` during that wait: terminate (`killpg`) every tracked child, mark
+  them `skipped ("interrupted")`, exit 130.
+- The parent installs SIGTERM / SIGHUP handlers for the duration of the run that raise into the
+  same cleanup; a `finally` kills every tracked child still alive and restores the handlers.
 
 ### Budgets across the children
-- `WSB_SLOTS`: inherited when set; else the parent sets a run-private directory under the run's
-  `out` with `n = 1500` (constant `runner.RUN_SLOTS`, documented as account-specific).
-- `rpm` / `itpm` stay budgets of the whole run: the parent sets `WSB_PACER=<dir>` (run-private,
-  under `out`); when the variable is set, `_Pacer.reserve` and `_TokenPacer.reserve` keep `next`
-  in a file there under `flock`, on wall-clock time (`time.time()`), instead of in memory.
-  `_pace(rpm)` keeps its one-argument signature. Without the variable nothing changes.
+- The parent creates a fresh local directory `tempfile.mkdtemp(prefix="wsb-run-")` (never under
+  `out`: that is often a network volume, and a results directory must not hold 1,500 lock files)
+  with `slots/` and `pacer/` inside, removed in the `finally`. Before spawning it probes `flock`
+  once there; a failure exits 3 with a clear message.
+- `WSB_SLOTS`: a value already in the environment is inherited as is; else
+  `<tmp>/slots:<runner.RUN_SLOTS>` with `RUN_SLOTS = 1500` (account-specific: about what a 15M
+  output-tokens-a-minute limit carries; with 8 x 256 = 2,048 requested slots the cap is meant to
+  bind).
+- `rpm` / `itpm` stay budgets of the whole run: the parent sets `WSB_PACER=<tmp>/pacer`. When the
+  variable is set, `_Pacer.reserve` and `_TokenPacer.reserve` keep `next` in one small file each
+  there: one fd kept open per process and pacer, the existing `threading.Lock` held together
+  with an exclusive `flock`, `pread` / `pwrite`, no fsync, nothing awaited inside; an empty or
+  torn file reads as 0; `reset()` truncates the file. The clock stays `llm._now()`
+  (`time.monotonic`: system-wide on Linux, so comparable across the run's processes, and the seam
+  the pacer tests patch). `_pace(rpm)` keeps its one-argument signature. Without the variable the
+  pacers are in-memory exactly as before.
 
 ### Tests (`tests/test_run_procs.py`)
-With the spawn seam faked (no real subprocess, no network): argv forwarding for every forwarded
-key and absence of every non-forwarded one; outcome mapping for ok / failed 2 / failed 3 /
-missing outcome file with exit 2 / abnormal exit (raises, others terminated); `specs` order;
-`wait=` late submit still works in process mode; interrupt gives 130; `dry_run=True` and
-`layers=each` force threads; `WSB_RUN_PROCS=0` and `procs=False` force threads, `procs=True`
-beats the env. One real-subprocess smoke on a regex-scored family over `examples/readouts`
-(no LLM call): the result equals the in-process result. Shared pacer: two reservers on one
-`WSB_PACER` directory are spaced by the budget; unset = in-memory as before. `judge outcome=`
-writes the outcome file for ok and for a failing family.
+With the spawn seam faked (no real subprocess, no network): the built argv parsed back through
+`JudgeFamily` gives the same field values as the run's (every forwarded key), and holds none of
+the non-forwarded ones; outcome mapping for ok / failed 2 / failed 3 / no outcome file with exit
+2 / killed by a signal (failed, others unaffected) / exit 1 (raises, others terminated) / ok
+with unreadable results (raises); a stale `outcome.json` is ignored; `specs` order; `wait=` late
+submit in process mode; first interrupt = 130 after waiting, second interrupt terminates the
+children; SIGTERM runs the cleanup; `dry_run=True`, `layers=each` and a caller `env` force
+threads; `WSB_RUN_PROCS=0` and `procs=False` force threads, `procs=True` beats the env; the
+temporary directory is removed; a failing `flock` probe exits 3; an inherited `WSB_SLOTS` is not
+replaced. `judge outcome=` writes the file and exits with its code for an ok family, a
+`SystemExit` family, a `JudgeConfigError` family and a bad `opts=`.
+One real-subprocess smoke, offline: `run families=typo_mt readouts_root=examples/readouts
+out=TMP opts=aggregate=native allow_missing=True procs=True` with the API-key variables removed
+from the child env (verified by the reviewer: exit 0, `pass_rate=0.5 n=85`); its `results.json`
+bytes equal those of `judge` with the same arguments; use `capfd`.
+Shared pacer: two reservers on one `WSB_PACER` directory are spaced by the budget (patched
+clock); a torn file reads as 0; unset = in-memory as before.
+
+### Docs and files added by this section
+README Quickstart paragraph, `docs/producing_readouts.md` §4 and the CLAUDE.md Driver paragraph
+(process mode, `procs=`, `WSB_RUN_PROCS`, the run-private slots / pacer directory, children
+preflight again); `tests/test_run_procs.py`; the `tests/conftest.py` fixture.
 
 ### Validation before merge (replaces the in-process gate above)
 `wsbench run all=True` (process mode, defaults) on the mlnla11-rl600 full readouts: 0
