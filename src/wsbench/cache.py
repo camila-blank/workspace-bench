@@ -12,6 +12,19 @@ from typing import Any, Self
 _RESERVED = ("key", "fp", "ts")
 
 
+def _dumps(row: dict[str, Any]) -> str:
+    """One cache line: UTF-8 JSON as before, or, only when the row carries a lone surrogate (a
+    model emitting half an emoji's UTF-16 pair, e.g. ``"\\ud83e"``, which ``json.loads`` accepts),
+    the ASCII-escaped form, which reads back to the same string; an unencodable row used to
+    raise ``UnicodeEncodeError`` and fail the whole run (judge sweep, minimax-m3.1-flash)."""
+    line = json.dumps(row, ensure_ascii=False)
+    try:
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        return json.dumps(row)
+    return line
+
+
 def fingerprint(*parts: Any) -> str:
     blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
@@ -57,7 +70,7 @@ class Cache:
         if clash:
             raise ValueError(f"payload uses reserved cache keys: {clash}")
         row = {"key": key, "fp": fp, "ts": time.time(), **payload}
-        self._fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        self._fh.write(_dumps(row) + "\n")
         self._fh.flush()
         self._rows.setdefault(key, []).append(row)
         self._n += 1
@@ -143,7 +156,7 @@ class SharedLog:
             raise ValueError(f"payload uses reserved cache keys: {clash}")
         row = {"key": key, "fp": fp, "ts": time.time(), **payload}
         # the leading newline ends a line another writer tore, so this row always parses
-        data = ("\n" + json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8")
+        data = ("\n" + _dumps(row) + "\n").encode("utf-8")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:

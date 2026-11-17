@@ -90,3 +90,17 @@ def test_creates_parent_dir(tmp_path):
     c.put("k", "fp", {"result": 1})
     c.close()
     assert (tmp_path / "deep" / "dir" / "c.jsonl").exists()
+
+
+def test_put_survives_a_lone_surrogate(tmp_path):
+    # a model can emit half an emoji's UTF-16 pair ("\ud83e"), which json.loads accepts; writing
+    # it used to raise UnicodeEncodeError and fail the whole run. Normal rows stay byte-identical.
+    p = tmp_path / "c.jsonl"
+    c = Cache(p)
+    bad = json.loads('"smile \\ud83e here"')
+    c.put("k1", "fp", {"result": {"text": bad}})
+    c.put("k2", "fp", {"result": {"text": "é plain"}})
+    assert c.get("k1", "fp")["result"]["text"] == bad
+    lines = p.read_text(encoding="utf-8").splitlines()
+    assert "\\ud83e" in lines[0] and "é plain" in lines[1]  # ASCII-escaped only when needed
+    assert Cache(p).get("k1", "fp")["result"]["text"] == bad  # reads back the same string

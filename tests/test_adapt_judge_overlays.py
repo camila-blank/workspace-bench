@@ -416,6 +416,32 @@ def test_basic_readout_mt_missing_entries_are_loud(tmp_path, monkeypatch):
     assert mf.gate_name_forms(ad, "readout") == mf.item_name_forms(ad, "readout")  # {} = none
 
 
+def test_check_item_exonyms_warning_only_for_an_unlisted_adapted_id(tmp_path, monkeypatch):
+    """#289: ``judge_inputs`` warned for every adapted-only basic_readout_mt id, also one the
+    set's own exonyms.json lists (``{}`` = none), and cited stale line numbers."""
+    from wsbench.adapt import judge_inputs as ji
+
+    ad = _brmt_adapted(_brmt_items())
+
+    def exo():
+        return [p for p in ji.check_item(BRMT, ad, None) if "exonyms.json" in p]
+
+    assert len(exo()) == 1  # no root: nothing lists it
+    _root(tmp_path, monkeypatch, {})
+    (warning,) = exo()  # a set with no exonyms.json
+    assert "gate_name_forms" in warning and "_adapted_entry" in warning
+    assert "1777" not in warning and ".py:" not in warning  # names, not line numbers
+    _root(tmp_path / "a", monkeypatch, {f"{BRMT}/exonyms.json": {"items": {"other-id": {}}}})
+    assert len(exo()) == 1  # the set's file does not list this id
+    _root(tmp_path / "b", monkeypatch, _BRMT_OVERLAY)
+    assert exo() == []  # listed with forms
+    _root(tmp_path / "c", monkeypatch, {f"{BRMT}/exonyms.json": {"items": {"brh-ad-new": {}}}})
+    assert exo() == []  # listed as "no exonyms"
+    # a registered item never gets it, with or without the overlay
+    reg = _brmt_items()[0]
+    assert not [p for p in ji.check_item(BRMT, reg, None) if "exonyms.json" in p]
+
+
 # -------------------------------------------------------------------- agentic_misalignment
 
 AG = "agentic_misalignment"

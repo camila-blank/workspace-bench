@@ -1396,9 +1396,28 @@ def _write_note(model: str, items: list[dict[str, Any]]) -> str:
     return text
 
 
+def unfinished(model: str, elicited: Mapping[str, Any] | None = None) -> list[str]:
+    """Elicited candidate ids with no gate record: a wave that crashed after ``elicit`` and
+    before ``build`` (#289). Empty after any wave that ran to its end, since ``build`` records
+    every elicited candidate it is given; an elicited id that is no candidate under the ext pool
+    (``_by_id`` reports those) is never built, so it is not unfinished."""
+    elicited = _load(model, "elicit.json") if elicited is None else elicited
+    rows = store.gated(model, FAMILY)
+    todo = [i for i in elicited if i not in rows]
+    if not todo:
+        return []
+    try:
+        known = {it["id"] for _o, it in candidates("ext")}
+    except SystemExit:  # no box pool (driver tests): nothing here can finish them
+        return []
+    return [i for i in todo if i in known]
+
+
 def prior_tally(model: str) -> tuple[int, int]:
     """(tried, landed) over every item already elicited (the 181 bank / retired / g3 items before
-    the first wave, plus earlier waves): landed = its last gate record passes ``row_passes``."""
+    the first wave, plus earlier waves): landed = its last gate record passes ``row_passes``.
+    Ids a crashed wave elicited but never built (``unfinished``) are not tried yet: the next
+    wave finishes and counts them."""
     from . import refill
 
     elicited = _load(model, "elicit.json")
@@ -1406,7 +1425,8 @@ def prior_tally(model: str) -> tuple[int, int]:
     if not elicited:
         live = [r for r in rows.values() if not r["gate"].get("lint")]
         return len(live), sum(refill.row_passes(FAMILY, r) for r in live)
-    return len(elicited), sum(refill.row_passes(FAMILY, rows[i]) for i in elicited if i in rows)
+    tried = len(elicited) - len(unfinished(model, elicited))
+    return tried, sum(refill.row_passes(FAMILY, rows[i]) for i in elicited if i in rows)
 
 
 def pool_generation(model: str, cutoff: str | None = None) -> dict[str, Any] | None:
@@ -1426,8 +1446,10 @@ def pool_generation(model: str, cutoff: str | None = None) -> dict[str, Any] | N
     rows = store.gated(model, FAMILY)
     done = [it["id"] for it in new if it["id"] in elicited]
     landed = sum(refill.row_passes(FAMILY, rows[i]) for i in done if i in rows)
-    return {"name": GENERATION, "tried": len(done), "landed": landed, "size": len(new),
-            "unseen": len(new) - len(done)}  # fmt: skip
+    # tried = built ids only (#289: a crashed wave's elicited ids are finished by the next wave,
+    # and are not unseen either); equal to len(done) after any wave that ran to its end
+    return {"name": GENERATION, "tried": sum(i in rows for i in done), "landed": landed,
+            "size": len(new), "unseen": len(new) - len(done)}  # fmt: skip
 
 
 def refill_wave(model: str, *, wave: int, runner=None, llm: str | None = None,
@@ -1456,7 +1478,12 @@ def refill_wave(model: str, *, wave: int, runner=None, llm: str | None = None,
     elicited = elicit(model, runner=runner, pool="ext", cutoff=cutoff, wave=wave,
                       wave_size=wave_size)  # fmt: skip
     new = [i for i in elicited if i not in before]
-    if new:
+    # #289: ids an earlier wave elicited and then crashed on (no gate record) are finished here,
+    # also by a wave with nothing new to elicit, and counted in this wave's tally
+    # (``prior_tally`` leaves them out). Empty on a run that never crashed, where this is the
+    # old `if new:`.
+    left = [i for i in unfinished(model, elicited) if i not in set(new)]
+    if new or left:
         canon(model, counted, workers, pool="ext")
         verify(model, counted, cutoff, workers, pool="ext")
         units(model, counted, cutoff, workers, require_verify=llm_on, pool="ext")
@@ -1464,6 +1491,7 @@ def refill_wave(model: str, *, wave: int, runner=None, llm: str | None = None,
         redo = {i for i in elicited if i not in gated or not gated[i]["gate"].get("pass")}
         build(model, cutoff, require_verify=llm_on, pool="ext", ids=redo | set(new))
     rows = store.gated(model, FAMILY)
+    new = [*new, *(i for i in left if i in rows)]
     landed = sum(refill.row_passes(FAMILY, rows[i]) for i in new if i in rows)
     ext = [it for o, it in candidates("ext") if o == REFILL]
     unseen = [it for it in ext if it["id"] not in elicited and eligible(it, cutoff)]

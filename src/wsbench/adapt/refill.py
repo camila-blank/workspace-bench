@@ -23,6 +23,7 @@ MH2 = "multihop_mt"
 # the adapt module that owns each family's stages and optional hooks (row_passes, select_refill,
 # refill_wave, prior_tally, build_pool); buggy_code goes through run.fill
 FAMILY_MODULES = {MSDM: "msdm", KCUTOFF: "kcutoff", WI: "wrong_intermediate", MH2: "mhmt2"}
+MH2_ROUTE = f"{FAMILY_MODULES[MH2]}.refill_wave"
 
 
 def _registered_size(family: str) -> int:
@@ -499,11 +500,29 @@ def change_text(block: dict, measured: str = "") -> str:
     if block.get("tried") is not None:
         y = block.get("yield")
         ys = f", yield {y:.2%}" if isinstance(y, int | float) else ""
-        parts.append(f"{block.get('landed')} landed of {block['tried']} tried{ys}")
+        # T1 (#289): multihop_mt tallies its easiest level only (2-hop, §1.2) while 3-hop items
+        # ship too, so `landed` is below the shipped count by design; the line says so
+        lvl = " at the easiest level only" if block.get("route") == MH2_ROUTE else ""
+        parts.append(f"{block.get('landed')} landed of {block['tried']} tried{lvl}{ys}")
     if block.get("pool_size") is not None:
         parts.append(f"pool {block.get('pool_used')}/{block['pool_size']} used")
     parts.append(f"stop: {block.get('stop')}")
     return "; ".join(parts)
+
+
+NOTE_MARK = "refill_note_sha"  # the note standing when the refill block was written (R1, #289)
+
+
+def note_sha(entry: dict) -> str:
+    return hashlib.sha256(str(entry.get("note") or "").encode()).hexdigest()[:16]
+
+
+def stale_note(entry: dict) -> bool:
+    """True when the family's ``note`` is byte-identical to the one that stood when its refill
+    block was written (``write_block``): the refill is newer than the note, which may describe
+    the pre-refill family. An entry without the mark (older blocks) is never flagged."""
+    mark = entry.get(NOTE_MARK)
+    return bool(mark and entry.get("note") and entry.get("refill") and mark == note_sha(entry))
 
 
 def write_block(model: str, family: str, block: dict, status: str) -> None:
@@ -511,6 +530,7 @@ def write_block(model: str, family: str, block: dict, status: str) -> None:
         entry = store.report_slot(report, "families", family)
         entry["refill"] = block
         entry["status"] = status
+        entry[NOTE_MARK] = note_sha(entry)
 
     store.update_report(model, _set)
 
@@ -564,6 +584,12 @@ def _refill_family(
     # gpu_minutes as a wall-clock cap on this family's waves; no global call counter is cheap
     start, calls, done = time.monotonic(), 0, 0
     exhausted, pool_size, pool_used = False, prev.get("pool_size"), prev.get("pool_used")
+    # S1 (#289): the previous block's pool state, used ONLY to label a stop this call makes
+    # before its first wave (a resume would else relabel a "pool exhausted" stop "low yield above
+    # half"); it never stops a call that would have run a wave
+    prev_exhausted = (
+        isinstance(pool_size, int) and isinstance(pool_used, int) and pool_used >= pool_size
+    )
     status, why = None, ""
     levels_hook = _hook(family, "untried_levels")
     gen_hook = _hook(family, "pool_generation")
@@ -595,6 +621,12 @@ def _refill_family(
             s_tried, s_landed, s_exhausted = tried, landed, exhausted
         status, why = stop_status(have, target, s_tried, s_landed, n_min, pol.y_min,
                                   s_exhausted, budget, hold=hold)  # fmt: skip
+        if (status == "partial" and done == 0 and prev_exhausted
+                and not (gen is not None and gen["unseen"] > 0)):  # fmt: skip
+            # same arguments with the pool known exhausted: full / ooc / held-ooc precede that
+            # condition in stop_status, so only a partial's reason can change
+            status, why = stop_status(have, target, s_tried, s_landed, n_min, pol.y_min,
+                                      True, budget, hold=hold)  # fmt: skip
         if status in ("ooc", "partial") and gen_rules and ("yield" in why or "exhausted" in why):
             why = f"{why} (pool generation {gen['name']})"  # only when its tally stopped it
         if status is not None:

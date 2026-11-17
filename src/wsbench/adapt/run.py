@@ -1086,6 +1086,12 @@ def freeze(
         # measured, not the tier menu; from the refill block when the family was refilled
         measured = describe(family, originals, items)
         entry["change"] = rf.change_text(block, measured) if block else measured
+        if rf.stale_note(entry):  # R1 (#289): the note is kept verbatim, so say it may be stale
+            print(
+                f"warning: {family}: its note was written before its refill and is kept "
+                "unchanged; check it still describes the family (`adapt note`)",
+                file=sys.stderr,
+            )
         if notes:
             entry["freeze_notes"] = notes
         # a refill recorded by hand (`note refill=`, plan 0072 D6) counts as tried, too

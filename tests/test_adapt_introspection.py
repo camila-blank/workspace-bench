@@ -546,6 +546,31 @@ def test_go_after_no_go_rejoins_the_macro(adapted, tok, subject, job, monkeypatc
     assert "NO-GO" not in entry.get("note", "")
 
 
+def test_no_go_build_keeps_a_hand_written_note(adapted, subject):
+    """#289: a NO-GO build wrote its generic note over a hand-written measured reason. It now
+    replaces only its own generic note (or the automatic absent note)."""
+    m = subject.key
+    (adapted / m / "introspection").mkdir(parents=True)
+    store.write_json(adapted / m / "introspection" / "job.json", {"inject_layer": 6})
+    store.write_json(adapted / m / "introspection" / "calibration.json",
+                     ii.calibrate(_sweep({1: 0.1}), None))  # fmt: skip
+
+    def build_with(note):
+        store.update_report(m, lambda r: r.setdefault("families", {}).setdefault(
+            "introspection", {}).update(note=note))  # fmt: skip
+        assert ii.stage_build(m) is None
+        e = json.loads((adapted / m / "report.json").read_text())["families"]["introspection"]
+        assert e["status"] == "ooc" and e["exclude_from_macro"] is True and e["n_items"] == 0
+        return e["note"]
+
+    hand = "measured 2026-11-05: the concept dose never beats the gaussian control at block 6"
+    assert build_with(hand) == hand
+    generic = build_with(f"{ii.NO_GO_PREFIX} an earlier run's reason; no bank written")
+    assert generic.startswith(ii.NO_GO_PREFIX) and "an earlier run" not in generic
+    assert build_with(store.ABSENT_NOTE).startswith(ii.NO_GO_PREFIX)
+    assert build_with("").startswith(ii.NO_GO_PREFIX)
+
+
 def test_build_ooc_on_no_go(adapted, subject):
     m = subject.key
     (adapted / m / "introspection").mkdir(parents=True)
