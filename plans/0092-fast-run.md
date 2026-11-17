@@ -106,6 +106,19 @@ length is unknown), and per-process settings cannot see the other processes. So:
 - Tests: off without the variable; two slots admit two holders and a third only after a release;
   a call waits for a slot, runs, and releases it; a bad value raises.
 
+### 2c. `items=` under `--fast` is a partial run (amended 2026-11-17)
+
+`--fast items=a,b` was a usage error (plan 0090). It now judges that part of the fast items (ids
+outside `fast-v1` exit 2) and the result is always `complete=False` with
+`extras.fast_items_subset`. Purpose: a slow family can be judged in parallel item groups that fill
+the cache. Measured on real caches: a subset run of jailbreak, knowledge_cutoff and hinted_cutoff
+made 0 new calls against the full run's cache, i.e. call keys do not depend on the item set.
+Sanctioned test edit: `["items=t1"]` leaves `test_cli_fast_refused_combinations`' parameter list.
+NOT done here: a full pass that replays such a cache exactly. `scripts/cache_only_run.py` over a
+finished run's cache reproduced jailbreak exactly but scored 2 knowledge_cutoff items and agentic
+differently, because calls that failed or were too long are not recorded in the cache and the
+replay cannot re-ask them; that needs a change in `digest.py` and its own plan.
+
 ### 2b. Failed calls are reported loudly (`runner.py`); completeness is NOT changed
 
 Known and pre-existing: a per-layer digest lost to a failed call (retries exhausted) leaves the

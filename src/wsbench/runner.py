@@ -118,8 +118,19 @@ def judge_family(
     the family's fast read ids, and the result is rescored on the fast units and stamped."""
     items, scope, ati = args.items, "", None
     fast_entry = fast.entry(spec.name) if getattr(args, "fast", False) else None
+    fast_partial = 0
     if fast_entry is not None:
-        items, scope = list(fast_entry["read_ids"]), fast.SCOPE
+        read_ids = list(fast_entry["read_ids"])
+        if args.items is not None:
+            # plan 0092 §2c: items= under --fast is a PART of the fast items (a warm-up of the
+            # cache, e.g. one group of a family judged in parallel groups); never a full result
+            want = set(args.items)
+            stray = sorted(want - set(read_ids))
+            if stray:
+                raise SystemExit(f"{spec.name}: items= not in {fast.VERSION}: {stray[:5]}")
+            read_ids = [i for i in read_ids if i in want]
+            fast_partial = len(read_ids)
+        items, scope = read_ids, fast.SCOPE
     if spec.name not in digest.NATIVE_ONLY:  # those run native under either mode
         warn_mode_change(out, opts.get("aggregate", "native"), spec.name)
     if getattr(args, "anti_text_inversion", False):
@@ -166,6 +177,9 @@ def judge_family(
         result.extras["summary_mode_note"] = digest.NATIVE_ONLY[spec.name]
     if fast_entry is not None:
         stamp_fast(spec.name, result, fast_entry)
+        if fast_partial:
+            result.complete = False
+            result.extras["fast_items_subset"] = fast_partial
     if ati is not None:
         result.config["scope"] = scope
         result.extras["ati_n_bank"] = ati["n_bank"]

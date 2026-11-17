@@ -224,8 +224,6 @@ class JudgeOptions(Command):
         """``--fast`` is one defined variant: the fast items, full reads, the summary judges of
         record. Every key that would change one of those is a usage error."""
         keys = {p.split("=", 1)[0].strip(): p.split("=", 1)[-1] for p in self.opt}
-        if self.items is not None:
-            raise ValueError("--fast picks the items itself; drop items=")
         if self.anti_text_inversion:
             raise ValueError("--fast and anti_text_inversion=True are separate scopes; pick one")
         if keys.get("reads") == "lite":
