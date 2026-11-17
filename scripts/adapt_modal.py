@@ -1,4 +1,4 @@
-"""The subject on Modal, for subjects too big for the 24 GB box (SKILL.md runbook step 0).
+"""The subject on Modal: every adapt subject's generation (adapt-bank SKILL.md §0).
 
 A deployed vLLM class the local pipeline calls through ``wsbench.adapt.gate.RemoteRunner``: the
 box renders every prompt with the subject's own template (so the gate, read plan and lint are the
@@ -43,10 +43,10 @@ recipe's ``/hf``: ``modal_weights`` is the hub-cache snapshot dir under it (``hf
 
 Prerequisites: the subject's weights volume exists in the env (``glm53-weights`` with
 ``hf/nvidia__GLM-5.3-NVFP4``; ``v4-flash``; ``v4-pro``, ``kimi-k3`` with the pinned snapshot
-under ``hf/hub``; ``muse-spark``); the glm53 fork tarball comes from a public HF repo
-(no secret). kimi-k2 has no weights volume: its first load downloads ~1 TB into
-``adapt-hf-cache``. A Subject with ``modal_built=False`` (glm-5.3-flash: Agam's text-only app)
-is refused here and by RemoteRunner.
+under ``hf/hub``; ``muse-spark``; plan 0089: ``kimi-k2`` and ``glm53-flash`` with the pinned
+snapshot under ``hf/hub``, mounted at the default recipe's ``/hf`` as ``kimi-k3``); the glm53
+fork tarball comes from a public HF repo (no secret). A Subject with ``modal_built=False`` (an
+external app; none is registered since plan 0089) is refused here and by RemoteRunner.
 
 Deploy (Camila's env; ``MODAL=/root/.cache/cfinf-modal-venv/bin/modal``, from the repo root)::
 
@@ -54,6 +54,7 @@ Deploy (Camila's env; ``MODAL=/root/.cache/cfinf-modal-venv/bin/modal``, from th
     $MODAL deploy scripts/adapt_modal.py                            # adapt-subject-llm (shared)
     ADAPT_SUBJECT=glm-5.3 $MODAL deploy scripts/adapt_modal.py      # adapt-glm-5.3 (B300:8 TP8)
     ADAPT_SUBJECT=kimi-k2 $MODAL deploy scripts/adapt_modal.py      # adapt-kimi-k2 (B300:8 TP8)
+    ADAPT_SUBJECT=glm-5.3-flash $MODAL deploy scripts/adapt_modal.py  # B200:4|H200:4, TP4
     ADAPT_SUBJECT=deepseek-v4-pro $MODAL deploy scripts/adapt_modal.py  # adapt-v4-pro (B300:8 TP8)
     ADAPT_SUBJECT=kimi-k3 $MODAL deploy scripts/adapt_modal.py      # adapt-kimi-k3 (B300:8 TP8)
     ADAPT_SUBJECT=muse-spark-open $MODAL deploy scripts/adapt_modal.py  # B300:8|B200:8, TP8
@@ -76,7 +77,12 @@ SPEC_ENV = "ADAPT_MODAL_SPEC"  # the deployed spec, baked into the image for the
 
 def _spec() -> dict:
     """Locally: the spec of ``$ADAPT_SUBJECT`` (or the shared app's), from subjects.py loaded by
-    path (the Modal client venv has no wsbench). In the container: the one baked into the image."""
+    path (the Modal client venv has no wsbench). In the container: the one baked into the image,
+    read from its env var FIRST: an engine worker process spawned inside the container re-imports
+    this module and ``modal.is_local()`` is True there (no Modal runtime in the child), so a
+    local-first check made every multi-engine container crash-loop on a missing subjects.py."""
+    if SPEC_ENV in os.environ:
+        return json.loads(os.environ[SPEC_ENV])
     if not modal.is_local():
         return json.loads(os.environ[SPEC_ENV])
     import importlib.util
@@ -114,6 +120,9 @@ RECIPES: dict[str, dict] = {
         "env": {"HF_HOME": "/vol/hf", "CUDA_HOME": "/usr/local/cuda", "MAX_JOBS": "4"},
         "resources": {"memory": 256 * 1024, "cpu": 16},
     },
+    # Dory (NVIDIA looped 4B): the shared hub-cache volume (writable, as the default recipe's),
+    # on vLLM 0.33.0, the first release registering DoryForCausalLM (and its DoryConfig)
+    "dory": {"mount": "/hf", "env": {"HF_HOME": "/hf"}, "resources": {}, "hub_cache": True},
     "muse": {  # Muse-Spark-Open: a plain snapshot dir on the muse-spark volume
         "mount": "/vol",
         "env": {"HF_HOME": "/vol/hf", "CUDA_HOME": "/usr/local/cuda", "MAX_JOBS": "4"},
@@ -125,6 +134,7 @@ MUSE_VLLM = "vllm==0.33.0"  # Muse-Spark (MuseSparkForConditionalGeneration) nee
 # and cc1plus segfaults building it on the B300 (gcc ICE in trtllm_batched_gemm_runner.cu, every
 # TP rank, container crash-loop). Install flashinfer's prebuilt JIT cache instead: the meta package
 # (provider discovery) --no-deps plus the B300 (sm103a) and B200 (sm100a) providers only.
+DORY_VLLM = "vllm==0.33.0"  # DoryForCausalLM + DoryConfig are registered from 0.33.0 on
 FLASHINFER_JIT = "0.7.2.post1+cu130"
 FLASHINFER_INDEX = "https://flashinfer.ai/whl/cu130"
 RECIPE = RECIPES[SPEC["image"]]
@@ -175,6 +185,12 @@ def _image(recipe: str) -> modal.Image:
                 "and 'fused_moe_trtllm_sm100' in p.modules "
                 "for p in ps) for a in ('sm103a', 'sm100a'))\"",
             )
+            .env(env)
+        )
+    if recipe == "dory":  # the CUDA 13 devel base (flashinfer JIT needs nvcc), on vLLM 0.33.0
+        return (
+            modal.Image.from_registry("nvidia/cuda:13.0.1-devel-ubuntu24.04", add_python="3.12")
+            .uv_pip_install(DORY_VLLM, "huggingface_hub", "hf_transfer")
             .env(env)
         )
     if recipe == "dsv4":  # DeepGEMM JIT-compiles at runtime and asserts a CUDA home (nvcc)
@@ -279,6 +295,47 @@ def split(n: int, k: int) -> list[tuple[int, int]]:
     return [(lo, min(n, lo + step)) for lo in range(0, n, step)]
 
 
+PAD = int(SPEC.get("pad", 0))  # Subject.modal_pad: head + tail throwaway requests per call
+# DeepSeek-V4 greedy canary (global-workspace scripts/v4_flash/gen_requests_modal.py CANARY, token
+# ids from V4's own encoder): a broken engine answers "- 1. 2. 3." and must never serve
+V4_CANARY = [
+    ([0, 128803, 18387, 14717, 270, 223, 2254, 23, 5485, 552, 14986, 33, 9361, 418, 1438, 270,
+      2329, 16, 128804, 128822], "Spielberg"),  # <bos><User>Who directed the 1975 film Jaws? ...
+    ([0, 32504, 28, 455, 6102, 294, 8760, 344], "Paris"),  # <bos>Fact: The capital of France is
+]  # fmt: skip
+
+
+def _generate(llm, ins: list, sps):
+    """``llm.generate`` with ``PAD`` throwaway copies of the last canary prompt before AND after
+    the real requests (pads run greedy to the call's longest max_tokens, ignoring EOS, so the
+    batch never drains under the last real request); returns the real outputs only."""
+    if not PAD:
+        return llm.generate(ins, sps, use_tqdm=False)
+    from vllm import SamplingParams
+    from vllm.inputs import TokensPrompt
+
+    real = list(sps) if isinstance(sps, list) else [sps] * len(ins)
+    m = max([sp.max_tokens or 1 for sp in real] or [1])
+    pad_sp = SamplingParams(temperature=0.0, max_tokens=m, min_tokens=m, ignore_eos=True)
+    pad = [TokensPrompt(prompt_token_ids=list(V4_CANARY[-1][0])) for _ in range(PAD)]
+    out = list(llm.generate(pad + list(ins) + pad, [pad_sp] * PAD + real + [pad_sp] * PAD,
+                            use_tqdm=False))  # fmt: skip
+    return out[PAD : PAD + len(ins)]
+
+
+def canary(llm) -> list[str]:
+    """Greedy answers to the V4 canary prompts (padded like every call); raises on a wrong one."""
+    from vllm import SamplingParams
+
+    outs = _generate(llm, _inputs([list(ids) for ids, _ in V4_CANARY]),
+                     SamplingParams(temperature=0.0, max_tokens=12))  # fmt: skip
+    got = [o.outputs[0].text for o in outs]
+    bad = [(want, g) for (_, want), g in zip(V4_CANARY, got, strict=True) if want not in g]
+    if bad:
+        raise RuntimeError(f"broken V4 engine, canary failed: {bad}")
+    return got
+
+
 def run_sample(
     llm, prompts, max_tokens, draws, temperature, top_p, seed, top_k=-1, stop_token_ids=None
 ) -> list:
@@ -289,12 +346,13 @@ def run_sample(
 
     stop = stop_token_ids or None
     ins = _inputs(prompts)
-    g = llm.generate(
+    g = _generate(
+        llm,
         ins,
         [SamplingParams(temperature=0.0, max_tokens=m, stop_token_ids=stop) for m in max_tokens],
-        use_tqdm=False,
     )
-    s = llm.generate(
+    s = _generate(
+        llm,
         ins,
         [
             SamplingParams(
@@ -308,7 +366,6 @@ def run_sample(
             )
             for i, m in enumerate(max_tokens)
         ],
-        use_tqdm=False,
     )
     return [(gi.outputs[0].text, [o.text for o in si.outputs]) for gi, si in zip(g, s, strict=True)]
 
@@ -325,7 +382,7 @@ def run_generate(llm, prompts, temperature, max_tokens, seed, top_p, stop_token_
         seed=seed,
         stop_token_ids=stop_token_ids or None,
     )
-    outs = llm.generate(_inputs(prompts), sp, use_tqdm=False)
+    outs = _generate(llm, _inputs(prompts), sp)
     return [{"text": o.outputs[0].text, "ids": list(o.outputs[0].token_ids)} for o in outs]
 
 
@@ -342,7 +399,7 @@ def run_cont_logprobs(llm, ids: list, starts: list) -> list:
     from vllm import SamplingParams
 
     sp = SamplingParams(temperature=0.0, max_tokens=1, prompt_logprobs=0)
-    outs = llm.generate(_inputs(ids), sp, use_tqdm=False)
+    outs = _generate(llm, _inputs(ids), sp)
     return [
         float(sum(o.prompt_logprobs[i][x[i]].logprob for i in range(max(k, 1), len(x))))
         for o, x, k in zip(outs, ids, starts, strict=True)
@@ -398,6 +455,8 @@ def _engine_worker(gpu: int, kwargs: dict, conn, make=_vllm_engine, run=_vllm_ru
     ``run`` are module-level callables (tests pass CPU fakes; spawn pickles them by name)."""
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     llm = make(kwargs)
+    if PAD and make is _vllm_engine:  # a broken V4 engine fails its start (Modal replaces it)
+        print(f"engine {gpu} canary: {canary(llm)}", flush=True)
     conn.send("ready")
     while (msg := conn.recv()) is not None:
         name, args = msg
@@ -503,10 +562,13 @@ def start_engines(n: int, kwargs: dict, into: list, make=_vllm_engine, run=_vllm
 
 
 app = modal.App(SPEC["app"])
-volume = modal.Volume.from_name(SPEC["volume"], create_if_missing=SPEC["image"] == "default")
+HUB_CACHE = SPEC["image"] == "default" or bool(RECIPE.get("hub_cache"))  # the shared hub cache
+volume = modal.Volume.from_name(SPEC["volume"], create_if_missing=HUB_CACHE)
 _cls_options = dict(RECIPE["resources"])
 if SPEC["replicas"] > 1:  # the containers RemoteRunner fans out over
     _cls_options["max_containers"] = SPEC["replicas"]
+if SPEC.get("max_containers"):  # Subject.modal_max_containers: a hard cap on concurrent stages
+    _cls_options["max_containers"] = max(SPEC["max_containers"], SPEC["replicas"])
 
 
 @app.cls(
@@ -514,7 +576,7 @@ if SPEC["replicas"] > 1:  # the containers RemoteRunner fans out over
     gpu=SPEC["gpu"][0] if len(SPEC["gpu"]) == 1 else SPEC["gpu"],
     # the weights volumes (glm53-weights, v4-flash, v4-pro, muse-spark) are read-only here; the
     # default recipe's volume (the hub cache; kimi-k3's) is mounted writable
-    volumes={RECIPE["mount"]: volume if SPEC["image"] == "default" else volume.read_only()},
+    volumes={RECIPE["mount"]: volume if HUB_CACHE else volume.read_only()},
     timeout=6 * 3600,
     scaledown_window=600,
     **_cls_options,
@@ -534,6 +596,8 @@ class SubjectLLM:
             from vllm import LLM
 
             self.llm = LLM(**kwargs)
+            if PAD:
+                print(f"canary: {canary(self.llm)}", flush=True)
         if not SPEC["weights"]:  # a first load cached the hub weights on the volume
             volume.commit()
 

@@ -59,7 +59,7 @@ def _put(store: Path, row: dict, cells: list[dict] | None) -> None:
         if cells is None:
             fh.write(json.dumps({"row_sha": lr.row_sha(row), "row": None}) + "\n")
         for c in cells or []:
-            fh.write(json.dumps({"row_sha": lr.row_sha(row), "row": c}) + "\n")
+            fh.write(json.dumps({"row_sha": lr.row_sha(row), "row": c}, ensure_ascii=False) + "\n")
 
 
 def _cells(i: str, tag: str = "t") -> list[dict]:
@@ -148,3 +148,15 @@ def test_same_topk_tolerates_only_near_ties():
     assert lr.same_topk(t, s, ["a", "b", "d"], [3.0, 2.0, 1.0])  # k-th boundary swap
     assert not lr.same_topk(t, s, ["b", "a", "c"], [3.0, 2.0, 1.0])  # a real reorder
     assert not lr.same_topk(t, s, t, [3.0, 2.5, 1.0])  # scores differ
+
+
+def test_store_lines_with_u2028_survive(setup):
+    rows, store, args = setup
+    cells = _cells("a")
+    cells[0]["tokens"] = ["line\u2028separator"]  # JSON keeps U+2028 raw; splitlines() splits it
+    _put(store, rows["fam"][0], cells)
+    _put(store, rows["fam"][1], _cells("b"))
+    lr.assemble(args)
+    out = (Path(args.out) / "fam.jsonl").read_text(encoding="utf-8").split("\n")
+    got = [json.loads(x) for x in out if x]
+    assert len(got) == 4 and got[0]["tokens"] == ["line\u2028separator"]

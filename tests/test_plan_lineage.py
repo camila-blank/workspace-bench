@@ -5,6 +5,7 @@ dropped items' cells removed. Everything else refuses as before."""
 
 import copy
 import json
+import os
 
 import pytest
 
@@ -21,7 +22,7 @@ FAM = "association"
 @pytest.fixture
 def mdir(tmp_path, monkeypatch, real_families):
     monkeypatch.setattr(store, "model_dir", lambda model, root=None: tmp_path / model)
-    for k in list(__import__("os").environ):
+    for k in list(os.environ):
         if k.startswith(registry.BANK_FILE_ENV_PREFIX):
             monkeypatch.delenv(k)
     monkeypatch.delenv(registry.BANK_ROOT_ENV, raising=False)
@@ -213,3 +214,73 @@ def test_lineage_walk_is_bounded_and_needs_a_root(tmp_path, monkeypatch):
     assert reads.lineage_drops(FAM, "c", "a") is None  # never backwards
     monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + FAM.upper(), str(tmp_path / "x.json"))
     assert reads.lineage_drops(FAM, "a", "c") is None  # a bank-file pin overrides the set
+
+
+# ---------------------------------------------------------------- registered lineage (plan 0083)
+
+ARITH = "arithmetic_intermediates"
+ARITH_V1_SHA = "ad92c18203e8c526ef3a4e02d80fc0a17063ee1d1a5cd3584d6992b198b8e715"
+
+
+def _arith_readouts(tmp_path, ids, sha):
+    path = tmp_path / "arith.jsonl"
+    with path.open("w", encoding="utf-8") as fh:
+        for i in ids:
+            for layer in readplan.GRID:
+                for pos in range(-42, 0):
+                    fh.write(json.dumps({"id": i, "layer": layer, "pos": pos,
+                                         "samples": ["- x"]}) + "\n")  # fmt: skip
+    write_sidecar(path, sampling="prose1", plan_sha=sha)
+    return path
+
+
+@pytest.fixture
+def noroot(monkeypatch, real_families):
+    for k in list(os.environ):
+        if k.startswith(registry.BANK_FILE_ENV_PREFIX):
+            monkeypatch.delenv(k)
+    monkeypatch.delenv(registry.BANK_ROOT_ENV, raising=False)
+    reads._specs.cache_clear()
+    yield
+    reads._specs.cache_clear()
+
+
+def test_registered_header_records_the_frac_drop(noroot):
+    """The registered arithmetic bank v2 carries its v1 -> v2 drop-only step (plan 0083)."""
+    raw = json.loads(registry.bank_path(ARITH).read_text(encoding="utf-8"))
+    (step,) = raw["plan_lineage"]
+    assert step["from"] == ARITH_V1_SHA and step["to"] == reads.plan_sha(ARITH)
+    assert len(step["dropped"]) == 116 and all(i.startswith("frac-") for i in step["dropped"])
+
+
+def test_v1_readouts_load_on_v2_without_frac_cells(noroot, tmp_path):
+    path = _arith_readouts(tmp_path, ["absval-052", "frac-000"], ARITH_V1_SHA)
+    cells, rep = reads.load(_args(path, tmp_path), ARITH)
+    assert {c.id for c in cells} == {"absval-052"}
+    assert rep.plan_lineage["from"] == ARITH_V1_SHA and rep.plan_lineage["n_dropped_items"] == 116
+    assert rep.plan_lineage["n_dropped_cells"] > 0
+
+
+def test_unknown_sha_still_refuses_without_root(noroot, tmp_path):
+    path = _arith_readouts(tmp_path, ["absval-052"], "0" * 64)
+    with pytest.raises(SystemExit) as e:
+        reads.load(_args(path, tmp_path), ARITH)
+    assert e.value.code == 2
+
+
+def test_bank_file_pin_still_refuses_the_registered_lineage(noroot, tmp_path, monkeypatch):
+    path = _arith_readouts(tmp_path, ["absval-052"], ARITH_V1_SHA)
+    monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + ARITH.upper(),
+                       str(registry.bank_path(ARITH)))  # fmt: skip
+    reads._specs.cache_clear()
+    with pytest.raises(SystemExit) as e:
+        reads.load(_args(path, tmp_path), ARITH)
+    assert e.value.code == 2
+
+
+def test_a_root_never_reads_the_registered_header(noroot, tmp_path, monkeypatch):
+    """Under WSB_BANK_ROOT only the set's report.json counts (a root with no report refuses)."""
+    want = reads.plan_sha(ARITH)
+    assert len(reads.lineage_drops(ARITH, ARITH_V1_SHA, want) or []) == 116
+    monkeypatch.setenv(registry.BANK_ROOT_ENV, str(tmp_path / "no-such-set"))
+    assert reads.lineage_drops(ARITH, ARITH_V1_SHA, want) is None

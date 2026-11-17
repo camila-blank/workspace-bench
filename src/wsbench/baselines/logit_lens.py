@@ -63,7 +63,8 @@ def _check(r: Any, path: Path, versions: dict[str, str], *, ati: bool) -> None:
 
 def _plan_sha(family: str, readouts: Path, path: Path) -> str:
     """The readouts sidecar's ``plan_sha`` for ``family`` under ``readouts`` (its legacy file name
-    accepted), refused unless it declares a logit-lens reader and equals current main's plan."""
+    accepted), refused unless it declares a logit-lens reader and equals current main's plan (or
+    reaches it through the registered bank's drop-only ``plan_lineage``)."""
     from wsbench import reads, registry
 
     names = [
@@ -78,9 +79,12 @@ def _plan_sha(family: str, readouts: Path, path: Path) -> str:
     if meta.get("reader") not in READERS:
         raise ValueError(f"freeze: {meta_p} declares reader {meta.get('reader')!r}")
     got, want = str(meta.get("plan_sha") or ""), reads.plan_sha(family)
-    if got != want:
+    # an older plan is accepted only as the judge accepts it (reads guard iii): through the
+    # registered bank's recorded drop-only ``plan_lineage`` (plan 0083, arithmetic bank v1 -> v2);
+    # the entry records the plan it was scored on, main's
+    if got != want and reads.lineage_drops(family, got, want) is None:
         raise ValueError(f"freeze: {meta_p} plan_sha {got[:12]} != main's {want[:12]}")
-    return got
+    return want
 
 
 def _runs(src: Path) -> dict[Path, Any]:
