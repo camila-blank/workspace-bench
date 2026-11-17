@@ -42,8 +42,8 @@ VARIANTS = (
 )
 # review of #202 round 4: conjunctive_association's headline configs (all-layer, lite) judge a
 # sharded digest, where each draw is the one-pick MC plus a candidate list (+cand3: up to
-# N_CANDIDATES more options), 3 draws per shard, and the item passes on any shard (any inverted
-# shard vetoes). The ``*_cands`` guessers answer in that form, 3 draws per shard for
+# N_CANDIDATES more options), 3 draws per shard, and the item passes on any shard (the
+# inverted twin vetoes nothing). The ``*_cands`` guessers answer in that form, 3 draws per shard for
 # HEADLINE_SHARDS[config] shards, and are scored by that rule (``headline_rule``) against the
 # exact uniform chance of the same rule (``rule_chance``). The shard counts are the cached O-lens
 # runs' modal counts (all-layer: 8 for 92 of 100 items, 7-9 for the rest). Camila r3
@@ -65,8 +65,11 @@ STANDARD_POINTS_BY_FAMILY: dict[str, float] = {"moral_rationale": 0.02}
 # lists; families with a topic file only
 TOPICS_DIR = REPO_ROOT / "evals" / "baselines" / "topics"
 # final r1 (2026-10-31): the multi-mark guessers of a family whose judge is multi-label (moral
-# ec-v5c): every option the guesser thinks the model weighs is marked, MARK_DRAWS draws, and the
-# item is scored by the judge's own pass rule (marks_verdict)
+# ec-v5c / ec-v5d / ec-v7): every option the guesser thinks the model weighs is marked, MARK_DRAWS
+# draws, and the item is scored by that judge's pass rule (marks_verdict). The registered moral
+# judge (ec-v9) takes ONE pick, so its floors are the single-pick guessers (question / blind /
+# described); the multi-mark variants only describe the opt-in bank v5 floors
+# (lucky_guessing_moral_v5.json, ec-v7)
 # blind_marks (round 3): the options-only guesser without examples, scored by the same rule
 MARK_VARIANTS = ("question_marks", "described_marks", "blind_marks")
 # round 4 (MC leakage standard, Camila r2: ">= 5 draws"): 5 draws, an option marked by >= 3
@@ -93,7 +96,8 @@ def is_floor(family: str | None, variant: str) -> bool:
     return family is None or variant not in NOT_A_FLOOR.get(family, frozenset())
 
 
-OPP_WIN_RATIO = 1.5  # moral_rationale.judge.OPP_WIN_RATIO (held equal by a test)
+# the ratio of moral_rationale's earlier multi-label rule (ec-v5c / ec-v5d; see marks_pass)
+OPP_WIN_RATIO = 1.5
 MAX_TOKENS = 1024  # a few integers of JSON after the model's (minimal) reasoning tokens
 MAX_PICKS = 3  # a multi-select item dictates at most three concepts
 FROZEN = REPO_ROOT / "evals" / "baselines" / "lucky_guessing.json"
@@ -187,7 +191,7 @@ DESCRIPTIONS: dict[str, str] = {
         "which concept a model was told to hold in mind, or to suppress, while writing an "
         "unrelated sentence"
     ),
-    "multihop_mt_v2": (
+    "multihop_mt": (
         "which multi-token entities a two- or three-hop factual prompt passes through on the way "
         "to its answer"
     ),
@@ -226,6 +230,10 @@ DESCRIPTIONS: dict[str, str] = {
         "computation, or its own favourite of some category"
     ),
     "wrong_intermediate": "which person, group or company an unseen factual question is about",
+    "model_multihop": (
+        "which country, product, person or organisation a language model silently resolves as "
+        "the hidden first step of an unseen two-step factual question"
+    ),
     "nyt_connections": (
         "which connection a language model had in mind for one of the groups it formed when "
         "sorting the 16 words of an NYT Connections puzzle into 4 groups of 4"
@@ -300,25 +308,24 @@ def fine_topic(m: dict[str, Any]) -> str:
 
 
 def _conjunctive() -> list[Item]:
-    from wsbench.evals.conjunctive_association.judge import build_options, inverted_position
+    from wsbench.evals.conjunctive_association.judge import build_options
 
     out = []
     for it in load_bank("conjunctive_association"):
         shown, gold, _contrast = build_options(it)
-        inv = inverted_position(it, shown)
-        out.append(Item(it["id"], [shown[:-1]], [gold], meta={"inverted": inv}))
+        out.append(Item(it["id"], [shown[:-1]], [gold]))
     return out
 
 
 def _role_bound() -> list[Item]:
     # the judge's own lists: plan 0055 C3.11's oa-v2, round 4's oa-v3 (judge.blocks_of)
     from wsbench.evals.role_bound_association.gate import load_lexicon
-    from wsbench.evals.role_bound_association.judge import blocks_of
+    from wsbench.evals.role_bound_association.judge import blocks_of, load_items
     from wsbench.mc import CANNOT
 
-    bank = load_bank("role_bound_association")
+    bank, pool = load_items()
     lex = load_lexicon()
-    blocks = blocks_of(bank, bank, lex)
+    blocks = blocks_of(bank, pool, lex)
     out = []
     for it in bank:
         b = blocks[it["id"]]
@@ -444,22 +451,29 @@ def _poetry() -> list[Item]:
 
 def _multitoken(name: str) -> Callable[[], list[Item]]:
     def build() -> list[Item]:
-        from wsbench.multitoken.family import mc_family
-        from wsbench.multitoken.options import judged_roles, option_sets
+        from wsbench.multitoken.family import language_leg_on, mc_family
+        from wsbench.multitoken.options import LANGUAGE_ROLE, judged_roles, option_sets
 
         cfg = mc_family(name)
         _h, items = load_bank_file(bank_path(name))
         opts = option_sets(items, cannot=cfg.cannot)
+        # a multilingual family scores its language unit on the raw samples (the language leg),
+        # never by an option list, so it is floored on its content lists only
+        no_language = language_leg_on(name)
         out = []
         for it in items:
             # a family whose headline scores some units only (basic_readout_mt: the readout
             # unit, plan 0051) is floored on those units' lists only
+            every = judged_roles(it)
             roles = [
-                r for r in judged_roles(it) if cfg.headline_units is None or r in cfg.headline_units
+                r
+                for r in every
+                if (cfg.headline_units is None or r in cfg.headline_units)
+                and not (no_language and r == LANGUAGE_ROLE)
             ]
             lists = [opts[it["id"]][r][0][:-1] for r in roles]
             golds = [opts[it["id"]][r][1] + 1 for r in roles]
-            out.append(Item(it["id"], lists, golds, meta={"roles": roles}))
+            out.append(Item(it["id"], lists, golds, meta={"roles": roles, "judged_roles": every}))
         return out
 
     return build
@@ -467,11 +481,10 @@ def _multitoken(name: str) -> Callable[[], list[Item]]:
 
 def _basic_readout() -> list[Item]:
     """plan 0039: the blind MC judge's frozen option lists (cannot-tell dropped)."""
-    from wsbench.basic.mcjudge_basic import CANNOT_OF, options_for
-    from wsbench.basic.prompts import prompt_version_of
+    from wsbench.basic.mcjudge_basic import CANNOT_OF, options_for, options_version
 
     _h, items = load_bank_file(bank_path("basic_readout"))
-    pv = prompt_version_of("basic_readout")
+    pv = options_version("basic_readout")  # the judge's own option seed
     out = []
     for it in items:
         o = options_for(it, pv=pv, cannot=CANNOT_OF["basic_readout"])
@@ -591,10 +604,23 @@ def _wrong_intermediate() -> list[Item]:
     return out
 
 
+def _model_multihop() -> list[Item]:
+    """The frozen ``mc`` blocks (plan 0076): the bridge and its decoys in the bank's order, gold =
+    Qwen's bridge; the cannot-tell line is the summary judge's, not an option."""
+    from wsbench.readplan import bank_file  # an id-keyed bank (no ``name``)
+
+    _h, items = bank_file(bank_path("model_multihop"))
+    out = []
+    for it in items:
+        order = list(it["mc"]["order"])
+        out.append(Item(it["id"], [order], [order.index(it["mc"]["gold"]) + 1]))
+    return out
+
+
 def _introspection() -> list[Item]:
     """The 125 headline items (protocol, beta 4): the judge's 7-option list minus cannot-tell
-    (the five cluster concepts and "no injected concept", the bank's seeded order). Round 4: the
-    headline is the regex (rxhead-v1); this floors the diagnostic judge column."""
+    (the five cluster concepts and "no injected concept", the bank's seeded order). The headline
+    judge (``jhead-v2``) shows exactly these options, so this floors the headline."""
     from wsbench.evals.introspection.judge import is_headline
     from wsbench.evals.introspection.judge import load as load_ii
     from wsbench.mc import is_cannot
@@ -619,7 +645,7 @@ BUILDERS: dict[str, Callable[[], list[Item]]] = {
     "user_modeling": _user_modeling,
     "directed_modulation": _directed_modulation,
     "poetry": _poetry,
-    "multihop_mt_v2": _multitoken("multihop_mt_v2"),
+    "multihop_mt": _multitoken("multihop_mt"),
     "multilingual": _multitoken("multilingual"),  # plan 0054: the mc+regex MC roles
     "multilingual_mt": _multitoken("multilingual_mt"),
     "typo_mt": _multitoken("typo_mt"),
@@ -632,6 +658,7 @@ BUILDERS: dict[str, Callable[[], list[Item]]] = {
     "basic_readout": _basic_readout,
     "multihop": _multihop,
     "wrong_intermediate": _wrong_intermediate,
+    "model_multihop": _model_multihop,
 }
 
 
@@ -686,6 +713,11 @@ def with_topics(items: list[Item], family: str) -> list[Item]:
     out = []
     for it in items:
         t = topics.get(it.id)
+        every, kept = it.meta.get("judged_roles"), it.meta.get("roles")
+        if t is not None and every and kept and len(t) == len(every) != len(it.lists):
+            # labels written for every judged list (one per role); the floor's lists are a
+            # subset of those roles (a language-leg family drops its language list)
+            t = [label for role, label in zip(every, t, strict=True) if role in kept]
         if t is None or len(t) != len(it.lists):
             raise ValueError(f"{family}/{it.id}: topic labels {t!r} do not match its lists")
         out.append(Item(it.id, it.lists, it.golds, it.multi, {**it.meta, "topics": t}))
@@ -904,16 +936,27 @@ def score_marks_draw(reply: dict[str, Any] | None, item: Item) -> dict[str, Any]
     }
 
 
-def marks_verdict(draws: list[dict[str, Any] | None], item: Item) -> bool | None:
-    """The judge's ec-v5c rule (``moral_rationale.judge.ml_verdict``, through the shared
-    ``judge.ec_pass``) on a guesser's draws (final r1, reviews of #203). Each mark of a draw is
-    its OWN statement, the way the judge reads a readout naming each option on a separate line,
-    so rule (f) unmarks nothing. Per list: an option is MARKED when more than half of the draws
-    mark it, and its support is the number of draws marking it. The list passes when its gold is
-    marked, not every option is marked, and no marked opposite-side option has support >=
-    ``OPP_WIN_RATIO`` times the gold's. Every list must pass. ``None`` when every draw failed."""
-    from wsbench.evals.moral_rationale.judge import ec_pass
+def marks_pass(sup: dict[int, int], gold: int, kind_by_pos: dict[int, str], n_content: int) -> bool:
+    """The multi-mark pass of one option list, from its marked options and their support: the
+    gold is marked, NOT every content option is marked, and no marked opposite-side option has
+    support >= ``OPP_WIN_RATIO`` x the gold's (and non-zero). This was moral_rationale's ec-v5c /
+    ec-v5d judge rule (``judge.ec_pass``); ec-v9 replaced that judge with a single pick, so it
+    lives on here only to score the multi-mark guessers and side readers of the floors frozen
+    under those instruments."""
+    if gold not in sup or len(sup) >= n_content:
+        return False
+    opp = max((n for p, n in sup.items() if p != gold and kind_by_pos.get(p) == "opp"), default=0)
+    return not (opp > 0 and opp >= OPP_WIN_RATIO * sup[gold])
 
+
+def marks_verdict(draws: list[dict[str, Any] | None], item: Item) -> bool | None:
+    """The retired judge's ec-v5c rule (:func:`marks_pass`) on a guesser's draws (final r1,
+    reviews of #203). Each mark of a draw is its OWN statement, the way the judge read a readout
+    naming each option on a separate line. Per list: an option is MARKED when more than half of
+    the draws mark it, and its support is the number of draws marking it. The list passes when
+    its gold is marked, not every option is marked, and no marked opposite-side option has
+    support >= ``OPP_WIN_RATIO`` times the gold's. Every list must pass. ``None`` when every draw
+    failed."""
     live = [d for d in draws if d is not None]
     if not live:
         return None
@@ -921,7 +964,7 @@ def marks_verdict(draws: list[dict[str, Any] | None], item: Item) -> bool | None
     for li, (gold, n) in enumerate(zip(item.golds, item.n_options, strict=True)):
         count = Counter(p for d in live for p in d["marks"][li])
         sup = {p: c for p, c in count.items() if 2 * c > len(draws)}
-        if not ec_pass(sup, gold, {int(k): v for k, v in kinds[li].items()}, n):
+        if not marks_pass(sup, gold, {int(k): v for k, v in kinds[li].items()}, n):
             return False
     return True
 
@@ -936,8 +979,6 @@ def marks_null(draws: list[dict[str, Any] | None], item: Item) -> float | None:
     single out the gold scores above this line, one whose marks ignore the gold sits on it.
     Lists are independent, so an item's chance is the product over its lists. ``None`` when every
     draw failed."""
-    from wsbench.evals.moral_rationale.judge import ec_pass
-
     live = [d for d in draws if d is not None]
     if not live:
         return None
@@ -949,7 +990,7 @@ def marks_null(draws: list[dict[str, Any] | None], item: Item) -> float | None:
         kind = {int(k): v for k, v in kinds[li].items()}
         perms = list(itertools.permutations(range(1, n + 1)))
         hits = sum(
-            ec_pass({perm[p - 1]: c for p, c in sup.items()}, gold, kind, n) for perm in perms
+            marks_pass({perm[p - 1]: c for p, c in sup.items()}, gold, kind, n) for perm in perms
         )
         out *= hits / len(perms)
     return out
@@ -973,14 +1014,12 @@ def prior_side(per_item: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     """The prior-side reader of a two-sided family (round 4 review of #215, finding 1): with no
     readout and no guesser, ALWAYS mark the options arguing one fixed side ('no' / 'False', or
     'yes'), i.e. a list's own side (gold + same-side options) when that is the list's side and
-    its ``opp`` options otherwise, scored with ``judge.ec_pass`` (an item passes when every list
+    its ``opp`` options otherwise, scored with ``marks_pass`` (an item passes when every list
     does). It reads the bank's base rate: bank v5 commits 'no' on 22 of 24 items, so always-no
     passes 0.917. Scored over every item whose lists all have a known side and kinds (one-sided
-    deliberative lists fail it: marking every option fails ``ec_pass``); the better of the two
+    deliberative lists fail it: marking every option fails ``marks_pass``); the better of the two
     fixed sides is ``side_prior`` (its side in ``side_prior_dir``); ``None`` when no item
     scores."""
-    from wsbench.evals.moral_rationale.judge import ec_pass
-
     rows: list[dict[str, float]] = []
     for r in per_item.values():
         kinds = r.get("kinds") or []
@@ -994,7 +1033,7 @@ def prior_side(per_item: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
                 kind = {int(p): v for p, v in kinds[li].items()}
                 opp = {p for p in range(1, n + 1) if kind.get(p) == "opp"}
                 marks = set(range(1, n + 1)) - opp if _list_side(r, li) == prior else opp
-                ok *= float(bool(marks) and ec_pass(dict.fromkeys(marks, 1), gold, kind, n))
+                ok *= float(bool(marks) and marks_pass(dict.fromkeys(marks, 1), gold, kind, n))
             row[prior] = ok
         rows.append(row)
     if not rows:
@@ -1010,7 +1049,7 @@ def side_readers(
     """The side-aware readers of a two-sided family under the judge's rule (round 4 review of
     #215). A reader that can tell which side of the dilemma each option argues (easy given the
     question) marks every option of ONE side: the gold's side (the gold and the same-side
-    options) passes ``judge.ec_pass`` (gold marked, not every option, no opposite option marked),
+    options) passes ``marks_pass`` (gold marked, not every option, no opposite option marked),
     the opposite side fails, so its pass rate is how often it names the model's side and a coin
     passes ``SIDE_COIN`` of the lists. Two readers are built from a guesser's own draws:
     ``follow`` marks the side the guesser leans to (more picks or marks per option of that side,
@@ -1021,8 +1060,6 @@ def side_readers(
     item passes when all its lists do). Records carrying a committed side (``direction``, or
     ``directions[item id]`` from the bank) also get the guesser-free :func:`prior_side` reader
     (``side_prior``). ``None`` when no item scores."""
-    from wsbench.evals.moral_rationale.judge import ec_pass
-
     if directions:
         per_item = {
             i: {**r, "direction": r.get("direction") or directions.get(i)}
@@ -1049,8 +1086,8 @@ def side_readers(
                 break
             seen = [p for d in live for p in (d["marks"][li] if "marks" in d else [d["picks"][li]])]
             lean = sum(p in opp for p in seen) / len(opp) - sum(p in own for p in seen) / len(own)
-            p_own = float(ec_pass(dict.fromkeys(own, 1), gold, kind, n))
-            p_opp = float(ec_pass(dict.fromkeys(opp, 1), gold, kind, n))
+            p_own = float(marks_pass(dict.fromkeys(own, 1), gold, kind, n))
+            p_opp = float(marks_pass(dict.fromkeys(opp, 1), gold, kind, n))
             half = (p_own + p_opp) / 2
             f *= half if lean == 0 else p_opp if lean > 0 else p_own
             c *= half if lean == 0 else p_own if lean > 0 else p_opp
@@ -1115,21 +1152,20 @@ def majority_correct(draws: list[dict[str, Any] | None], item: Item) -> bool | N
 
 
 def conjunctive_rule(draws: list[dict[str, Any] | None], item: Item) -> bool | None:
-    """conjunctive_association's own item rule (comp-v3 +maj-noinv) on the first 3 draws: a
-    majority picks the gold and no draw picks the gold's role-swapped twin."""
+    """conjunctive_association's own item rule (``+maj``) on the first 3 draws: a majority picks
+    the gold (a pick of the gold's role-swapped twin is one non-gold vote)."""
     live = [d for d in draws[:3] if d is not None]
     if not live:
         return None
     picks = [d["picks"][0] for d in live]
-    inv = item.meta.get("inverted")
-    return 2 * picks.count(item.golds[0]) > 3 and (inv is None or inv not in picks)
+    return 2 * picks.count(item.golds[0]) > 3
 
 
 def score_cands_draw(reply: dict[str, Any] | None, item: Item) -> dict[str, Any] | None:
     """A candidate-list draw (``*_cands``): the valid distinct options of the one pick and then
     at most ``N_CANDS`` candidates; ``outcome`` is the judge's fold (``fold_candidates``): the
-    twin among them vetoes the draw (``inverted``), else the gold passes it (``gold``), else
-    ``other``. ``correct`` is the one-pick answer alone (the per-draw mean)."""
+    gold among them passes it (``gold``), else ``other`` (the twin vetoes nothing).
+    ``correct`` is the one-pick answer alone (the per-draw mean)."""
     if reply is None:
         return None
     n = item.n_options[0]
@@ -1138,11 +1174,7 @@ def score_cands_draw(reply: dict[str, Any] | None, item: Item) -> dict[str, Any]
     raw = raw if isinstance(raw, list) else []
     asked = [first, *raw]
     cands = list(dict.fromkeys(p for p in asked if _valid(p, n)))[: N_CANDS + 1]
-    inv = item.meta.get("inverted")
-    outcome = (
-        "inverted" if inv is not None and inv in cands else "gold" if item.golds[0] in cands else
-        "other"
-    )  # fmt: skip
+    outcome = "gold" if item.golds[0] in cands else "other"
     return {
         "picks": [first],
         "cands": cands,
@@ -1155,37 +1187,30 @@ def score_cands_draw(reply: dict[str, Any] | None, item: Item) -> dict[str, Any]
 
 def headline_rule(draws: list[dict[str, Any] | None], item: Item, shards: int) -> bool | None:
     """conjunctive_association's sharded rule on a ``*_cands`` guesser's draws: shard ``j`` is
-    draws ``3j .. 3j+2``, folded by the judge's own ``_resolve`` (a gold majority, vetoed by any
-    inverted draw) and the shards by ``shards_pick`` (any inverted shard vetoes, any gold shard
-    passes). ``None`` when a needed draw failed."""
-    from wsbench.evals.conjunctive_association.judge import _resolve, shards_pick
+    draws ``3j .. 3j+2``, folded by the judge's own ``majority`` and the shards by
+    ``shards_pick`` (any gold shard passes). ``None`` when a needed draw failed."""
+    from wsbench.evals.conjunctive_association.judge import majority, shards_pick
 
     need = draws[: shards * SHARD_DRAWS]
     if len(need) < shards * SHARD_DRAWS or any(d is None for d in need):
         return None
-    name = {"gold": "gold", "inverted": "inverted", "other": "distractor"}
+    name = {"gold": "gold", "other": "distractor"}
     picks = [
-        _resolve([name[d["outcome"]] for d in need[j : j + SHARD_DRAWS]])  # type: ignore[index]
+        majority([name[d["outcome"]] for d in need[j : j + SHARD_DRAWS]])  # type: ignore[index]
         for j in range(0, len(need), SHARD_DRAWS)
     ]
     return shards_pick(picks) == "gold"
 
 
-def rule_chance(n: int, twin: bool, k: int = 1, shards: int = 1) -> float:
+def rule_chance(n: int, k: int = 1, shards: int = 1) -> float:
     """Exact uniform pass rate of one conjunctive item under its rule: each draw lists ``k``
     distinct uniform options of ``n`` (the guesser's lists: no cannot tell); a draw is gold when
-    the gold is listed and its twin (``twin``) is not, inverted when the twin is listed; a shard
-    of 3 draws is gold on a gold majority with no inverted draw and inverted on an inverted
-    majority or a gold majority with one inverted draw; the item passes when no shard is
-    inverted and some shard is gold. ``k=1, shards=1`` is the single-layer rule (comp-v3
-    +maj-noinv): a^3 + 3a^2(1 - a - b)."""
-    k = min(k, n)
-    b = k / n if twin else 0.0
-    a = k / n - (k * (k - 1) / (n * (n - 1)) if twin and n > 1 else 0.0)
-    o = 1.0 - a - b
-    p_gold = a**3 + 3 * a**2 * o
-    p_inv = b**3 + 3 * b**2 * (1 - b) + 3 * a**2 * b
-    return (1 - p_inv) ** shards - (1 - p_inv - p_gold) ** shards
+    the gold is listed (``a = k / n``); a shard of 3 draws is gold on a gold majority; the item
+    passes when some shard is gold. ``k=1, shards=1`` is the single-layer rule (``+maj``):
+    a^3 + 3a^2(1 - a). The twin vetoes nothing, so it does not enter."""
+    a = min(k, n) / n
+    p_gold = a**3 + 3 * a**2 * (1 - a)
+    return 1 - (1 - p_gold) ** shards
 
 
 def family_chance(name: str, items: list[Item]) -> float:
@@ -1193,9 +1218,7 @@ def family_chance(name: str, items: list[Item]) -> float:
     4): the standard reads a guesser's ``family_rule`` against this, never against the per-draw
     ``analytic_floor``. A family without a multi-draw rule: the analytic floor."""
     if name == "conjunctive_association":
-        return statistics.fmean(
-            rule_chance(it.n_options[0], it.meta.get("inverted") is not None) for it in items
-        )
+        return statistics.fmean(rule_chance(it.n_options[0]) for it in items)
     if name in PAIR_RULE_FAMILIES:  # both directions of a pair right: the product of floors
         pairs = direction_pairs(items)
         return statistics.fmean(
@@ -1242,10 +1265,7 @@ def pair_rule(per_item: dict[str, dict[str, Any]], items: list[Item]) -> float |
 
 def headline_chance(items: list[Item], shards: int) -> float:
     """Uniform chance of the sharded +cand3 rule (``headline_rule``) on these items."""
-    return statistics.fmean(
-        rule_chance(it.n_options[0], it.meta.get("inverted") is not None, N_CANDS + 1, shards)
-        for it in items
-    )
+    return statistics.fmean(rule_chance(it.n_options[0], N_CANDS + 1, shards) for it in items)
 
 
 def standard(family: str, entry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1645,13 +1665,20 @@ def freeze(run_dir: Path, dst: Path = FROZEN) -> dict[str, Any]:
             "any_hit": a.get("any_hit"),
             "mean_picks": a.get("mean_picks"),
             **({"marks_null": a["marks_null"]} if a.get("marks_null") is not None else {}),
-            # two-sided lists (moral_rationale): the side-aware readers of the guesser's draws
+            # two-sided lists under a multi-mark rule (moral_rationale's opt-in bank v5): the
+            # side-aware readers of the guesser's draws, scored by ``marks_pass``. A single-pick
+            # entry gets none: the registered judge (``ec-v9``) takes one pick, and a reader
+            # marking a whole side is not an answer it can give
             **(
-                side_readers(
-                    r.get("per_item") or {},
-                    bank_directions(r.get("bank")) if fam == "moral_rationale" else None,
+                (
+                    side_readers(
+                        r.get("per_item") or {},
+                        bank_directions(r.get("bank")) if fam == "moral_rationale" else None,
+                    )
+                    or {}
                 )
-                or {}
+                if r["variant"] in MARK_VARIANTS
+                else {}
             ),
             **({"by_n_concepts": a["by_n_concepts"]} if a.get("by_n_concepts") else {}),
             "analytic_floor": r["analytic_floor"],

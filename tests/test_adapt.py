@@ -220,7 +220,7 @@ def test_mt_build_roundtrip_and_stamp():
         def encode(self, s, add_special_tokens=False):
             return list(range(max(1, len(s) // 4)))
 
-    # multihop_mt was removed 2026-10-30; multilingual_multihop is the other bridge family the
+    # multihop_mt_regex was removed 2026-10-30; multilingual_multihop is the other bridge family the
     # same lint rule (bridge vs answer) covers
     fam = "multilingual_multihop"
     _h, items = original_bank(fam)
@@ -603,8 +603,7 @@ def test_role_bound_lint_flags_unlexiconed_role():
     """plan 0055 C2.5: an authored role missing from roles_v1.json is flagged; the judge then
     falls back to terms=[role] with no near-role distractor, counted in n_roles_unlexiconed."""
     from wsbench.evals.role_bound_association import gate
-    from wsbench.evals.role_bound_association.judge import build_block_v2
-    from wsbench.mcjudge import load_bank
+    from wsbench.evals.role_bound_association.judge import build_block_v2, load_items
 
     item = {
         "id": "x-ab",
@@ -623,7 +622,7 @@ def test_role_bound_lint_flags_unlexiconed_role():
     problems = lint("role_bound_association", item)
     assert "lexicon: role 'barber' not in roles_v1.json" in problems
     assert not any("police officer" in p for p in problems)
-    b = build_block_v2(item, [item, *load_bank("role_bound_association")], gate.load_lexicon())
+    b = build_block_v2(item, [item, *load_items()[0]], gate.load_lexicon())
     assert b.unlexiconed == ("barber",) and b.n_near == 1
 
 
@@ -830,7 +829,8 @@ def test_freeze_builds_originals_from_the_registered_item(tmp_path, monkeypatch)
         assert got[it["id"]]["adapt"]["origin"] == "original"
     rep = _json.loads((d / "report.json").read_text())
     e = rep["families"]["association"]
-    assert e["bank_version"] == 3 and e["bank"] == "evals/association/items_v3.json"
+    assert e["bank_version"] == 5 and e["bank"] == "evals/association/items_v5.json"
+    assert "read_plan_bank" not in bank  # the set plans its own items
     wb = rep["families"]["wrong_intermediate"]
     assert wb["status"] == "absent" and wb["note"] == "Phase B: later"  # never overwritten
     assert "exclude_from_macro" not in wb and "absent_auto" not in wb  # a hand note: not forced
@@ -840,6 +840,26 @@ def test_freeze_builds_originals_from_the_registered_item(tmp_path, monkeypatch)
     assert "association" not in {
         f for f, x in rep["families"].items() if x.get("status") == "absent"
     }
+
+
+def test_freeze_drops_the_read_plan_bank_pointer(tmp_path, monkeypatch):
+    """A registered bank that shares an earlier bank's read plan (header ``read_plan_bank``)
+    ships as its own read plan: an adapted set has no earlier bank beside it."""
+    import json as _json
+
+    from wsbench.adapt import run
+    from wsbench.readplan import READ_PLAN_BANK
+
+    d = _set(tmp_path, monkeypatch)
+    fam = "role_bound_association"
+    raw = _json.loads(registry.frozen_bank_path(fam).read_text(encoding="utf-8"))
+    assert raw.get(READ_PLAN_BANK)  # the registered bank v2 reads items.json's plan
+    header, items = original_bank(fam)
+    assert READ_PLAN_BANK not in header  # the loader drops it too
+    _gate_log(d, fam, [_row(it) for it in items[:4]])
+    run.freeze("qwen3.5-4b", [fam])
+    bank = _json.loads((d / f"{fam}.json").read_text())
+    assert READ_PLAN_BANK not in bank and bank["items"]
 
 
 def test_freeze_overlays_subject_fields_and_own_gold(monkeypatch, tmp_path):
@@ -931,6 +951,11 @@ def test_native_langs_file_and_freeze_refusal(tmp_path, monkeypatch):
         run.freeze("qwen3.5-4b", ["typo_mt"])
     rebuilt[nl.MARKER] = ["en", "ja"]
     rebuilt["units"] = [{**rebuilt["units"][0], "match": ["ja-form"]}]
+    _gate_log(d, "typo_mt", [_row(rebuilt)])
+    # plan 0072: a rebuild must also name the registered item it was rebuilt from
+    with pytest.raises(SystemExit, match="not rebuilt"):
+        run.freeze("qwen3.5-4b", ["typo_mt"])
+    rebuilt[nl.SOURCE_KEY] = nl.source_sha(items[0])
     _gate_log(d, "typo_mt", [_row(rebuilt)])
     run.freeze("qwen3.5-4b", ["typo_mt"])
     out = _json.loads((d / "typo_mt.json").read_text())
@@ -1096,7 +1121,7 @@ def test_floor_record_protocol_falls_back_to_the_frozen_file(tmp_path):
     assert cli._floor_record("prompt_only", src, tmp_path / "x.json")["protocol"] == "po-opus-v1"
 
 
-@pytest.mark.parametrize("family", ["knowledge_cutoff", "multihop_mt_v2"])
+@pytest.mark.parametrize("family", ["knowledge_cutoff", "multihop_mt"])
 def test_freeze_ships_subject_stage_originals_verbatim(family, tmp_path, monkeypatch):
     """Families with their own subject stage (kcutoff, mhmt2, msdm, wrong_intermediate) write
     `original` rows already rebuilt on the subject: freeze ships the row's item, never the

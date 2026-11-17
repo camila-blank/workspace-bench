@@ -11,6 +11,7 @@ byte-level BPE to text here, once (``wsbench.bpe``); the read-site ``token`` is 
 """
 
 import json
+import os
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -73,6 +74,12 @@ class LoadReport:
     reader: str = ""
     layers_requested: list[int] | None = None
     lite_rule: str = ""  # reads=lite: the frozen lite rule(s) the selection applied (json)
+    # plan 0090 (a --fast load of a family whose fast entry reduces the positions)
+    fast_rule: str = ""  # the fast positions rule the load applied (json)
+    n_cells_before_fast: int = 0  # cells of the fast read ids before that narrowing
+    fast_fallback_ids: list[str] = field(default_factory=list)  # read at the fallback position
+    # plan 0072 0.3: an older plan's file accepted through the set's lineage records
+    plan_lineage: dict[str, Any] | None = None
     n_samples_trimmed: int = 0
     n_packed_ambiguous: int = 0
     n_cells_short: int = 0
@@ -300,7 +307,7 @@ def convert_read_json(path: Path, out: Path) -> LoadReport:
 
 SAMPLINGS = ("bullet4", "prose1", "tokens10")
 SIDECAR_SUFFIX = ".meta.json"
-SIDECAR_KEYS = ("reads", "sampling", "reader", "arm", "layers", "plan_sha", "producer_sha")
+SIDECAR_KEYS = ("reads", "sampling", "reader", "arm", "layers", "plan_sha", "producer_sha", "fast")
 
 
 def sidecar_path(path: Path) -> Path:
@@ -310,7 +317,8 @@ def sidecar_path(path: Path) -> Path:
 
 def read_sidecar(path: Path) -> dict[str, Any] | None:
     """The sidecar of ``path`` (``{reads, sampling, reader, arm, layers, [plan_sha,
-    producer_sha, protocol]}``), or None when the file has none. A malformed sidecar or an
+    producer_sha, protocol, fast]}``; ``fast`` = the fast subset version of a file produced from
+    ``wsbench plan --fast``, plan 0090), or None when the file has none. A malformed sidecar or an
     unknown ``sampling`` / ``reads`` value is an error (exit 2), never a silent default."""
     p = sidecar_path(Path(path))
     if not p.exists():
@@ -329,12 +337,18 @@ def read_sidecar(path: Path) -> dict[str, Any] | None:
 
 
 def write_sidecar(path: Path, **meta: Any) -> Path:
-    """Write ``<path>.meta.json`` (producers, converters, the prompt-only writer)."""
+    """Write ``<path>.meta.json`` (producers, converters, the prompt-only writer), atomically:
+    a temporary file beside it, then ``os.replace``, so a reader never sees half a sidecar."""
     if meta.get("sampling") not in SAMPLINGS:
         raise ValueError(f"sampling={meta.get('sampling')!r}; expected one of {SAMPLINGS}")
     meta.setdefault("reads", "full")
     p = sidecar_path(Path(path))
-    p.write_text(json.dumps(meta, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(json.dumps(meta, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
     return p
 
 

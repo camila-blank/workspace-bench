@@ -3,6 +3,7 @@ stack-agnostic executor, sharding, and the shared torch steer (``Backend.steered
 
 import hashlib
 import json
+import sys
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
@@ -657,7 +658,51 @@ def _rank(scores: Sequence[float], i: int) -> int:
     return 1 + sum(1 for j, x in enumerate(scores) if x > scores[i] or (x == scores[i] and j < i))
 
 
-def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dict[str, Any]:
+def set_kda_mode(model: Any, mode: str) -> int:
+    """Kimi-K3: put every ``KimiDeltaAttention`` (fla KDA) in ``mode``; GLM-5.3-Flash: every
+    ``Glm5NextTextLinearAttention`` (one switch for the module); returns the count.
+    ``fused_recurrent`` is token-sequential and exactly causal; ``chunk`` (the remote code's
+    default) let a steer on later tokens move earlier positions' logits by 5.6 within one 64-token
+    chunk (plan 0067, 2026-11-05). That leak is fla's Triton chunk kernel; GLM-5.3-Flash's stock
+    torch chunk path is causal as shipped, so its swap is a guard against a kernel swap-in."""
+    if mode not in ("chunk", "fused_recurrent"):
+        raise ValueError(mode)
+    n = 0
+    glm = []
+    for m in model.modules():
+        if type(m).__name__ == "KimiDeltaAttention":
+            m.mode = mode
+            n += 1
+        elif type(m).__name__ == "Glm5NextTextLinearAttention":
+            glm.append(m)
+    if glm:  # GLM-5.3-Flash (stock transformers glm5_next): no per-layer mode, see below
+        _set_glm5_next_kda_mode(sys.modules[type(glm[0]).__module__], mode)
+        n += len(glm)
+    return n
+
+
+def _set_glm5_next_kda_mode(mod: Any, mode: str) -> None:
+    """transformers' ``Glm5NextTextLinearAttention.forward`` calls the module global
+    ``chunk_kimi_delta_attention`` on every cache-less forward; ``fused_recurrent`` swaps it for the
+    module's own token-sequential ``recurrent_kimi_delta_attention`` (its KV-cached decode step,
+    the same ``g`` / ``beta`` / l2norm semantics), ``chunk`` restores the original."""
+    orig = mod.__dict__.setdefault("_wsb_chunk_kda", mod.chunk_kimi_delta_attention)
+
+    def recurrent_as_chunk(query, key, value, g, beta, chunk_size=64, initial_state=None,
+                           output_final_state=False, use_qk_l2norm_in_kernel=False,
+                           **kwargs):  # fmt: skip
+        return mod.recurrent_kimi_delta_attention(
+            query, key, value, g=g, beta=beta, initial_state=initial_state,
+            output_final_state=output_final_state,
+            use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel, **kwargs,
+        )  # fmt: skip
+
+    mod.chunk_kimi_delta_attention = orig if mode == "chunk" else recurrent_as_chunk
+
+
+def calib_report(
+    raw: dict[str, Any], decode: Callable[[list[int]], str], gate_full_depth: bool = False
+) -> dict[str, Any]:
     """Verdicts of plan 0067 §5 from the stack's raw calibration outputs (pure), each with a
     ``pass``. ``g0_pass`` (the run refuses to launch without it) = the ENGINE checks (a) no-op and
     (d) local steer; (b) concept mention and (c) batched vs single are recorded measurements of
@@ -666,7 +711,7 @@ def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dic
     a = raw["noop"]
     base_lp = [x for r in a["base_lp"] for x in r]
     other = [x for k in ("beta0_lp", "zero_lp") for r in a[k] for x in r]
-    rep: dict[str, Any] = {"gpu": raw.get("gpu")}
+    rep: dict[str, Any] = {"gpu": raw.get("gpu"), "gate_full_depth": gate_full_depth}
     ra = {
         "beta0_logprobs_equal": a["beta0_lp"] == a["base_lp"],
         "zero_vec_logprobs_equal": a["zero_lp"] == a["base_lp"],
@@ -704,6 +749,8 @@ def calib_report(raw: dict[str, Any], decode: Callable[[list[int]], str]) -> dic
     # re-routes the span's tokens, which changes the per-expert GEMM shapes the pre-span rows
     # share, so it is ~1.8 on V4-Pro and Muse alike (Muse's loop has explicit causal masks)
     d["pass"] = d["pre_span_max_abs_diff"] == 0.0 and d["in_span_max_rel_err"] <= CALIB_SPAN_REL
+    if gate_full_depth:  # a batch-invariant stack (Kimi-K3): the full-depth check is exact
+        d["pass"] = d["pass"] and d.get("pre_span_logits_max_abs_diff") == 0.0
     rep["d_steer_is_local"] = d
     rep["g0_pass"] = rep["a_noop"]["pass"] and rep["d_steer_is_local"]["pass"]
     rep["recorded_not_gated"] = ["b_mention", "c_batched_vs_single"]

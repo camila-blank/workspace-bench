@@ -255,7 +255,6 @@ def test_native_only_is_exactly(real_families):
     """NATIVE_ONLY = {jlens_concept_pr} (decision Q2); hallucination left WorkspaceBench (plan
     0040), so there is no other exception."""
     assert set(digest.NATIVE_ONLY) == {"jlens_concept_pr"}
-    assert "unverbalized_hint" not in digest.NATIVE_ONLY
 
 
 def test_library_default_is_summary():

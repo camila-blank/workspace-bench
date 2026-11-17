@@ -706,10 +706,28 @@ def _measure_off(model: str, why: str, runner: Any,
     return rec
 
 
+SOURCE_KEY = "native_units_src"  # item key: source_sha of the registered item it was rebuilt from
+
+
+def source_sha(reg_item: dict) -> str:
+    """sha256 over the registered item's native-dependent content (``NATIVE_KEYS`` and
+    ``lang``): an original rebuilt from an older registered item (a list rebuild, plan 0072
+    §0 / critique 3) no longer matches it."""
+    import hashlib
+
+    keys = (*NATIVE_KEYS, "lang")
+    src = {k: reg_item[k] for k in keys if k in reg_item}
+    return hashlib.sha256(json.dumps(src, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 def unbuilt(family: str, row_item: dict, reg_item: dict, langs: list[str]) -> bool:
     """True when ``row_item`` is not a rebuild of ``reg_item`` for ``langs``: unmarked, marked
-    for other languages, or missing a native-dependent key the registered item has."""
+    for other languages, missing a native-dependent key the registered item has, or rebuilt
+    from another version of the registered item (``SOURCE_KEY`` != ``source_sha``; a row
+    rebuilt before plan 0072 carries none, so re-run ``native_langs stage=upgrade``)."""
     if row_item.get(MARKER) != list(langs):
+        return True
+    if row_item.get(SOURCE_KEY) != source_sha(reg_item):
         return True
     return any(k in reg_item and k not in row_item for k in NATIVE_KEYS)
 
@@ -724,4 +742,6 @@ def overlay_native_units(family: str, item: dict, row_item: dict) -> dict:
     for k in NATIVE_KEYS:
         if k in item and k in row_item:
             item[k] = copy.deepcopy(row_item[k])
+    if SOURCE_KEY in row_item:  # plan 0072: the shipped item says which registered item it is from
+        item[SOURCE_KEY] = row_item[SOURCE_KEY]
     return item

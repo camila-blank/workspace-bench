@@ -18,6 +18,11 @@ def _parts(word: str) -> frozenset[str]:
     return frozenset(pronouncing.rhyming_part(p) for p in pronouncing.phones_for_word(word.lower()))
 
 
+def rhyming_parts(word: str) -> frozenset[str]:
+    """The CMU rhyming parts of ``word`` (empty for an unknown word)."""
+    return _parts(word.lower().strip())
+
+
 def rhymes(a: str, b: str) -> bool:
     """``a`` rhymes with ``b`` and is not the same word."""
     a, b = a.lower().strip(), b.lower().strip()

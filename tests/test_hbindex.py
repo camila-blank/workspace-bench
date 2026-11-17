@@ -33,7 +33,7 @@ def _cell(v: float, lo: float, hi: float) -> dict:
 FIXTURE = {
     "hb_repo": "github.com/camila-blank/hallucination-bench",
     "hb_sha": "0123456789abcdef0123456789abcdef01234567",
-    "version": "hindex-v6",
+    "version": "hindex-v8",
     "rows": [
         {"method": "m-full", "layer": 20, "full": _cell(0.10, 0.08, 0.12),
          "matched": _cell(0.09, 0.07, 0.11)},
@@ -47,16 +47,26 @@ FIXTURE = {
 
 def test_vendored_index_schema_and_version():
     idx = hbindex.load()
-    assert idx["version"] == "hindex-v6" == hbindex.VERSION
+    assert idx["version"] == "hindex-v8" == hbindex.VERSION
     assert re.fullmatch(r"[0-9a-f]{7,40}", idx["hb_sha"])
     assert idx["hb_repo"] == "github.com/camila-blank/hallucination-bench"
-    assert idx["families"] == ["main", "agentic_misalignment", "sibling", "story", "overrefusal"]
+    assert idx["families"] == [
+        "main",
+        "am_claims",
+        "am_situation",
+        "sibling",
+        "story",
+        "overrefusal",
+        "benign_roleplay",
+    ]
     assert idx["weights"]["family"] == {
         "main": 9.0,
-        "agentic_misalignment": 3.0,
-        "sibling": 2.0,
+        "am_claims": 3.0,
+        "am_situation": 3.0,
+        "sibling": 1.0,
         "story": 1.0,
         "overrefusal": 1.0,
+        "benign_roleplay": 2.0,
     }
     assert "sources" not in idx and "safety" not in idx
     assert "/workspace" not in json.dumps(idx)  # no dev-box paths
@@ -74,14 +84,14 @@ def test_vendored_index_schema_and_version():
 
 
 def test_vendored_numbers_match_hb_results_doc():
-    # HB docs/results/0022_index_v6.md: s3d-rl600 L44 full 13.2 [12.0, 14.4]; jlens has no full
+    # HB docs/results/0029_index_v8.md: s3d-rl600 L44 full 9.7 [9.0, 10.4]; jlens has no full
     got = hbindex.lookup("s3d-rl600", [44])
     assert got is not None
     (row,) = got["rows"]
     assert row["kind"] == "full"
     assert (round(100 * row["value"], 1), [round(100 * x, 1) for x in row["ci"]]) == (
-        13.2,
-        [12.0, 14.4],
+        9.7,
+        [9.0, 10.4],
     )
     jl = hbindex.lookup("jlens", [44])
     assert jl is not None and jl["rows"][0]["kind"] == "matched (no sibling)"
@@ -166,7 +176,7 @@ def test_report_appends_hb_block(tmp_path, capsys):
     capsys.readouterr()
     plain, with_hb = (base / "summary.md").read_text(), (hb / "summary.md").read_text()
     assert "HallucinationBench" not in plain  # no method resolves: no block
-    block = "HallucinationBench index (hindex-v6 @ b1043b4, lower is better): s3d-rl600 full "
+    block = "HallucinationBench index (hindex-v8 @ 2563704, lower is better): s3d-rl600 full "
     assert with_hb.startswith(plain) and block in with_hb
     assert with_hb.rstrip().endswith("at L44")
     # the macro value is unchanged: the HB index is a separate number
@@ -181,7 +191,7 @@ def test_report_appends_hb_block(tmp_path, capsys):
     assert hbj["rows"][0]["layer"] == 44 and hbj["rows"][0]["kind"] == "full"
     # the argument wins over run.json
     assert main(["report", f"dir={hb}", "floors=False", "hb_method=jlens"]) == 0
-    assert "jlens matched (no sibling) 2.3% [1.8, 2.9] at L44" in (hb / "summary.md").read_text()
+    assert "jlens matched (no sibling) 3.1% [2.7, 3.5] at L44" in (hb / "summary.md").read_text()
 
 
 def test_run_stores_hb_method_in_run_json(tmp_path):
@@ -211,18 +221,18 @@ def test_vendor_script_refuses_sha_or_version_mismatch(tmp_path):
         "git_sha": FIXTURE["hb_sha"],
         "sources": {"main": ["/workspace/dev-box/path"]},
         "weights": {"family": {"main": 9.0, "sibling": 2.0}},
-        "notes": {"m-full.main": "kept", "other": "dropped", "hindex-v6": "kept"},
+        "notes": {"m-full.main": "kept", "other": "dropped", "hindex-v8": "kept"},
     }
     p = tmp_path / "index.json"
     p.write_text(json.dumps(src))
     out = vend.vendor(p, "0123456", methods)
     assert out["hb_sha"] == FIXTURE["hb_sha"] and out["families"] == ["main", "sibling"]
     assert {r["method"] for r in out["rows"]} == {"m-full"} and "sources" not in out
-    assert set(out["notes"]) == {"m-full.main", "hindex-v6"}
+    assert set(out["notes"]) == {"m-full.main", "hindex-v8"}
     with pytest.raises(ValueError, match="is not HB_SHA"):
         vend.vendor(p, "fedcba9", methods)
-    p.write_text(json.dumps({**src, "version": "hindex-v5"}))
-    with pytest.raises(ValueError, match="is not hindex-v6"):
+    p.write_text(json.dumps({**src, "version": "hindex-v6"}))
+    with pytest.raises(ValueError, match="is not hindex-v8"):
         vend.vendor(p, "0123456", methods)
     assert vend.main([f"SRC={p}", "HB_SHA=0123456", f"DST={tmp_path / 'o.json'}"]) == 2
     assert not (tmp_path / "o.json").exists()
@@ -239,15 +249,63 @@ def test_methods_json_keys_are_campaign_arms():
     assert "mlnla-rl2-2000" in m["not_measured"]
 
 
-def test_final_olens_arm_is_mapped_and_full():
-    # plan 0057: the campaign's final O-lens arm (HB plan 0024)
+def test_final_olens_arm_is_not_measured_on_v8():
+    # plan 0080: HB plan 0029 §2.4 keeps final-olens-rl600-x4 out of hindex-v8 (v6 / v7 only)
     m = hbindex.methods()
-    assert m["methods"]["final-olens-rl600-x4"] == "final-olens-rl600-x4"
-    got = hbindex.lookup("final-olens-rl600-x4", list(range(20, 61, 4)))
-    assert got is not None and not got["missing_layers"]
-    assert {r["kind"] for r in got["rows"]} == {"full"}
-    (l44,) = [r for r in got["rows"] if r["layer"] == 44]
-    assert (round(100 * l44["value"], 1), [round(100 * x, 1) for x in l44["ci"]]) == (
-        16.6,
-        [15.1, 18.2],
-    )
+    assert "final-olens-rl600-x4" not in m["methods"]
+    assert "not a hindex-v8 arm" in m["not_measured"]["final-olens-rl600-x4"]
+    assert hbindex.lookup("final-olens-rl600-x4", [44]) is None
+    rj = {"readouts_root": "/x/readouts/final-olens-rl600-x4"}
+    method, why = hbindex.resolve_method(run_json=rj)
+    assert method is None and why.startswith("final-olens-rl600-x4: " + hbindex.NOT_MEASURED)
+
+
+def test_vendor_keeps_joint_rows_apart(tmp_path):
+    """plan 0080: v8's joint 11-layer rows (HB layer "all") go to `joint`, never to `rows`;
+    the excluded-cell report is kept per vendored method."""
+    vend = _vendor_module()
+    methods = tmp_path / "methods.json"
+    methods.write_text(json.dumps({"methods": {"s3d-rl600": "m-full"}, "not_measured": {}}))
+    joint = {
+        "method": "m-full",
+        "layer": "all",
+        "full_joint": _cell(0.3, 0.2, 0.4),
+        "families": {"main": {"v": 0.1, "ci": [0, 1], "n": 5, "n_items": 2, "health": {}}},
+    }
+    excl = [
+        {"family": "overrefusal", "method": "m-full", "unit": "L20", "n_cells": 4,
+         "n_excluded": 1, "share": 0.25, "by_reason": {"refused": 1}, "n_unsettled_verdicts": 0},
+        {"family": "main", "method": "m-matched", "unit": "L20", "n_cells": 4,
+         "n_excluded": 1, "share": 0.25, "by_reason": {"refused": 1}},
+    ]  # fmt: skip
+    src = {
+        **{k: v for k, v in FIXTURE.items() if k != "hb_sha"},
+        "git_sha": FIXTURE["hb_sha"],
+        "rows": [*FIXTURE["rows"], joint],
+        "weights": {"family": {"main": 9.0}},
+        "manifest": {"persistent_failures": {"n_excluded": 2, "entries": excl}},
+    }
+    p = tmp_path / "index.json"
+    p.write_text(json.dumps(src))
+    out = vend.vendor(p, "0123456", methods)
+    assert [(r["method"], r["layer"]) for r in out["rows"]] == [("m-full", 20), ("m-full", 24)]
+    assert out["joint"] == [
+        {
+            "method": "m-full",
+            "full_joint": {"v": 0.3, "ci": [0.2, 0.4]},
+            "families": {"main": {"v": 0.1, "ci": [0, 1], "n": 5, "n_items": 2}},
+        }
+    ]
+    assert out["excluded"] == [{k: v for k, v in excl[0].items() if k != "n_unsettled_verdicts"}]
+    # lookup / missing_reason never see the joint row (integer layers only)
+    assert hbindex.lookup("m-full", [20], index=out) is not None
+
+
+def test_vendored_joint_rows():
+    idx = hbindex.load()
+    methods = set(hbindex.methods()["methods"].values())
+    assert {j["method"] for j in idx["joint"]} == methods
+    for j in idx["joint"]:
+        assert 0 < j["full_joint"]["v"] < 1 and set(j) == {"method", "full_joint", "families"}
+    assert all(isinstance(r["layer"], int) for r in idx["rows"])
+    assert {e["method"] for e in idx["excluded"]} <= methods

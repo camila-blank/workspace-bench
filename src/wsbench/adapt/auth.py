@@ -11,6 +11,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from wsbench.llm import ledger
+
 DICT_NAME = "anthropic-oauth"
 OAUTH_BETA = "oauth-2025-04-20"
 PUSH = "the token is missing or expired: ask Agam to run `push-judge-token` on the Mac"
@@ -69,7 +71,9 @@ class Session:
 
     def create(self, **kw: Any) -> Any:
         """``messages.create`` that waits out rate limits and overloads (see ``_throttled``)."""
-        return self._throttled(lambda: self.client.messages.create(**kw))
+        msg = self._throttled(lambda: self.client.messages.create(**kw))
+        ledger(str(kw.get("model", "")), getattr(msg, "usage", None))
+        return msg
 
     def stream_final(self, **kw: Any) -> Any:
         """A streamed ``messages`` call (long replies must stream); returns the final message."""
@@ -78,7 +82,9 @@ class Session:
             with self.client.messages.stream(**kw) as stream:
                 return stream.get_final_message()
 
-        return self._throttled(run)
+        msg = self._throttled(run)
+        ledger(str(kw.get("model", "")), getattr(msg, "usage", None))
+        return msg
 
     @staticmethod
     def _throttled(fn: Callable[[], Any]) -> Any:

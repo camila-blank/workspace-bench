@@ -18,6 +18,7 @@ ALLOWED_LITERALS = {
     "multitoken/family.py",  # mt_family's default path
     "readplan.py",  # jlens_concept_pr's adapted rollout ids (bank_dir/items.json)
     "nocot.py",
+    "adapt/refill.py",  # plan 0072 §0 D1: buggy_code's adapted target IS bank v1 (items.json)
 }
 
 

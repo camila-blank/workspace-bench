@@ -9,6 +9,20 @@ TEMPLATES = Path(__file__).parent / "data" / "templates"  # pinned chat template
 DEFAULT_MODAL_APP = "adapt-subject-llm"  # the shared H200 app any hub-cached subject can use
 
 
+# the global-workspace xaff DeepSeek-V4-Pro reader's lens layers (gw PR #723)
+V4PRO_READ_BAND: tuple[int, ...] = (19, 23, 27, 31, 34, 38, 42, 46, 50, 53, 57)
+# Camila's multilayer DeepSeek-V4-Flash O-lens layers: the s3don AR + O-lens READ_LAYERS 15..42:3
+# (global-workspace scripts/v4_flash/common.py) plus layer 26 (xaff plan §3.1, Camila
+# 2026-11-03: "add layer 26 to v4 flash"). 11 layers, one per 27B grid layer (GRID_27B[i] ->
+# band[i], see remap_layer): nearest-snap would fold 13/16 -> 15 and 38/40 -> 39 and never read
+# 26 or 42.
+V4FLASH_READ_BAND: tuple[int, ...] = (15, 18, 21, 24, 26, 27, 30, 33, 36, 39, 42)
+# Dory-4B's O-lens sites on the 2-loop path (unrolled-view indices; see the Subject below)
+DORY_READ_BAND: tuple[int, ...] = (15, 19, 23, 27, 39, 43, 47, 51, 55, 59, 63)
+# the benchmark's 11-layer grid of record (readplan.GRID, Qwen3.6-27B layers out of 64)
+GRID_27B: tuple[int, ...] = tuple(range(20, 61, 4))
+
+
 @dataclass(frozen=True)
 class Subject:
     key: str
@@ -61,6 +75,17 @@ class Subject:
     # predates token-id prompts): RemoteRunner refuses it instead of failing inside vLLM
     modal_built: bool = True
     modal_engine: tuple[tuple[str, Any], ...] = ()  # extra kwargs for the vLLM engine (overrides)
+    # throwaway requests at the head AND tail of every engine call (0 = none). DeepSeek-V4-Flash
+    # TP=1 engines on vLLM 0.31.0 return garbage for small generate() calls and the first ~2
+    # requests of any call, and drain-corrupt the tail of long ones (global-workspace
+    # scripts/v4_flash/gen_requests_modal.py ``padded``, 2026-10-24): 300, pads run to max_tokens
+    modal_pad: int = 0
+    # Modal max_containers for the app (0 = Modal's default autoscaling, unless modal_replicas
+    # > 1 sets it): concurrent adapt stages each get a container, up to this many
+    modal_max_containers: int = 0
+    # prompts per RemoteRunner call (0 = RemoteRunner.CHUNK, 512). A padded subject wants big
+    # calls: each engine call carries 2 x modal_pad throwaway requests whatever its size
+    modal_chunk: int = 0
     # plan 0060 D8: arithmetic has no pre-registered cell on this subject (its render has no
     # counterpart of the Qwen cell's token); freeze drops cell.pos and the judge reads every cell
     arith_all_positions: bool = False
@@ -166,15 +191,13 @@ SUBJECTS: dict[str, Subject] = {
             backend="modal",
             thinking_mode=True,  # hub template: enable_thinking opens <think>
         ),
-        # normal-bank OLens subjects (>= 32B, 2026-10-23): gated + re-golded on the 27B bank only.
-        # model-parallel HF generation on Modal: gw-olens scripts/ola/port/adapt_mp_subject_modal.py
-        # kimi-k2: the hub tokenizer at the pinned revision (tiktoken remote code; needs the
-        # ``tiktoken`` package, in the gpu extra), no longer Agam's converted
+        # kimi-k2 (rebuilt under plan 0089): the hub tokenizer at the pinned revision (tiktoken
+        # remote code; needs the ``tiktoken`` package, in the gpu extra), no longer Agam's converted
         # /workspace/agam/hf_tok/kimi-k2. Its official hub template is used as-is (no thinking),
         # so EVERY Kimi render opens with the template's default system turn ("You are Kimi, an
         # AI assistant created by Moonshot AI.") unless the ask brings its own system message;
         # sets are built fresh, so this need not match Agam's earlier gate renders. Generation:
-        # our B300:8 at TP8 (plan 0060 D2); the first load writes ~1 TB into adapt-hf-cache.
+        # vLLM on our B300:8 at TP8 (plan 0060 D2), weights from the kimi-k2 volume (as kimi-k3).
         Subject(
             "kimi-k2",
             "moonshotai/Kimi-K2-Instruct-0905",
@@ -187,8 +210,23 @@ SUBJECTS: dict[str, Subject] = {
             trust_remote_code=True,
             modal_gpu=("B300:8",),
             modal_tp=8,
+            # plan 0089: the pinned snapshot (~1.03 TB, block FP8 as shipped) on its own volume,
+            # mounted at the default recipe's /hf (as kimi-k3), so no B300 container downloads it
+            modal_volume="kimi-k2",
+            modal_weights="hf/hub/models--moonshotai--Kimi-K2-Instruct-0905/snapshots/"
+            "ac6c49f04883bd0a0598b790693a72061c676629",
             modal_engine=(("trust_remote_code", True),),
+            # one B300:8 container: a second concurrent stage (keepalive, a parallel refill) queues
+            # instead of booting another 1 TB engine (plan 0089)
+            modal_max_containers=1,
         ),
+        # GLM-5.3-Flash (plan 0089: Agam's set rebuilt): 320B MoE (KDA linear attention + DSA
+        # sparse layers, mHC), ~328 GB FP8 as shipped. vLLM 0.31.0 serves
+        # Glm5NextForConditionalGeneration; text only (language_model_only). Tokenizer from the hub
+        # at the pinned revision; the upstream template always opens <think> at effort max, so the
+        # pinned data/templates/glm53_flash_nothink.jinja makes the same two edits as GLM-5.3's
+        # (effort low, generation prompt <|assistant|><think></think>). Weights on volume
+        # glm53-flash (hub-cache layout under /hf, as kimi-k3), TP4 on B200:4 (H200:4 fallback).
         Subject(
             "glm-5.3-flash",
             "zai-org/GLM-5.3-Flash",
@@ -197,11 +235,15 @@ SUBJECTS: dict[str, Subject] = {
             "glm5",
             "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
             backend="modal",
-            modal_app="adapt-mp-glm-5.3-flash",
-            modal_built=False,  # Agam's text-only app; not rebuilt (plan 0060 D1: GLM-5.3 instead)
-            tokenizer_dir="/workspace/agam/hf_tok/glm-5.3-flash",
-            # gw-olens' template: the upstream one always opens <think>
-            chat_template="/workspace/agam/hf_tok/glm-5.3-flash/glm5_chat_nothink.jinja",
+            modal_app="adapt-glm-5.3-flash",
+            chat_template=str(TEMPLATES / "glm53_flash_nothink.jinja"),
+            modal_gpu=("B200:4", "H200:4"),
+            modal_tp=4,
+            modal_volume="glm53-flash",
+            modal_weights="hf/hub/models--zai-org--GLM-5.3-Flash/snapshots/"
+            "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+            modal_engine=(("language_model_only", True),),
+            modal_max_containers=1,  # one B200:4 container; concurrent stages queue (plan 0089)
             thinking_mode=True,  # the upstream template always opens <think> (see above)
         ),
         # GLM-5.3 non-Flash (plan 0060 D1): the glm53 lens work's checkpoint, 754B MoE, d 6144.
@@ -243,9 +285,10 @@ SUBJECTS: dict[str, Subject] = {
         ),
         # plan 0060 A3 (2026-11-03). No Jinja template ships: the pinned one reproduces
         # encode_messages(thinking_mode="chat") = <bos><|User|>...<|Assistant|></think> (fullwidth
-        # bars) token for token (tests/test_adapt_v4.py). J-lens v4-flash:/runs/jlens/std-n1000:
-        # row r = block r for r in 0..40 (sources 0..40, target block 41); row 41 is the identity
-        # anchor and there is no L42 row, so the band is rows <= 40.
+        # bars) token for token (tests/test_adapt_v4.py). read_band = Camila's multilayer O-lens
+        # layers (V4FLASH_READ_BAND, 2026-11-15 adapted set). The J-lens
+        # v4-flash:/runs/jlens/std-n1000 has rows 0..40 only (no L42 row), so jlens_concept_pr
+        # would need its own layers <= 40 (the band was range(41) before the adapted set).
         Subject(
             "deepseek-v4-flash",
             "deepseek-ai/DeepSeek-V4-Flash",
@@ -254,7 +297,7 @@ SUBJECTS: dict[str, Subject] = {
             "dsv4",
             "60d8d70770c6776ff598c94bb586a859a38244f1",
             backend="modal",
-            read_band=tuple(range(41)),
+            read_band=V4FLASH_READ_BAND,
             modal_app="adapt-v4-flash",
             chat_template=str(TEMPLATES / "deepseek_v4_chat.jinja"),
             arith_all_positions=True,
@@ -267,12 +310,18 @@ SUBJECTS: dict[str, Subject] = {
             modal_weights="hf/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/"
             "60d8d70770c6776ff598c94bb586a859a38244f1",
             modal_engine=(("moe_backend", "marlin"), ("generation_config", "vllm")),
+            modal_pad=300,  # gw's V4 small-call / tail corruption guard (+ the start canary)
+            # concurrent stages share at most 4 B300:8 containers (Camila 2026-11-15: <= 8 of
+            # the env's 16; the rest stay free for the other adapted-set work)
+            modal_max_containers=4,
+            modal_chunk=9600,  # ~1,200 real prompts per engine call against its 600 pads
             # encoding_dsv4 thinking_mode="thinking"; no Jinja template renders it yet, so
             # native_langs thinking=on refuses until a thinking_template is pinned
             thinking_mode=True,
         ),
-        # plan 0060 new subjects (2026-11-03; every pin = hub main that day). No J-lens for any
-        # of the three yet: read_band=() (depth remap, no snap) until one is fitted.
+        # plan 0060 new subjects (2026-11-03; every pin = hub main that day). Kimi-K3 and Muse have
+        # no fitted lens yet: read_band=() (depth remap, no snap). DeepSeek-V4-Pro snaps to the
+        # gw xaff reader's layers (V4PRO_READ_BAND).
         # DeepSeek-V4-Pro-0813: Flash's tokenizer files byte for byte; its encoding_dsv4.py
         # differs from Flash's only in thinking-mode reasoning-effort prompts, so the chat-mode
         # render (Flash's pinned template) is identical (tests/test_adapt_new_subjects.py).
@@ -297,6 +346,9 @@ SUBJECTS: dict[str, Subject] = {
             "72e1d3230f6c080a530b0a1d46f8eb4602340597",
             modal_engine=(("moe_backend", "marlin"), ("generation_config", "vllm")),
             thinking_mode=True,  # as Flash: no thinking render pinned yet
+            # the global-workspace xaff V4-Pro reader's 11 layers (its V4PRO_TABLE: the 27B grid
+            # at the same depth, floor(+1/2)): snaps the depth remap's 30 -> 31 and 60 -> 57
+            read_band=V4PRO_READ_BAND,
         ),
         # Kimi-K3: the remote-code tokenizer overrides apply_chat_template with an XTML render
         # (encoding_k3.py), switched by ``thinking`` (enable_thinking is ignored). thinking=False
@@ -357,6 +409,30 @@ SUBJECTS: dict[str, Subject] = {
             # hub template reasons in the to=self channel, which think_markers delimits
             thinking_mode=True,
         ),
+        # NVIDIA Dory1.0-4B: a LOOPED model (8 input blocks, the same 20 blocks run k times, 8
+        # output blocks). The subject is the k=2 model (NVIDIA's default, config
+        # n_recurrent_loops=2, per-loop KV), served by vLLM 0.33.0's native DoryForCausalLM.
+        # Layers are indices of the mOre-lenses unrolled view (agu18dec/mOre-lenses
+        # dory-4b/code/looped.py: 0-7 input, 8-27 pass 1, 28-35 exit after 1 loop, 36-55 pass 2,
+        # 56-63 exit after 2 loops, 64+ passes 3-4). n_layers=64 spans the 2-loop view; the
+        # band is the O-lens sites the 2-loop forward computes, minus exit 1 (a side branch the
+        # 2-loop output never passes through) and site 11 (20% of the path's depth, shallower
+        # than the grid's first layer): 11 sites, so GRID_27B[i] reads band[i] (the table rule).
+        # Hub template: enable_thinking=False pre-fills an empty <think></think>.
+        Subject(
+            "dory-4b",
+            "nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16",
+            "NVIDIA Dory1.0-4B (2 loops)",
+            64,
+            "dory",
+            "ee517dd388a9b348890ae1e00dacc5eb4d0c750d",
+            backend="modal",
+            read_band=DORY_READ_BAND,
+            modal_app="adapt-dory-4b",
+            modal_gpu=("H200", "H100"),
+            modal_image="dory",
+            thinking_mode=True,
+        ),
     ]
 }
 
@@ -384,6 +460,8 @@ def modal_spec(s: Subject | None = None) -> dict[str, Any]:
         "volume": s.modal_volume,
         "weights": s.modal_weights,
         "engine": dict(s.modal_engine),
+        **({"pad": s.modal_pad} if s.modal_pad else {}),  # absent = 0 (older apps' specs unchanged)
+        **({"max_containers": s.modal_max_containers} if s.modal_max_containers else {}),
     }
 
 
@@ -415,9 +493,17 @@ def load_tokenizer(
 
             tok = PreTrainedTokenizerFast.from_pretrained(tokenizer_dir)
     else:
-        tok = AutoTokenizer.from_pretrained(
-            hf_id, revision=revision, trust_remote_code=trust_remote_code
-        )
+        try:
+            tok = AutoTokenizer.from_pretrained(
+                hf_id, revision=revision, trust_remote_code=trust_remote_code
+            )
+        except Exception:  # a model_type this transformers cannot configure (Dory: PR 50099,
+            # unreleased; its "mlp" layer_types fail huggingface_hub's strict config validation,
+            # StrictDataclassClassValidationError, not a ValueError). The tokenizer itself is a
+            # plain tokenizer.json: load the class its tokenizer_config names, without the config
+            from transformers import PreTrainedTokenizerFast
+
+            tok = PreTrainedTokenizerFast.from_pretrained(hf_id, revision=revision)
     if chat_template:
         tok.chat_template = Path(chat_template).read_text()
     if thinking_kwarg is None:
@@ -446,7 +532,12 @@ def rename_thinking(tok: Any, kwarg: str) -> Any:
 
 def remap_layer(layer: int, n_layers: int, band: tuple[int, ...] | list[int] = ()) -> int:
     """A 27B read layer at the same depth fraction of the subject, snapped to the nearest layer of
-    ``band`` (the subject's lens layers; ties go deeper) when the subject has one."""
+    ``band`` (the subject's lens layers; ties go deeper) when the subject has one. A band of
+    exactly one layer per grid layer (``len(band) == len(GRID_27B)``) is the lens's own table:
+    grid layer i reads ``sorted(band)[i]``, so every lens layer is read (for V4-Pro's band this is
+    the nearest snap itself); off-grid layers still snap."""
+    if band and len(band) == len(GRID_27B) and layer in GRID_27B:
+        return sorted(band)[GRID_27B.index(layer)]
     x = min(n_layers - 1, round(layer * n_layers / ORIGINAL_LAYERS))
     return min(band, key=lambda b: (abs(b - x), -b)) if band else x
 
