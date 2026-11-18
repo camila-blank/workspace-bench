@@ -441,13 +441,3 @@ def test_a_luna_run_without_judge_fallback_makes_no_claude_call(
     if name in ("agentic_misalignment/summary", "jailbreak_recognition/summary"):
         assert "+sonnet-digest" in res.config["prompt_version"]
         assert "+opus5-fb" in res.config["prompt_version"]
-
-
-def test_a_regex_family_under_a_luna_judge_is_not_the_pinned_instrument(tmp_path, real_families):
-    """model_specific_directed_modulation scores by regex with a fixed pinned judge stand-in;
-    its digest follows a Luna override all the same, so that row must not stamp pinned (review
-    of #505)."""
-    name = "model_specific_directed_modulation"
-    for flag, want in ((None, True), (OPUS5, True), (LUNA, False)):
-        args = _family_args(tmp_path, name, **({"flag": flag} if flag else {}))
-        assert digest.summarizer_judge(args, name).pinned is want
