@@ -184,10 +184,16 @@ per-layer digests are merged into the one judged digest (see "Audit fixes" below
     `digest.consensus_claims`), the judge's `CONSENSUS_RULE` and `extras.consensus_band` were
     retired on 2026-11-04 (`+generic-r7`); `collapse(consensus=)` remains, but no family sets it.
 - **Refusal fallbacks** (`summ_fallback`): `default` passes the server-side refusal fallback
-  (`fallbacks="default"`); `default+<claude model>` additionally re-runs a call still declined
+  (`fallbacks="default"`); `default+<model>` additionally re-runs a call still declined
   after it once on that model, at the same level, before any halving (plan 0037 J10;
   the four F3 families use `default+claude-sonnet-5-5`, i.e.
-  `digest.REFUSAL_MODEL`; Sonnet 5 before 2026-11-01). `none+<claude model>` is that
+  `digest.REFUSAL_MODEL`; Sonnet 5 before 2026-11-01). `<model>` is any model id (plan 0096):
+  a refusal model on the other route than the digest model needs that route's key (checked
+  before the first digest call, never on a dry run) and its re-run sends the reasoning of its
+  own route (`llm.reasoning_for`: an OpenRouter model `{"effort": "minimal"}`, an Anthropic
+  one no effort key from an OpenRouter digest's settings), at the digest model's output cap;
+  a same-route re-run is unchanged. What a non-Claude PRIMARY digest model sends is not
+  re-shaped. `none+<model>` is that
   client-side re-run alone, for a digest model that rejects server-side `fallbacks`
   (`claude-sonnet-5` answers the parameter with a 400): agentic_misalignment and
   jailbreak_recognition, whose digests run on their `claude-sonnet-5` judge pins, use

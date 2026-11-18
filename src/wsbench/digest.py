@@ -451,6 +451,13 @@ class Settings:
         _head, sep, model = self.fallback.partition("+")
         return model if sep else None
 
+    def reasoning_on(self, model: str) -> dict | None:
+        """The reasoning a client-side re-run on ``model`` sends: :attr:`reasoning` as it is on
+        the digest model's route, re-shaped by ``llm.reasoning_for`` on the other (plan 0096)."""
+        if llm.route(model) == llm.route(self.model):
+            return self.reasoning
+        return llm.reasoning_for(llm.route(model), self.reasoning)
+
 
 # the benchmark default (plan 0024): ``runner.parse_opts`` — the entry of every CLI run — fills it
 # in when ``opts=`` does not set ``aggregate``
@@ -476,19 +483,15 @@ def _choice(args: JudgeArgs, key: str, allowed: Sequence[str], default: str) -> 
 
 def _fallback_opt(args: JudgeArgs) -> str:
     """``summ_fallback``: ``none``, ``default`` (server-side refusal fallback),
-    ``default+<claude model>`` (plus one client-side re-run of a still-declined call on that
-    model; plan 0037 J10) or ``none+<claude model>`` (the client-side re-run alone, for a digest
-    model that does not accept server-side fallbacks)."""
+    ``default+<model>`` (plus one client-side re-run of a still-declined call on that
+    model; plan 0037 J10) or ``none+<model>`` (the client-side re-run alone, for a digest
+    model that does not accept server-side fallbacks). ``<model>`` is any model id, on either
+    route (plan 0096)."""
     v = args.extra.get("summ_fallback", "none")
     head, sep, model = v.partition("+")
-    if v in ("none", "default") or (
-        head in ("default", "none") and sep and model.startswith("claude-")
-    ):
+    if v in ("none", "default") or (head in ("default", "none") and sep and model):
         return v
-    fail(
-        f"summ_fallback={v!r}: expected one of none, default, default+<claude model>, "
-        "none+<claude model>"
-    )
+    fail(f"summ_fallback={v!r}: expected one of none, default, default+<model>, none+<model>")
 
 
 def _decode_opt(args: JudgeArgs) -> bool:
@@ -2047,6 +2050,15 @@ def collapse(
     first number of at least 3 of the 4 samples of one activation (:func:`consensus_claims`)
     with that count, and such a number fills a slot the summarizer left free."""
     s = settings(args, name)
+    if (
+        s.refusal_model
+        and cells_by_item
+        and not args.dry_run
+        and llm.route(s.refusal_model) != llm.route(s.model)
+    ):
+        # plan 0096: a client-side refusal model on the other route needs that route's key; a
+        # missing one is a JudgeConfigError before the first digest call, never mid-run
+        llm.api_key(s.refusal_model)
     notes = _notes(name, cells_by_item, task_note)
     _check_expect_all(name, cells_by_item, expect_all)
     # a tie-extended numbers digest (chain) keeps its own request when given operands: the
@@ -2284,7 +2296,7 @@ def _collapse_stride(
                 [(system_of[i], user) for i, _fp, user in declined],
                 schema=schema,
                 model=model,
-                reasoning=s.reasoning,
+                reasoning=s.reasoning_on(model),
                 on_result=on_retry,
                 concurrency=s.concurrency or args.concurrency,
                 rpm=args.rpm,
@@ -2787,7 +2799,7 @@ def _layered_pass(
                 [(render_layered_system(s, notes[i]), u) for i, _k, _f, u in ts],
                 schema=DIGEST_SCHEMA,
                 model=model,
-                reasoning=s.reasoning,
+                reasoning=s.reasoning_on(model) if client else s.reasoning,
                 on_result=on_result,
                 concurrency=conc,
                 rpm=args.rpm,
@@ -3429,7 +3441,7 @@ def _collapse_hierarchical(
             [(system_of[i], u) for i, _k, _f, u in again],
             schema=schema,
             model=model,
-            reasoning=s.reasoning,
+            reasoning=s.reasoning_on(model),
             on_result=on_retry,
             concurrency=conc,
             rpm=args.rpm,

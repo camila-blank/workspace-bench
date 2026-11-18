@@ -4,11 +4,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
-from wsbench.llm import route
+from wsbench.llm import ANTHROPIC_REASONING_KEYS, OPENROUTER_MIN_REASONING, reasoning_for, route
 
 DEFAULT_JUDGE = "claude-opus-5-5"  # plan 0023 (Camila 2026-10-29)
-DEFAULT_REASONING = {"effort": "minimal"}  # OpenRouter judges: Gemini cannot turn reasoning off
-ANTHROPIC_REASONING_KEYS = frozenset({"anthropic_effort"})  # every other key is OpenRouter's
+# OpenRouter judges with no reasoning of their own: one definition, in ``llm`` (plan 0096)
+DEFAULT_REASONING = OPENROUTER_MIN_REASONING
+__all__ = [
+    "ANTHROPIC_REASONING_KEYS",
+    "DEFAULT_JUDGE",
+    "DEFAULT_REASONING",
+    "ENV_OVERRIDE",
+    "JudgeConfig",
+    "ResolvedJudge",
+    "resolve",
+]
 ENV_OVERRIDE = "WSBENCH_JUDGE_MODEL"
 
 
@@ -41,14 +50,9 @@ def resolve(
         model, source = config.model, "family"
     # a family's reasoning keys are route-specific: `anthropic_effort` rides the Anthropic route,
     # every other key the OpenRouter one; keys for the other route are dropped, so an Opus judge
-    # of a family with an OpenRouter-only setting resolves to None (plan 0023)
-    is_anthropic = route(model) == "anthropic"
-    kept = {
-        k: v
-        for k, v in (config.reasoning or {}).items()
-        if (k in ANTHROPIC_REASONING_KEYS) == is_anthropic
-    }
-    reasoning: dict | None = kept or (None if is_anthropic else dict(DEFAULT_REASONING))
+    # of a family with an OpenRouter-only setting resolves to None (plan 0023; the rule lives in
+    # ``llm.reasoning_for``)
+    reasoning = reasoning_for(route(model), config.reasoning)
     return ResolvedJudge(
         model=model, reasoning=reasoning, pinned=model == config.model, source=source
     )

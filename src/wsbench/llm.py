@@ -35,6 +35,12 @@ _DEFAULT_MAX_TOKENS = {"openrouter": 8000, "anthropic": 16000}
 
 Route = Literal["anthropic", "openrouter"]
 
+# A family's reasoning dict is route-keyed: these keys ride the Anthropic route, every other key
+# the OpenRouter one (plan 0023); `reasoning_for` is the one rule
+ANTHROPIC_REASONING_KEYS = frozenset({"anthropic_effort"})
+# OpenRouter calls with no reasoning setting of their own: Gemini cannot turn reasoning off
+OPENROUTER_MIN_REASONING = {"effort": "minimal"}
+
 
 class JudgeConfigError(RuntimeError):
     """A configuration problem that would fail every judge call (raised, never degraded)."""
@@ -89,6 +95,20 @@ class Spend:
 
 def route(model: str) -> Route:
     return "anthropic" if model.startswith("claude-") else "openrouter"
+
+
+def reasoning_for(route_: Route, reasoning: dict[str, Any] | None) -> dict[str, Any] | None:
+    """``reasoning`` as a call on ``route_`` sends it: the Anthropic route keeps only
+    :data:`ANTHROPIC_REASONING_KEYS` (``None`` when none is left), the OpenRouter route every
+    other key, or a copy of :data:`OPENROUTER_MIN_REASONING` when none is left. Used by
+    ``judge_config.resolve`` and for a refusal re-run on the other route (plan 0096)."""
+    is_anthropic = route_ == "anthropic"
+    kept = {
+        k: v
+        for k, v in (reasoning or {}).items()
+        if (k in ANTHROPIC_REASONING_KEYS) == is_anthropic
+    }
+    return kept or (None if is_anthropic else dict(OPENROUTER_MIN_REASONING))
 
 
 def api_key(model: str) -> str:
@@ -398,6 +418,7 @@ async def _openrouter_once(
     max_tokens: int,
     timeout: float,
     spend: Spend,
+    mark_refusals: bool = False,
 ) -> dict[str, Any] | None:
     extra_body: dict[str, Any] = {
         "usage": {"include": True},
@@ -420,12 +441,25 @@ async def _openrouter_once(
     spend.calls += 1
     if not getattr(resp, "choices", None):  # an error delivered in a 200 body
         raise ValueError("response has no choices")
-    usage = getattr(resp, "usage", None)
+    spend.usd += _openrouter_cost(getattr(resp, "usage", None))
+    choice = resp.choices[0]
+    content = choice.message.content or ""
+    refusal = getattr(choice.message, "refusal", None)
+    if getattr(choice, "finish_reason", None) == "content_filter" or (
+        refusal and not content.strip()
+    ):  # a declined call (plan 0096): one refusal, never 12 retries of an unparsable body
+        spend.refusals += 1
+        print(f"  llm refusal: {model}")
+        return REFUSED_JSON if mark_refusals else None
+    return _parse_object(content)
+
+
+def _openrouter_cost(usage: Any) -> float:
+    """The USD cost OpenRouter reports in ``usage`` (``usage: {include: true}``), else 0."""
     cost = getattr(usage, "cost", None) if usage is not None else None
     if cost is None and usage is not None:
         cost = (getattr(usage, "model_extra", None) or {}).get("cost")
-    spend.usd += float(cost or 0.0)
-    return _parse_object(resp.choices[0].message.content or "")
+    return float(cost or 0.0)
 
 
 # What a free-text call returns for a model refusal when the caller passes mark_refusals=True
@@ -629,6 +663,8 @@ async def _one(
                     max_tokens=max_tokens,
                     timeout=timeout,
                     spend=spend,
+                    # only when asked: fakes of this function need not know the keyword
+                    **({"mark_refusals": True} if mark_refusals else {}),
                 )
         except Exception as e:
             name = type(e).__name__
@@ -683,6 +719,7 @@ async def stream_json_async(
     fallbacks: str | None = None,
     refusal_model: str | None = None,
     overflow_max_tokens: int | None = None,
+    refusal_reasoning: dict[str, Any] | None = None,
 ) -> Spend:
     """Run ``(system, user)`` prompt pairs concurrently, handing each parsed result (or
     ``None``) to ``on_result(index, result)`` as it lands. Raises :class:`JudgeConfigError` on
@@ -690,11 +727,20 @@ async def stream_json_async(
     the OpenRouter route only: newer Claude models reject the field (400), so the Anthropic route
     drops it with one printed warning per batch.
 
-    ``refusal_model`` (client-side): a call ``model`` declines (``stop_reason``
-    refusal) is re-run ONCE, same request, on that model (same route); a served result carries
+    ``refusal_model`` (client-side): a call ``model`` declines (Anthropic ``stop_reason``
+    refusal; OpenRouter ``finish_reason`` content_filter, a ``message.refusal`` with no content,
+    or the moderation 403) is re-run ONCE, same request, on that model; a served result carries
     it as :data:`SERVED_BY`. Only refusals move: a ``max_tokens`` stop, an error or an
     unparsable body stays the primary's outcome. For models without server-side ``fallbacks``
-    (claude-sonnet-5 rejects the parameter with a 400).
+    (claude-sonnet-5 rejects the parameter with a 400). It must be another model and may be on
+    either route (plan 0096). On the same route the re-run shares the client and sends
+    ``reasoning`` unchanged. On the other route its key is resolved before any call (a missing
+    one raises :class:`JudgeConfigError`), a second client is built, and the request is
+    re-shaped for that route: ``reasoning`` through :func:`reasoning_for`, a ``max_tokens`` left
+    ``None`` as that route's default, ``temperature`` sent to an OpenRouter model (the caller's
+    value) and never to an Anthropic one, the plain cap and timeout (the ``overflow_max_tokens``
+    state carries over only between Anthropic calls). ``refusal_reasoning`` (a dict) is the
+    re-run's reasoning as given, instead of that rule.
 
     ``overflow_max_tokens`` (Anthropic route): a call of ``model`` that stops at ``max_tokens``
     is re-asked ONCE, same request, with this larger output cap (and the timeout scaled by the
@@ -714,14 +760,30 @@ async def stream_json_async(
         raise JudgeConfigError(f"concurrency must be >= 1 and rpm > 0 (got {concurrency}, {rpm})")
     route_ = route(model)
     key = api_key(model)
-    if refusal_model is not None and (refusal_model == model or route(refusal_model) != route_):
-        raise JudgeConfigError(f"refusal_model={refusal_model!r} must be another {route_} model")
+    if refusal_model is not None and refusal_model == model:
+        raise JudgeConfigError(f"refusal_model={refusal_model!r} must be another model")
+    # a refusal model on the other route: its key before any call, its own client and knobs
+    fb_route = route_ if refusal_model is None else route(refusal_model)
+    cross = fb_route != route_
+    fb_key = api_key(refusal_model) if cross and refusal_model is not None else key
+    fb_kw: dict[str, Any] = {}
+    if cross:
+        fb_kw = {
+            "reasoning": reasoning_for(fb_route, reasoning),
+            "temperature": None if fb_route == "anthropic" else temperature,
+            "max_tokens": _DEFAULT_MAX_TOKENS[fb_route] if max_tokens is None else max_tokens,
+            "timeout": timeout,
+            "attempts": attempts,
+        }
+    if refusal_reasoning is not None:
+        fb_kw["reasoning"] = refusal_reasoning
     if temperature is not None and route_ == "anthropic":
         print(f"  llm: dropping temperature={temperature} for {model} (Anthropic route rejects it)")
         temperature = None
     if max_tokens is None:
         max_tokens = _DEFAULT_MAX_TOKENS[route_]
     client = _make_client(route_, key)
+    fb_client = _make_client(fb_route, fb_key) if cross else client
     sem = asyncio.Semaphore(concurrency)
     grow = (
         route_ == "anthropic"
@@ -769,7 +831,13 @@ async def stream_json_async(
                 )
             if refusal_model is not None and res == REFUSED_JSON:
                 again = await _one(
-                    route_, client, system, user, model=refusal_model, mark_refusals=True, **kw
+                    fb_route,
+                    fb_client,
+                    system,
+                    user,
+                    model=refusal_model,
+                    mark_refusals=True,
+                    **(kw | fb_kw),
                 )
                 if isinstance(again, dict) and again not in (REFUSED_JSON, TOO_LONG_JSON):
                     again = {**again, SERVED_BY: refusal_model}
@@ -788,6 +856,8 @@ async def stream_json_async(
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await client.close()
+        if fb_client is not client:
+            await fb_client.close()
     return spend
 
 
@@ -817,6 +887,7 @@ def stream_json(
     fallbacks: str | None = None,
     refusal_model: str | None = None,
     overflow_max_tokens: int | None = None,
+    refusal_reasoning: dict[str, Any] | None = None,
 ) -> Spend:
     """Synchronous wrapper around :func:`stream_json_async` for the CLI and tests."""
     if _in_running_loop():
@@ -841,6 +912,7 @@ def stream_json(
             fallbacks=fallbacks,
             refusal_model=refusal_model,
             overflow_max_tokens=overflow_max_tokens,
+            refusal_reasoning=refusal_reasoning,
         )
     )
 
@@ -913,10 +985,10 @@ def preflight(model: str, reasoning: dict[str, Any] | None) -> None:
 
 
 # ---------------------------------------------------------------- free-text primitive
-# Used by agentic_misalignment (three free-text stages, no schema). Anthropic route only:
-# streaming (the SDK refuses non-streaming requests whose max_tokens implies a >10 min
+# Used by agentic_misalignment (three free-text stages, no schema). Both routes (plan 0096):
+# streaming (the Anthropic SDK refuses non-streaming requests whose max_tokens implies a >10 min
 # operation), per-call thinking on/off, and a budget-doubling retry when the text is empty and
-# stop_reason == "max_tokens" (thinking ate the budget), up to _TEXT_BUDGET_CEILING.
+# the stop is the output cap (thinking ate the budget), up to _TEXT_BUDGET_CEILING.
 
 _TEXT_BUDGET_CEILING = 64_000
 
@@ -966,7 +1038,85 @@ async def _anthropic_text_once(
         return txt
 
 
+async def _openrouter_text_once(
+    client: Any,
+    user: str,
+    *,
+    model: str,
+    thinking: bool,
+    max_tokens: int,
+    timeout: float,
+    spend: Spend,
+    mark_refusals: bool = False,
+) -> str | None:
+    """The OpenRouter twin of :func:`_anthropic_text_once`, same contract: the stripped text
+    (``""`` valid), or ``None`` / :data:`REFUSED` for a refusal (``finish_reason``
+    content_filter, or a refusal with no text). With no schema, a refusal written as ordinary
+    content is an answer. ``thinking`` asks for OpenRouter's default (medium) reasoning; a
+    no-thinking stage runs at :data:`OPENROUTER_MIN_REASONING`, since some models cannot turn
+    reasoning off. A stream that ends in ``finish_reason`` error or without any choice raises
+    ``ValueError`` (retried by :func:`_one_text`)."""
+    budget = max_tokens
+    while True:
+        stream = await client.chat.completions.create(
+            stream=True,
+            stream_options={"include_usage": True},
+            timeout=timeout,
+            model=model,
+            max_tokens=budget,
+            messages=[{"role": "user", "content": user}],
+            extra_body={
+                "usage": {"include": True},
+                "provider": {"require_parameters": True},
+                "reasoning": {"enabled": True} if thinking else dict(OPENROUTER_MIN_REASONING),
+            },
+        )
+        parts: list[str] = []
+        refusal: list[str] = []
+        finish: str | None = None
+        usage: Any = None
+        seen = False  # a chunk with choices arrived
+        try:
+            async for chunk in stream:
+                if getattr(chunk, "usage", None) is not None:
+                    usage = chunk.usage  # the final chunk's
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    continue
+                seen = True
+                delta = getattr(choices[0], "delta", None)
+                if getattr(delta, "content", None):
+                    parts.append(delta.content)
+                if getattr(delta, "refusal", None):
+                    refusal.append(delta.refusal)
+                if getattr(choices[0], "finish_reason", None) is not None:
+                    finish = choices[0].finish_reason
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                await close()
+        spend.calls += 1
+        spend.usd += _openrouter_cost(usage)
+        if usage is not None:
+            spend.input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+            spend.output_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+        if finish == "error":  # a provider error delivered inside the stream
+            raise ValueError("stream ended with finish_reason=error")
+        if not seen:
+            raise ValueError("stream has no choices")
+        txt = "".join(parts).strip()
+        if finish == "content_filter" or ("".join(refusal).strip() and not txt):
+            spend.refusals += 1
+            print(f"  llm refusal: {model}")
+            return REFUSED if mark_refusals else None
+        if not txt and finish == "length" and budget < _TEXT_BUDGET_CEILING:
+            budget *= 2
+            continue
+        return txt
+
+
 async def _one_text(
+    route_: Route,
     client: Any,
     user: str,
     *,
@@ -978,14 +1128,18 @@ async def _one_text(
     spend: Spend,
     mark_refusals: bool = False,
 ) -> str | None:
-    """Same backoff / fatal classification as :func:`_one`, for one free-text call."""
+    """Same backoff / fatal classification as :func:`_one`, for one free-text call, with its
+    OpenRouter moderation rule (a 403 naming the flagged input is one refusal). On the
+    OpenRouter route an SDK ``APIError`` without a status (an error event inside the stream)
+    is transient too."""
     user = user.encode("utf-8", "replace").decode("utf-8")
+    once = _anthropic_text_once if route_ == "anthropic" else _openrouter_text_once
     await _pace_tokens(len(user) // 3)  # once per call, not per retry
     for attempt in range(_ATTEMPTS):
         await _pace(rpm)
         try:
             async with _slot():
-                return await _anthropic_text_once(
+                return await once(
                     client,
                     user,
                     model=model,
@@ -998,6 +1152,10 @@ async def _one_text(
         except Exception as e:
             name = type(e).__name__
             status = getattr(e, "status_code", None)
+            if route_ == "openrouter" and status == 403 and _moderation_flagged(e):
+                spend.refusals += 1  # one prompt flagged by moderation, not a config error
+                print(f"  llm refusal (moderation): {model}")
+                return REFUSED if mark_refusals else None
             if name in _FATAL or status in (401, 402, 403):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
             transient = (
@@ -1006,6 +1164,7 @@ async def _one_text(
                 or "Connection" in name
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
+                or (route_ == "openrouter" and name == "APIError" and status is None)
             )
             if transient and attempt < _ATTEMPTS - 1:
                 spend.retries += 1
@@ -1032,28 +1191,32 @@ async def stream_text_async(
     refusal_model: str | None = None,
     on_served: Callable[[int, str], None] | None = None,
 ) -> Spend:
-    """Run user-only free-text prompts concurrently on the Anthropic route (no system block,
-    no schema), handing each stripped text (or ``None`` = exhausted retries / non-transient
-    error / refusal; with ``mark_refusals`` a refusal is :data:`REFUSED` instead) to
-    ``on_result(index, text)`` as it lands. ``""`` is a valid result (the
-    source returns it after the 64k budget ceiling). Any non-``claude-*`` model raises
-    :class:`JudgeConfigError`. Builds no client when there is nothing to call.
+    """Run user-only free-text prompts concurrently on the model's route (both routes since
+    plan 0096; no system block, no schema), handing each stripped text (or ``None`` = exhausted
+    retries / non-transient error / refusal; with ``mark_refusals`` a refusal is :data:`REFUSED`
+    instead) to ``on_result(index, text)`` as it lands. ``""`` is a valid result (the
+    source returns it after the 64k budget ceiling). Builds no client when there is nothing to
+    call.
 
     ``refusal_model`` (client-side): a prompt ``model`` declines is re-run ONCE on
     that model with the same settings; when it serves, ``on_served(index, refusal_model)`` fires
-    just before ``on_result`` (the text itself carries no provenance)."""
+    just before ``on_result`` (the text itself carries no provenance). It must be another model
+    and may be on either route: on the other route its key is resolved before any call and a
+    second client is built (:func:`stream_json_async`)."""
     spend = spend or Spend()
     if not prompts:
         return spend
     if concurrency < 1 or rpm <= 0:
         raise JudgeConfigError(f"concurrency must be >= 1 and rpm > 0 (got {concurrency}, {rpm})")
-    if route(model) != "anthropic":
-        raise JudgeConfigError(f"free-text stage requires a claude-* model (got {model})")
-    if refusal_model is not None and (
-        refusal_model == model or route(refusal_model) != "anthropic"
-    ):
-        raise JudgeConfigError(f"refusal_model={refusal_model!r} must be another claude-* model")
-    client = _make_client("anthropic", api_key(model))
+    route_ = route(model)
+    key = api_key(model)
+    if refusal_model is not None and refusal_model == model:
+        raise JudgeConfigError(f"refusal_model={refusal_model!r} must be another model")
+    fb_route = route_ if refusal_model is None else route(refusal_model)
+    cross = fb_route != route_
+    fb_key = api_key(refusal_model) if cross and refusal_model is not None else key
+    client = _make_client(route_, key)
+    fb_client = _make_client(fb_route, fb_key) if cross else client
     sem = asyncio.Semaphore(concurrency)
 
     async def one(i: int, user: str) -> tuple[int, str | None, str | None]:
@@ -1067,10 +1230,17 @@ async def stream_text_async(
         served: str | None = None
         async with sem:
             res = await _one_text(
-                client, user, model=model, mark_refusals=mark_refusals or bool(refusal_model), **kw
+                route_,
+                client,
+                user,
+                model=model,
+                mark_refusals=mark_refusals or bool(refusal_model),
+                **kw,
             )
             if refusal_model is not None and res == REFUSED:
-                res = await _one_text(client, user, model=refusal_model, mark_refusals=True, **kw)
+                res = await _one_text(
+                    fb_route, fb_client, user, model=refusal_model, mark_refusals=True, **kw
+                )
                 if res is not None and res != REFUSED:
                     served = refusal_model
         if res == REFUSED and not mark_refusals:
@@ -1089,6 +1259,8 @@ async def stream_text_async(
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await client.close()
+        if fb_client is not client:
+            await fb_client.close()
     return spend
 
 
