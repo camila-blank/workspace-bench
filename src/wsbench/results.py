@@ -545,7 +545,10 @@ def _stale_fast_subset(r: FamilyResult) -> bool:
     from wsbench import fast  # lazy: fast imports this module
 
     v = r.config.get("fast_subset")
-    return v != fast.VERSION and not (v in fast.COMPATIBLE and r.family in fast.subset())
+    if v == fast.VERSION:
+        return False
+    # compatible only when the stamped version's own file holds the family too (plan 0095)
+    return not (v in fast.COMPATIBLE and r.family in fast.subset() and r.family in fast.subset(v))
 
 
 def _stale_ati_subset(r: FamilyResult) -> str | None:

@@ -780,7 +780,10 @@ def fast_header(results: Iterable[FamilyResult] = ()) -> str:
             and r.family in other
             and (
                 r.config.get("fast_subset") == version
-                or r.config.get("fast_subset") in fast.COMPATIBLE
+                or (
+                    r.config.get("fast_subset") in fast.COMPATIBLE
+                    and r.family in fast.subset(r.config.get("fast_subset"))
+                )
             )
             for r in rows
         )

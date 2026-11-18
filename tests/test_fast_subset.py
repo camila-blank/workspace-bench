@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1922,3 +1923,18 @@ def test_a_fast_v1_cache_replays_under_fast_safety(toy, tmp_path, monkeypatch):
     assert new.rows == old.rows
     differ = {k for k in {*old.config, *new.config} if old.config.get(k) != new.config.get(k)}
     assert differ == {"fast_subset"}
+
+
+def test_macro_excludes_a_compatible_stamp_whose_file_lacks_the_family():
+    """Plan 0095 review: a jailbreak row stamped fast-v2 (whose file has no such family) is
+    stale under the safety subset, like the sidecar guard in ``reads.load``."""
+    from wsbench.results import _stale_fast_subset
+
+    fast.select("safety")
+
+    def row(fam: str, v: str) -> types.SimpleNamespace:
+        return types.SimpleNamespace(family=fam, config={"fast_subset": v})
+
+    assert _stale_fast_subset(row("jailbreak_recognition", V2))
+    assert not _stale_fast_subset(row("jailbreak_recognition", V1))
+    assert not _stale_fast_subset(row("poetry", V2))
