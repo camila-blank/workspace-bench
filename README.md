@@ -671,7 +671,8 @@ digest's token lines are also matched space-joined, stamped `+joined-2026-10-30`
   Claude digest model>` is the way back.
 - **The validated Luna instrument is a recipe, not a default.** A bare
   `judge_model=openai/gpt-6-luna` sets the digest model and its fallback only; the judge then
-  runs at `{"effort": "minimal"}`. What plan 0059 validated is, explicitly:
+  runs at `{"effort": "minimal"}` (sent as `low` on the `openai` route, whose models reject
+  `minimal`; the fingerprint keeps `minimal`). What plan 0059 validated is, explicitly:
   `WSBENCH_OPENAI_ROUTE=wif WSBENCH_OPENROUTER_MAX_OUT=32000 wsbench run ...
   judge_model=openai/gpt-6-luna judge_effort=low opts=summ_context=1050000`, with
   `judge_effort=default` for hinted_cutoff, introspection and model_multihop (separate jobs).

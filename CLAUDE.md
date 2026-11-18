@@ -67,7 +67,7 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   call returns `None` and never scores. `stream_json_async` is the primitive, `stream_json`
   wraps it (`temperature` dropped on the Anthropic route); `stream_text[_async]` is agentic's
   free-text primitive, on both routes since plan 0096 (`_openrouter_text_once`: a streamed
-  chat completion, `thinking` -> `{"enabled": true}`, no thinking -> `{"effort": "minimal"}`,
+  chat completion, `thinking` -> `{"enabled": true}`, no thinking -> `{"effort": "minimal"}`, (the `openai` route sends `minimal` as `low`, `llm._openai_effort`: gpt-6-luna 400s on it),
   the same budget doubling to `_TEXT_BUDGET_CEILING`; a status-less SDK `APIError` from the
   stream, `finish_reason == "error"` and a stream without choices are transient). An OpenRouter
   refusal is `finish_reason == "content_filter"`, a `refusal` with no content, or the moderation

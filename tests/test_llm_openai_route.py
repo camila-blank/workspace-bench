@@ -401,7 +401,7 @@ def test_openai_text_request_and_spend(monkeypatch, thinking):
     if thinking:
         assert "reasoning_effort" not in kw  # the model's default
     else:
-        assert kw["reasoning_effort"] == "minimal"
+        assert kw["reasoning_effort"] == "low"  # minimal is sent as low on this route
     assert (spend.calls, spend.input_tokens, spend.output_tokens) == (1, 7, 3)
 
 
@@ -515,7 +515,7 @@ def test_json_rerun_from_anthropic_to_openai(monkeypatch):
     assert ant.calls[0]["max_tokens"] == 20_000  # the Anthropic primary is never capped
     (again,) = fake.calls
     assert again["model"] == "gpt-6-luna" and again["max_completion_tokens"] == 900
-    assert again["reasoning_effort"] == "minimal"  # reasoning_for: the non-Anthropic default
+    assert again["reasoning_effort"] == "low"  # reasoning_for's minimal default, sent as low
     assert "temperature" not in again  # sent only to an openrouter re-run
     monkeypatch.delenv(llm.MAX_OUT_ENV)
     fake.outcomes.append(_plain('{"a": 3}'))
@@ -555,7 +555,7 @@ def test_text_rerun_crosses_to_and_from_openai(monkeypatch):
     assert got == ["from luna"] and served == [LUNA] and built[2:] == ["anthropic", "openai"]
     assert ant.calls[1]["max_tokens"] == 400
     assert fake.calls[1]["max_completion_tokens"] == 1000
-    assert fake.calls[1]["reasoning_effort"] == "minimal"
+    assert fake.calls[1]["reasoning_effort"] == "low"
 
 
 def test_fallback_credentials_on_the_openai_route(monkeypatch, mk_args, tmp_path):
@@ -794,3 +794,19 @@ def test_openai_route_spend_limit_fails_the_run_at_the_first_call(monkeypatch):
         with pytest.raises(JudgeConfigError, match="spend limit"):
             call()
         assert len(fake.calls) == 1
+
+
+def test_openai_route_never_sends_minimal_effort(monkeypatch):
+    """Live 2026-11-18: gpt-6-luna answers 400 to reasoning_effort=minimal, so a Luna judge
+    resolved with the repo's default ``{"effort": "minimal"}`` (no judge_effort=) is sent
+    ``low``; every other level goes through as given."""
+    assert [llm._openai_effort(e) for e in ("minimal", "none", "low", "high")] == [
+        "low",
+        "none",
+        "low",
+        "high",
+    ]
+    fake = FakeOpenAI([_plain()])
+    install(monkeypatch, fake)
+    got, _spend = _json(reasoning=dict(DEFAULT_REASONING))
+    assert got == [{"a": 1}] and fake.calls[0]["reasoning_effort"] == "low"

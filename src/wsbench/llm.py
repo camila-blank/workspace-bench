@@ -561,6 +561,15 @@ def _chat_result(
         return None
 
 
+def _openai_effort(effort: Any) -> str:
+    """The ``reasoning_effort`` the ``openai`` route sends for a reasoning ``effort``. OpenAI's
+    current reasoning models reject ``minimal`` (400: supported are none / low / medium / high /
+    xhigh; seen live on gpt-6-luna, 2026-11-18), so the repo's non-Anthropic default
+    ``{"effort": "minimal"}`` is sent as ``low``, the nearest level and the one plan 0059
+    validated. The judge fingerprint keeps the reasoning as resolved."""
+    return "low" if str(effort) == "minimal" else str(effort)
+
+
 class _WifClient:
     """The ``openai`` route's client: ``ati_remote.Clients("openai-wif")`` (one ``AsyncOpenAI``
     per access token) behind the ``close()`` the batch calls at the end."""
@@ -635,7 +644,7 @@ async def _openai_once(
     }
     effort = (reasoning or {}).get("effort")
     if effort:
-        kwargs["reasoning_effort"] = str(effort)
+        kwargs["reasoning_effort"] = _openai_effort(effort)
     resp = await _wif_create(wif, kwargs)
     return _chat_result(
         resp, model=model, max_tokens=max_tokens, spend=spend, mark_refusals=mark_refusals
@@ -1395,8 +1404,8 @@ async def _openai_text_once(
 ) -> str | None:
     """The ``openai``-route twin, same contract (:func:`_chat_text`): ``max_completion_tokens``,
     no ``extra_body``; ``thinking`` sends no ``reasoning_effort`` (the model's default), a
-    no-thinking stage ``reasoning_effort="minimal"``. A 401 re-exchanges the token
-    (:func:`_wif_create`)."""
+    no-thinking stage the lowest effort the route takes (:func:`_openai_effort`). A 401
+    re-exchanges the token (:func:`_wif_create`)."""
     from wsbench.baselines import ati_remote
 
     async def create(budget: int) -> Any:
@@ -1409,7 +1418,7 @@ async def _openai_text_once(
             "messages": [{"role": "user", "content": user}],
         }
         if not thinking:
-            kwargs["reasoning_effort"] = OPENROUTER_MIN_REASONING["effort"]
+            kwargs["reasoning_effort"] = _openai_effort(OPENROUTER_MIN_REASONING["effort"])
         return await _wif_create(wif, kwargs)
 
     return await _chat_text(
