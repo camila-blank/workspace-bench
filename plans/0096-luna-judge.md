@@ -474,3 +474,87 @@ src/wsbench/digest.py               digest_reasoning, fallback default, summ_con
 README.md, CLAUDE.md, docs/summarizer.md, evals/{agentic_misalignment,jailbreak_recognition}/README.md
 tests/test_llm_openai_route.py, tests/test_digest_follow_0096.py, + updates to this PR's own tests
 ```
+
+## Part 2 rulings (critique round 1; where a ruling and a sentence above disagree, the ruling wins)
+
+R1. **Token-exchange errors (section 6).** In `_one` and `_one_text`, as on the branch: a
+`JudgeConfigError` raised inside a call (a failed WIF exchange, `ati_remote.AbortError`) is
+re-raised first, never degraded to `None`; `ati_remote.TransientExchangeError` (token endpoint
+429 / 5xx) is transient. A last 401 is fatal; a 403 on the `openai` route is fatal even when
+it names flagged input (the moderation carve-out stays OpenRouter-only). One test each.
+
+R2. **Too-long inputs: the branch's `_too_long`, ported as it is.** On the `openrouter` and
+`openai` routes the `OPENROUTER_TOO_LONG` phrases count only while
+`WSBENCH_OPENROUTER_MAX_OUT` is set (without the cap a context-length 400 can be the output
+request); otherwise only "prompt is too long", as today. The `context_length_exceeded` code
+check of section 6 is dropped. Env unset = today's behaviour on every route.
+
+R3. **`_chat_result`'s length rule is ported** into the helper both chat routes share: an
+unparsable body with `finish_reason == "length"` is one failed call (`None`, one counted
+error, never retried). The refusal rule stays part 1's (a `message.refusal` counts only with
+empty content; the branch counted any), on purpose. The helper keeps `_openrouter_once`'s
+signature usable by the conftest shim (`mark_refusals` optional).
+
+R4. **`WSBENCH_OPENROUTER_MAX_OUT` sites.** It caps by the route of the model actually called:
+`stream_json_async`'s primary and its refusal re-run each by their own route (an Anthropic
+call never reads it; an `openai` / `openrouter` fallback of an Anthropic primary does). Free
+text: it is the STARTING budget on the two chat routes; doubling still runs to
+`_TEXT_BUDGET_CEILING`. The digest's own cap (`Settings.max_tokens`) is overridden inside
+`llm` for a chat-route digest model, as on the branch. Tests: both cross-route directions.
+
+R5. **`args.judge is None`** (`digest._probe`, used by `validate`, `resolve_layer_mode`,
+`preflight_judge`): the follow rule is "a judge is present, not pinned, and on a
+non-Anthropic route". `digest.preflight_judge(extra, aux_models, judge=None)`: the new
+argument is optional and `None` means no follow (`tests/test_jailbreak_recognition.py` calls
+it with two arguments and must stay green); `runner` passes the resolved judge. Section 8's
+exit 2 for an explicit `default` fallback on a followed digest surfaces wherever `settings`
+first sees the judge (the runner's digest preflight): one exit 2 before any family starts.
+The explicit-fallback test reads `args.extra` BEFORE `_with_family` merges the defaults.
+
+R6. **`judge_effort` plumbing.** `judge_config.resolve(..., effort=)` (sets `pinned=False`;
+`fail` imported lazily); every resolve site passes it: `cli.JudgeFamily`, `runner._one` (the
+process-mode child path) and `runner.run_families`' resolution; `runner.judge_argv` emits
+`judge_effort=<v>` only when given (new code: the branch had no process mode); `run.json`
+gets `judge_effort` only when given. Read it with `getattr(args, "judge_effort", None)`
+(hand-built namespaces in `tests/test_run_procs.py` lack it).
+
+R7. **What a bare `judge_model=openai/gpt-6-luna` runs, stated in README, not defaulted.**
+The follow rule sets the digest model and section 8's fallback only. The judge runs at
+`{"effort": "minimal"}` unless `judge_effort=` is given. The instrument plan 0059 validated
+is, explicitly: `WSBENCH_OPENAI_ROUTE=wif WSBENCH_OPENROUTER_MAX_OUT=32000`,
+`judge_effort=low` (`default` for hinted_cutoff, introspection, model_multihop: separate
+jobs), `opts=summ_context=1050000`; README §Judges gives it as a recipe. Not validated by the
+sweep, and README says so: agentic_misalignment with a Luna digest and judge (the sweep ran
+agentic for `claude-*` only), whose free-text stages ignore `judge_effort`.
+
+R8. **Stamps and reports.** The literals `+sonnet-digest+opus5-fb` (agentic, jailbreak) stay in
+a Luna row's `prompt_version`, as they do under `summ_model=` today; `config.summarizer.model`
+is the record. `report alt_judge=` matches rows on `config.summarizer`, so a Luna column
+beside an Opus row needs `opts=summ_model=claude-opus-5-5`: one README sentence. The regex
+families' digests follow too (consistent with Arm B).
+
+R9. **`Settings.reasoning_on(model)`** = `digest_reasoning(model, <the run's summ_effort>)`
+for every client-side re-run: a `claude-*` refusal model gets `{"anthropic_effort": effort}`
+whatever the digest model's route (identical to today for Claude -> Claude); a non-Claude
+one gets `None` at `default`, else `{"effort": effort}`. `_default_digest` is unchanged.
+Part 1's test of a Claude digest with a Luna refusal model changes accordingly.
+
+R10. **Credentials on the `openai` route.** `api_key` returns `""` there, so part 1's up-front
+checks would pass vacuously: for an `openai`-route fallback, `family.require_fallback_key` and
+the `digest.collapse` check build the WIF token source instead and turn its
+`ati_remote.AbortError` into the same `JudgeConfigError` with the `opts=fallback=none` hint.
+
+R11. **Tests and fixtures.** `tests/conftest.py` gains an autouse fixture clearing
+`WSBENCH_OPENAI_ROUTE` and `WSBENCH_OPENROUTER_MAX_OUT` (an additive fixture is not an edit
+of a test). `llm.route` now raises on a bad env value: every caller (`judge_config.resolve`
+in `cli` / `runner`, `digest.settings`) must end as exit 3 with the message, not a traceback.
+The branch tests to port from are `tests/test_llm_sweep.py` (~l.476-560),
+`tests/test_digest_sweep.py`, `tests/test_judge_effort_ledger.py`. Any test this PR itself
+added (not on `origin/main`) may be updated to the part 2 rules, e.g.
+`tests/test_fallback_0096.py`'s model_multihop summary case, whose "every call has
+temperature 0.0" assertion now also sees Luna digest calls; each such update is listed in the
+PR body. Part 1's header lines "No ... fingerprint ... moves" and "The digest pins stay" are
+superseded by part 2 for non-Claude digests and for a Luna judge.
+
+R12. **Smoke.** Without Anthropic credentials the smoke cannot exercise a cross-route judge
+fallback from the `openai` route; accepted. Section 6's "cannot 404" is "cannot be rejected".
