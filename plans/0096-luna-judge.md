@@ -558,3 +558,8 @@ superseded by part 2 for non-Claude digests and for a Luna judge.
 
 R12. **Smoke.** Without Anthropic credentials the smoke cannot exercise a cross-route judge
 fallback from the `openai` route; accepted. Section 6's "cannot 404" is "cannot be rejected".
+
+R13. (round 2) R9: if `Settings` gains an `effort` field it stays OUT of `Settings.to_json`
+(no Claude digest fingerprint may move); recovering the effort from `reasoning` is equally
+fine. R2: the `openai`-route too-long test sets `WSBENCH_OPENROUTER_MAX_OUT`, with a companion
+case unset that is a plain error.
