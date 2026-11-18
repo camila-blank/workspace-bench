@@ -539,9 +539,9 @@ def _ati_exception(r: FamilyResult) -> bool:
 
 
 def _stale_fast_subset(r: FamilyResult) -> bool:
-    """A fast row out of the current subset's macro: stamped with neither ``fast.VERSION`` nor,
-    for a family of the current subset, a ``fast.COMPATIBLE`` version (plan 0094: same entry,
-    same value)."""
+    """A fast row out of the active subset's macro: stamped with neither ``fast.VERSION`` nor,
+    for a family of the active subset, a ``fast.COMPATIBLE`` version (plans 0094 / 0095: same
+    entry, same value)."""
     from wsbench import fast  # lazy: fast imports this module
 
     v = r.config.get("fast_subset")
