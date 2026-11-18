@@ -783,7 +783,11 @@ async def stream_json_async(
     if max_tokens is None:
         max_tokens = _DEFAULT_MAX_TOKENS[route_]
     client = _make_client(route_, key)
-    fb_client = _make_client(fb_route, fb_key) if cross else client
+    try:
+        fb_client = _make_client(fb_route, fb_key) if cross else client
+    except BaseException:
+        await client.close()
+        raise
     sem = asyncio.Semaphore(concurrency)
     grow = (
         route_ == "anthropic"
@@ -855,9 +859,11 @@ async def stream_json_async(
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await client.close()
-        if fb_client is not client:
-            await fb_client.close()
+        try:
+            await client.close()
+        finally:
+            if fb_client is not client:
+                await fb_client.close()
     return spend
 
 
@@ -1110,7 +1116,7 @@ async def _openrouter_text_once(
             print(f"  llm refusal: {model}")
             return REFUSED if mark_refusals else None
         if not txt and finish == "length" and budget < _TEXT_BUDGET_CEILING:
-            budget *= 2
+            budget = min(budget * 2, _TEXT_BUDGET_CEILING)  # providers 400 above their cap
             continue
         return txt
 
@@ -1130,8 +1136,9 @@ async def _one_text(
 ) -> str | None:
     """Same backoff / fatal classification as :func:`_one`, for one free-text call, with its
     OpenRouter moderation rule (a 403 naming the flagged input is one refusal). On the
-    OpenRouter route an SDK ``APIError`` without a status (an error event inside the stream)
-    is transient too."""
+    OpenRouter route an SDK ``APIError`` without a status is an error event inside the stream:
+    it is classified by its body's ``code`` like an HTTP status (fatal, moderation, transient),
+    and is transient when it carries none."""
     user = user.encode("utf-8", "replace").decode("utf-8")
     once = _anthropic_text_once if route_ == "anthropic" else _openrouter_text_once
     await _pace_tokens(len(user) // 3)  # once per call, not per retry
@@ -1152,11 +1159,19 @@ async def _one_text(
         except Exception as e:
             name = type(e).__name__
             status = getattr(e, "status_code", None)
+            if route_ == "openrouter" and name == "APIError" and status is None:
+                # an error event inside the stream has no HTTP status: classify it by its code
+                body = getattr(e, "body", None)
+                code = body.get("code") if isinstance(body, dict) else None
+                status = code if isinstance(code, int) else None
+                stream_error = True
+            else:
+                stream_error = False
             if route_ == "openrouter" and status == 403 and _moderation_flagged(e):
                 spend.refusals += 1  # one prompt flagged by moderation, not a config error
                 print(f"  llm refusal (moderation): {model}")
                 return REFUSED if mark_refusals else None
-            if name in _FATAL or status in (401, 402, 403):
+            if (name in _FATAL and not stream_error) or status in (401, 402, 403):
                 raise JudgeConfigError(f"{name}: {str(e)[:300]}") from e
             transient = (
                 status in _TRANSIENT
@@ -1164,7 +1179,7 @@ async def _one_text(
                 or "Connection" in name
                 or "Deadline" in name
                 or isinstance(e, json.JSONDecodeError | ValueError)
-                or (route_ == "openrouter" and name == "APIError" and status is None)
+                or (stream_error and status is None)  # no code: a dropped / garbled stream
             )
             if transient and attempt < _ATTEMPTS - 1:
                 spend.retries += 1
@@ -1216,7 +1231,11 @@ async def stream_text_async(
     cross = fb_route != route_
     fb_key = api_key(refusal_model) if cross and refusal_model is not None else key
     client = _make_client(route_, key)
-    fb_client = _make_client(fb_route, fb_key) if cross else client
+    try:
+        fb_client = _make_client(fb_route, fb_key) if cross else client
+    except BaseException:
+        await client.close()
+        raise
     sem = asyncio.Semaphore(concurrency)
 
     async def one(i: int, user: str) -> tuple[int, str | None, str | None]:
@@ -1258,9 +1277,11 @@ async def stream_text_async(
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await client.close()
-        if fb_client is not client:
-            await fb_client.close()
+        try:
+            await client.close()
+        finally:
+            if fb_client is not client:
+                await fb_client.close()
     return spend
 
 

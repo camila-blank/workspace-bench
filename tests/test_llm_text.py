@@ -420,3 +420,26 @@ def test_openrouter_fatal_still_raises(keys, fast, monkeypatch):
     with pytest.raises(JudgeConfigError):
         stream_text(["u"], model=LUNA, on_result=lambda i, r: None, thinking=False, max_tokens=1)
     assert fake.closed
+
+
+def _stream_error(code):
+    e = APIError("Provider returned error")
+    e.body = {"code": code, "message": "x"}
+    return e
+
+
+def test_openrouter_stream_error_is_classified_by_its_code(keys, fast, monkeypatch):
+    """An error event inside the stream has no HTTP status; its body's code decides (review of
+    #505): a transient code is retried, a credits / auth code is fatal, any other is one error."""
+    fake = _scripted([[chunk("par"), _stream_error(502)], text_stream("whole")])
+    got, spend = _collect(["u"], fake, monkeypatch, model=LUNA)
+    assert got == {0: "whole"} and spend.retries == 1 and spend.errors == 0
+    fake = _scripted([[chunk("par"), _stream_error(400)], text_stream("never")])
+    got, spend = _collect(["u"], fake, monkeypatch, model=LUNA)
+    assert got == {0: None} and spend.retries == 0 and spend.errors == 1
+    fake = _scripted([[chunk("par"), _stream_error(402)], text_stream("never")])
+    monkeypatch.setattr(llm, "_make_client", lambda route, key: fake)
+    with pytest.raises(JudgeConfigError):
+        llm.stream_text(
+            ["u"], model=LUNA, on_result=lambda i, r: None, thinking=False, max_tokens=100
+        )

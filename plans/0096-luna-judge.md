@@ -286,7 +286,8 @@ layer (`stream_text` is no longer Anthropic-only; cross-route `refusal_model`;
   not use `fake_client_installer` (it patches `llm.api_key`).
 - **No pre-existing test is edited** except exactly these four, which pin deleted behaviour
   (the fourth, `tests/test_agentic_misalignment.py::test_non_claude_judge_raises`, the family
-  twin of the first, was found by the implementer, left red and ruled on by the main session):
+  twin of the first, was found by the implementer and left red; it is deleted, replaced by
+  `tests/test_fallback_0096.py::test_agentic_native_stages_run_on_an_openrouter_judge`):
   `tests/test_llm_text.py::test_openrouter_model_raises`, the `"none+gpt-6"` entry of the bad
   list in `tests/test_llm_refusal_rerun.py` (~l.311), and the `default+gpt-5` / `none+gpt-5`
   params in `tests/test_digest_hierarchical.py` (~l.395). Each is listed in the PR body with
