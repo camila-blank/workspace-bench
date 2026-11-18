@@ -1,6 +1,7 @@
 # Plan 0096: an OpenRouter judge (GPT Luna) can run every family
 
-Status: draft. Owner: Camila. Scope: `llm.py`, `digest.py`, four family judges, docs, tests.
+Status: draft (critique round 1 applied). Owner: Camila. Scope: `llm.py`, `judge_config.py`,
+`mcjudge.py`, `digest.py`, `family.py`, four family judges, docs, tests.
 No bank, prompt, call key, fingerprint or `prompt_version` moves. No judge call of a run on the
 family pin changes by one byte (the invariant every step below is checked against).
 
@@ -46,8 +47,8 @@ Two items of the report are answered here, not changed:
     extra_body={"usage": {"include": True}, "provider": {"require_parameters": True},
     "reasoning": ...})`; user-only message, no system block, no `response_format` (as the
     Anthropic twin sends it).
-  - Reasoning: `thinking=True` -> `{"enabled": True}` (the provider's default effort, the
-    analogue of Anthropic `adaptive`); `thinking=False` -> `OPENROUTER_MIN_REASONING =
+  - Reasoning: `thinking=True` -> `{"enabled": True}` (OpenRouter documents this as medium
+    effort; the analogue of Anthropic `adaptive`); `thinking=False` -> `OPENROUTER_MIN_REASONING =
     {"effort": "minimal"}`, the value every structured OpenRouter judge call already runs at
     (`judge_config.DEFAULT_REASONING`, "Gemini cannot turn reasoning off"), so a no-thinking
     stage never 400s on a model that cannot disable reasoning. `judge_config.DEFAULT_REASONING`
@@ -59,12 +60,18 @@ Two items of the report are answered here, not changed:
     `finish_reason`, the `usage` of the final chunk (cost -> `spend.usd` by the rule of
     `_openrouter_once`; prompt / completion tokens -> `spend.input_tokens` / `output_tokens`),
     and any `delta.refusal` text. `spend.calls += 1` once per completed stream.
-  - A chunk carrying an `error` object, or a stream that ends with no chunk that has
-    `choices`, raises `ValueError` (transient: retried by `_one_text`, as "response has no
-    choices" is in `_openrouter_once`).
+  - Mid-stream errors. The OpenAI SDK never yields an error chunk: it raises
+    `openai.APIError` (no `status_code`) from the stream iterator for SSE data with an `error`
+    key. On the OpenRouter text route `_one_text` therefore treats as transient: an exception
+    named `APIError` with no `status_code` raised while iterating, `finish_reason == "error"`,
+    and a stream that ends with no chunk that has `choices` (the last two raise `ValueError`
+    inside `_openrouter_text_once`). The stream is closed on every exit path. The test fake
+    raises an SDK-shaped exception from its iterator.
   - Refusal = `finish_reason == "content_filter"`, or a non-empty refusal with empty text:
     `spend.refusals += 1`, print `  llm refusal: <model>`, return `REFUSED` if
-    `mark_refusals` else `None`.
+    `mark_refusals` else `None`. Stated limit: with no schema, a refusal written as ordinary
+    content ("I can't help with that") is an answer; the text fallback fires only on
+    `content_filter`, a `refusal` field or the moderation 403.
   - Budget doubling, same loop as the Anthropic twin: empty text and `finish_reason ==
     "length"` and `budget < _TEXT_BUDGET_CEILING` -> `budget *= 2`, re-ask. The retained
     invariant, restated: the ceiling stays `_TEXT_BUDGET_CEILING = 64_000` for both routes, and
@@ -76,6 +83,14 @@ Two items of the report are answered here, not changed:
 - `stream_text_async`: the `route(model) != "anthropic"` raise is deleted; the client is built
   for `route(model)`. Everything else in its contract is retained: no client when there is
   nothing to call, `""` valid, `on_served` before `on_result`.
+- **Structured calls get the same refusal rule** (`_openrouter_once`): `finish_reason ==
+  "content_filter"`, or a non-empty `message.refusal` with empty content (both read with
+  `getattr`, so the conftest `SimpleNamespace` fakes pass unchanged) -> `spend.refusals += 1`,
+  `REFUSED_JSON` under `mark_refusals`, else `None`; `_openrouter_once` gains the
+  `mark_refusals` keyword and `_one` passes it. Without this a declined structured Luna call is
+  a `JSONDecodeError`, retried 12 times and lost as an error, and step 4 would do nothing for
+  model_multihop and jailbreak. This changes OpenRouter judges only (never a pin): 12 retries
+  + one error becomes one refusal.
 - The section comment and docstrings say "both routes"; plan 0005 gets a one-line "superseded
   by plan 0096" note at the "for now" sentence (plans are history; nothing else there moves).
 
@@ -97,11 +112,19 @@ different route is legal.
   (`judge_config` re-exports it), and `judge_config.resolve` calls the helper so the rule has
   one home; `resolve`'s outputs are unchanged for every existing input (a test pins the table).
   **The helper is applied only to a cross-route re-run.** A primary call, and a same-route
-  re-run, send `reasoning` exactly as today.
+  re-run, send `reasoning` exactly as today. `reasoning_for` accepts `None` and returns a copy
+  of the constant, never the constant itself.
+- `stream_json_async` and `mcjudge.run_calls` gain `refusal_reasoning: dict | None = None`.
+  When given it is the re-run's reasoning as is (no helper). Reason: a family's own
+  `anthropic_effort` is dropped by `resolve` for an OpenRouter judge, so the callee cannot
+  recover it; without this a Sonnet 5.5 fallback under a Luna judge would run at `effort: low`
+  while the same fallback on the pin runs at the family's `default`. Callers pass it only for
+  a cross-route fallback (step 4).
 - Cross-route re-run, the other per-route knobs (`stream_json_async` only): `max_tokens` the
   caller left `None` resolves to the refusal route's own `_DEFAULT_MAX_TOKENS`; `temperature`
   is not sent to an Anthropic refusal model (the existing drop rule) and is sent to an
-  OpenRouter one; `overflow_max_tokens` state carries over only between Anthropic calls (an
+  OpenRouter one (the caller's ORIGINAL value: today's code overwrites `temperature` with
+  `None` on an Anthropic primary, so keep the original for an Anthropic -> OpenRouter re-run); `overflow_max_tokens` state carries over only between Anthropic calls (an
   OpenRouter re-run uses the plain cap); `fallbacks=` is never passed to the re-run (today's
   rule). Retained, restated: only refusals move (a `max_tokens` stop, an error or an
   unparsable body stays the primary's outcome), the re-run happens ONCE, a served JSON result
@@ -117,6 +140,10 @@ s.reasoning)` **iff** `llm.route(model) != llm.route(s.model)`, else `s.reasonin
 Retained, restated at the point of change: the digest fingerprint and the fallback salt are
 untouched; a fallback-served row still carries `SERVED_BY` + `SERVED_VIA = "client"` and
 `_stale_fallback` still makes a row another client-side model served a cache miss.
+
+A cross-route digest re-run keeps `s.max_tokens` and `overflow_kw` (the latter ignored off
+Anthropic); a cap the other route's provider rejects is that run's configuration problem, not
+re-shaped here.
 
 Not in scope (recorded so the reviewer does not chase it): what a non-Claude **primary** digest
 model sends (`reasoning={"anthropic_effort": ...}` reaches OpenRouter as-is today; server-side
@@ -136,21 +163,49 @@ differs from the resolved judge model**, whatever `judge.pinned` says, and off u
 | agentic_misalignment | summary Stage C `refusal_model=` | `REFUSAL_MODEL if judge.pinned else None` | `REFUSAL_MODEL if fallback on and REFUSAL_MODEL != judge.model else None` |
 | jailbreak_recognition | summary draws `refusal_model=` | same | same |
 
-- hinted_cutoff's fallback `ResolvedJudge` takes `reasoning=llm.reasoning_for(route(fb),
-  args.judge.reasoning)` when the routes differ (it is a separate `run_calls`, so it shapes its
-  own request), else `args.judge.reasoning` as today. Its key suffix `|fb`, its "any failed
-  call" trigger and `n_fallback_calls` are retained.
+- **Fallback effort = the family's own instrument.** For a cross-route fallback, its reasoning
+  is `judge_config.resolve(<the family's JudgeConfig>, flag=fb).reasoning` (hinted_cutoff and
+  model_multihop set `anthropic_effort: default`; agentic and jailbreak set none, so theirs is
+  `None`): hinted_cutoff's fallback `ResolvedJudge` takes it, the other `run_calls` sites pass
+  it as `refusal_reasoning=`. A same-route fallback sends what it sends today
+  (`args.judge.reasoning`; no `refusal_reasoning`). hinted_cutoff's key suffix `|fb`, its "any
+  failed call" trigger and `n_fallback_calls` are retained.
 - `opts=fallback=on|none` (hinted_cutoff has it; default `on`) is read the same way by the
   other three, through one shared helper in `wsbench/family.py` (`fallback_on(args, name)`;
-  any other value exits 2 with hinted_cutoff's message form). It is how a judge-comparison run
-  gets a pure single-judge row. It keys no fingerprint and no stamp.
-- Instrument identity is untouched: `summary_pinned` (agentic, jailbreak) keeps
-  `bool(args.judge.pinned) and ...`, `digest.pinned` likewise, so a Luna row still reports
-  `pinned_instrument = false` and is `complete = false` by the results contract, with or
-  without a served fallback. On the pin, `REFUSAL_MODEL != judge.model` and `fb != judge.model`
-  are always true, so the pinned path is byte-identical.
-- Rows already record who served (`judge_served_by` / `judge_model` / `n_fallback_calls` /
-  model_multihop's config `refusal_model`); no new result field.
+  any other value exits 2 with hinted_cutoff's message form), called at the top of each
+  family's `run()`, so a bad value exits 2 in native mode too (where agentic and jailbreak have
+  no judge fallback and the value is otherwise unused). It turns off the JUDGE-call fallback
+  only (the digest's is `opts=summ_fallback=`), and it is how a judge-comparison run gets a
+  row whose judge calls are one model's. It keys no fingerprint.
+- **`fallback=none` never reuses a fallback-served cache row.** `run_calls` caches a served
+  row under the judge's fingerprint and agentic's `_batch` does the same, so a resumed out dir
+  would silently mix. `run_calls` gains `accept_served: bool = True`; with `False` a cached
+  row carrying a serving model is a miss (re-asked on the judge, the new row appended), and
+  `_batch` gets the same switch. The three families pass `False` exactly when their fallback
+  is off by `opts=fallback=none`. Default `True` = today's lookup, byte-identical.
+  hinted_cutoff needs nothing (its `|fb` rows are read only when the fallback is on).
+- **Credentials up front.** When a family's effective fallback is on another route than the
+  judge and the run is not a dry run, the family resolves `llm.api_key(fallback)` before its
+  first call (a missing key is a `JudgeConfigError`, exit 3, naming `opts=fallback=none`);
+  `digest.collapse` does the same for a cross-route `s.refusal_model`. Same-route: no new
+  call (the pinned path is untouched).
+- **Stamps.** On the pin with the fallback on (the default) `config` is byte-identical to
+  today (the logit-lens floor test matches full live configs). Otherwise, i.e. when the judge
+  is not the pin or `fallback=none`, agentic / jailbreak / model_multihop add
+  `config.judge_fallback = <effective fallback model> | "none"`; hinted_cutoff keeps its
+  existing `config.fallback_model`. `summary_pinned` (agentic, jailbreak) and model_multihop's
+  `pinned` gain "and the judge fallback is on", so `fallback=none` on the pin is not the
+  instrument of record; hinted_cutoff's existing `fallback=none` behaviour is left as it is.
+  A Luna row still reports `pinned_instrument = false` and `complete = false`. On the pin,
+  `REFUSAL_MODEL != judge.model` and `fb != judge.model` always hold, so the pinned path is
+  byte-identical.
+- **Provenance.** agentic and jailbreak rows already record the serving model (`judge_model`
+  / `judge_served_by`). model_multihop and hinted_cutoff record nothing per row today, so
+  under a Luna judge an unknown subset of cells would be Sonnet 5.5's: a row whose verdict a
+  fallback served gains `judge_served_by` (model_multihop: from `llm.SERVED_BY`; hinted_cutoff:
+  the fallback model for a chunk whose `|fb` result was used, as a per-row list or count,
+  whichever its row shape takes with least change), and `extras.n_judge_fallback_served` is
+  added when > 0. A row no fallback served is byte-identical.
 
 ### 5. Docs
 
@@ -158,7 +213,8 @@ README §Judges (the override bullets: fallbacks follow an override judge, `opts
 the digest pin answer above, free-text stages on both routes), the agentic / jailbreak /
 hinted_cutoff / model_multihop family READMEs where they say "when pinned", `CLAUDE.md` judge
 layer (`stream_text` is no longer Anthropic-only; cross-route `refusal_model`;
-`reasoning_for`), `docs/summarizer.md` where `summ_fallback` is specified.
+`reasoning_for`), `docs/summarizer.md` where `summ_fallback` is specified, and the
+`stream_json_async` / `mcjudge.run_calls` docstrings ("same route" wording).
 
 ## Tests (offline; `tests/conftest.py` fakes)
 
@@ -177,16 +233,24 @@ layer (`stream_text` is no longer Anthropic-only; cross-route `refusal_model`;
   fallback and recorded; `opts=fallback=none` leaves it lost; a judge equal to the fallback
   model gets none; a bad `fallback=` value exits 2. agentic: the three native stages run on an
   OpenRouter judge end to end (fake).
-- **No pre-existing test is edited** except assertions that pin the three deleted behaviours
-  by name: "free-text stage requires a claude-* model", "must be another <route> model" for a
-  cross-route pair, and `summ_fallback` rejecting a non-Claude model, plus any test asserting
-  that an unpinned judge of the four families gets no fallback. Each such edit is listed in the
-  PR body with its old and new assertion. Any other red pre-existing test is a stop-and-report,
-  never an edit.
+- structured OpenRouter refusal (`content_filter`, `message.refusal`) -> `REFUSED_JSON` and the
+  re-run; `refusal_reasoning=` is what the re-run sends; `accept_served=False` re-asks a
+  served row (a fallback-on run, then `fallback=none` on the same out dir, per family).
+- one request-capture test per family ON ITS PIN: the request kwargs of every judge and
+  fallback call, and `config`, equal a golden captured from `origin/main` before the change.
+- **No pre-existing test is edited** except exactly these three, which pin deleted behaviour:
+  `tests/test_llm_text.py::test_openrouter_model_raises`, the `"none+gpt-6"` entry of the bad
+  list in `tests/test_llm_refusal_rerun.py` (~l.311), and the `default+gpt-5` / `none+gpt-5`
+  params in `tests/test_digest_hierarchical.py` (~l.395). Each is listed in the PR body with
+  its old and new assertion. Any other red pre-existing test is a stop-and-report, never an
+  edit.
 
 ## Live smoke (after CI, before merge)
 
-OpenRouter is only called from Modal (secret `openrouter`), never from the dev box. From Modal:
+OpenRouter is only called from Modal (secret `openrouter`), never from the dev box; the smoke
+also needs Anthropic credentials in the container (the Sonnet 5 digest and the Opus 5 / Sonnet
+5.5 fallbacks). It adds one model_multihop `limit=3` run (its `temperature=0.0` under
+`require_parameters`) to the list. From Modal:
 `llm.stream_text` on `openai/gpt-6-luna`, one prompt each for `thinking=True` / `False` and one
 with `max_tokens=16` (budget doubling), then `wsbench judge family=agentic_misalignment
 judge_model=openai/gpt-6-luna limit=1` on existing readouts, native and summary. The PR records
@@ -199,6 +263,7 @@ plans/0096-luna-judge.md                          new
 plans/0005-agentic.md                             one-line superseded note
 src/wsbench/llm.py                                steps 1-2
 src/wsbench/judge_config.py                       reasoning_for / constants re-export
+src/wsbench/mcjudge.py                            refusal_reasoning, accept_served
 src/wsbench/digest.py                             step 3
 src/wsbench/family.py                             fallback_on
 src/wsbench/evals/{hinted_cutoff,model_multihop,agentic_misalignment,jailbreak_recognition}/judge.py   step 4
