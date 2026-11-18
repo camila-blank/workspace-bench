@@ -775,3 +775,22 @@ def test_an_exhausted_quota_is_fatal_not_a_rate_limit():
     rate = err(type="requests", code="rate_limit_exceeded")
     assert llm._out_of_quota(quota) and not llm._out_of_quota(rate)
     assert not llm._out_of_quota(ValueError("x"))
+
+
+def test_openai_route_spend_limit_fails_the_run_at_the_first_call(monkeypatch):
+    """The 429 OpenAI sends for a project over its spend limit is a config error at the first
+    attempt (no backoff, no second request), on structured and free-text calls alike."""
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self) -> None:
+            super().__init__("Your project has reached its configured enforced spend limit.")
+            self.body = {"type": "insufficient_quota", "code": "project_spend_limit_exceeded"}
+
+    for call in (_json, lambda: _text(thinking=True, max_tokens=100)):
+        fake = FakeOpenAI([RateLimitError(), _plain()])
+        install(monkeypatch, fake)
+        with pytest.raises(JudgeConfigError, match="spend limit"):
+            call()
+        assert len(fake.calls) == 1
