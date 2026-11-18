@@ -487,12 +487,13 @@ def test_explicit_x4_equals_the_default(tmp_path, monkeypatch):
 
 
 def test_stage2_cross_route_refusal_rerun_sends_openrouter_reasoning(tmp_path, monkeypatch):
-    """Plan 0096: the layered stage-2 re-run on a refusal model of the other route is re-shaped
-    for that route; the primary stage-2 call and a same-route re-run send ``s.reasoning``."""
+    """Plan 0096: the layered stage-2 re-run on a refusal model of the other route sends that
+    model's ``digest_reasoning`` (part 2, R9: none at the default effort for a non-Claude
+    model); the primary stage-2 call and a same-route re-run send ``s.reasoning``."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     luna = "openai/gpt-6-luna"
     default = {"anthropic_effort": digest.DEFAULT_EFFORT}
-    for fb, want in ((luna, {"effort": "minimal"}), (digest.SONNET_REFUSAL_MODEL, default)):
+    for fb, want in ((luna, None), (digest.SONNET_REFUSAL_MODEL, default)):
         _items, path = _setup(tmp_path, monkeypatch)
         seen: list[tuple] = []
         real = FakeLLM.install(monkeypatch, _quiet)

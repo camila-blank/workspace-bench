@@ -957,16 +957,17 @@ def _recording(models_refusing: set[str], seen: list[tuple]):
 
 @pytest.mark.parametrize("overflow", ["hierarchical", "stride"])
 def test_cross_route_refusal_model_sends_its_routes_reasoning(tmp_path, fam, monkeypatch, overflow):
-    """The client-side re-run on a model of the other route is re-shaped by
-    ``llm.reasoning_for``; one on the digest model's route sends ``s.reasoning`` as before. The
-    cap is kept, the fingerprint and the ``SERVED_VIA`` tag do not move."""
+    """The client-side re-run on a model of the other route sends ``digest_reasoning`` of that
+    model at the run's effort (plan 0096 R9: no reasoning at the default effort for a non-Claude
+    model); one on the digest model's route sends ``s.reasoning`` as before. The cap is kept,
+    the fingerprint and the ``SERVED_VIA`` tag do not move."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     monkeypatch.setitem(digest.FAMILY_DEFAULTS[FAM], "summ_overflow", overflow)
     monkeypatch.setattr(
         llm, "count_tokens", lambda model, prompts, concurrency=8: [10] * len(prompts)
     )
     default = {"anthropic_effort": digest.DEFAULT_EFFORT}
-    for fb, want in ((LUNA, {"effort": "minimal"}), ("claude-sonnet-5", default)):
+    for fb, want in ((LUNA, None), ("claude-sonnet-5", default)):
         seen: list[tuple] = []
         monkeypatch.setattr(llm, "stream_json", _recording({"claude-opus-5-5"}, seen))
         out = tmp_path / fb.replace("/", "_")

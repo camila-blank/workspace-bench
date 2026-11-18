@@ -27,7 +27,34 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   the table); not restated here.
 - Routes by model id: `claude-*` -> Anthropic SDK (`ANTHROPIC_API_KEY`, or with no key and
   `ANTHROPIC_PROFILE` set, the SDK's `ant auth login` profile; structured output,
-  refusal -> `None`); else OpenRouter via the OpenAI SDK (`OPENROUTER_API_KEY`, `sk-or-…`).
+  refusal -> `None`); else OpenRouter via the OpenAI SDK (`OPENROUTER_API_KEY`, `sk-or-…`);
+  with `WSBENCH_OPENAI_ROUTE=wif` (plan 0096 part 2, a port of the unmerged plan-0059 branch)
+  an `openai/*` id that is not `openai/gpt-oss*` takes route `openai`: OpenAI directly through
+  `llm._WifClient(ati_remote.Clients("openai-wif"))` (`api_key` = `""`; `_openai_once` /
+  `_openai_text_once`: `max_completion_tokens`, `reasoning_effort` from `effort`, never
+  `temperature` or `extra_body`; `_wif_create` re-exchanges on a 401 up to
+  `ati_remote.AUTH_REFRESHES` times, the last 401 and every 403 are fatal, a
+  `JudgeConfigError` inside a call is re-raised, `TransientExchangeError` is transient; cost 0).
+  A bad env value raises in `llm.route`, so every `resolve` / `digest.settings` caller must end
+  as exit 3. The two chat routes share `_chat_result` (refusal rule; an unparsable body with
+  `finish_reason == "length"` is one failed call, never retried), `_chat_text`, and
+  `WSBENCH_OPENROUTER_MAX_OUT` (`llm._capped`: the cap of every chat-route call by the route of
+  the model actually called, the starting budget of free text, never read for an Anthropic
+  call; while set, `_too_long` also takes the `OPENROUTER_TOO_LONG` phrases of a 400 as
+  `TOO_LONG_JSON`). `reasoning_for` treats `openai` as `openrouter`; `temperature` goes only to
+  an `openrouter` call; `llm.require_credentials` is the up-front check (the WIF token source on
+  `openai`). `tests/conftest.py` clears both env keys for every test.
+  `judge_effort=minimal|low|medium|high|default` (`judge_config.resolve(effort=)`, non-Claude
+  judges only, a Claude judge exits 2; sets `pinned=False`; passed by `cli.JudgeFamily`,
+  `runner._one`, `runner.run_families`, emitted by `judge_argv` and written to `run.json` only
+  when given; read with `getattr(args, "judge_effort", None)`).
+  **The summarizer follows a non-Claude override judge** (`digest.digest_model` /
+  `follows_judge`: `summ_model=` > a present, unpinned judge on a non-Anthropic route >
+  `aux_models["digest"]` > `DEFAULT_MODEL`; `digest.preflight_judge(extra, aux_models, judge)`
+  must be given the resolved judge); `digest.digest_reasoning` gives a non-Claude digest no
+  reasoning at the default effort, a family-default `summ_fallback` is `none` for it, an
+  explicit `default[+<model>]` exits 2, `summ_context=` sizes the budget (README §Judges for the
+  rule, the experiment and the validated Luna recipe).
   Shared: JSON-schema output, 11 jittered retries (`_ATTEMPTS = 12`) on 408/409/429/5xx/
   timeouts, process-wide thread-safe RPM pacer (`rpm=`, library default 240; CLI default 30000), `preflight` fail-fast,
   `Spend` tally. Structured Anthropic calls run at `effort: low` on always-thinking models unless

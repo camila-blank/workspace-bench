@@ -469,7 +469,11 @@ route, a Stage C call the override judge declines re-runs once on `claude-opus-5
 off (the digest's is `summ_fallback`), re-asks on the judge any cached Stage C answer another
 model served, and unpins the run; a run that is not the pinned default records
 `config.judge_fallback` (`claude-opus-5`, `none` or `same-as-judge`). The digest keeps its
-`claude-sonnet-5` pin under a judge override (`opts=summ_model=` moves it). A Sonnet digest call is capped at
+`claude-sonnet-5` pin under a `claude-*` judge override (`opts=summ_model=` moves it); under a
+non-Claude override judge (`judge_model=openai/gpt-6-luna`) the digest follows the judge and has
+no refusal re-run unless `opts=summ_fallback=none+<model>` gives one (README §Judges; this
+Luna digest + judge instrument was not validated by the plan 0059 sweep, and the free-text
+stages ignore `judge_effort`). A Sonnet digest call is capped at
 64k output tokens (`digest.OUTPUT_CAPS`), since Sonnet does not always keep to the 25-entry rare
 tier on long bundles; `max_tokens` keys no fingerprint, so cached digests stay valid. Under the
 layered digest (the CLI default for a multi-layer run) stage 2 runs on the same model, cap and

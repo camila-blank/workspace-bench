@@ -146,8 +146,10 @@ grader prompt and its sha, the unused gated role-play pool for HallucinationBenc
   `WSBENCH_JUDGE_MODEL` are not pinned and never numbers of record. The summarizer runs on the
   same pin, `claude-sonnet-5` (`JudgeConfig.aux_models["digest"]`); a digest or judge call Sonnet
   declines re-runs once on `claude-opus-5` (Summary mode, below). The digest keeps that pin
-  under a judge override (`opts=summ_model=` moves it), and the judge-draw re-run follows the
-  override judge, on either route.
+  under a `claude-*` judge override (`opts=summ_model=` moves it); under a non-Claude override
+  judge (`judge_model=openai/gpt-6-luna`) the digest follows the judge and has no refusal
+  re-run unless `opts=summ_fallback=none+<model>` gives one (README §Judges). The judge-draw
+  re-run follows the override judge, on any route.
 - **Summary mode** (default): every cell of an item → one digest (`EvalSpec.task_note` below,
   no family token cap: the global 920k cap with hierarchical overflow, nothing dropped;
   `FAMILY_DEFAULTS`: `summ_timeout=1800`, `summ_fallback=none+claude-opus-5` (`summ_concurrency=8`

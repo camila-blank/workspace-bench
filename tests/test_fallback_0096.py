@@ -133,7 +133,12 @@ def test_a_luna_judges_declined_call_reruns_on_the_family_fallback(
         assert llm.always_thinks(fb) and "effort" not in again["output_config"]
         assert "temperature" not in again
     if name == "model_multihop/summary":  # its temperature rides the OpenRouter judge call
-        assert {c.get("temperature") for c in run.orc.calls} == {0.0}
+        # (part 2: the digest follows the Luna judge, and a digest call sends no temperature)
+        digests = [c for c in run.orc.calls if c["messages"][-1]["content"].startswith("READOUTS:")]
+        judged = [c for c in run.orc.calls if c not in digests]
+        assert digests and {c["model"] for c in digests} == {LUNA}
+        assert all("temperature" not in c and "reasoning" not in c["extra_body"] for c in digests)
+        assert judged and {c.get("temperature") for c in judged} == {0.0}
     if run.family == "agentic_misalignment":
         assert res.extras["judge_fallback_ids"] == [RH]
         assert again["thinking"] == {"type": "adaptive"}  # Stage C: free text, same settings
