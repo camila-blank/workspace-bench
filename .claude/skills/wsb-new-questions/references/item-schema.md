@@ -52,7 +52,7 @@ legacy fallback keys on it), `parent_family`, `contract`, `gate`, `frozen` (ISO 
 
 | field | meaning | read by |
 |---|---|---|
-| `name`, `subfamily` | id; `entity`/`l2_factual` (basic_readout), `2hop`/`3hop` (multihop, multilingual_multihop), `fwd` (multilingual), `novel`/`realword`/`arith` (typo), `typo` (multilingual_typo) | all; quotas |   # REVERT the script R7 hunk here: `typo` is the SUBFAMILY value
+| `name`, `subfamily` | id; `entity`/`l2_factual` (basic_readout), `2hop`/`3hop` (multihop, multilingual_multihop), `fwd` (multilingual), `novel`/`realword`/`arith` (typo), `typo` (multilingual_typo) | all; quotas |
 | `prompt` | plain-text fragment ending IMMEDIATELY before the answer (no trailing space or punctuation; typo families end WITH the misspelling) | plan, capable |
 | `target`, `target_alts` | the next-token answer and its inflections; gate golds; a scored optional unit only under `include_target` | capable, judge (multihop) |
 | `lang` | L2 code, one of `pl tr fi hu id vi sw ru el he ar ko` (the MC language confusables exist only for these) | judge (MC), plan |

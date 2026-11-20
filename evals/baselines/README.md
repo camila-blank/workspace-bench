@@ -1293,8 +1293,8 @@ minus control false-alarm rate, so it can be negative.
 
 No entry: model_multihop (registered after the first freeze; its L63 logit-lens readouts exist
 only as a conversion of another producer's grids, reader `gw-mmh-v2-logit`, which `freeze` refuses),
-and jlens_concept_pr and the superseded `typo_st`, as for prompt-only. multihop is the former   # reword by hand: the key history sentence
-`multihop_mt_v2` key.
+and jlens_concept_pr and the superseded `typo_st`, as for prompt-only. multihop is the family keyed
+`multihop_mt_v2` until 2026-11-04 and `multihop_mt` until plan 0101.
 
 | family | logit lens L63 | n | ATI (n) | instrument |
 |---|---|---|---|---|
