@@ -145,7 +145,11 @@ def test_no_pool_file_is_tracked_by_git():
                          text=True, timeout=30)  # fmt: skip
     if out.returncode != 0:
         pytest.skip("not a git checkout")
-    tracked = [f for f in out.stdout.splitlines() if "_pool.json" in f.rsplit("/", 1)[-1]]
+    from wsbench import datapack
+
+    # plan 0097: the packed bank files are not tracked; their sidecars list them
+    shipped = sorted(set(out.stdout.splitlines()) | set(datapack.listed_paths()))
+    tracked = [f for f in shipped if "_pool.json" in f.rsplit("/", 1)[-1]]
     assert tracked == []
 
 

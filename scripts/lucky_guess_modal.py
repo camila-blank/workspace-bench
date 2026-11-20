@@ -16,6 +16,13 @@ from pathlib import Path
 import modal
 
 REPO = Path(__file__).resolve().parents[1]
+if modal.is_local():  # plan 0097: the host unpacks the banks before the image mounts evals/
+    import sys
+
+    sys.path.insert(0, str(REPO / "src"))
+    from wsbench import datapack
+
+    datapack.ensure()
 app = modal.App("wsb-lucky-guess")
 image = (
     modal.Image.debian_slim(python_version="3.12")

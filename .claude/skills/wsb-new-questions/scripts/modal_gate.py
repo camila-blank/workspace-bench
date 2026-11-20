@@ -21,6 +21,13 @@ import modal
 _HERE = Path(__file__).resolve()
 # .claude/skills/<skill>/scripts/ -> repo root (only meaningful on the client side)
 REPO = _HERE.parents[4] if len(_HERE.parents) > 4 else Path("/repo")
+if modal.is_local():  # plan 0097: the host unpacks the banks before the image mounts evals/
+    import sys
+
+    sys.path.insert(0, str(REPO / "src"))
+    from wsbench import datapack
+
+    datapack.ensure()
 # a small subject fits any GPU; set WSB_GATE_GPU=H100 (etc.) for >= 9B models
 GPU = os.environ.get("WSB_GATE_GPU", "L40S")  # "none" = CPU only (pass --extra "--device cpu")
 GPU_ARG = None if GPU.lower() == "none" else GPU

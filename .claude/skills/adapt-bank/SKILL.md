@@ -260,6 +260,24 @@ PYTHONPATH = gw `src` + the cf_influence scripts dir + this repo's `src`.
   floors. Link AUDIT.md.
 - **Census:** bump `tests/test_typo_mt.py::test_no_reachable_typo_mt_bank_has_arith_items` (`len(paths) == N`,
   "bump per set"). It is the one pre-existing test a new set's PR changes by design.
+- **Pack the set (plan 0097; `data/README.md`).** Nothing under `adapted/<m>/` is tracked by
+  git: the data PR carries sidecars under `data/adapted/<m>/`, and the files travel as
+  password-protected zips on a release. The push recipe, in the clone the PR is made from:
+  1. `wsbench unpack` (the clone must be fully unpacked before it can pack);
+  2. copy the set's shipped files into the clone's `adapted/<m>/` (the frozen banks,
+     `report.json`, `AUDIT*.md`, `floors/floors.json`, per-set judge resources; never `gate/`,
+     `cand/`, `mc/`, `mmh/`, readouts or caches);
+  3. `wsbench pack add=adapted/<m>/<entry>` for every NEW file or directory (an existing set's
+     changed files need no `add`), then `wsbench pack`;
+  4. `wsbench pack status` (exit 0; read the `?` lines: a shipped file left unlisted is not in
+     the PR) and `wsbench pack diff units=adapted/<m>` (`text=True` for the item-level diff:
+     this replaces `git diff adapted/<m>/...` in the review);
+  5. `wsbench pack publish` (needs `gh` and push rights; from a fork, `wsbench pack publish
+     repo=<your fork>` and a maintainer re-runs `publish` before the merge), THEN `git add
+     data/` and commit: publish may rewrite a sidecar.
+  A packed zip exists only in that machine's `$WSB_CACHE/data/` until it is published, and a
+  sidecar committed without its published zip fails CI (the test session unpacks the banks
+  automatically, `tests/conftest.py`, and cannot fetch a zip that was never uploaded).
 - `pytest -q` and `ruff` pass locally. Push, open the PR (`Closes #<set issue>`), then run
   `scripts/gated_merge.sh <pr>`.
 
@@ -871,6 +889,26 @@ Every step writes its own entry (agentic, carry included); writes are atomic and
 - Claude API spend is not capped, but it is ledgered (`WSB_TOKEN_LEDGER`). GPU spend is what to
   watch: post the expected GPU $ before a fan-out. Before any big run, check that no other session
   is already running it (one agent per shared run).
+- Bank files are unpacked, git-ignored data (plan 0097): `git status` / `git diff` never show
+  a bank edit. Use `wsbench pack status` / `wsbench pack diff`. Never `git pull` or merge a
+  sidecar change into a tree with a running job (the pull's unpack rewrites the files under
+  it), and merge main into a run tree with bank edits as: copy the edited files aside, merge,
+  `wsbench unpack`, copy them back, `wsbench pack`. `wsbench unpack` refuses to overwrite an
+  edited file: it reports a conflict and prints the command that discards the edit, `wsbench
+  unpack units=<the conflicting units> force=True` (only those units; every overwritten or
+  deleted file is printed).
+- The unpacked bank files are git-IGNORED, not tracked. `git clean -fdX` / `git clean -fdx`
+  and `git worktree remove` delete them, un-packed edits included, and git cannot restore
+  them: `wsbench pack` (or copy the run tree's set aside) before removing a run tree. A
+  packed change that is not published exists only in that machine's `$WSB_CACHE/data/`.
+  Checking out a pre-cutover commit, tag or branch silently OVERWRITES the unpacked banks with
+  that commit's tracked files (git treats ignored files as expendable; it refuses with
+  "untracked working tree files would be overwritten" only under
+  `checkout.overwriteIgnore=false`), and checking out the newer commit again deletes them
+  until the next `wsbench` command re-unpacks. Pack or copy aside every bank edit first. To
+  clear the unpacked files by hand: `git ls-files -z --others --ignored --exclude-standard --
+  evals adapted | xargs -0 rm -f` (it removes work products under `adapted/` too, so archive
+  them first); `wsbench unpack` re-creates the banks.
 - Merge only through `scripts/gated_merge.sh` (fail closed). Bench data stays local until the set
   is frozen and audited.
 

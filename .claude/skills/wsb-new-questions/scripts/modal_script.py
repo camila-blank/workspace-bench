@@ -36,6 +36,13 @@ import modal
 
 _HERE = Path(__file__).resolve()
 REPO = _HERE.parents[4] if len(_HERE.parents) > 4 else Path("/repo")
+if modal.is_local():  # plan 0097: the host unpacks the banks before the image mounts evals/
+    import sys
+
+    sys.path.insert(0, str(REPO / "src"))
+    from wsbench import datapack
+
+    datapack.ensure()
 SKILL = "/repo/.claude/skills/wsb-new-questions/scripts"
 GPU = os.environ.get("WSB_GATE_GPU", "L40S")  # "none" = CPU (add --device cpu --dtype float32)
 GPU_ARG = None if GPU.lower() == "none" else GPU

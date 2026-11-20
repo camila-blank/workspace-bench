@@ -56,13 +56,12 @@ def r5(tmp_path, monkeypatch, real_families):
     assert _evals_status() == before  # nothing under evals/ changed, whatever the write path
 
 
-def _evals_status() -> str:
-    import subprocess
+def _evals_status() -> dict[str, str]:
+    """Plan 0097: the sha256 of every file under evals/ (the banks are git-ignored once they
+    are unpacked from their zips, so ``git status`` would no longer see a change)."""
+    from wsbench import datapack
 
-    return subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "evals/"],
-        cwd=REPO, capture_output=True, text=True, check=True,
-    ).stdout  # fmt: skip
+    return datapack.tree_shas("evals", REPO)
 
 
 def _items(r5):

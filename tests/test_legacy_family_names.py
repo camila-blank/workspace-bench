@@ -265,7 +265,10 @@ def _tracked_files() -> list[str]:
         ).stdout
     except (OSError, subprocess.CalledProcessError):
         pytest.skip("not a git checkout")
-    return [p for p in out.decode("utf-8").split("\0") if p]
+    from wsbench import datapack
+
+    # plan 0097: the packed bank files are not tracked; their sidecars list them
+    return sorted({p for p in out.decode("utf-8").split("\0") if p} | set(datapack.listed_paths()))
 
 
 def _is_data(path: str) -> bool:
