@@ -15,6 +15,11 @@ rulings on the former open questions are §0.4; §2 is now a complete inventory 
 name-embedding sites; §8 (the migration script) is redesigned around a KEEP list; §11 has the
 manifest; §15 is the commit order.
 
+Revision 3 (after critique 2, `/root/tmp/wsb-0101-critique2.md`; all ten items verified and
+applied): F14 covers `row_sha` and the cell store, F16 the producer's resume file; §2.3 is the
+table of every place code derives something from a family key's SPELLING; the refusal marks
+and KEEP patterns of §8 are tightened; the manifest script's imports are stated (§11.1).
+
 ## 0. Decisions (the owner's, not open)
 
 ### 0.1 Key renames (A)
@@ -153,11 +158,13 @@ seeds) is out of scope and unchanged.
 | F11 | `multitoken/options.py:101,126,134` | language-distractor seeds `f"{R4_LANG_SEED}\|{family}\|{gold}"`, `…\|balanced\|{family}`, `…\|balanced\|{family}\|{name}`; live caller `adapt/author.py:83-95`, builders `scripts/build_r4_mc_banks.py:101-122`, `scripts/build_r4b_mc_banks.py:75-109`; pinned against the frozen banks by `tests/test_r4b_mc_banks.py:96` and `tests/test_r4_bridge_ml.py:403,407` | gets `frozen_name` in all three seeds. `R4_LANG_POOLS` (`options.py:68`) keys are renamed (`multilingual` -> `multilingual_st`, `multilingual_mt` -> `multilingual`), values untouched. Both tests must pass with NO value change |
 | F12 | `adapt/author.py:1506` | the authoring prompt says "…WorkspaceBench family {family}: …"; authoring calls are cached by a hash of the prompt | gets `frozen_name(family)` in the prompt text, so a mid-refill set re-uses its authoring cache and authors from the same prompt bytes. Not a judge prompt; the manifest pins its sha (§11.1) |
 | F13 | `adapt/onecue.py:154,168` | option-order seed and cache key `f"{VERSION}\|{row.family}\|{row.id}\|{row.role}\|…"` (families: single-token multihop, the multi-token basic_readout and multilingual, two unaffected) | gets `frozen_name(row.family)` in both |
-| F14 | `scripts/lens_readouts_modal.py:617` `_job` | the producer's sampling seed `sha256(f"{arm}\|{fam}\|{row_sha}")` | gets `frozen_name(fam)`: a re-produced readouts file samples as before |
-| F15 | `scripts/r4b_mc_refine.py:369,773`, `scripts/common_confusers_r5.py:198,242,248,538,593` | builder cache key `f"{family}\|{source_bank}"`, seeded draw `draw(lists[k], f"{family}\|{k}", rnd)`, gate-row keys and `gate_r5.json` keys `f"{family}\|{id}"` (the gate key also feeds `gate_sampling.seed`). These builders are LIVE for adapted sets (`adapt/mcstage` runs them into `adapted/<m>/mc/<family>/build-<hash>/`) | get `frozen_name(family)` at every listed line |
+| F14 | `scripts/lens_readouts_modal.py`: `row_sha` (101-108), `_job` (617), `store_path` (553), the export (690-722) | `row_sha` is sha256 of the WHOLE plan row, and `ROW_SHA_EXCLUDE` (75) does not drop `family`, whose value is the current key (`_plan_rows`, 545-550). `row_sha` keys the resumable cell store (`stored_shas` 557, 599-601) and is the third component of the `_job` sampling seed `sha256(f"{arm}\|{fam}\|{row_sha}")`. Unfixed, every stored cell of all eight families misses (a full GPU re-read) and the seed moves. `store_path` is `<store>/<subject>/<arm>/<family>.jsonl`, so new multi-token cells would APPEND to an old single-token `multihop.jsonl` | (a) `row_sha` hashes the row with `family` replaced by `frozen_name(family)` (nothing else changes; layers stay hashed). (b) `_job` seeds with `frozen_name(fam)`. (c) Store-path rule, §5.9: reads take every `lookup_names` candidate that content-attributes to the family; writes go only to `<current key>.jsonl` and are refused when that file belongs to the partner. (d) the export writes `<out>/<current key>.jsonl` under the same refusal |
+| F15 | `scripts/r4b_mc_refine.py:773`, `scripts/common_confusers_r5.py:198,242,248,538,593` | seeded draw `draw(lists[k], f"{family}\|{k}", rnd)`; gate-row keys and `gate_r5.json` keys `f"{family}\|{id}"` (the gate key also feeds `gate_sampling.seed`). These builders are LIVE for adapted sets (`adapt/mcstage` runs them into `adapted/<m>/mc/<family>/build-<hash>/`). (`r4b_mc_refine.py:369` `f"{family}\|{source_bank(family)}"` is an in-process dict key, not a hash or a stored key: harmless either way, converted too for uniformity) | get `frozen_name(family)` at every listed line |
+| F16 | `src/wsbench/produce/producer.py:196-219` `run_family` | resumable by item id: it reads the ids already in `out`, then opens `out` with `"a"`. No row hash and no family in a key (rows are the readout contract: id, layer, pos, token, samples), but `produce family=multihop out=<root>/multihop.jsonl` over a pre-0101 single-token file would append multi-token rows to it and then write a multi-token sidecar over it | before reading `done`: when `out` exists and the family is in a pair, `registry.owner(<bare key>, ids=readouts.ids_in(out))` must not be the partner and must not raise "both"; else `RenamedKey`, nothing opened. A fresh `out` is unaffected |
 | — | `reads._clean_row` (`reads.py:98`), `text_inversion._row_dict` (1290), `qwen_seed` (943), `lucky_guessing._rng` (769) and its call keys (1474, 1512), `gate_sampling.seed` (33), `scripts/r4_mc_select.py:245,290` | family in plan_sha / bank_sha / seeds | uses `hash_name` already: unchanged |
 | — | `adapt/generate.py:306`, `adapt/author.py:1635` | item ids `f"{family.split('_')[0]}-{tier}-…"`, `…-au-…` | the first `_` segment is the same string before and after for all eight keys: unchanged. Consequence (note 12 of the critique): both members of a pair share the `multihop-au-` / `basic-au-` id prefix, so F10's disjointness is an observed fact, not a structural one; T5 runs over every set and `owner(ids=)` raises on "both" |
 | — | `baselines/text_inversion.py:896` `run_key(out)` | hashes the `out` PATH (the Modal answers volume key), not a family | not hash-relevant. A work dir path that contains a family key is the caller's choice |
+| — | every other place a plan ROW is hashed or keyed (swept: `row_sha`, `plan_sha_rows`, `.row()`, `json.dumps(row…)` + sha across `src/`, `scripts/`, `atlas/`, skills): `reads.plan_sha_rows` and `fast_plan_sha` (via `_clean_row`), `text_inversion._row_dict`, `scripts/dmo_control_plan.py:28` and `scripts/drop_frac_0083.py:83` (both call `reads.plan_sha_rows`), `readplan.write` (1414, writes rows, hashes nothing), `adapt/run.py:787` (rows for `lineage_step`, which cleans them with `_clean_row`), `scripts/evidence_mh2.py:205` (prints a row) | plan rows | all go through `hash_name` already or hash nothing: unchanged. `scripts/lens_readouts_modal.py` (F14) is the only raw row hash in the repo; no other driver is vendored here (`ati_qwen_modal.py`, `qwen_sample_modal.py`, `adapt_modal.py` key their requests by `gate_sampling.seed` / `qwen_seed`, already on `hash_name`) |
 | — | `adapt/mcstage.py:232` `work_dir`, `adapt/mhmt2.py:1808` `_work_dir` | hash of the candidate items / ids; the family is only the parent directory (`family_dir`) | hash unchanged; the directory lookup is §5.5 |
 | — | `mcjudge.Call` fingerprint; every cache key of the eight families (`<item id>\|L<layer>[\|<role>]`, `digest:<id>\|<layer>`, `ntok:<id>\|…`); the digest fingerprint (`digest.py:1825`); `mcjudge_basic` option seeds (`<OPTIONS_VERSIONS stamp>\|<id>`); `multitoken/options.py:151-214` (`<MC_SEED>\|<item name>\|<role>`); `adapt/rebuild.py:67`; `scripts/build_multilingual_v2.py:182`, `build_r4_mc_banks.py:74`, `build_multihop_mc.py:661` (item names only) | no family key | not hash-relevant |
 | — | every result stamp (§3.2), the task note each family's digest is told (text only), `EvalSpec.title` (read by `wsbench list`, the README tests and the viewer; in no prompt) | no family key | not hash-relevant |
@@ -167,7 +174,41 @@ seeds) is out of scope and unchanged.
 The manifest (§11.1) records an output of EVERY row marked "gets" or "already", so the
 inventory is checked by a byte comparison, not by trust.
 
-### 2.3 Other facts that shape the design
+### 2.3 Code that derives something from a family key's SPELLING (prefix, suffix, substring, split, regex)
+
+A rename table preserves IDENTITY uses of a key (`family == "typo_mt"`, membership in a set or
+tuple of keys, dict lookups): each literal maps to the same family, so R4 is right there, and
+that covers every key set in the repo (`RAW_REGEX_FAMILIES`, `ANCHOR_SUPPORT_FAMILIES`,
+`PIN_FAMILIES`, `ALIAS_FAMILIES`, `PREMISE_FAMILIES`, `MC_FAMILIES`, `MC_BANK_FAMILIES`,
+`onecue.FAMILIES`, `NOT_GATED`, `ATI_EXCLUDE`, `TOPIC_FAMILIES`, `LITE_*_FAMILIES`,
+`viewer.build.GROUPS`, the `capable` and `adapt.families` tables). It does NOT preserve logic
+that reads the spelling. Swept: `.startswith(` / `.endswith(` / `.removeprefix(` /
+`.removesuffix(` / `.split(` / `.rsplit(` / `.partition(` / `.replace(` on a family-like
+variable; `"_mt"`, `"_st"`, `"-mt"`, `"-hard"` literals; `[:-3]`-style slices; `re.*` calls
+and `in <string>` tests naming a key; f-strings that build a key from another
+(`f"{x}_mt"`); glob patterns on keys; over `src/`, `scripts/`, `atlas/`, `viewer_app/`,
+`.claude/skills/`, `tests/conftest.py`, `tests/summary_fakes.py`. Every hit:
+
+| site | today, over the 32 families | after | new code |
+|---|---|---|---|
+| `adapt/onecue.py:146` `if family.startswith("multilingual"):` | true for the 4 multilingual families (of which onecue's `FAMILIES` holds 3: `multilingual_mt`, `multilingual_typo`, `multilingual_multihop`): the target forms join the gold's banned forms | must stay true for the same families, now keyed `multilingual`, `multilingual_typo`, `multilingual_multihop` (and `multilingual_st`) | UNCHANGED text. All four new keys still start with `multilingual`. R4 would have made it `startswith("multilingual_st")`, true for one family, silently dropping the target forms for the other three. KEEP pattern (§8.2); manifest row (§11.1) |
+| `adapt/generate.py:306` `family.split('_')[0]`, `adapt/author.py:1635` same | the first `_` segment as an id prefix: `basic`, `multihop`, `multilingual`, `typo` for the eight; unique segment for the rest | the same four strings (`basic_readout_st` -> `basic`, `multihop_st` -> `multihop`, …) | unchanged; the manifest records the generated ids' prefix per family |
+| `multitoken/regex.py:311,318,319` `family.endswith("-mt")`, `family != "multilingual-mt"` | `family` here is the bank HEADER's value (`header.get("family", name)` at `mcrx.py:340`, `family.py:747,1882,2580,2654`), source vocabulary with hyphens; with the registry key as fallback both tests are False / True for all 32 (keys have no hyphen) | identical: header values never change (F9) and no new key ends in `-mt` | unchanged; hyphenated literals are a KEEP pattern |
+| `baselines/prompt_only.py:390,408`, `text_inversion.py:1830` `fam.startswith("_")` | skips metadata keys (`_source`, `_not_gated`) of a frozen file | same | unchanged |
+| `atlas/build.py:575,625`, `viewer_app/index.py:452,531` `jd.name.endswith("_opus")` / `.replace("_opus", "")` | strips a run-dir suffix, then uses the directory name as the family | the name is a pre- or post-0101 key | §5.8: the family comes from `read_results` / `dir_owner`, not the name |
+| `viewer_app/index.py:508` `s, fam = f.stem.split(".", 1)` | family from an exported readouts file stem `<subject>.<family>.jsonl` | stems of old exports are pre-0101 keys | §5.8: `registry.owner(<stem>, ids=readouts.ids_in(f))` for a bare-key stem; unattributable -> skipped with a logged line |
+| `atlas/normal_gated.py:98,197,228` gate keys `f"{fam}/{iid}"`, `k.startswith(fam + "/")` | per-item gate map; line 197 loads a PERSISTED map keyed `<family>/<id>` | a persisted map written before 0101 has bare keys meaning the single-token family | the loaded map is re-keyed once on load: `<key>/<id>` -> `<registry.owner(key, ids=[id]) or canonical(key)>/<id>`; the prefix test itself is unchanged (the `/` makes it exact) |
+| `scripts/evidence_mh2.py:271` `"multihop" in ln` | a substring filter over listing lines in a dated evidence script | historical script | unchanged (KEEP pattern; not live) |
+| `scripts/typo_mt_drop_arith.py:71` `REPO.glob("adapted/*/typo_mt.json")` | a dated one-off migration | historical | R6 rewrites the stem to `typo.json` (an identity use of a file name); nothing else |
+| `tests/*` `"<key>" in <collection>` assertions (`test_capable.py:256-257`, `test_readplan.py:185,189`, `test_registry.py:81-82`, `test_tiers.py:80`, `test_text_inversion.py:88-89,887,893`, `test_multihop.py:96,98`) | membership in a dict / list / set of keys | identity | R4 is right (e.g. `"typo_mt" in seen and "typo" not in seen` becomes `"typo" in seen and "typo_st" not in seen`); those in KEEP files are hand-edited |
+
+No code builds one key from another (`+ "_mt"`, `f"{x}_mt"`, `removesuffix("_mt")`, a `[:-3]`
+slice on a key) and no regex names a key; `rg` found none. T17 (§9.3) keeps it that way: an
+`ast` scan fails on any new `startswith` / `endswith` / `removeprefix` / `removesuffix` /
+`split` / `re.*` call whose argument or receiver is one of the 40 current or former keys
+outside a small allowlist holding exactly the rows above.
+
+### 2.4 Other facts that shape the design
 
 - F7. `baselines/logit_lens.py:146` uses `registry.HASH_FAMILY_NAMES[family]` as a FILE-NAME
   fallback. After this plan `hash_name("multihop_st") == "multihop"`, another live family's
@@ -772,6 +813,34 @@ Test T13: a pre-0101 tree with `multihop/` (single-token stamp) and `multihop_mt
 two families under their current keys and titles. Public exports already published are not
 re-keyed (ruling 0.4.3).
 
+### 5.9 The lens producer's cell store (`scripts/lens_readouts_modal.py`) and resumable readouts files
+
+Rows of the store are `{"row_sha", "row": {"id", "layer", "pos", …}}`, so a store file is
+attributable by the item ids it holds (`registry.owner(<bare key>, ids=…)`).
+
+- `store_files(store, subject, arm, family) -> list[Path]` (new, replaces `store_path` for
+  READS: `stored_shas`, the export's cell collection): every
+  `<store>/<subject>/<arm>/<key>.jsonl` for `key in registry.lookup_names(family)` that
+  exists and, when `key` is a reused key, whose ids attribute to `family`; a file under a bare
+  key that holds ids of BOTH members, or of neither while non-empty, is `RenamedKey`.
+- `store_path(…)` (WRITES) is always `<current key>.jsonl`. Before the first append of a run
+  it must be absent, empty, or attributed to `family`; if it is the partner's, the driver
+  exits ("`<path>` is the single-token family's store, written before 2026-11-20; run
+  `scripts/migrate_0101.py set <store>/<subject>` or move it to `multihop_st.jsonl`") and
+  appends nothing.
+- An existing pre-0101 store (`multihop.jsonl` single-token, `multihop_mt.jsonl`
+  multi-token), unmigrated: `multihop_st` READS `multihop.jsonl` (its `row_sha`s still match,
+  thanks to (a) of F14: no GPU re-read) and writes new cells to `multihop_st.jsonl`;
+  `multihop` reads `multihop_mt.jsonl` and, having new cells to write, is REFUSED until the
+  store is migrated (its write target `multihop.jsonl` is the partner's). It can never read
+  or append to the other family's file. After `migrate_0101.py set` (which renames store
+  files two-phase by content, §8.3) both resume with zero re-reads.
+- A fresh store: plain `<current key>.jsonl` for both members; no legacy candidate exists.
+- The export (`<out>/<family>.jsonl`, opened `"w"`, and its `stale.unlink`): the same
+  refusal before unlinking or overwriting a file that attributes to the partner.
+- `Producer.run_family`: F16 (§2.2).
+- T18 (§9.3) covers the four cases.
+
 ## 6. Every in-repo artefact keyed by family
 
 "in place" = renamed by the script, value-preserving, checked by `json.loads(new) ==
@@ -896,14 +965,26 @@ under `basic/` (F8). Therefore:
   commit that added the script, or a descendant with no migration commit (the script checks
   that `src/wsbench/evals/basic/` does not exist, that `evals/basic/` does not exist, and
   that `tests/golden/manifest_0101_pre.json` exists and its embedded `base_sha` is an ancestor
-  of `HEAD`); no tracked file outside the KEEP list contains a `_st` key
-  (`(?<![A-Za-z0-9_])(basic_readout|multihop|multilingual|typo)_st(?![A-Za-z0-9_])`), an
-  `evals/<category>/<family>` path or a `wsbench.evals.<category>.` import.
+  of `HEAD`); no tracked file outside the KEEP list contains a post-migration mark:
+  (1) a `_st` key
+  (`(?<![A-Za-z0-9_])(basic_readout|multihop|multilingual|typo)_st(?![A-Za-z0-9_])`);
+  (2) a path `evals/<category>/<family>` or (3) an import `wsbench.evals.<category>.<family>`
+  (also `wsbench/evals/<category>/<family>`), where in both `<family>` is a NEW key that
+  `CATEGORY` places in that `<category>`. The pair, not the category alone: today's tree is
+  full of `wsbench.evals.association.judge` / `.prompts` (the FAMILY `association`:
+  `baselines/lucky_guessing.py:286`, `scripts/mc_leakage_r4.py:781`,
+  `tests/test_association_*.py`, `tests/test_basic_association.py:116-117`,
+  `tests/test_lucky_guessing.py:484`) and `evals/association/items_v5.json`, which a
+  category-only mark would match, so `apply` would always refuse. `judge`, `prompts`,
+  `items_v5.json` are not families of the category `association`; `conjunctive_association`
+  and `user_modeling` are, and neither string exists before the migration.
 - The text-rewrite function refuses any single FILE that contains one of those three
   post-migration marks (it raises; it never "skips and continues"), so a partly migrated file
   cannot be half-inverted.
-- `apply` writes `.migrate_0101_applied` (untracked) as its first act and refuses when it
-  exists; a failed run is recovered with `git reset --hard && git clean -fd`, never by
+- `apply` writes its run marker `.git/migrate_0101_applied` as its first act and refuses when
+  it exists (inside `.git/`, like the pre-run sha record of §8.3, so neither is a stray file
+  for `git status` or the reviewer's `git diff --quiet`; `check` leaves the marker and deletes
+  the sha record); a failed run is recovered with `git reset --hard && git clean -fd`, never by
   re-running over the partial tree.
 - There is no general `rewrite <paths>` subcommand (revision 1 had one; it was the unsafe
   entry point). Branches use `branch` (§8.7), which works only from a pre-migration base.
@@ -921,8 +1002,10 @@ KEEP files (the script reads them only to hash them):
   `tests/test_adapted_exclusions_alias.py`;
 - every test file that mentions `canonical`, `legacy_names`, `lookup_names`, `stored_family`,
   `family_dir`, `hash_name`, `REUSED_FAMILY_KEYS`, `LEGACY_FAMILY_NAMES`, `multihop_mt_v2`,
-  `multihop_mt_regex` or `wrong_bridge` (the script computes this set by grep and prints it;
-  on 030dd09b it is the four above plus `test_adapt_floors_missing_only.py`,
+  `multihop_mt_regex` or `wrong_bridge` (the script COMPUTES this set by grep at the commit it
+  runs on and prints it; the computed set governs, and the list here is only what it is on
+  030dd09b, before commit 2 adds helper names such as `family_dir` to more tests: the four
+  above plus `test_adapt_floors_missing_only.py`,
   `test_adapt_refreeze_registered_edits.py`, `test_basic_prompts.py`, `test_fast_subset.py`,
   `test_logit_lens_floor.py`, `test_lucky_guessing.py`, `test_msdm_plan0034.py`,
   `test_r5_adapted_mode.py`, `test_readplan.py`, `test_refill_fresh_pool.py`,
@@ -931,6 +1014,9 @@ KEEP files (the script reads them only to hash them):
   `test_wrong_intermediate.py`). For these the script applies ONLY R1 (imports) and R2 (data
   paths), which cannot change what an assertion means, and leaves every key literal for a
   line-by-line hand edit;
+- the script's own tests and the path-rule test, which hold `_st` keys and category paths on
+  purpose: `tests/test_migrate_0101.py`, `tests/test_family_paths.py`, and
+  `scripts/migrate_0101.py`, `scripts/manifest_0101.py` themselves;
 - `src/wsbench/registry.py` (all of §3 is hand-written);
 - everything in the "must NOT touch" list of §8.3.
 
@@ -948,6 +1034,13 @@ classified by hand):
   `"family": "basic_readout_mt"`; `scripts/build_basic_readout_v2.py:1064` and
   `scripts/build_brmt_v2.py:623` are `gate_sampling` rows, whose seed goes through
   `hash_name`). Only a human can tell which, so none is rewritten mechanically;
+- a key literal used for its SPELLING (§2.3): an argument or receiver of `startswith`,
+  `endswith`, `removeprefix`, `removesuffix`, `split`, `rsplit`, `partition`, `replace`, an
+  operand of `in <str>` where the right side is a string (not a collection of keys), or any
+  argument of an `re.*` call. `family.startswith("multilingual")` (`adapt/onecue.py:146`) is
+  the live case: rewritten, it would be true for one family instead of four;
+- hyphenated source vocabulary (`"multilingual-mt"`, `"basic-readout-hard"`, `"-mt"`,
+  `"-hard"`): never a key;
 - any string containing a stamp prefix of §3.2, a 64-hex sha, or a golden / fixture file name
   (`multihop_mc_options_v5.json`, `basic_readout_mt_options_v2.json`, …).
 
@@ -985,8 +1078,8 @@ mechanical commit shows them untouched.
 
 Phases of `apply`:
 
-1. Preconditions (§8.1). Record the sha256 of every tracked file (`.migrate_0101_before`,
-   untracked) for `check`.
+1. Preconditions (§8.1). Record the sha256 of every tracked file (`.git/migrate_0101_before`,
+   not in the work tree) for `check`.
 2. Moves, two-phase so that every swap and the `association` case is collision-free: phase A
    `git mv <src> .migrate_0101_staging/<n>` for every source (dirs: `evals/`,
    `src/wsbench/evals/`; files: adapted banks, overlay dirs, examples, topics, confusers, test
@@ -1014,7 +1107,7 @@ files; the `basic_readout_mt/` overlay dir; `report.json` / `floors/*.json` /
 directories that revision 1 left out: `gate/<family>.jsonl`, `cand/<family>.jsonl`,
 `readouts/<family>.jsonl[.meta.json]` and every `readouts/<arm>/<family>.jsonl`,
 `floors/readouts/**/<family>.jsonl[.meta.json]`, `floors/results/**/<family>/`,
-`mc/<family>/`, `judged/**/<family>/`; then the marker. Each file or directory under a bare
+`mc/<family>/`, `judged/**/<family>/`; then the marker. Given a lens cell store directory (`<store>/<subject>`), it renames `<arm>/<family>.jsonl` the same way (§5.9). Each file or directory under a bare
 key is attributed by content first (`registry.owner`: header, stamp, ids) and the run aborts
 before changing anything if any is unattributable. It refuses a set that has the marker.
 
@@ -1029,6 +1122,12 @@ before changing anything if any is unattributable. It refuses a set that has the
   import or file-stem substitution from the tables, in a non-KEEP file, or (b) an entry of
   §9.2. The PR body carries the count of each. Any other changed number, stamp, sha, id list,
   count or expected string blocks the merge.
+- `plan` also writes `keep-proposed.diff`: what R4-R9 WOULD have done in the grep-selected
+  KEEP test files (which get R1 / R2 only). It is not applied. It is the reference for the
+  hand edits of commit 5: that commit's hunks in those files must equal `keep-proposed.diff`
+  minus the hunks listed one by one under §9.2 V2 / V3 / V8, and the reviewer diffs the two.
+  Without it every key literal in `test_lucky_guessing.py`, `test_readplan.py`,
+  `test_fast_subset.py` would be hand-edited with nothing to review against.
 - RESIDUE = every word-boundary hit that no rule rewrote: prose words, unquoted keys in `.sh`
   loops (`for f in basic_readout multihop …`), markdown table cells (`| multihop |`), the
   `DIGEST_TASK_NOTES` block printed in `evals/typo/README.md` (lines of the form
@@ -1064,7 +1163,8 @@ before changing anything if any is unattributable. It refuses a set that has the
    (§5); `baselines/text_inversion.py`, `baselines/prompt_only_opus.py` (§5.7a);
    `baselines/logit_lens.py` (F7); `adapt/store.py`, `adapt/run.py`, `adapt/floors.py`,
    `adapt/mcstage.py`, `adapt/mhmt2.py`, `adapt/__main__.py` (§5.5); `atlas/build.py`,
-   `viewer_app/index.py` (§5.8). (The `frozen_name` sites F1, F2, F5, F6, F11-F15 and the
+   `atlas/normal_gated.py`, `viewer_app/index.py` (§5.8, §2.3); `scripts/lens_readouts_modal.py`
+   store rule and `produce/producer.py` resume guard (§5.9). (The `frozen_name` sites F1, F2, F5, F6, F11-F15 and the
    `repo_path` / `family_root` conversions are done BEFORE the rename, commit 2.)
 3. The f-string imports of §4 (4 in `src`, `adapt/run.py`'s walk, `tests/conftest.py`, 14 test
    files).
@@ -1127,7 +1227,7 @@ Must pass with NO value change, named because they pin the sites of §2.2:
 `tests/test_r4b_mc_banks.py`, `tests/test_r4_bridge_ml.py` (F11), the option goldens
 `multihop_mc_options{,_v5}.json` (F1), `tests/test_capable*.py` against
 `tests/golden/capable_questions.json` (F5), `tests/test_adapt_onecue.py` (F13),
-`tests/test_lens_readouts_store.py` (F14), `tests/test_common_confusers_r5.py`,
+`tests/test_lens_readouts_store.py` (F14; its store fixtures keep their `row_sha` values), `tests/test_common_confusers_r5.py`,
 `tests/test_mc_builders_bank.py`, `tests/test_refill_mh2.py`, `tests/test_adapt_rebuild.py`,
 `tests/test_adapt_phase2_fixes.py` (F15).
 
@@ -1219,15 +1319,31 @@ changes.
   with pre-0101 names finds both members.
 - T15 the migration script (unit tests on a synthetic mini-tree, no real data): `apply`
   refuses a tree with `src/wsbench/evals/basic/`; the rewrite function raises on a file that
-  holds a `_st` key, an `evals/<category>/<family>` path or a `wsbench.evals.<category>.`
-  import; running the rules twice is impossible through the public entry points; a KEEP file
-  and every KEEP pattern (`"family": "multihop"`, `header["family"] == "typo"`) come out
-  byte-identical; `association` moves under `basic/` exactly once.
+  holds a post-migration mark as defined in §8.1 (a `_st` key; `evals/<category>/<family>` or
+  `wsbench.evals.<category>.<family>` with the family one of that category's new keys) and
+  does NOT raise on the pristine spellings `wsbench.evals.association.judge`,
+  `from wsbench.evals.association import prompts`, `evals/association/items_v5.json`; `apply`
+  passes its preconditions on a synthetic tree holding those; running the rules twice is impossible through the public entry points; a KEEP file
+  and every KEEP pattern (`"family": "multihop"`, `header["family"] == "typo"`,
+  `family.startswith("multilingual")`, `"multilingual-mt"`) come out byte-identical; the run
+  marker and sha record live under `.git/` and `git status` is clean after `check`; `association` moves under `basic/` exactly once.
 - T16 `frozen_name` sites (§2.2), direct unit pins beside the manifest:
   `r4_language_distractors("multilingual_st", "French")` equals the pre-0101
   `("multilingual", "French")` list, and likewise `("multilingual", <gold>)` vs the pre-0101
   `multilingual_mt`; `split.is_dev` of 20 ids per family; `mcjudge_bank.options_of` of 5
   items.
+
+- T17 spelling logic (§2.3): the `ast` scan and its allowlist;
+  `onecue._gold_forms("multilingual", item, role, block)` includes the item's `target` (as
+  `("multilingual_mt", …)` did before), and likewise for `multilingual_typo` /
+  `multilingual_multihop`.
+- T18 the lens store and resumable files (§5.9, F14, F16), on synthetic stores: `row_sha` of a
+  plan row of each renamed family equals the value recorded in the manifest; with a pre-0101
+  store, `multihop_st` resumes from `multihop.jsonl` with zero pending rows and `multihop` is
+  refused before any append; with a fresh store both write `<current key>.jsonl`; a store file
+  holding both members' ids is `RenamedKey`; the export refuses to overwrite the partner's
+  file; `Producer.run_family(family="multihop", out=<single-token file>)` raises before
+  opening it.
 
 `tests/test_family_paths.py` (TP): the three scans of §4, plus `registry._layout()` equals the
 §0.2 table as a literal, plus `family_module` / `family_root` / `repo_path` unit cases
@@ -1275,10 +1391,35 @@ reviewer regenerates it in a clean worktree of that commit
 git show <commit 1>:scripts/manifest_0101.py > /root/tmp/manifest_0101.py &&
 WSB_NO_NYT=1 WSB_NO_NOCOT=1 PYTHONPATH=src python /root/tmp/manifest_0101.py --out
 /root/tmp/manifest_pristine.json`) and requires `cmp` with the committed
-`tests/golden/manifest_0101_pre.json`. The script imports only public `wsbench` functions and
-takes its family list from the registry, so the SAME file runs before and after; after the
-rename it maps each family's key through `registry.frozen_name` when writing, and the output
-must be byte-identical (`--check`).
+`tests/golden/manifest_0101_pre.json`. The SAME file runs before and after, so it must import
+cleanly on pristine main and on the migrated tree:
+
+- its family list is `registry.FAMILIES` after `load_all()`; a family's data directory is
+  `registry.frozen_bank_path(f).parent` (exists at every commit; `family_root` does not exist
+  at commit 1);
+- `fz = getattr(registry, "frozen_name", lambda k: k)`: every family key it WRITES goes
+  through `fz` (identity on main and at commit 2, the pre-0101 key after the rename), so the
+  output is byte-identical by construction only if nothing moved;
+- it names its private imports, each guarded and each recorded in the output under
+  `"imports"` with the module file's path-independent role, so a missing one is an error, not
+  a silent omission: `wsbench.adapt.onecue` (`_order`, `_gold_forms`, `rows`),
+  `wsbench.adapt.author` (the prompt builder at 1506, the F6 rng), `wsbench.adapt.generate`,
+  `wsbench.capable.run`, `wsbench.split.is_dev`, `wsbench.digest` (the fingerprint at 1825),
+  `wsbench.baselines.lucky_guessing._rng`, `wsbench.baselines.text_inversion.qwen_seed`, and
+  from `scripts/` (loaded by file path with `importlib.util`): `lens_readouts_modal`
+  (`row_sha`, `_plan_rows`, `_job`; the module imports `modal` at top level, so the manifest
+  installs a stub `modal` module in `sys.modules` when the package is absent),
+  `r4b_mc_refine.draw`, `common_confusers_r5` (its gate-row builder);
+- coverage is explicit: for every family the output lists `n_calls` recorded per mode
+  (`native`, `summary`), and `--check` fails when a family outside the named exception list
+  has zero. Exceptions, each with its reason in the file: `nyt_connections` (no plan rows
+  under `WSB_NO_NYT=1`; the `tests/conftest.py` stub of `nyt.puzzles` is used instead, so it
+  does record calls and is NOT an exception unless the stub is unavailable outside pytest, in
+  which case it is listed), `jlens_concept_pr` (`summary`: native-only by
+  `digest.NATIVE_ONLY`), `model_specific_directed_modulation` (regex judge, no call in either
+  mode), the regex-scored families in `native` mode (`multilingual`, `typo`,
+  `multilingual_typo` after the rename: scorer `regex`, zero calls by design; their summary
+  mode records digest calls).
 
 Per family (all 32; the extra rows only where they apply), offline, no API call:
 
@@ -1298,7 +1439,9 @@ Per family (all 32; the extra rows only where they apply), offline, no API call:
 | language-distractor lists of 3 probe golds per family in `R4_LANG_POOLS`, and `r4b_balanced_language_distractors` over the registered bank's golds (F11) | |
 | sha256 of the authoring prompt per tier (F12) | `adapt.author` prompt builder |
 | `onecue._order` of 3 probe rows and their cache keys (F13) | |
-| `lens_readouts_modal._job` seed for a fixed fake pack (F14) | |
+| `lens_readouts_modal.row_sha` of 3 REAL plan rows per family (the first 3 of `_plan_rows(family, "qwen3.5-4b")`, the band of a subject the script knows), and the `_job` seed derived from those rows for a fixed arm name (F14). A fake pack would hide the family inside `row_sha` | |
+| `onecue._gold_forms` (the banned forms) of one probe item per family in `onecue.FAMILIES` (§2.3: catches a rewritten `startswith("multilingual")`) | |
+| the id prefix `family.split('_')[0]` per family (§2.3) | |
 | `r4b_mc_refine` cache key and `draw` result on a fixed toy list; `common_confusers_r5` gate-row keys of 3 items (F15) | |
 | lucky-guessing seeds and call keys of 3 probe items; `gate_sampling.seed`; `qwen_seed` | the `hash_name` sites |
 | `wsbench list` row (n items, judge, calls per arm) minus key, title | |
@@ -1400,6 +1543,10 @@ that. Nothing else in #510 changes.
 | a viewer shows an old `multihop/` directory as the multi-token family | the family comes from `read_results` / `dir_owner` (§5.8); T13 |
 | a pre-0101 `WSB_BANK_FILE_<BARE>` pin is ignored by the `_st` family or accepted header-less | `bank_pins` + positive header match (§3.3); T14 |
 | a new-layout path under the `association` category is "translated" by `repo_path` | rule order of §4; TP unit cases |
+| the lens producer's cell store misses for every stored cell, or new cells append to the partner's store file | `row_sha` over `frozen_name(family)`; reads by content, writes only to the current key and refused on the partner's file (§5.9); T18; real plan rows in the manifest |
+| `produce` appends to a pre-0101 readouts file of the partner | F16: `RenamedKey` before the file is opened |
+| a key literal used for its spelling is rewritten (`startswith("multilingual")`) | KEEP pattern; §2.3 table; manifest row; T17 |
+| `apply` refuses the pristine tree because the family `association` looks like a category | marks are (category, family-of-that-category) pairs (§8.1); T15 |
 | the script rewrites an English word or a bank value | context rules + reviewer-classified residue + untouched-bytes check (§8.4, §8.5) |
 | the `association` family / category collision (F8) | two-phase move; `_layout()` rejects a family in two categories; category packages export nothing |
 | fast files edited by mistake | sha pins in `test_fast_subset.py` unchanged and still asserted |
@@ -1416,9 +1563,9 @@ None. The six questions of revision 1 are decided (§0.4).
 | # | commit | contains | must be green |
 |---|---|---|---|
 | 1 | manifest | `scripts/manifest_0101.py` and `tests/golden/manifest_0101_pre.json`, generated on pristine 030dd09b; nothing else | the reviewer's regeneration in a clean worktree is byte-identical (§11.1); full pytest (unchanged code) |
-| 2 | code that is valid BEFORE any rename | `registry.frozen_name` with an EMPTY `FROZEN_KEY_NAMES` (identity) and its use at F1, F2, F5, F6, F11-F15; `registry.family_root` / `family_rel` / `family_module` / `family_packages` / `repo_path` / `resource_path` over a layout scan that accepts the flat tree (a family directly under `evals/` has category `""`), with EVERY call site converted (§4, incl. the f-string imports in `src` and `tests`, `readplan.families`, `logit_lens.py:146` -> `lookup_names`); `root_bank`, `bank_pins`, `attribute_rows`, `owner`, `dir_owner`, the generalised `Reused` record holding only today's `multihop_mt` entry, the new `stored_family` signature; era-aware loaders (`fast.KEY_ERA` total, `rekey_pre_0101` with an EMPTY `PRE_0101_KEYS`); §5.7a's `draw_verdicts(expect=)` and the all-unverified exit; TP scans 1 and 3 | full pytest and ruff; `manifest_0101.py --check` byte-identical (no key has changed, so no mapping is involved: this proves the refactor alone moves nothing); no file moved, no key renamed; `git diff -- tests/` shows no changed assertion value |
+| 2 | code that is valid BEFORE any rename | `registry.frozen_name` with an EMPTY `FROZEN_KEY_NAMES` (identity) and its use at F1, F2, F5, F6, F11-F15 (incl. `row_sha`, F14) and the F16 guard; `registry.family_root` / `family_rel` / `family_module` / `family_packages` / `repo_path` / `resource_path` over a layout scan that accepts the flat tree (a family directly under `evals/` has category `""`), with EVERY call site converted (§4, incl. the f-string imports in `src` and `tests`, `readplan.families`, `logit_lens.py:146` -> `lookup_names`); `root_bank`, `bank_pins`, `attribute_rows`, `owner`, `dir_owner`, the generalised `Reused` record holding only today's `multihop_mt` entry, the new `stored_family` signature; era-aware loaders (`fast.KEY_ERA` total, `rekey_pre_0101` with an EMPTY `PRE_0101_KEYS`); §5.7a's `draw_verdicts(expect=)` and the all-unverified exit; TP scans 1 and 3 | full pytest and ruff; `manifest_0101.py --check` byte-identical (no key has changed, so no mapping is involved: this proves the refactor alone moves nothing); no file moved, no key renamed; `git diff -- tests/` shows no changed assertion value |
 | 3 | the migration script | `scripts/migrate_0101.py`, its unit tests (T15), `scripts/migrate_0101_residue.txt` as classified by the fresh-eye reviewer from `plan`'s output; tag `pre-0101-migration` on this commit | full pytest; `migrate_0101.py plan` runs clean and its per-rule diffs and `tests-values.diff` are attached to the PR for review BEFORE commit 4 is made |
-| 4 | the mechanical migration | exactly the output of `migrate_0101.py apply` on commit 3: moves, rule rewrites, JSON keys, formatter hunks. Nothing hand-written | `migrate_0101.py check`; the reviewer's own `apply` on commit 3 reproduces this tree (`git diff --quiet`); KEEP files byte-identical. The test suite is NOT expected to pass here (the registry tables still describe the old keys); CI is not required green on this commit and the PR is not mergeable at it |
+| 4 | the mechanical migration | exactly the output of `migrate_0101.py apply` on commit 3: moves, rule rewrites, JSON keys, formatter hunks. Nothing hand-written. Reproducible because the formatter is `uv run ruff` at the version pinned in `uv.lock` (the script calls it that way and records `ruff --version` in the commit message) | `migrate_0101.py check`; the reviewer's own `apply` on commit 3 reproduces this tree (`git diff --quiet`); KEEP files byte-identical. The test suite is NOT expected to pass here (the registry tables still describe the old keys); CI is not required green on this commit and the PR is not mergeable at it |
 | 5 | hand edits and new tests | `registry.py` tables (`LEGACY_FAMILY_NAMES`, `HASH_FAMILY_NAMES`, `FROZEN_KEY_NAMES`, `PRE_0101_KEYS`, the four new `REUSED_FAMILY_KEYS` entries), `register`'s category check, the layout scan made two-level only, the eight family `__init__.py`, the remaining §5 guards (`reads.load` block, `readouts_path`, `family_dir` content rule, `cli._family` notice, adapt marker fence, floors, viewers), the KEEP files, `tests/test_rename_0101.py` (T1-T14, T16), TP scan 2, V1-V8 | full pytest and ruff; `manifest_0101.py --check` byte-identical under the key mapping; gates 5-9 of §11.2; `git diff <commit 4>..<commit 5> -- tests/` contains only KEEP-file edits, new tests and V1-V8 |
 | 6 | docs | `README.md`, `CLAUDE.md`, `AGENTS.md`, `NOTICE.md`, family README prose, `adapted/README.md`, `tests/golden/README.md`, `plans/README.md`, the three live docs, skills | `tests/test_readme.py`, `test_prompts_in_readme.py`, `test_adapt_skill_docs.py`, TP scan 3; full pytest; manifest check once more |
 
