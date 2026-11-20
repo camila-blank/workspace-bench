@@ -309,14 +309,14 @@ def test_adapt_set_build_and_refill_dry(tmp_path):
     steps = [x.split(":")[0] for x in r.stdout.splitlines() if x.startswith("STEP ")]
     assert steps[:2] == ["STEP native_langs", "STEP profile"] and "STEP wrong_intermediate" in steps
     assert "variant=system_one_word" in r.stdout and "pool=/p/a,/p/b" in r.stdout
-    r = _dry(tmp_path, M, "refill", DRY_SHORT='{"refill": ["multihop_mt"], '
-             '"max_waves": ["multihop_mt"], "final": []}')  # fmt: skip
-    assert "families=multihop_mt waves=40" in r.stdout and r.stdout.rstrip().endswith("REFILL DONE")
+    r = _dry(tmp_path, M, "refill", DRY_SHORT='{"refill": ["multihop"], '
+             '"max_waves": ["multihop"], "final": []}')  # fmt: skip
+    assert "families=multihop waves=40" in r.stdout and r.stdout.rstrip().endswith("REFILL DONE")
 
 
 def test_adapt_set_loop_dry_backfills_and_converges(tmp_path):
     r = _dry(tmp_path, M, "loop", "3", "5",
-             DRY_SHORT='{"refill": ["poetry", "user_modeling", "basic_readout"], '
+             DRY_SHORT='{"refill": ["poetry", "user_modeling", "basic_readout_st"], '
                        '"max_waves": [], "final": []}',
              DRY_LUCKY='{"both": ["association"], "blind_only": ["poetry"]}')  # fmt: skip
     out = r.stdout

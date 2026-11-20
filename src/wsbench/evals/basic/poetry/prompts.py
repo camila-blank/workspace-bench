@@ -40,7 +40,8 @@ PROMPT_VERSION = CALL_VERSION + "+noveto-a1"
 BANK_GATE_INSTRUMENT = MC_PROMPT_VERSION
 # the headline instrument the Opus-fails gate is re-verified under: the cached gate draws re-judged
 # (``scripts/poetry/opus_gate.py rejudge --record``, no new asks), recorded in
-# ``evals/basic/poetry/opus_gate_free.json`` beside the frozen bank. Recorded under the dominance veto,
+# ``evals/basic/poetry/opus_gate_free.json`` beside the frozen bank. Recorded under the dominance
+# veto,
 # which no gate draw reached (kinds: none 226, not_line_final 73, other_word 1 of 300), so the
 # record (0 of 100 items picked) stands under +noveto-a1
 OPUS_GATE_INSTRUMENT = CALL_VERSION

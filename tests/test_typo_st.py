@@ -1,4 +1,4 @@
-"""typo on the shared basic-family code."""
+"""typo_st on the shared basic-family code."""
 
 from pathlib import Path
 
@@ -50,7 +50,7 @@ def test_dry_run_on_the_toy_file(tmp_path, capsys, monkeypatch):
 
 def test_typo_is_superseded_by_typo_mt(real_families):
     """plan 0033 T1 (Camila 2026-10-30: "drop this from the macro, we don't need it, just keep
-    the hard version"): typo is out of the macro and out of every ``all`` default."""
+    the hard version"): typo_st is out of the macro and out of every ``all`` default."""
     from test_results import _res
 
     from wsbench.results import macro
@@ -59,6 +59,6 @@ def test_typo_is_superseded_by_typo_mt(real_families):
     assert registry.FAMILIES["typo"].superseded_by == ""  # the hard version stays
     m = macro([_res("typo_st", value=1.0), _res("typo", value=0.5)])
     assert m["families"] == ["typo"] and m["value"] == 0.5
-    assert {"family": "typo", "reason": "superseded", "by": "typo_mt"} in m["excluded"]
+    assert {"family": "typo_st", "reason": "superseded", "by": "typo"} in m["excluded"]
     assert registry.drop_superseded(["typo_st", "typo"]) == ["typo"]
     assert registry.FAMILIES["typo_st"].bank.name == "items.json"  # frozen bank untouched

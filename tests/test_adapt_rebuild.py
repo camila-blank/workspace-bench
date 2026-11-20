@@ -1,4 +1,4 @@
-"""Plan 0060 A2: the basic_readout v5 and basic_readout_mt v4 rebuilds and the ``adapt mc`` stage
+"""Plan 0060 A2: the basic_readout_st v5 and basic_readout v4 rebuilds and the ``adapt mc`` stage
 (fakes only: no GPU, Modal or API)."""
 
 import collections
@@ -37,7 +37,7 @@ def mdir(tmp_path, monkeypatch):
     return tmp_path
 
 
-# ---------------------------------------------------------------- basic_readout: gold slots
+# ---------------------------------------------------------------- basic_readout_st: gold slots
 
 
 def test_gold_slots_reproduce_the_registered_deal():
@@ -130,8 +130,8 @@ def test_subject_fields_marks_and_rekeys(mdir):
     pieces = ("queen", "king", "rook", "bishop", "knight", "pawn")
     flat = {"name": "brx", "subfamily": "implicit", "topic": "chess piece",
             "candidates": [{"option": o, "aliases": []} for o in pieces]}  # fmt: skip
-    cand = author._finish(author._br_v5(flat), author.BRIEFS["basic_readout_st"], "basic_readout_st",
-                          "demo", "t1", 0, "")  # fmt: skip
+    cand = author._finish(author._br_v5(flat), author.BRIEFS["basic_readout_st"],
+                          "basic_readout_st", "demo", "t1", 0, "")  # fmt: skip
     store.add_candidates("demo", "basic_readout_st", [cand])
     rec = {"legs": {"surface": {"own": "Rook"}}}
     gated = arun.restamp("basic_readout_st", copy.deepcopy(cand), rec)
@@ -176,7 +176,7 @@ def test_freeze_balances_the_shipped_set(mdir, monkeypatch):
     assert json.loads(BR_V5.read_text(encoding="utf-8"))["items"][0] == items[0]  # evals intact
 
 
-# ---------------------------------------------------------------- basic_readout v5 Brief + lint
+# ---------------------------------------------------------------- basic_readout_st v5 Brief + lint
 
 
 def test_br_v5_brief_builds_lint_clean_items():
@@ -224,7 +224,7 @@ def test_br_v5_flat_roundtrip_on_the_registered_bank():
             assert got["mc"]["aliases"] == it["mc"]["aliases"]
 
 
-# ---------------------------------------------------------------- basic_readout_mt v4 gate
+# ---------------------------------------------------------------- basic_readout v4 gate
 
 
 def _brmt_items() -> list[dict]:
@@ -352,11 +352,11 @@ def test_brmt_v4_brief_build_lint_and_overlays(mdir):
     other = {**copy.deepcopy(it), "name": "brh-au-y"}
     other.pop("exonyms")
     notes, files = rebuild.freeze_step("demo", "basic_readout", {}, [orig, it, other])
-    assert notes and set(files) == {"basic_readout_mt/exonyms.json",
-                                    "basic_readout_mt/hidden_rivals.json"}  # fmt: skip
-    ex = files["basic_readout_mt/exonyms.json"]["items"]
+    assert notes and set(files) == {"basic_readout/exonyms.json",
+                                    "basic_readout/hidden_rivals.json"}  # fmt: skip
+    ex = files["basic_readout/exonyms.json"]["items"]
     assert ex == {"brh-au-x": {"readout": {"ru": ["Кальбиты"]}}, "brh-au-y": {}}
-    assert files["basic_readout_mt/hidden_rivals.json"]["items"] == {"brh-au-x": {},
+    assert files["basic_readout/hidden_rivals.json"]["items"] == {"brh-au-x": {},
                                                                      "brh-au-y": {}}  # fmt: skip
     assert "exonyms" not in it and "hidden_rivals" not in orig
     assert rebuild.freeze_step("demo", "basic_readout", {}, [orig]) == ([], {})
@@ -599,8 +599,8 @@ def test_brmt_exonyms_follow_the_registered_rule():
              "name_forms": {"readout": {"en": ["Rustamid dynasty"]}},
              "mc": {"readout": {"gold": "Rustamid dynasty", "distractors": []}}}  # fmt: skip
     _notes, files = rebuild.freeze_step("demo", "basic_readout", {}, [it, other])
-    ex = files["basic_readout_mt/exonyms.json"]["items"]["brh-au-x"]
+    ex = files["basic_readout/exonyms.json"]["items"]["brh-au-x"]
     assert ex == {"readout": {"ru": ["Кальбиты"], "de": ["Kalbiden"], "fr": ["Zirides"]}}
-    assert files["basic_readout_mt/hidden_rivals.json"]["items"]["brh-au-x"] == {
+    assert files["basic_readout/hidden_rivals.json"]["items"]["brh-au-x"] == {
         "readout": ["Aghlabid dynasty"]
     }

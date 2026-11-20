@@ -1630,7 +1630,8 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="freeze: the bank file to write (an adapted subject's; default: the bank of record "
-        "evals/logical_processing/moral_rationale/items_v3.json, refused for a subject-keyed rekey.json)",
+        "evals/logical_processing/moral_rationale/items_v3.json, refused for a subject-keyed "
+        "rekey.json)",
     )
     a = ap.parse_args(argv)
     if a.step == "build":

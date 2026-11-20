@@ -216,7 +216,8 @@ def _p_rb_distractors(it, _h, _reg):
 
     if str(it.get("pair_id", "")) not in distractors_v3():
         return (
-            f"hazard: evals/anti_bag_of_features/role_bound_association/distractors_v3.json: no entry for pair_id "
+            "hazard: evals/anti_bag_of_features/role_bound_association/distractors_v3.json: no "
+            "entry for pair_id "
             f"{it.get('pair_id')!r}: build_block_v3 silently falls back to the leaking oa-v2 "
             "block (judge.py:270-272)"
         )
@@ -230,7 +231,8 @@ def _p_rb_roles(it, _h, _reg):
     miss = [r for r in (it.get("role_a"), it.get("role_b")) if r and not lex.has(str(r))]
     if miss:
         return (
-            f"hazard: evals/anti_bag_of_features/role_bound_association/roles_v1.json: roles {miss} not in the "
+            "hazard: evals/anti_bag_of_features/role_bound_association/roles_v1.json: roles "
+            f"{miss} not in the "
             "lexicon: role_ref accepts only the literal role, conflicting_role loses near-role "
             "terms (gate.py:40-69, 262-391); counted only in extras.n_roles_unlexiconed"
         )
@@ -244,7 +246,8 @@ def _p_rb_action(it, _h, _reg):
     table = acts.get("actions", acts) if isinstance(acts, dict) else {}
     if it.get("action") and str(it["action"]) not in table:
         return (
-            f"hazard: evals/anti_bag_of_features/role_bound_association/actions_v1.json: action {it['action']!r} "
+            "hazard: evals/anti_bag_of_features/role_bound_association/actions_v1.json: action "
+            f"{it['action']!r} "
             "not in the lexicon: only the literal word matches, no inflections / needs / preps "
             "(gate.py:413-447, 572-602)"
         )
@@ -302,7 +305,7 @@ def _p_dm_group(it, _h, _reg):
 
     if it.get("concept") and str(it["concept"]) not in _groups():
         return (
-            f"exit: evals/basic/directed_modulation/distractor_groups.json has no group for concept "
+            "exit: evals/basic/directed_modulation/distractor_groups.json has no group for concept "
             f"{it['concept']!r} (judge.py:69-77 ValueError)"
         )
     return None
@@ -386,13 +389,13 @@ def _p_brmt_exonyms(it, _h, registered):
     try:
         data, _added = registry.load_resource("basic_readout", "exonyms.json", ("items",))
     except SystemExit as e:  # the set's file redefines a registered entry: the judge exits too
-        return f"exit: the set's basic_readout_mt/exonyms.json cannot be merged: {e}"
+        return f"exit: the set's basic_readout/exonyms.json cannot be merged: {e}"
     if str(it.get("id") or it.get("name")) in (data.get("items") or {}):  # the judge's own key
         return None
     return (
         "hazard: evals/basic/basic_readout/exonyms.json is keyed by registered item id "
         "(multitoken.family.gate_name_forms): this adapted-only id is not listed in the set's "
-        "own basic_readout_mt/exonyms.json, so under WSB_BANK_ROOT the judge exits "
+        "own basic_readout/exonyms.json, so under WSB_BANK_ROOT the judge exits "
         "(multitoken.family._adapted_entry; an entry of {} = no exonyms) and without the root "
         "it gets no exonym forms (a stricter name gate)"
     )
@@ -590,7 +593,7 @@ def _native_langs(where: str = "banks.py:76-91") -> JudgeInput:
         SUBJECT,
         where,
         "absent = Qwen's ('en','zh'); per-subject measurement (plan 0060 A1.10); required "
-        "of an adapted bank (typo_mt's registered header has none)",
+        "of an adapted bank (typo's registered header has none)",
         adapted_only=True,
     )
 
@@ -1115,7 +1118,7 @@ _add(
                 SUBJECT,
                 _fam("basic_readout_st", "items_v5.json"),
             ),
-            _qwen_min_full(8, "basic_readout/__init__.py"),
+            _qwen_min_full(8, "basic_readout_st/__init__.py"),
             _GRID,
         ),
     )
@@ -1154,7 +1157,8 @@ _add(
                 SILENT,
                 BUILD,
                 "basic/mcjudge_bank.py:430-449",
-                "keyed by option value; a set's own WSB_BANK_ROOT/multihop_st/derived_forms.json adds "
+                "keyed by option value; a set's own WSB_BANK_ROOT/multihop_st/derived_forms.json "
+                "adds "
                 "forms for new values; a value in neither has no derived forms (name and aliases)",
             ),
             _rule(
@@ -1166,7 +1170,7 @@ _add(
                 probe=_p_multihop_element,
             ),
             _q("zh forms in mc.aliases", SUBJECT, _fam("multihop_st", "items_v3.json")),
-            _qwen_min_full(8, "multihop/__init__.py"),
+            _qwen_min_full(8, "multihop_st/__init__.py"),
             _GRID,
         ),
     )
@@ -1176,7 +1180,7 @@ _add(
     FamilyInputs(
         "typo_st",
         "basic/{family,judge}.py",
-        "superseded by typo_mt (not refilled)",
+        "superseded by typo (not refilled)",
         "dict",
         "name",
         (
@@ -1244,7 +1248,7 @@ _add(
                 "keyed by registered item id (REPO_ROOT) + the set's overlay items",
                 probe=_p_brmt_exonyms,
             ),
-            _qwen_min_full(8, "basic_readout_mt/__init__.py"),
+            _qwen_min_full(8, "basic_readout/__init__.py"),
             _GRID,
         ),
     )
@@ -1283,7 +1287,7 @@ _add(
                 "multitoken/prompts.py:194-200",
                 "stale for an adapted bank's option set",
             ),
-            _qwen_min_full(4, "multilingual/__init__.py"),
+            _qwen_min_full(4, "multilingual_st/__init__.py"),
             _GRID,
         ),
         "Adapted sets today are v1: they silently run the retired v1 scorer.",
@@ -1310,7 +1314,7 @@ _add(
                 "multitoken/languages.py:747-754",
                 probe=_p_mt_language_unit,
             ),
-            _qwen_min_full(16, "multilingual_mt/__init__.py"),
+            _qwen_min_full(16, "multilingual/__init__.py"),
             _GRID,
         ),
     )
@@ -1419,7 +1423,7 @@ _add(
                 _fam("typo", "items_v2.json header dropped.names"),
                 "no code rule: an arith item copied from v1 is scored like any other",
             ),
-            _qwen_min_full(1, "typo_mt/__init__.py"),
+            _qwen_min_full(1, "typo/__init__.py"),
             _GRID,
         ),
     )
@@ -1459,7 +1463,7 @@ _add(
                 HAZARD,
                 "adapt/run.py:373",
             ),
-            _qwen_min_full(15, "multihop_mt/__init__.py:19-21"),
+            _qwen_min_full(15, "multihop/__init__.py:19-21"),
             _GRID,
         ),
     )
@@ -2160,7 +2164,7 @@ SUBJECT_FIELDS: dict[str, tuple[str, ...]] = {
 overlays them on the registered item instead of copying them verbatim, plan 0060 A1.1). A
 superset of A1.1's named per-family list: it also holds the own-answer golds and the
 tokenizer-tied fields (``probe_token_lens``, ``read``, ``cell``, ``readout`` offsets) that the
-restamp step re-derives. basic_readout's ``mc`` is subject for its implicit items only (the
+restamp step re-derives. basic_readout_st's ``mc`` is subject for its implicit items only (the
 restamp rewrites it there); entity / processing items keep the registered block."""
 
 

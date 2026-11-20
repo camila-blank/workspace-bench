@@ -16,7 +16,7 @@ from wsbench.multitoken.regex import SCORER_VERSION
 HOUR, OCTO = "mlh-ar-hourglass", "mlh-ar-octopus"
 MH = "mh2-coeur-de-lion-brother-charter-q2"
 SUFFIX = "+digest-v5-task-extractive+sj-v10"
-# summ_lang was removed on 2026-11-01 (Camila): multilingual_mt's stamp no longer has "-lang"
+# summ_lang was removed on 2026-11-01 (Camila): multilingual's stamp no longer has "-lang"
 ML_SUFFIX = "+digest-v5-task-extractive+sj-v10"
 
 
@@ -25,7 +25,9 @@ def _pin_v1_banks(monkeypatch):
     """Plan 0033 §6: these tests stay on the frozen v1 banks; the v2 clones live in
     test_multilingual.py."""
     for name in ("multilingual", "multilingual_multihop", "multilingual_typo"):
-        monkeypatch.setenv(f"WSB_BANK_FILE_{name.upper()}", f"evals/{name}/items.json")
+        monkeypatch.setenv(
+            f"WSB_BANK_FILE_{name.upper()}", f"{registry.family_rel(name).as_posix()}/items.json"
+        )
 
 
 def _write(path, rows):
@@ -95,7 +97,7 @@ def test_token_file_digest_only_and_multiword_reachable_via_joined_line(tmp_path
     )
     fake = FakeLLM.install(monkeypatch, _no_judge)
     args = summary_args(path, tmp_path / "o", SCORER_VERSION, items=[MH])
-    args.extra["judge"] = "regex"  # multihop_mt is MC-scored since plan 0041; regex = opt-in
+    args.extra["judge"] = "regex"  # multihop is MC-scored since plan 0041; regex = opt-in
     r = MH2.run(args)
     assert fake.n("interp") == 0 and fake.n("digest") == 1 * 2  # no per-cell interp-v1 call
     assert r.config["source_kind"] == "tokens"
@@ -182,7 +184,7 @@ def _unpin(monkeypatch):
         monkeypatch.delenv(f"WSB_BANK_FILE_{name.upper()}", raising=False)
 
 
-V2_SUFFIX = "+" + V2_MT_TAG + ML_SUFFIX  # multilingual_mt: + the language leg
+V2_SUFFIX = "+" + V2_MT_TAG + ML_SUFFIX  # multilingual: + the language leg
 
 
 def test_regex_one_digest_per_item_and_relaxed_conjunction_v2(tmp_path, monkeypatch):

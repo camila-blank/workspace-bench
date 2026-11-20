@@ -1,5 +1,5 @@
-"""Plan 0075 follow-up: lint rejects a user_modeling gold alias in the user turn and a multihop
-item ``build_multihop_mc --bank`` cannot build, before the gate; the multihop brief names the
+"""Plan 0075 follow-up: lint rejects a user_modeling gold alias in the user turn and a multihop_st
+item ``build_multihop_mc --bank`` cannot build, before the gate; the multihop_st brief names the
 builder's own tables."""
 
 import copy

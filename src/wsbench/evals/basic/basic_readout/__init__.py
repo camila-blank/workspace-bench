@@ -1,4 +1,4 @@
-"""Basic readout (multi-token): a question whose answer is one multi-word name, read at every
+"""Basic readout: a question whose answer is one multi-word name, read at every
 position of the chat render; the MC judge with the name gate is the instrument (plan 0051)."""
 
 from wsbench.multitoken.family import mt_family
@@ -8,7 +8,7 @@ from wsbench.registry import family_rel, register
 SPEC = register(
     mt_family(
         "basic_readout",
-        "Basic readout (multi-token)",
+        "Basic readout",
         calls_per_arm="≈ 215 (summary: 90 digests + 124 MC)",
         scorer="mc",
         # bank v6 = v4 without the sarin item, with the leaking answer lists rebuilt and 8 items

@@ -247,8 +247,8 @@ def test_list_has_category_and_tier_columns(real_families, capsys):
     assert cell["multihop_st"] == "full" and cell["jlens_concept_pr"] == "full"
     assert cell["typo_st"] == "—"
     assert {f for f, c in cell.items() if c == "core"} == CORE
-    typo = next(ln for ln in rows if ln.startswith("typo "))
-    assert "basic (superseded by typo_mt)" in typo
+    typo = next(ln for ln in rows if ln.startswith("typo_st "))
+    assert "basic (superseded by typo)" in typo
 
 
 # ---------------------------------------------------------------- the core macro
@@ -360,7 +360,7 @@ def test_full_result_set_keeps_the_macro_and_adds_the_core_one(clean):
     results = sorted(core + rest, key=lambda r: r.family)
     m = macro(results)
     assert m == macro(results, None, None, None, None)
-    assert set(CORE) < set(m["families"]) and "typo" not in m["families"]
+    assert set(CORE) < set(m["families"]) and "typo_st" not in m["families"]
     cm = core_macro(results)
     assert cm["families"] == sorted(CORE) and cm["complete"] is True
     assert cm["value"] == pytest.approx(sum(r.value for r in core) / N)

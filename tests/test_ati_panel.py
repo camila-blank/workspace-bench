@@ -617,7 +617,7 @@ def test_regex_multi_unit_families_count_any_unit_for_the_gate(tmp_path):
         {"id": "c", "pass": None, "any_hit": False},  # a missing layer stays undecided
     ]
     # plan 0054 item 10: the multilingual families gate on content_hit instead
-    # (test_multilingual_gate_ignores_language_unit); typo_mt is out of ATI by design (plan 0033)
+    # (test_multilingual_gate_ignores_language_unit); typo is out of ATI by design (plan 0033)
     for fam in ("basic_readout",):
         p = tmp_path / fam / "results.json"
         p.parent.mkdir(parents=True)
@@ -699,7 +699,8 @@ def test_ati_exclude_all_covers_new_survivors(tmp_path, fams, monkeypatch):
 
 
 def test_multilingual_ati_exclusions_are_applied():
-    """Plan 0033 §4: the 6 multihop, 1 mt and 15 typo panel-v1 survivors, and the 21 multilingual
+    """Plan 0033 §4: the 6 multihop_st, 1 mt and 15 typo_st panel-v1 survivors, and the 21
+    multilingual_st
     ids the R1-ATI re-gate admitted, are all obvious from the prompt; each carries a reason.
     Since the 2026-10-31 re-gate (R1-ATI) the frozen entries
     apply the exclusions: no audited id is in a subset, and every id the gate dropped as

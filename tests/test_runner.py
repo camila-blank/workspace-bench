@@ -327,7 +327,7 @@ def test_keyboard_interrupt_writes_manifest_and_exits_130(offline, tmp_path, mon
 
 def test_mcrx_family_is_preflighted(offline, tmp_path):
     """Plan 0033 R7: scorer mc+regex leaves EvalSpec.scorer empty, so ``run`` preflights the judge
-    of multilingual / multilingual_multihop; the regex family (multilingual_mt) makes no call."""
+    of multilingual_st / multilingual_multihop; the regex family (multilingual) makes no call."""
     import dataclasses
 
     for name in ("multilingual_st", "multilingual"):

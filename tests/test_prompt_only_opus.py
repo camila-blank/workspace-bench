@@ -197,7 +197,7 @@ def test_excluded_is_only_jlens_concept_pr():
 def test_build_asks_only_the_judged_banks_ids(real_families):
     """A bank that reads with an earlier bank's plan (``read_plan_bank``) is asked on its own ids
     only: association v5 keeps v3's 93-row plan but judges 91 items. The registered multihop bank
-    v5 and basic_readout_mt bank v7 plan their own rows, so every plan id is judged."""
+    v5 and basic_readout bank v7 plan their own rows, so every plan id is judged."""
     from wsbench import readplan
     from wsbench.baselines import text_inversion as ti
 

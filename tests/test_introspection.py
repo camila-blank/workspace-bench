@@ -785,7 +785,7 @@ def test_shipped_vectors_match_bank_fingerprints():
     import numpy as np
 
     bank = judge.load()
-    arr = np.load(REPO / bank["vectors"]["concept"]["path"])
+    arr = np.load(registry.repo_path(bank["vectors"]["concept"]["path"]))
     assert arr.dtype == np.float32 and arr.shape == (125, 5120)
     for c, row in zip(bank["concepts"], arr, strict=True):
         fp = hashlib.sha256(json.dumps([round(x, 3) for x in row.tolist()]).encode()).hexdigest()
@@ -801,7 +801,7 @@ def test_vector_files_sha256_match_bank():
     bank = judge.load()
     for key, n in (("concept", 125), ("gaussian", 500)):
         v = bank["vectors"][key]
-        p = REPO / v["path"]
+        p = registry.repo_path(v["path"])  # the bank keeps the pre-0101 layout string
         assert hashlib.sha256(p.read_bytes()).hexdigest() == v["sha256"], key
         assert v["dtype"] == "float32" and v["shape"] == [n, 5120]
         assert np.load(p).shape == (n, 5120)
@@ -811,7 +811,7 @@ def test_gaussian_vectors_unit_norm_after_normalisation():
     import numpy as np
 
     bank = judge.load()
-    g = np.load(REPO / bank["vectors"]["gaussian"]["path"])
+    g = np.load(registry.repo_path(bank["vectors"]["gaussian"]["path"]))
     norms = np.linalg.norm(g, axis=1)
     assert np.all(norms > 50) and np.all(norms < 90)  # raw randn(5120): ~sqrt(5120) = 71.6
     unit = g / norms[:, None]
@@ -824,7 +824,7 @@ def test_gaussian_vectors_match_seed_recipe():
     import numpy as np
 
     bank = judge.load()
-    g = np.load(REPO / bank["vectors"]["gaussian"]["path"])
+    g = np.load(registry.repo_path(bank["vectors"]["gaussian"]["path"]))
     gauss = [it for it in bank["items"] if it["kind"] == "gaussian"]
     for it in gauss[:: len(gauss) // 10] + gauss[-1:]:
         gen = torch.Generator().manual_seed(int(it["vector"]["seed"]))

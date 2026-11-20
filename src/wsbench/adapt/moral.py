@@ -940,7 +940,8 @@ def options(
 
     if is_registered(model):
         raise SystemExit(
-            "moral options: the 27B's options are evals/logical_processing/moral_rationale/items_v3.json"
+            "moral options: the 27B's options are "
+            "evals/logical_processing/moral_rationale/items_v3.json"
         )
     d = Path(out)
     if not (d / "rekey.json").exists():

@@ -40,7 +40,7 @@ FAMILY_DESC = {
     "typo_st": "A misspelled word; the lens should read the corrected word.",
     "directed_modulation": "The model is told to think (or not think) about a word while writing something else.",
     "multilingual": "Multi-token concept described in another language.",
-    "typo": "Typo'd multi-token word (the hard typo family; typo is superseded by it).",
+    "typo": "Typo'd multi-token word (the hard typo family; typo_st is superseded by it).",
     "basic_readout": "Multi-token answer (an entity) read before it is written.",
     "multilingual_multihop": "Two-hop question asked in another language.",
     "multilingual_typo": "Typo'd word inside a non-English prompt.",
@@ -573,11 +573,13 @@ def techniques_for(model: str) -> list[dict]:
             root = AGAM / "olens_ckpts" / cdir / "wsb" / tag
             fams = {}
             for jd in sorted((root / "judged_opus").glob("*")):
-                fam = jd.name[:-5] if jd.name.endswith("_opus") else jd.name
+                fam = _dir_family(jd)
+                if fam is None:  # a pre-0101 bare-key directory that cannot be attributed
+                    continue
                 e = {
                     "results": jd / "results.json" if (jd / "results.json").exists() else None,
                     "cells": jd / "cells.jsonl",
-                    "readouts": root / "readouts" / f"{fam}.jsonl",
+                    "readouts": _readouts(root / "readouts", fam),
                     "field": None,
                 }
                 nd = NG / sk / "judged" / tag / fam
@@ -623,11 +625,13 @@ def techniques_for(model: str) -> list[dict]:
         root = AGAM / "olens_ckpts" / cdir / "wsb" / tag
         fams = {}
         for jd in sorted((root / "judged_opus").glob("*")):
-            fam = jd.name[:-5] if jd.name.endswith("_opus") else jd.name
+            fam = _dir_family(jd)
+            if fam is None:
+                continue
             fams[fam] = {
                 "results": jd / "results.json" if (jd / "results.json").exists() else None,
                 "cells": jd / "cells.jsonl",
-                "readouts": root / "readouts" / f"{fam}.jsonl",
+                "readouts": _readouts(root / "readouts", fam),
                 "field": None,
             }
         techs.append(
@@ -641,6 +645,23 @@ def techniques_for(model: str) -> list[dict]:
             }
         )
     return techs
+
+
+def _readouts(rdir: Path, fam: str) -> Path:
+    """The family's readouts file of a run tree, also under a pre-0101 name (content-checked)."""
+    from wsbench.runner import readouts_path
+
+    return readouts_path(rdir, fam) or rdir / f"{fam}.jsonl"
+
+
+def _dir_family(jd: Path) -> str | None:
+    """The current family of a judged directory ``<key>[_opus]`` of a run tree (plan 0101: an
+    old tree's ``multihop/`` is the single-token family; by content, ``registry.dir_family``)."""
+    name = jd.name[:-5] if jd.name.endswith("_opus") else jd.name
+    fam = registry.dir_family(jd, name)
+    if fam is None:
+        print(f"skipped {jd}: a pre-0101 family key whose content does not say whose it is")
+    return fam
 
 
 def bank_items(model: str, fam: str) -> tuple[list[dict], dict]:
@@ -847,7 +868,7 @@ def main() -> None:
             "bank": (
                 "evals/ (frozen 27B banks)"
                 if model == "qwen3.6-27b"
-                else "evals/ 27B bank, gated on the subject; own golds for poetry / basic_readout / moral"
+                else "evals/ 27B bank, gated on the subject; own golds for poetry / basic_readout_st / moral"
                 if model in NORMAL_GATED
                 else f"adapted/{model}/"
             ),

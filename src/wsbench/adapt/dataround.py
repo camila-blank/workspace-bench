@@ -229,7 +229,7 @@ CAPITAL_FAMILIES = (
     "multilingual_typo", "multilingual_multihop", "relational_multihop",
     "conjunctive_association", "chain_intermediates",
 )  # fmt: skip
-# D5 keeps the two figurative typo_mt rows (plan 0075 "Data round rules")
+# D5 keeps the two figurative typo rows (plan 0075 "Data round rules")
 CAPITAL_KEEP = frozenset({"tyh-real-gastronomy", "typo-au-t1-w100c0-tyh-novel-decentralization"})
 CAPITAL = re.compile(
     r"\bcapital\b(?!\s+(?:letters?|[A-Z]\b|crimes?|offen[cs]es?|punishment|gains?|invest\w*|"

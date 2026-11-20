@@ -1,5 +1,5 @@
 """Stamp the tokenizer-dependent fields of a bank for one tokenizer: `probe_token_lens` (the six
-multi-token families) and multihop `readout.offsets`.
+multi-token families) and multihop_st `readout.offsets`.
 
     uv run --with transformers --with jinja2 python \\
         .claude/skills/wsb-new-questions/scripts/restamp.py \\

@@ -1,5 +1,5 @@
 """A candidate ``adapt mc`` dropped (no options built) is rejected by lint before the gate, in
-every MC family, including multihop and basic_readout_mt whose required keys omit ``mc``."""
+every MC family, including multihop_st and basic_readout whose required keys omit ``mc``."""
 
 import pytest
 

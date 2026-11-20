@@ -1,4 +1,5 @@
-"""Build evals/model_specific/model_multihop/items.json from global-workspace's frozen_v2.json (plan 0076).
+"""Build evals/model_specific/model_multihop/items.json from global-workspace's frozen_v2.json
+(plan 0076).
 
     python scripts/build_model_multihop_bank.py \
         --frozen <gw>/evals/model_multihop/frozen_v2.json [--check-decode]

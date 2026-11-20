@@ -24,7 +24,7 @@ TOOL = re.compile(
 # §2.8.1 assigns to it (directed_modulation, user_modeling, buggy_code, introspection,
 # unverbalized_hint; medical_diagnosis{,_alt}, since removed by plan 0058).
 PENDING_FAMILY_PR: dict[str, str] = {
-    # the multi-token families left the list with plan 0051 (basic_readout_mt.md: the shared
+    # the multi-token families left the list with plan 0051 (basic_readout.md: the shared
     # multitoken SYSTEM opening is tool-free, BRMT_SYSTEM is built on mc.READOUT_PHRASE)
 }
 

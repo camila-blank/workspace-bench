@@ -466,7 +466,7 @@ def test_note_mark_survives_the_waves_own_note_and_a_noop_resume(mdir, monkeypat
 
 
 def test_change_text_says_the_mh2_tally_is_the_easiest_level_only():
-    """T1 (#289): multihop_mt tallies 2-hop candidates only while 3-hop items ship too."""
+    """T1 (#289): multihop tallies 2-hop candidates only while 3-hop items ship too."""
     block = {"route": "mhmt2.refill_wave", "unit": "items", "target": 100, "have": 58,
              "tried": 900, "landed": 46, "yield": 46 / 900, "stop": "pool exhausted"}  # fmt: skip
     assert block["route"] == rf.MH2_ROUTE
@@ -541,7 +541,7 @@ def test_refill_driver_writes_the_block_and_stops_ooc(mdir, monkeypatch):
 
 
 def test_refill_driver_no_ooc_while_a_harder_level_is_untried(mdir, monkeypatch):
-    """multihop_mt: a 2-hop tally under y_min is not ooc while 3-hop pool candidates remain
+    """multihop: a 2-hop tally under y_min is not ooc while 3-hop pool candidates remain
     ungated (``mhmt2.untried_levels``); once none remain, the plan's ooc rule applies."""
     from wsbench.adapt import mhmt2
 

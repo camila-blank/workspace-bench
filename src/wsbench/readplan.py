@@ -28,7 +28,7 @@ SIX = [20, 28, 36, 44, 52, 60]  # the association families' former coarser grid
 FIVE = [20, 36, 44, 52, 60]  # the former five in-house layers (old jailbreak and removed arms)
 N_MODEL_LAYERS = 64  # Qwen3.6-27B, the frozen banks' subject
 LAYERS_ENV = "WSB_LAYERS"  # `all` or a csv: plan()'s layers when its argument is None (producer)
-ANSWER_STEM = "My one-word answer is:"  # basic_readout implicit items: prefilled assistant turn
+ANSWER_STEM = "My one-word answer is:"  # basic_readout_st implicit items: prefilled assistant turn
 SUMMARIZE_SUFFIX = "\n\nSummarize the preceding story in one sentence."
 
 RENDERS: dict[str, str] = {
@@ -422,8 +422,8 @@ def _token_at_char(tokens: list[str], start: int, end: int, k: int) -> int:
 
 
 def first_diff(typo: str, target: str) -> int:
-    """Index of the first character where ``typo`` differs from ``target`` (case-insensitive);
-    ``len(typo) - 1`` when ``typo`` is a prefix of ``target`` or equal to it."""
+    """Index of the first character where ``typo_st`` differs from ``target`` (case-insensitive);
+    ``len(typo_st) - 1`` when ``typo_st`` is a prefix of ``target`` or equal to it."""
     a, b = typo.lower(), target.lower()
     k = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), min(len(a), len(b)))
     return min(k, len(a) - 1)
@@ -527,9 +527,9 @@ def _final_token_families_items(
         item_lite = lite
         spec = it.get("readout") or {}
         if spec.get("kind") == "question_through_end":
-            # plan 0053 (basic_readout v2): every token from the first token of the user question
+            # plan 0053 (basic_readout_st v2): every token from the first token of the user question
             # through the prefilled answer stem; lite = the bank's lite rule (the stem's ":"),
-            # except for LITE_SAME_FAMILIES (basic_readout, plan 0061: the same positions)
+            # except for LITE_SAME_FAMILIES (basic_readout_st, plan 0061: the same positions)
             out.append(
                 ReadSpec(
                     family,
@@ -554,7 +554,9 @@ def _final_token_families_items(
             rule = {"kind": "all"}
             item_lite = dict(SAME) if same else dict(spec.get("lite") or FINAL)
         r = it.get("eval_render") or render
-        if r == "chat":  # basic_readout's implicit items: the model's own favourite after the stem
+        if (
+            r == "chat"
+        ):  # basic_readout_st's implicit items: the model's own favourite after the stem
             out.append(
                 ReadSpec(
                     family,
@@ -589,7 +591,7 @@ def _multihop_st() -> list[ReadSpec]:
         offsets = (it.get("readout") or {}).get("offsets") or [-1]
         k = -int(offsets[0])
         if k < 1:
-            raise ValueError(f"multihop/{it['id']}: readout.offsets {offsets} must be negative")
+            raise ValueError(f"multihop_st/{it['id']}: readout.offsets {offsets} must be negative")
         out.append(
             ReadSpec(
                 "multihop_st",

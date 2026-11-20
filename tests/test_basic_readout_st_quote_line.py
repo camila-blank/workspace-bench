@@ -1,5 +1,5 @@
 # ruff: noqa: RUF001
-"""basic_readout's quote rule (``+qline-v2``): the quote verifies by ``digest.quote_ok``
+"""basic_readout_st's quote rule (``+qline-v2``): the quote verifies by ``digest.quote_ok``
 (markdown-insensitive), else near-verbatim (``nearquote.close_lines``), and names the pick read in
 the line it came from: through the line only when the quote was cut mid-name, where the line
 continues it into the pick or the sample ends inside a name only the pick's forms start with.

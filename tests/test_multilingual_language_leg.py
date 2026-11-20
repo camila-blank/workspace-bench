@@ -40,7 +40,7 @@ def _spec(name: str):
 
 @pytest.fixture(autouse=True)
 def _austria_bank(monkeypatch):
-    monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + "MULTILINGUAL", V4)
+    monkeypatch.setenv(registry.BANK_FILE_ENV_PREFIX + "MULTILINGUAL_ST", V4)
 
 
 def _unit(family: str, item: str) -> regex.ScoredUnit:

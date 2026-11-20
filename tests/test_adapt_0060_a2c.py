@@ -1,6 +1,6 @@
 """Plan 0060 A2 per-family items: chain v2 (gate legs, regate=all, generator rule, freeze mc),
 buggy twin pairing, the jailbreak control re-screen, agentic clean twins (D5), and the
-multilingual native_langs measurement + upgrade. Offline: every runner, labeller and judge is a
+multilingual_st native_langs measurement + upgrade. Offline: every runner, labeller and judge is a
 fake; nothing touches a GPU, Modal or an API."""
 
 import copy
@@ -568,7 +568,7 @@ def test_rebuild_drops_when_l2_turns_native_or_forms_are_missing():
         rebuild("multilingual_st", zh, ["en"], ["en", "zh"], _CharTok())
     with pytest.raises(DropError, match="'ja'"):  # a new native code: no authored forms
         rebuild("multilingual_st", de, ["en", "ja"], ["en", "zh"], _CharTok())
-    # typo_mt's correction is English by design: a new native code is not required there
+    # typo's correction is English by design: a new native code is not required there
     typo = _reg("typo")
     assert rebuild("typo", typo, ["en", "ja"], ["en", "zh"], _CharTok())
 

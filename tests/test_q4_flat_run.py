@@ -2,7 +2,7 @@
 of its members, whatever their rank, even when only one of them is an option. The shared token
 note, the multitoken MC rules and the association / role_bound prompts say so (no lone-option
 credit for "a line that holds other words of the same kind"), and the multitoken name-gate
-families (basic_readout_mt, multihop_mt) and association hold it in code for token lines."""
+families (basic_readout, multihop) and association hold it in code for token lines."""
 
 import json
 import re
@@ -245,7 +245,7 @@ def test_flat_run_gets_no_credit_end_to_end(
 
 
 def test_lite_rule_that_keeps_nothing_fails_loudly(tmp_path):
-    """The multihop toy file holds only pos 14 (the lite site itself, positive index, no
+    """The multihop_st toy file holds only pos 14 (the lite site itself, positive index, no
     sidecar): ``offset_from_end`` k=2 over that one position kept nothing, and the run judged
     zero cells as n plain negatives. Now it exits 2 naming the fix."""
     import subprocess

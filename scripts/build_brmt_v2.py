@@ -620,7 +620,7 @@ def stage_qwen(work: Path, tag: str, only: list[str], max_tokens: int) -> None:
         rows.append(
             {
                 "key": f"{i}|{hashlib.sha1(d['question'].encode()).hexdigest()[:10]}",
-                "family": "basic_readout_mt",
+                "family": "basic_readout",
                 "text": d["question"],
                 "enable_thinking": False,
                 "greedy": True,

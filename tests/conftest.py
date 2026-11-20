@@ -60,6 +60,14 @@ def _default_routes():
 
 
 @pytest.fixture(autouse=True)
+def _no_swap_notice(monkeypatch):
+    """Plan 0101: typing one of the four swapped bare keys prints one line on stderr (until the
+    next version tag). Tests that read stderr run without it; the notice's own test turns it on."""
+    monkeypatch.setenv(registry.NO_NOTICE_ENV, "1")
+    registry._NOTICED.clear()
+
+
+@pytest.fixture(autouse=True)
 def _run_in_threads(monkeypatch):
     """Plan 0092 §5: ``wsbench run`` judges one process per family by default; tests call
     ``main(["run", ...])`` against families registered or patched in this process, so they run

@@ -41,7 +41,7 @@ def _golds(item: dict) -> list[str]:
 
 def _bridge_asks(item: dict) -> list[Ask]:
     """The scored latent of the bridge families is the bridge: each bridge question is its own leg.
-    Single-token multihop carries ``bridge_question`` (new items) instead of ``bridges``."""
+    Single-token multihop_st carries ``bridge_question`` (new items) instead of ``bridges``."""
     out = []
     for n, br in enumerate(item.get("bridges") or [], start=1):
         answers = [str(a) for a in br.get("answers") or [] if str(a)]
@@ -68,7 +68,7 @@ def _skipped_bridges() -> frozenset[str]:
 
 @functools.cache
 def _original_bridges() -> dict[str, dict]:
-    """Bridge questions for the frozen multihop bank's originals (it never gated the bridge),
+    """Bridge questions for the frozen multihop_st bank's originals (it never gated the bridge),
     authored once and model-independent: ``data/multihop_bridges.json``."""
     path = Path(__file__).parent / "data" / "multihop_bridges.json"
     if not path.exists():
@@ -153,7 +153,7 @@ def _basic_readout_st(item: dict) -> list[Ask]:
                 prefill=OWN_STEM, max_tokens=8)]  # fmt: skip
 
 
-# basic_readout_mt v4's own gate (the bank header's ``gate``; ``scripts/build_brmt_v2.py``
+# basic_readout v4's own gate (the bank header's ``gate``; ``scripts/build_brmt_v2.py``
 # ``QWEN_GATE``): answers were cut at 300 tokens there, and graded over the whole answer
 BRMT_MAX_TOKENS = 300
 
@@ -169,7 +169,7 @@ def _name_forms(item: dict, role: str = "readout") -> list[str]:
 
 
 def _basic_readout(item: dict) -> list[Ask]:
-    """basic_readout_mt v4 (plan 0060 A2): the bank's gate exactly: the QUESTION in chat, no
+    """basic_readout v4 (plan 0060 A2): the bank's gate exactly: the QUESTION in chat, no
     system turn, no answer stem and no plain leg, graded by ``name_forms`` (any language,
     ``mc.form_in``) over the whole answer; sampled at the family's T / top_p / top_k."""
     msgs = ({"role": "user", "content": item["prompt"]},)
@@ -466,7 +466,7 @@ def get(name: str) -> Family:
 # --- plan 0060 A1.1: what freeze ships ----------------------------------------------------------
 # Subject-derived item fields ``freeze`` overlays on an original built from the REGISTERED item
 # (``run.build_original``). They are never shipped from the registered item (it holds Qwen's), so
-# freeze refuses a family whose passing originals lack them. Native units of the multilingual
+# freeze refuses a family whose passing originals lack them. Native units of the multilingual_st
 # families are handled by ``native_langs`` (A1.10), not here.
 # The step that builds them on the subject (A2: moral adopt, the poetry steps) sets
 # ``item[SUBJECT_MARKER] = <model key>``; freeze requires it.
@@ -502,7 +502,7 @@ SUBJECT_FIELDS: dict[str, tuple[str, ...]] = {
         "prompt_only_opus",
         "gate_variant",
     ),
-    # basic_readout v5 (A2): an implicit item's options are re-keyed on the subject's own answer
+    # basic_readout_st v5 (A2): an implicit item's options are re-keyed on the subject's own answer
     # (``rebuild.subject_mc``; a distractor never equals it); entity / processing originals are
     # marked with the registered block unchanged. ``gold_position`` is rebuilt at freeze.
     "basic_readout_st": ("mc",),

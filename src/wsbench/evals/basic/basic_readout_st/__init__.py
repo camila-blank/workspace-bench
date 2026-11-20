@@ -1,4 +1,5 @@
-"""Basic readout: one-word questions (facts, simple computations, the model's own favourites),
+"""Basic readout (single-token): one-word questions (facts, simple computations, the model's own
+favourites),
 judged by the blind forced-choice bank judge (plan 0053; ``basic/mcjudge_basic.py``)."""
 
 from wsbench.basic.family import bank_family
@@ -26,7 +27,7 @@ FLAT_TYPES = ("numbers", "days of the week", "months", "candidate answers of the
 SPEC = register(
     bank_family(
         "basic_readout_st",
-        "Basic readout",
+        "Basic readout (single-token)",
         bank=BANK,
         # C4: one contiguous run of >= 8 positions (the question through the prefill) per cell
         min_full_positions=8,

@@ -339,7 +339,7 @@ def test_collapse_rejects_dropped_cells(tmp_path):
 
 def test_produce_lite_then_judge_lite_keeps_the_lite_site(tmp_path):
     """A file the producer wrote reads=lite (only the lite site) judges reads=lite unchanged:
-    the lite rule is not idempotent (multihop's offset_from_end k=2 over its own single output
+    the lite rule is not idempotent (multihop_st's offset_from_end k=2 over its own single output
     keeps nothing), so it is never re-applied to a declared-lite file (review of PR #140)."""
     fam = "multihop_st"
     sp = reads.specs(fam)
@@ -389,7 +389,7 @@ def test_lite_is_full_refuses_a_superseded_lite_file(tmp_path, capsys):
 
 
 def test_lite_without_same_rule_has_no_span_check(tmp_path):
-    """A family whose lite rule is a single site (multihop's offset_from_end) keeps today's lite
+    """A family whose lite rule is a single site (multihop_st's offset_from_end) keeps today's lite
     behaviour: a gapped file is judged at its lite site, nothing partial."""
     sp = reads.specs("multihop_st")
     iid = next(i for i, s in sp.items() if s.lite_positions.get("k") == 1)

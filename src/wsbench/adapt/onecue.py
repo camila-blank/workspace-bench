@@ -575,7 +575,7 @@ def repair(
 
 
 def new_block(family: str, item: dict[str, Any], role: str, rep: Repair) -> dict[str, Any]:
-    """The item's whole ``mc`` block with ``role``'s distractors replaced (multihop: and its
+    """The item's whole ``mc`` block with ``role``'s distractors replaced (multihop_st: and its
     ``distractor_aliases``, new options' forms added, replaced options' entries removed)."""
     block = copy.deepcopy(item.get("mc") or {})
     if family == "multihop_st":

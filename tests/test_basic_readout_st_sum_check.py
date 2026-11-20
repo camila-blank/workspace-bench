@@ -1,4 +1,4 @@
-"""basic_readout's asked-sum check (``+brsum-v2``): an arithmetic pick's quoted sentence must not
+"""basic_readout_st's asked-sum check (``+brsum-v2``): an arithmetic pick's quoted sentence must not
 compute only OTHER sums with the same result. Pure verification: a sentence stating no
 computation, or the asked one among others, passes. Both directions on cached readout shapes."""
 

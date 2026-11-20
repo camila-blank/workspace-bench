@@ -1,4 +1,4 @@
-"""typo_mt (plan 0033): the v2 bank (arith items dropped), the read site (every token of the
+"""typo (plan 0033): the v2 bank (arith items dropped), the read site (every token of the
 misspelled word; lite = its final token), split-word pooling within a layer, the reads guards,
 and the option sets of the optional MC judge (``opts=judge=mc``). The regex contract itself is
 tested in ``test_mt_regex.py``."""

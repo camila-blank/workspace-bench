@@ -336,16 +336,27 @@ def test_dynamic_paths_lists_what_no_rule_can_see():
 
 
 def test_tables_agree_with_the_registry_and_the_plan():
+    """The script's literal tables are the registry's (it ran once; the tree is migrated)."""
     from wsbench import registry
 
     assert set(mig.CATEGORY.values()) == set(registry.CATEGORIES)
-    assert set(mig.OLD_DIR) == set(registry._layout()) and len(mig.CATEGORY) == 32
+    assert registry._layout() == mig.CATEGORY and len(mig.CATEGORY) == 32
+    assert registry.PRE_0101_KEYS == mig.KEYS
     registry.load_all()
-    old_of = {new: old for old, new in mig.OLD_DIR.items()}
     for new, category in mig.CATEGORY.items():
-        assert registry.FAMILIES[old_of[new]].group == category, new
+        assert registry.FAMILIES[new].group == category, new
+    # the directory each family had before the move is its frozen (pre-0101) key
+    assert {registry.frozen_name(new): new for new in mig.CATEGORY} == mig.OLD_DIR
     assert mig.KEYS["multihop_mt_v2"] == mig.KEYS["multihop_mt"] == "multihop"
-    assert all(old in mig.KEYS or old == new for old, new in mig.OLD_DIR.items())
+    for header, family in mig.HEADER.items():
+        r = registry.REUSED_FAMILY_KEYS[registry.shared_key(family)]
+        assert header == (r.live_header if family == r.live else r.other_header)
+    for old, prefixes in mig.STAMPS.items():  # the stamp table is the registry's, per old key
+        if old == "multihop_mt_v2":
+            continue
+        new = mig.KEYS[old]
+        r = registry.REUSED_FAMILY_KEYS[registry.shared_key(new)]
+        assert prefixes == (r.live_stamps if new == r.live else r.other_stamps), old
 
 
 def test_apply_moves_rewrites_and_checks(tree):

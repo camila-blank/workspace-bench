@@ -671,7 +671,7 @@ def test_grid_table_rule_leaves_every_other_band_unchanged():
 
 
 def test_v4flash_is_built_to_plan_0075_targets():
-    """A set built fresh after plan 0075 gets its targets (association 100, basic_readout_mt 120)
+    """A set built fresh after plan 0075 gets its targets (association 100, basic_readout 120)
     and its strict-freeze / capital re-check, as the ten 0075 sets do."""
     from wsbench.adapt import refill
 

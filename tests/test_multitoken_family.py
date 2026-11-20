@@ -33,7 +33,7 @@ MT = [
 ]
 OPTS = ["alpha", "beta", "gamma", "delta", "epsilon", CANNOT]
 # opts=judge=mc is an unpinned diagnostic only where the regex contract is the scorer of record
-# (basic_readout_mt's MC judge IS its instrument since plan 0051; tests/test_basic_readout_mt.py)
+# (basic_readout's MC judge IS its instrument since plan 0051; tests/test_basic_readout_mt.py)
 MC_DIAGNOSTIC = [n for n in MT if n != "basic_readout"]
 
 
@@ -41,7 +41,9 @@ MC_DIAGNOSTIC = [n for n in MT if n != "basic_readout"]
 def _pin_v1_banks(monkeypatch):
     """Plan 0033 §6: this file stays on the frozen v1 banks of the multilingual families."""
     for name in ("multilingual", "multilingual_multihop", "multilingual_typo"):
-        monkeypatch.setenv(f"WSB_BANK_FILE_{name.upper()}", f"evals/{name}/items.json")
+        monkeypatch.setenv(
+            f"WSB_BANK_FILE_{name.upper()}", f"{registry.family_rel(name).as_posix()}/items.json"
+        )
 
 
 def test_letter_index_accepts_a_letter_or_a_letter_with_its_own_option():
@@ -130,7 +132,7 @@ def _readout_rows(items, layers, text_of):
 
 
 def test_run_family_toy_run_with_a_scripted_judge(tmp_path, monkeypatch):
-    """typo_mt has one judged unit (`correction`). Four items, one layer each way:
+    """typo has one judged unit (`correction`). Four items, one layer each way:
     A correct with a quote; B blank everywhere (negative); C cannot-tell (negative); D the judge
     never answered (undecided)."""
     from wsbench.banks import load_bank
@@ -210,7 +212,7 @@ def test_dry_run_on_the_toy_file(name, tmp_path, capsys, monkeypatch):
     assert main([*argv, "opts=judge=mc,aggregate=native"]) == 0
     r = read_results(out)
     # opts=judge=mc is a regex family's unpinned diagnostic, an mc family's pinned instrument
-    # (multihop_mt, plan 0041), and an mc+regex family's unpinned MC leg (plan 0054 B5)
+    # (multihop, plan 0041), and an mc+regex family's unpinned MC leg (plan 0054 B5)
     assert r.value is None and r.family == name and r.pinned_instrument == (name in fam.MC_PROFILES)
     assert "[user]" in capsys.readouterr().out
 
@@ -220,8 +222,8 @@ def test_dry_run_on_the_toy_file(name, tmp_path, capsys, monkeypatch):
 
 def test_scorer_enum_assignment(real_families):
     """The one scorer enum. The regex families register "regex" (EvalSpec.scorer = SCORER, no
-    call); "mc" / "mc+regex" are LLM-judged (EvalSpec.scorer empty) and pinned. basic_readout_mt
-    and multihop_mt move to "mc", multilingual / multilingual_multihop to "mc+regex", in their
+    call); "mc" / "mc+regex" are LLM-judged (EvalSpec.scorer empty) and pinned. basic_readout
+    and multihop move to "mc", multilingual_st / multilingual_multihop to "mc+regex", in their
     family PRs (their specs register the values; the factory below accepts them)."""
     for name in ("multilingual", "multilingual_typo", "typo"):
         assert real_families[name].scorer == fam.SCORER, name

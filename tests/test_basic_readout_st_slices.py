@@ -1,4 +1,4 @@
-"""basic_readout reports its entity / processing / implicit slices as
+"""basic_readout_st reports its entity / processing / implicit slices as
 numbers of their own in extras (decided n, passes, pass rate, bootstrap 95% CI)."""
 
 from wsbench.basic import mcjudge_basic as mj

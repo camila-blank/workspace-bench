@@ -4,7 +4,8 @@
         --scores <gw>/evals/chint_cutoff/frozen_v2_scores.json [--gw-commit <sha>] \
         --out evals/model_specific/hinted_cutoff/items_v2.json
 
-(v1: ``--frozen <gw>/evals/chint_cutoff/frozen_v1.json --out evals/model_specific/hinted_cutoff/items.json``.)
+(v1: ``--frozen <gw>/evals/chint_cutoff/frozen_v1.json --out
+evals/model_specific/hinted_cutoff/items.json``.)
 
 A pure transform (no tokenizer, no GPU). Plan 0064: every reader sees the PROMPT only, so items
 ship the prompt ids (``input_ids[:n_prompt]``), no reply text and no reply span; the read

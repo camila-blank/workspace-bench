@@ -26,16 +26,18 @@ MT = [
     "multilingual_multihop",
     "multilingual_typo",
 ]
-# the families whose scorer of record IS the regex contract (basic_readout_mt moved to the MC
+# the families whose scorer of record IS the regex contract (basic_readout moved to the MC
 # judge, plan 0051 item 1; its regex contract stays the opts=judge=regex diagnostic;
-# multilingual_multihop's scorer of record is mc+regex since plan 0054 item 9; multihop_mt is
+# multilingual_multihop's scorer of record is mc+regex since plan 0054 item 9; multihop is
 # MC-scored since plan 0041: its regex contract is the extras.regex diagnostic / opts=judge=regex)
 REGEX_SCORED = [n for n in MT if n not in ("basic_readout", "multilingual_multihop", "multihop")]
 # plan 0054 §6: the multilingual families judge their v2 banks; this file stays pinned to the
 # frozen v1 banks (the source-repo goldens), the v2 banks are tested in test_multilingual*.py
 V1_PINS = ("multilingual", "multilingual_multihop", "multilingual_typo")
 GOLDEN = json.loads((REPO / "tests/golden/mt_regex_matching.json").read_text(encoding="utf-8"))
-UNITS = json.loads((REPO / "tests/golden/mt_regex_units.json").read_text(encoding="utf-8"))
+UNITS = registry.rekey_pre_0101(
+    json.loads((REPO / "tests/golden/mt_regex_units.json").read_text(encoding="utf-8"))
+)  # keyed by the pre-0101 family keys (plan 0101: translated, never rewritten)
 
 
 # The port's sanctioned deviations from the source verdicts (the golden stays the source's).
@@ -49,7 +51,9 @@ DEVIATIONS = {
 @pytest.fixture(autouse=True)
 def _pin_v1_banks(monkeypatch):
     for name in V1_PINS:
-        monkeypatch.setenv(f"WSB_BANK_FILE_{name.upper()}", f"evals/{name}/items.json")
+        monkeypatch.setenv(
+            f"WSB_BANK_FILE_{name.upper()}", f"{registry.family_rel(name).as_posix()}/items.json"
+        )
 
 
 def test_matcher_verdicts_match_the_source():
@@ -108,7 +112,7 @@ def test_grid_verdict_matches_the_source():
 
 @pytest.mark.parametrize("name", MT)
 def test_scored_units_match_the_source_for_every_item(name):
-    header, items = load_bank(REPO / "evals" / name / "items.json")
+    header, items = load_bank(registry.family_root(name) / "items.json")
     contract = regex.contract_for(header, header["family"])
     assert contract.conjunctive_units and contract.multi_token
     assert contract.include_target == (name == "multihop")
@@ -170,7 +174,7 @@ def _args(path, out, **kw):
 
 
 def test_run_regex_prose(tmp_path, real_families):
-    """typo_mt: A hits at one layer (pass); B blank everywhere (empty, a negative); C misses;
+    """typo: A hits at one layer (pass); B blank everywhere (empty, a negative); C misses;
     D has a layer missing and no pass (undecided); no LLM call, spend 0, pinned, not complete
     (subset)."""
     _h, items = load_bank(REPO / "evals/basic/typo/items.json")
@@ -212,7 +216,7 @@ def test_run_regex_prose(tmp_path, real_families):
 
 
 def test_run_regex_tokens_and_the_language_unit(tmp_path, fake_llm, monkeypatch):
-    """multilingual_mt (concept + language, both required): a top-k bag of single tokens hits the
+    """multilingual (concept + language, both required): a top-k bag of single tokens hits the
     language name but never the two-word concept -> fail; a label-style token holding the whole
     phrase passes; the concept alone in a prose cell is any_hit but not a pass. Plan 0032 §2.3:
     the raw tokens alone decide (no interpretation step, no call)."""
@@ -289,7 +293,7 @@ def test_dispatch_and_dry_run(tmp_path, capsys):
     path.write_text(json.dumps({"id": it["id"], "layer": 20, "pos": 1, "samples": ["x"]}) + "\n")
     r = fam.run_family(_args(path, tmp_path / "o", items=[it["id"]], dry_run=True), name="typo")
     assert r.value is None and r.rows[0]["pass"] is None
-    assert f"[regex] typo_mt: scorer {SCORER_VERSION}" in capsys.readouterr().out
+    assert f"[regex] typo: scorer {SCORER_VERSION}" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         fam.run_family(_args(path, tmp_path / "o", extra={"judge": "llm"}), name="typo")
 
@@ -318,7 +322,7 @@ def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monke
     r = read_results(out)
     assert r.value is None and r.config["judge_model"] == "regex"
     assert "[regex]" in capsys.readouterr().out
-    # plan 0033 M1: typo_mt's v2-bank tag; plan 0054 item 5: the multilingual regex families
+    # plan 0033 M1: typo's v2-bank tag; plan 0054 item 5: the multilingual regex families
     # register the v2 bank tag
     tag = {
         "typo": "+typo-v2",
@@ -413,7 +417,9 @@ def test_numeric_answer_markers_are_case_insensitive():
 
 # ---------------------------------------------------------------- the v2 banks (plan 0040)
 
-UNITS_V2 = json.loads((REPO / "tests/golden/mt_regex_units_v2.json").read_text(encoding="utf-8"))
+UNITS_V2 = registry.rekey_pre_0101(
+    json.loads((REPO / "tests/golden/mt_regex_units_v2.json").read_text(encoding="utf-8"))
+)  # keyed by the pre-0101 family keys (plan 0101: translated, never rewritten)
 V2_FAMS = ["multilingual_st", "multilingual", "multilingual_multihop", "multilingual_typo"]
 
 
@@ -422,7 +428,7 @@ def test_scored_units_v2(name):
     """The v2 units as this code scores them (no source repo for v2: the golden is generated by
     ``wsbench.multitoken.regex`` on the frozen v2 banks and pins them; regenerated when
     multilingual_multihop's 97 ``bridge_l2`` units became optional)."""
-    header, items = load_bank(REPO / "evals" / name / "items_v2.json")
+    header, items = load_bank(registry.family_root(name) / "items_v2.json")
     contract = regex.contract_for(header, name)
     got = {it["name"]: [u.to_json() for u in regex.scored_units(it, contract)] for it in items}
     assert got == UNITS_V2[name]
@@ -432,7 +438,7 @@ def test_scored_units_v2(name):
 
 
 def test_v2_l2_answer_alone_fails():
-    """multilingual_mt v2: the concept in English plus the L2 answer word fails (the language
+    """multilingual v2: the concept in English plus the L2 answer word fails (the language
     unit holds names only); adding the language's name passes."""
     header, items = load_bank(REPO / "evals/basic/multilingual/items_v2.json")
     contract = regex.contract_for(header, "multilingual")
@@ -467,7 +473,7 @@ def test_v2_native_units_credit_every_listed_form(name):
     """PR review r1: the native content unit is required in v2, so it is ``multi_token: false``
     and every listed English/Chinese form credits, single-token ones included ('aurora',
     'thyroid', 'Kepler', 'adrenaline'); only the L2 units keep the multi-token filter."""
-    header, items = load_bank(REPO / "evals" / name / "items_v2.json")
+    header, items = load_bank(registry.family_root(name) / "items_v2.json")
     contract = regex.contract_for(header, name)
     for it in items:
         scored = {u.role: u for u in regex.scored_units(it, contract)}

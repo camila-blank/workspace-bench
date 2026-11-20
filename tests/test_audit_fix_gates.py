@@ -45,7 +45,7 @@ def _brmt(quote: str, lines, forms, *, src=None, options=None, rivals=()):
 ANGARA = {"en": ["Angara River", "Angara"], "zh": ["安加拉河"]}
 
 
-# ---------------------------------------------------------------- F4: basic_readout_mt gate
+# ---------------------------------------------------------------- F4: basic_readout gate
 
 
 def test_f4_any_line_rescue_is_retired_the_quotes_own_line_still_rescues():

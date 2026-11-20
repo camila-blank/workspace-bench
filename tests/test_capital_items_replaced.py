@@ -1,5 +1,5 @@
-"""2026-11-04: the country<->capital items leave basic_readout (bank v8),
-multilingual (bank v5) and basic_readout_mt (bank v7), each replaced by a new gated item of the same
+"""2026-11-04: the country<->capital items leave basic_readout_st (bank v8),
+multilingual_st (bank v5) and basic_readout (bank v7), each replaced by a new gated item of the same
 kind, so every bank keeps its size. Kept items are byte-identical to the frozen banks'."""
 
 import collections
@@ -68,7 +68,7 @@ CAPITAL = re.compile(r"capital|hauptstadt|capitale|seat of government", re.I)
 
 
 def _raw(fam: str, name: str) -> dict:
-    return json.loads((REPO / "evals" / fam / name).read_text(encoding="utf-8"))
+    return json.loads((registry.family_root(fam) / name).read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("fam", sorted(BANKS))
@@ -150,7 +150,7 @@ def test_kept_items_read_exactly_as_before(real_families, monkeypatch):
     for fam, (old_name, _new, _v, dropped, added) in BANKS.items():
         new_rows = {s.id: s.row() for s in readplan.plan(fam, layers=None)}
         env = registry.BANK_FILE_ENV_PREFIX + fam.upper()
-        monkeypatch.setenv(env, f"evals/{fam}/{old_name}")
+        monkeypatch.setenv(env, f"{registry.family_rel(fam).as_posix()}/{old_name}")
         old_rows = {s.id: s.row() for s in readplan.plan(fam, layers=None)}
         monkeypatch.delenv(env)
         for i, row in new_rows.items():

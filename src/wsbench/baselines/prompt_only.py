@@ -382,7 +382,7 @@ def floors(dst: Path = FROZEN) -> dict[str, dict[str, Any]]:
         return {}
     versions = instrument_versions()
     models = judge_models()
-    frozen = json.loads(dst.read_text(encoding="utf-8"))
+    frozen = _checked(json.loads(dst.read_text(encoding="utf-8")), dst)
     return {
         fam: e
         for fam, e in frozen.items()
@@ -400,12 +400,25 @@ def summary_floors(dst: Path = FROZEN_SUMMARY) -> dict[str, dict[str, Any]]:
     prompt_version and digest settings the row actually ran with."""
     if not dst.exists():
         return {}
-    frozen = json.loads(dst.read_text(encoding="utf-8"))
+    frozen = _checked(json.loads(dst.read_text(encoding="utf-8")), dst)
     return {
         fam: e
         for fam, e in frozen.items()
         if not fam.startswith("_") and fam not in EXCLUDED and isinstance(e, dict)
     }
+
+
+def _checked(frozen: dict[str, Any], path: Path) -> dict[str, Any]:
+    """A frozen floors file whose entry under a plan-0101 bare key is stamped by the OTHER
+    family of the pair was written before the rename: refused (``RenamedKey``), never drawn."""
+    for fam, e in frozen.items():
+        if isinstance(e, dict) and registry.stale_floor_key(fam, e.get("instrument")):
+            raise registry.RenamedKey(
+                f"{path}: the entry {fam!r} is stamped {e.get('instrument')!r}, the instrument "
+                f"of {registry.partner(fam)!r}: a floors file written before plan 0101 "
+                "(2026-11-20, the multi-token families took the plain keys); re-key it"
+            )
+    return frozen
 
 
 def summary_floor_matches(entry: dict[str, Any], config: dict[str, Any]) -> bool:

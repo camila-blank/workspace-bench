@@ -1,4 +1,4 @@
-"""plan 0060 Phase E: per-subject adaptation of wrong_intermediate and multihop_mt (fake
+"""plan 0060 Phase E: per-subject adaptation of wrong_intermediate and multihop (fake
 runners; no
 GPU, no API). ``wsbench.adapt.wrong_intermediate`` rebuilds the bank from the subject's own
 wrong-intermediate
@@ -26,7 +26,7 @@ def _registered(family):
     return store.original_bank(family)
 
 
-# ====================================================================== multihop_mt
+# ====================================================================== multihop
 def _mh2(pred):
     _h, items = _registered("multihop")
     return copy.deepcopy(next(it for it in items if pred(it)))
