@@ -646,16 +646,28 @@ def test_t17_no_code_derives_anything_from_a_family_keys_spelling():
 # ---------------------------------------------------------------- T10 / T11: frozen files
 
 
+# families whose registered bank changed after plan 0101 (tests/test_fast_subset.py REFROZEN)
+REFROZEN_SINCE_0101 = {"conjunctive_association"}
+
+
 def test_t10_the_fast_files_are_read_in_todays_keys():
     for version in sorted(fast.VERSIONS):
         raw = json.loads(fast.VERSIONS[version].read_text(encoding="utf-8"))
         got = fast.subset(version)
-        assert set(got) == {registry.PRE_0101_KEYS.get(f, f) for f in raw["families"]}
+        pre = fast.KEY_ERA[version] == "pre-0101"  # a file cut after the rename is in today's keys
+
+        def today(key: str, pre: bool = pre) -> str:
+            return registry.PRE_0101_KEYS.get(key, key) if pre else key
+
+        assert set(got) == {today(f) for f in raw["families"]}
         assert {"basic_readout", "basic_readout_st", "multihop"} <= set(got)
         assert not {"basic_readout_mt", "multihop_mt"} & set(got)
         for old, entry in raw["families"].items():
-            new = registry.PRE_0101_KEYS.get(old, old)
-            assert got[new] == entry and entry["bank_sha"] == fast.bank_sha(new), (version, old)
+            new = today(old)
+            assert got[new] == entry, (version, old)
+            # a version frozen before a family's bank changed keeps its old sha (a record)
+            refrozen = pre and new in REFROZEN_SINCE_0101
+            assert (entry["bank_sha"] == fast.bank_sha(new)) != refrozen, (version, old)
 
 
 def test_t11_every_frozen_entry_under_a_renamed_key_carries_that_familys_stamp():

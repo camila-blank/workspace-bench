@@ -128,9 +128,12 @@ def fast_plan_sha(family: str, declared: str | None = None) -> str:
     if declared is None:
         return plan_sha_rows(rows)
     fam = canonical(family)
-    ok = declared in {fast.VERSION, *fast.COMPATIBLE}
-    if not ok or fam not in fast.subset(declared):
+    if declared not in fast.VERSIONS or fam not in fast.subset(declared):
         raise SystemExit(f"{fam}: not in fast subset {declared}")
+    if declared != fast.VERSION and not fast.compatible(declared, fam):
+        raise SystemExit(
+            f"{fam}: its entry in fast subset {declared} is not {fast.VERSION}'s (re-frozen)"
+        )
     for row in rows:
         if "fast" in (row.get("extra") or {}):
             row["extra"] = {**row["extra"], "fast": declared}
@@ -538,9 +541,9 @@ def load(
         _attach(args, rep)
         return cells, rep
     fast_file = fast_entry is not None and declared_fast is not None
-    # plans 0094 / 0095: a compatible version's file is judged as it is (identical entries for
-    # every family in both subsets; its plan_sha is checked as that version's, below)
-    if fast_file and declared_fast not in {fast.VERSION, *fast.COMPATIBLE}:
+    # plans 0094 / 0095: a compatible version's file is judged as it is (the identical entry for
+    # this family in both subsets; its plan_sha is checked as that version's, below)
+    if fast_file and declared_fast not in fast.VERSIONS:
         fail(
             f"{path}: readouts were produced for another fast subset ({declared_fast!r}, not "
             f"{fast.VERSION!r})"
@@ -548,6 +551,12 @@ def load(
     # plan 0095: the declared version's own file must hold the family (with or without plan_sha)
     if fast_file and canonical(family) not in fast.subset(declared_fast):
         fail(f"{path}: {canonical(family)}: not in fast subset {declared_fast}")
+    # per family (2026-11-20): a family re-frozen since the declared version has another entry
+    if fast_file and not fast.compatible(declared_fast, family):
+        fail(
+            f"{path}: readouts were produced for another fast subset ({declared_fast!r}, not "
+            f"{fast.VERSION!r}): {canonical(family)} was re-frozen in between"
+        )
     fast_rule = dict(fast_entry.get("positions") or {}) if fast_entry is not None else {}
     if fast_rule and fast_rule.get("kind") not in readplan.FAST_KINDS:
         fail(f"{family}: unknown fast positions rule {fast_rule!r}")
