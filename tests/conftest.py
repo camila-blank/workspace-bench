@@ -5,6 +5,15 @@ import pytest
 from wsbench import fast, llm, mcjudge, registry
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _unpacked_banks():
+    """Plan 0097: the banks are unpacked from their zips before any test reads them (a no-op
+    when the stamp is current, and before the cutover)."""
+    from wsbench import datapack
+
+    datapack.ensure()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_registry():
     saved = dict(registry.FAMILIES)

@@ -202,8 +202,14 @@ unmodified judges:
   fixtures). A per-model SET is judged with `WSB_BANK_ROOT=adapted/<model>` instead, never
   with `WSB_BANK_FILE_*`: the per-set overlays and the missing-entry errors key on the root.
 
-- **A branch or fork** whose `evals/<family>/items.json` is your new bank (commit it as a new
-  bank with its own README note; keep the frozen one in history).
+- **A branch or fork** whose `evals/<family>/items.json` is your new bank (ship it as a new
+  bank with its own README note; keep the frozen one). Bank files are not tracked by git (plan
+  0097, `data/README.md`): they are evaluation data, shipped as password-protected zips so
+  that crawlers do not train on them, and git holds a sidecar per unit under `data/`. So a new
+  or changed bank file is committed as: `wsbench pack add=evals/<family>/<file>` (new files
+  only), `wsbench pack`, `wsbench pack publish` (from a fork: `repo=<your fork>`), then `git
+  add data/`. Review with `wsbench pack status` and `wsbench pack diff text=True`, not `git
+  diff`.
 - **A shadow checkout** (what `validate_bank.py` builds in its scratch dir): a directory with
   `src/` copied, every other top-level path symlinked, and `evals/<family>/items.json`
   replaced. Run any command against it with `PYTHONPATH=<shadow>/src`, for example

@@ -237,9 +237,22 @@ rather than re-deriving renders from the bank files:
 The adapt-bank workstream updates this table when a set is built, audited or changed. Refreshing a
 set to a newer bench is blocked until plan 0060 lands (the skill's §Refresh); never run a bare `freeze`.
 
+## How the sets are stored (plan 0097)
+
+This is evaluation data: please do not train on it or republish it unpacked. Nothing under
+`adapted/<model>/` is tracked by git; this README is the only tracked file here. Each
+`adapted/<model>/<entry>` (a bank file, `report.json`, an `AUDIT.md`, a directory such as
+`floors/`) is one unit with a sidecar `data/adapted/<model>/<entry>.json` and a
+password-protected zip published as a release asset; `wsbench unpack` (automatic on every
+`wsbench` command) writes the files here. To change or add a set's files: `wsbench pack
+add=adapted/<model>/<entry>` for new ones, `wsbench pack`, `wsbench pack publish`, then commit
+`data/`. Review with `wsbench pack diff units=adapted/<model> [text=True]`. Details:
+`data/README.md`.
+
 ## Work products not in git
 
 Gate logs (`gate/`), candidates (`cand/`), J-lens fits (`jlens_work/`, `jlens_concept_pr/gen-*/`),
 floor readouts and judge dirs (`floors/{readouts,results}/`) and the grade cache stay on the RunPod
-box under `/workspace/agam/workspace-bench/adapted/` (git-ignored; ~27 GB). The frozen banks,
-`report.json`, audits and `floors/floors.json` are committed.
+box under `/workspace/agam/workspace-bench/adapted/` (~27 GB). They are never packed: the pack
+set is the sidecars' file lists, so `wsbench pack status` shows them as unlisted (`?`) and no
+zip carries them. The frozen banks, `report.json`, audits and `floors/floors.json` are packed.

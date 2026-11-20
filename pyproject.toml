@@ -6,7 +6,8 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-  "openai>=1.40", "anthropic>=1.0", "numpy>=1.26", "pydra-config>=0.0.17", "pronouncing>=0.2"
+  "openai>=1.40", "anthropic>=1.0", "numpy>=1.26", "pydra-config>=0.0.17", "pronouncing>=0.2",
+  "pyzipper>=0.3.6",  # plan 0097: the AES bank zips; imported lazily in wsbench.datapack
 ]
 
 [project.optional-dependencies]

@@ -12,7 +12,7 @@ from typing import Any
 
 import pydra
 
-from wsbench import fast, hbindex, llm, readplan, registry, runner
+from wsbench import datapack, fast, hbindex, llm, readplan, registry, runner
 from wsbench.baselines import logit_lens, lucky_guessing, prompt_only, text_inversion
 from wsbench.capable import questions as capable_questions
 from wsbench.capable import run as capable_run
@@ -1610,6 +1610,107 @@ class TextInversion(Command):
         return 0
 
 
+class Unpack(Command):
+    """Write the banks' plaintext under ``evals/`` and ``adapted/`` from their zips (plan 0097;
+    ``data/README.md``). ``units=`` takes units or prefixes; ``force=True`` overwrites local
+    edits."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.units = None
+        self.force = False
+
+    def finalize(self) -> None:
+        self.units = _strs(self.units)
+        self.force = _bool(self.force)
+
+    def execute(self) -> int:
+        datapack.unpack(self.units, force=self.force)
+        return 0
+
+
+class Pack(Command):
+    """Re-zip every unit whose listed files changed and rewrite its sidecar; ``add=`` / ``rm=``
+    (paths, directories or globs, comma-separated or repeated) edit the file lists first."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.units = None
+        self.add = None
+        self.rm = None
+
+    def finalize(self) -> None:
+        self.units = _strs(self.units)
+        self.add = _strs(self.add)
+        self.rm = _strs(self.rm)
+
+    def execute(self) -> int:
+        for unit in datapack.pack(self.units, add=self.add, rm=self.rm):
+            print(unit)
+        return 0
+
+
+class PackStatus(Command):
+    """Listed files that differ from their sidecar or are missing (exit 1), and unlisted files
+    (printed only)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.units = None
+
+    def finalize(self) -> None:
+        self.units = _strs(self.units)
+
+    def execute(self) -> int:
+        report = datapack.status(self.units)
+        text = datapack.format_status(report)
+        if text:
+            print(text)
+        return 1 if datapack.dirty(report) else 0
+
+
+class PackDiff(Command):
+    """Files added / removed / changed between the sidecars at ``ref`` and the working tree;
+    ``text=True`` adds a unified diff of each changed text file (fetches ``ref``'s zips)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ref = "HEAD"
+        self.units = None
+        self.text = False
+
+    def finalize(self) -> None:
+        self.ref = str(self.ref)
+        self.units = _strs(self.units)
+        self.text = _bool(self.text)
+
+    def execute(self) -> int:
+        rows, text = datapack.diff(self.ref, self.units, text=self.text)
+        for mark, path in rows:
+            print(f"{mark} {path}")
+        if text:
+            print(text, end="")
+        return 0
+
+
+class PackPublish(Command):
+    """Upload every sidecar's zip the release does not hold yet (``gh``; push rights), then
+    check each new asset by an anonymous download. ``repo=<owner/name>`` publishes to a fork."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.repo = None
+
+    def finalize(self) -> None:
+        self.repo = None if self.repo in (None, "") else str(self.repo)
+
+    def execute(self) -> int:
+        done = datapack.publish(self.repo)
+        for unit in done["rewritten"]:
+            print(unit)  # sidecars publish rewrote: commit them
+        return 0
+
+
 COMMANDS: dict[str, type[Command]] = {
     "list": ListFamilies,
     "judge": JudgeFamily,
@@ -1623,7 +1724,31 @@ COMMANDS: dict[str, type[Command]] = {
     "text-inversion": TextInversion,
     "convert-gen-dir": ConvertGenDir,
     "convert-read-json": ConvertReadJson,
+    "unpack": Unpack,
+    "pack": Pack,
 }
+# `wsbench pack <word>` (plan 0097); the data commands never load the families
+PACK_SUBCOMMANDS: dict[str, type[Command]] = {
+    "status": PackStatus,
+    "diff": PackDiff,
+    "publish": PackPublish,
+}
+_REPEATABLE = ("units", "add", "rm")
+
+
+def _merge_repeats(args: list[str]) -> list[str]:
+    """``add=a add=b`` -> ``add=a,b`` for the data commands' list keys (pydra keeps the last)."""
+    out: list[str] = []
+    seen: dict[str, int] = {}
+    for a in args:
+        key, eq, value = a.partition("=")
+        if eq and key in _REPEATABLE:
+            if key in seen:
+                out[seen[key]] += "," + value
+                continue
+            seen[key] = len(out)
+        out.append(a)
+    return out
 
 
 def _n_items(spec: EvalSpec) -> str:
@@ -1667,7 +1792,10 @@ def _write_summary(
 
 
 def _usage() -> str:
-    return "usage: wsbench <" + "|".join(COMMANDS) + "> [key=value ...] [--show | --help]"
+    return (
+        "usage: wsbench <" + "|".join(COMMANDS) + "> [key=value ...] [--show | --help]\n"
+        "       wsbench pack <" + "|".join(PACK_SUBCOMMANDS) + "> [key=value ...]"
+    )
 
 
 def _defaults(command: Command) -> str:
@@ -1686,7 +1814,14 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or argv[0] not in COMMANDS:
         print(_usage(), file=sys.stderr)
         return EXIT_USAGE
-    command = COMMANDS[argv[0]]()
+    data_command = argv[0] in datapack.DATA_COMMANDS
+    if argv[0] == "pack" and len(argv) > 1 and argv[1] in PACK_SUBCOMMANDS:
+        command = PACK_SUBCOMMANDS[argv[1]]()
+        argv = [f"pack {argv[1]}", *argv[2:]]
+    else:
+        command = COMMANDS[argv[0]]()
+    if data_command:
+        argv = [argv[0], *_merge_repeats(argv[1:])]
     if any(a in ("--help", "-h") for a in argv[1:]):
         print(_defaults(command))
         return 0
@@ -1702,6 +1837,15 @@ def main(argv: list[str] | None = None) -> int:
     if show:
         print(json.dumps(command.to_dict(), indent=1))
         return 0
+    if data_command:  # plan 0097: these repair the tree, so they run without the registry
+        try:
+            return command.execute()
+        except datapack.DataError as e:
+            print(f"{argv[0]}: {e}", file=sys.stderr)
+            return EXIT_USAGE
+    if datapack.DEFERRED is not None:  # the import-time unpack of this process failed
+        print(f"{argv[0]}: {datapack.DEFERRED}", file=sys.stderr)
+        return EXIT_USAGE
     registry.load_all()
     return command.execute()
 
