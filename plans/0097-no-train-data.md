@@ -219,3 +219,70 @@ README.md, NOTICE.md, CLAUDE.md, AGENTS.md, adapted/README.md, .claude/skills/*/
 scripts/lucky_guess_modal.py, .claude/skills/wsb-new-questions/scripts/modal_{gate,script}.py
 tests/test_datapack.py, tests/conftest.py, + the three sanctioned test edits
 ```
+
+## Rulings (critique round 2; where a ruling and a sentence above disagree, the ruling wins)
+
+R1. **Units.** `evals/<entry>` (35) and `adapted/<model>/<entry>` (699: a bank file or a
+subdirectory), 734 in all, not one per model: two PRs touching different banks of one model
+then never conflict, and an edit re-uploads one small zip. Sidecar path = the unit path under
+`data/` plus `.json` with the entry's FULL name kept (`data/adapted/<m>/agentic_misalignment.json.json`
+beside `data/adapted/<m>/agentic_misalignment.json` for the directory of the same stem).
+Downloads run on a small thread pool.
+
+R2. **Release layout.** No sha-prefix buckets. Each sidecar records its release tag
+(`"release": "data-0001"`); `publish` uploads to the newest `data-NNNN` and rolls to the next
+tag when it holds 900 assets (GitHub's cap is 1,000). The URL is built from the sidecar:
+`https://github.com/<repo>/releases/download/<release>/<zip_sha256>.zip`. A data release is
+created with `gh release create <tag> --target <sha> --latest=false`, where `<sha>` is an
+ORPHAN commit holding only `data/README.md` (pushed as the tag only, so the release's "Source
+code" archives contain no bank text and no branch moves), never as a draft (draft assets are
+not anonymously downloadable), with notes carrying the do-not-train request and the canary.
+
+R3. **Forks.** The fetch tries `INDEX.json`'s `repo`, then `$WSB_DATA_REPO` when set.
+`publish repo=<owner/name>` uploads elsewhere (a contributor's fork). CI sets `WSB_DATA_REPO`
+to `github.event.pull_request.head.repo.full_name` on pull requests. Before merging a fork's
+bank change a maintainer runs `wsbench pack publish` (it mirrors missing assets upstream);
+CI on main fails otherwise.
+
+R4. **`publish` semantics.** List the release's assets (`gh release view <tag> --json
+assets`); an asset whose name, size (= `zip_bytes`) and state `uploaded` match is skipped,
+any other same-named asset is deleted and re-uploaded. After uploading, download each new
+asset ANONYMOUSLY (no token) to a temp file and check its sha256. A sidecar's zip that is in
+neither the cache nor the release is rebuilt from the tree; AES zips are not deterministic,
+so that rewrites the sidecar's `zip_sha256` and `publish` says so (commit it).
+
+R5. **Durability.** A packed-but-unpublished change exists only in that machine's cache.
+So `unpack` deletes or overwrites a stamp-unchanged file only when the STAMP's zip for that
+unit is in the cache or on the release (a HEAD request); otherwise it is a conflict whose
+message says to run `wsbench pack publish` on the branch that packed it. Docs say the same.
+
+R6. **Forgot to pack.** `tests/test_datapack.py` asserts `pack status` is clean on the real
+tree (red locally when a listed file differs from its sidecar; skipped when `data/` is
+absent), and its failure text lists unlisted files that sit beside listed ones. `status`
+exits 1 on a differing or missing listed file; unlisted files are printed, not fatal.
+
+R7. **Errors, offline, output.** Every `DataError` names the unit(s) and, for a fetch, the
+URL and both ways out: `WSB_NO_UNPACK=1` (run on the plaintext that is there) and seeding
+`$WSB_CACHE/data/<sha>.zip`. A conflict's text gives the recipe (copy the edited files
+aside, `wsbench unpack force=True`, copy back, `wsbench pack`). Progress goes to stderr only
+(several commands print parsed stdout). Fetch: 60 s timeout, 3 tries with backoff, an
+explicit `User-Agent`, redirects followed; no token is needed or sent for downloads.
+
+R8. **Bootstrap.** A unit with no sidecar is created by `pack add=`; `pack`'s
+"fully unpacked" precondition covers existing sidecars only. `pack add` records the added
+files in the stamp as packed, so the next `ensure()` is a no-op.
+
+R9. **Cutover order (replaces section 5's steps 2-5).** (2) identity check from the local
+cache as written. (3) `publish`. (3b) In a FRESH clone of the implementation commit with an
+empty `WSB_CACHE` and no GitHub token in the environment, with the tracked plaintext removed
+from that clone's working tree: `wsbench unpack`, then the same `git hash-object` vs
+`git ls-tree` comparison. Only when it is clean: (4) `git rm --cached` and commit. (5) CI
+green from a clean checkout. An offline tarball of the 7,619 plaintext files is kept on
+durable storage until CI is green on main.
+
+R10. **CI cache.** `actions/cache` key `wsbdata-${{ hashFiles('data/**') }}` with
+`restore-keys: wsbdata-`, so unchanged zips are reused.
+
+R11. **Wording.** "`pack` never touches the network" means plain `pack` / `add` / `rm` /
+`status`; `pack diff text=True` and `pack publish` do. The three Modal scripts call
+`ensure()` on the HOST before building their image (their containers have no `data/`).
