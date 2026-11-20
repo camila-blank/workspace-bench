@@ -797,21 +797,21 @@ def test_real_subprocess_smoke_matches_judge(tmp_path, monkeypatch, capfd, rundi
     )
     opts = ["opts=aggregate=native", "allow_missing=True"]
     out = tmp_path / "run"
-    argv = ["run", "families=typo_mt", "readouts_root=examples/readouts", f"out={out}"]
+    argv = ["run", "families=typo", "readouts_root=examples/readouts", f"out={out}"]
     assert main([*argv, *opts, "procs=True"]) == 0
     printed = capfd.readouterr()
     assert "typo_mt: pass_rate=0.5 n=85" in printed.out
     assert printed.out.rstrip().splitlines()[-1].startswith("wrote ")
-    fam = _manifest(out)["families"]["typo_mt"]
+    fam = _manifest(out)["families"]["typo"]
     assert fam["status"] == "ok" and fam["value"] == 0.5
-    assert not (out / "typo_mt" / "outcome.json").exists()
+    assert not (out / "typo" / "outcome.json").exists()
     assert list(rundirs.iterdir()) == []
 
-    solo = tmp_path / "judge" / "typo_mt"
-    judge = ["judge", "family=typo_mt", "readouts=examples/readouts/typo_mt.jsonl"]
+    solo = tmp_path / "judge" / "typo"
+    judge = ["judge", "family=typo", "readouts=examples/readouts/typo.jsonl"]
     assert main([*judge, f"out={solo}", *opts]) == 0
     capfd.readouterr()
-    a = (out / "typo_mt" / "results.json").read_bytes()
+    a = (out / "typo" / "results.json").read_bytes()
     assert a == (solo / "results.json").read_bytes()
 
 

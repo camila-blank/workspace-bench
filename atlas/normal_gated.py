@@ -23,7 +23,7 @@ import wsbench_spec as spec  # noqa: E402
 
 from wsbench import registry  # noqa: E402
 
-REGOLD = ("poetry", "basic_readout", "moral_rationale")
+REGOLD = ("poetry", "basic_readout_st", "moral_rationale")
 UNGATED = {"directed_modulation", "multi_concept_directed_modulation"}  # no checkable answer
 MIN_ITEMS = 10
 SUBJECTS = {  # key -> (adapted dir or None, olens_ckpts dir, {stage: tag})

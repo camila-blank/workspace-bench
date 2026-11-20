@@ -12,8 +12,8 @@ from wsbench import registry
 from wsbench.banks import load_bank
 
 ROOT_ENV = registry.BANK_ROOT_ENV
-BRMT = "basic_readout_mt"
-MHMT = "multihop_mt"
+BRMT = "basic_readout"
+MHMT = "multihop"
 
 
 @pytest.fixture(autouse=True)
@@ -169,20 +169,20 @@ def test_freeze_keeps_a_concurrent_update_to_another_family(tmp_path, monkeypatc
     (d / "gate" / "association.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     store.write_json(
         d / "report.json",
-        {"families": {"multihop": {"status": "partial", "n_items": 5}, "association": {}}},
+        {"families": {"multihop_st": {"status": "partial", "n_items": 5}, "association": {}}},
     )
     real = store.update_report
 
     def concurrent(model, mutate):  # another stage's write lands while freeze runs
         rep = store.read_report(model)
-        rep["families"]["multihop"] = {"status": "full", "n_items": 9, "note": "refilled"}
+        rep["families"]["multihop_st"] = {"status": "full", "n_items": 9, "note": "refilled"}
         store.write_json(d / "report.json", rep)
         return real(model, mutate)
 
     monkeypatch.setattr(store, "update_report", concurrent)
     run.freeze("qwen3.5-4b", ["association"])
     rep = json.loads((d / "report.json").read_text())
-    assert rep["families"]["multihop"] == {"status": "full", "n_items": 9, "note": "refilled"}
+    assert rep["families"]["multihop_st"] == {"status": "full", "n_items": 9, "note": "refilled"}
     assert rep["families"]["association"]["n_items"] == 3  # the frozen family is written
 
 

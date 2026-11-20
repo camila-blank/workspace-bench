@@ -35,17 +35,17 @@ from . import store
 
 # per family, the content units whose forms are keyed by native code (the language unit apart)
 CONTENT_ROLES: dict[str, tuple[str, ...]] = {
-    "multilingual": ("concept_native",),
-    "multilingual_mt": ("concept",),
+    "multilingual_st": ("concept_native",),
+    "multilingual": ("concept",),
     "multilingual_typo": ("correction_native",),
     "multilingual_multihop": ("bridge_native",),
-    "basic_readout_mt": ("readout",),
-    "typo_mt": ("correction",),
+    "basic_readout": ("readout",),
+    "typo": ("correction",),
 }
 # the families with a v2 language unit and MC roles (plan 0054 B2)
 MC_ROLES: dict[str, list[str]] = {
-    "multilingual": ["concept_native", "language"],
-    "multilingual_mt": ["concept", "language"],
+    "multilingual_st": ["concept_native", "language"],
+    "multilingual": ["concept", "language"],
     "multilingual_typo": ["correction_native", "language"],
     "multilingual_multihop": ["bridge_native", "language"],
 }

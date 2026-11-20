@@ -429,7 +429,7 @@ def test_summ_lang_removed_no_language_label(tmp_path):
 
 
 def test_summ_lang_stamp_dropped(tmp_path):
-    for fam in ("multilingual", "multilingual_mt", "multilingual_multihop", "multilingual_typo"):
+    for fam in ("multilingual_st", "multilingual", "multilingual_multihop", "multilingual_typo"):
         assert digest.prompt_version("pv", _args(tmp_path), fam) == (
             "pv+digest-v5-task-extractive+sj-v10"
         )

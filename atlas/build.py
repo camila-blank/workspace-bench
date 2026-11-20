@@ -33,15 +33,15 @@ FAMILY_GROUP = {f: g for g, fams in GROUPS for f in fams}
 
 FAMILY_DESC = {
     "association": "A passage describes something it never names; does the lens surface the unnamed referent?",
-    "basic_readout": "The model is asked for a one-word answer; read its answer before it is written.",
-    "multihop": "Two-hop factual question; the bridge entity is never written.",
-    "multilingual": "Prompt in another language; the concept should be readable language-independently.",
+    "basic_readout_st": "The model is asked for a one-word answer; read its answer before it is written.",
+    "multihop_st": "Two-hop factual question; the bridge entity is never written.",
+    "multilingual_st": "Prompt in another language; the concept should be readable language-independently.",
     "poetry": "Couplet: the rhyme word of line 2 is planned at the end of line 1.",
-    "typo": "A misspelled word; the lens should read the corrected word.",
+    "typo_st": "A misspelled word; the lens should read the corrected word.",
     "directed_modulation": "The model is told to think (or not think) about a word while writing something else.",
-    "multilingual_mt": "Multi-token concept described in another language.",
-    "typo_mt": "Typo'd multi-token word (the hard typo family; typo is superseded by it).",
-    "basic_readout_mt": "Multi-token answer (an entity) read before it is written.",
+    "multilingual": "Multi-token concept described in another language.",
+    "typo": "Typo'd multi-token word (the hard typo family; typo is superseded by it).",
+    "basic_readout": "Multi-token answer (an entity) read before it is written.",
     "multilingual_multihop": "Two-hop question asked in another language.",
     "multilingual_typo": "Typo'd word inside a non-English prompt.",
     "multi_concept_directed_modulation": "One to three dictated concepts to hold while writing a sentence; all must surface.",
@@ -119,7 +119,7 @@ SUBJECTS = {
     "qwen3.6-27b": ("Qwen3.6-27B (reference)", None, None, ()),
 }
 NG = WSB / "outputs/normal_gated"
-NG_REGOLD = ("poetry", "basic_readout", "moral_rationale")
+NG_REGOLD = ("poetry", "basic_readout_st", "moral_rationale")
 NORMAL_GATED = {  # view key -> (label, subject key in outputs/normal_gated, olens_ckpts dir, {stage: tag})
     "olmo-3.1-32b@27b": (
         "OLMo-3.1-32B · 27B bank, gated",

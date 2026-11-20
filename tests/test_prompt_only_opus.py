@@ -201,8 +201,8 @@ def test_build_asks_only_the_judged_banks_ids(real_families):
     from wsbench import readplan
     from wsbench.baselines import text_inversion as ti
 
-    assert ti.judged_bank_ids("multihop") is None  # bank v5: its own plan
-    assert ti.judged_bank_ids("basic_readout_mt") is None  # bank v7: its own plan
+    assert ti.judged_bank_ids("multihop_st") is None  # bank v5: its own plan
+    assert ti.judged_bank_ids("basic_readout") is None  # bank v7: its own plan
     own = ti.judged_bank_ids("association")
     plan = {s.id for s in readplan.plan("association")}
     assert own is not None and len(own) == 91 and len(plan) == 93 and own < plan

@@ -155,7 +155,10 @@ def test_remap_layers():
 
 
 def test_bank_root_override(tmp_path, monkeypatch):
-    assert registry.bank_path("typo") == registry.REPO_ROOT / "evals" / "typo" / "items.json"
+    assert (
+        registry.bank_path("typo")
+        == registry.REPO_ROOT / "evals" / "basic" / "typo_st" / "items.json"
+    )
     (tmp_path / "typo.json").write_text("[]")
     monkeypatch.setenv(registry.BANK_ROOT_ENV, str(tmp_path))
     assert registry.bank_path("typo") == tmp_path / "typo.json"
@@ -363,7 +366,9 @@ def test_readplan_uses_subject_layers_under_an_adapted_root(tmp_path, monkeypatc
     from wsbench import readplan
 
     (tmp_path / "report.json").write_text(_json.dumps({"n_layers": 32}))
-    bank = _json.loads((registry.REPO_ROOT / "evals/agentic_misalignment/items.json").read_text())
+    bank = _json.loads(
+        (registry.REPO_ROOT / "evals/safety/agentic_misalignment/items.json").read_text()
+    )
     (tmp_path / "agentic_misalignment.json").write_text(_json.dumps(bank))
     monkeypatch.setenv(registry.BANK_ROOT_ENV, str(tmp_path))
     layers = readplan.plan("agentic_misalignment")[0].layers
@@ -602,8 +607,11 @@ def test_role_bound_strict_requires_stated_roles(monkeypatch):
 def test_role_bound_lint_flags_unlexiconed_role():
     """plan 0055 C2.5: an authored role missing from roles_v1.json is flagged; the judge then
     falls back to terms=[role] with no near-role distractor, counted in n_roles_unlexiconed."""
-    from wsbench.evals.role_bound_association import gate
-    from wsbench.evals.role_bound_association.judge import build_block_v2, load_items
+    from wsbench.evals.anti_bag_of_features.role_bound_association import gate
+    from wsbench.evals.anti_bag_of_features.role_bound_association.judge import (
+        build_block_v2,
+        load_items,
+    )
 
     item = {
         "id": "x-ab",
@@ -829,7 +837,7 @@ def test_freeze_builds_originals_from_the_registered_item(tmp_path, monkeypatch)
         assert got[it["id"]]["adapt"]["origin"] == "original"
     rep = _json.loads((d / "report.json").read_text())
     e = rep["families"]["association"]
-    assert e["bank_version"] == 5 and e["bank"] == "evals/association/items_v5.json"
+    assert e["bank_version"] == 5 and e["bank"] == "evals/basic/association/items_v5.json"
     assert "read_plan_bank" not in bank  # the set plans its own items
     wb = rep["families"]["wrong_intermediate"]
     assert wb["status"] == "absent" and wb["note"] == "Phase B: later"  # never overwritten

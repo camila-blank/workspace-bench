@@ -17,7 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "tests/fixtures/basic_readout_v1_toy.jsonl"
 IDS = ["br-ent-ath-ali", "br-proc-arith-10-1", "br-imp-cardgame"]
 SPEC = bank_family(
-    "basic_free_text_fixture", "fixture", bank=Path("evals/basic_readout/items.json")
+    "basic_free_text_fixture", "fixture", bank=Path("evals/basic/basic_readout_st/items.json")
 )
 
 

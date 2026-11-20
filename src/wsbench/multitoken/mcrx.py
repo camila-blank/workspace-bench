@@ -133,7 +133,7 @@ def _pieces(ln: Line) -> list[str]:
 # month following X is", "the opposite of X is", "X plus one is", "X之后是"); a sentence ending in
 # a question mark is masked whole. The mask only removes credit (the others-check still sees the
 # full text), and applies to the quote line, a near/stitched line and the singling-line fallback.
-PREMISE_FAMILIES = frozenset({"multilingual"})
+PREMISE_FAMILIES = frozenset({"multilingual_st"})
 PREMISE_VERSION = "premise-v1"  # (stamped through MCRX_VERSION mcrx-2026-11-01a)
 # a sentence ends at its punctuation, a line break, a markdown heading mark or a bullet mark (so
 # "... ton **oncle paternel** ### Pourquoi ?" masks only the heading's question)

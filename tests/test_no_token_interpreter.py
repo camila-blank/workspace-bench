@@ -47,7 +47,7 @@ TOKEN_FAMILIES = [
     "role_bound_association",
     "user_modeling",
     "multi_concept_directed_modulation",
-    "multilingual_mt",
+    "multilingual",
 ]
 
 

@@ -14,7 +14,7 @@ import pytest
 from wsbench import llm, registry
 from wsbench.baselines import text_inversion as ti
 from wsbench.cli import main
-from wsbench.evals.model_specific_directed_modulation import SPEC as DMO
+from wsbench.evals.model_specific.model_specific_directed_modulation import SPEC as DMO
 from wsbench.results import read_results
 
 REPO = Path(__file__).resolve().parents[1]

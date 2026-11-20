@@ -3,7 +3,7 @@ with thinking off, deterministic sign-aware grading (optional LLM grader for the
 model-specific golds, tokenizer re-stamping, and the out-of-capability verdict.
 
     uv run --extra gpu python .claude/skills/wsb-new-questions/scripts/gate_hf.py \\
-        --family multihop --bank cand/multihop.json --model Qwen/Qwen3.5-0.8B \\
+        --family multihop_st --bank cand/multihop_st.json --model Qwen/Qwen3.5-0.8B \\
         --out gated/multihop
 
 Writes <out>/gate.json (every question, answer and verdict), <out>/items.json (the passers,
@@ -31,7 +31,7 @@ STRICT = {"chain_intermediates"}  # 10/10 at T=0.8, top_p=0.95
 MC = {"conjunctive_association", "role_bound_association"}
 GREEDY_ONLY = {"relational_multihop"}
 # the answer must be in the prompt's (L2) language: an English gloss is wrong, never graded up
-L2_ANSWER = {"multilingual", "multilingual_mt", "multilingual_multihop", "multilingual_typo"}
+L2_ANSWER = {"multilingual_st", "multilingual", "multilingual_multihop", "multilingual_typo"}
 L2_GRADE_NOTE = (
     "\n\nThis question is in a language other than English and its answer must be in that "
     "same language. An answer in another language (e.g. an English translation of the "
@@ -41,12 +41,12 @@ L2_GRADE_NOTE = (
 # are excluded (the continuation of a misspelling is not its correction)
 PLAIN_VARIANT = {
     "poetry",
+    "multihop_st",
+    "multilingual_st",
     "multihop",
     "multilingual",
-    "multihop_mt",
-    "multilingual_mt",
     "multilingual_multihop",
-    "basic_readout_mt",
+    "basic_readout",
 }
 # stamped as `gate_variant` (how the item was gated); every gate_hf.py gate is a chat render
 GATE_VARIANT = {"directed_modulation": "chat_dm"}  # greedy-correct, both items of a scene
@@ -325,7 +325,7 @@ def build_questions(
                 prefill=leg_stem,
                 max_new=32 if family in FINAL_ANSWER else 96,
             )
-        if family == "basic_readout":
+        if family == "basic_readout_st":
             for k, it in items.items():
                 if it.get("subfamily") == "implicit":
                     q(k, it["prompt"], [], "own_implicit", prefill=ANSWER_STEM, max_new=16)
@@ -480,7 +480,7 @@ def stamp_mt(it: dict[str, Any], tok: Any, family: str) -> bool:
                 if lang != "zh" and not any(c > 1 for c in counts):
                     ok = False
     ptl: dict[str, Any] = {"units": units, "target": ntok(tok, str(it.get("target", "")))}
-    if family == "multihop_mt":
+    if family == "multihop":
         ptl["target_alts"] = [ntok(tok, str(a)) for a in it.get("target_alts", [])]
     it["probe_token_lens"] = ptl
     return ok
@@ -772,20 +772,20 @@ def main() -> int:
                 if plain
                 else GATE_VARIANT.get(fam, "chat")
             )
-        if fam in ("multihop_mt", "multilingual_multihop"):
+        if fam in ("multihop", "multilingual_multihop"):
             it["bridge_consistency"] = {
                 q["qid"].split(":")[1]: q["hits"] / a.k for q in legs if ":bridge" in q["qid"]
             }
         if fam == "poetry":
             it["intermediates"] = [main["word"]]
-        if fam == "basic_readout" and it.get("subfamily") == "implicit":
+        if fam == "basic_readout_st" and it.get("subfamily") == "implicit":
             w = next(q["word"] for q in legs if q["mode"] == "own_implicit")
             it["target"], it["intermediates"] = w, [w]
             it["units"] = [{"role": "readout", "lang": "en", "headline": True, "match": [w]}]
         if fam in MT_FAMILIES and not stamp_mt(it, tok, fam):
             dropped[k] = "a required unit has no multi-token form under this tokenizer"
             continue
-        if fam == "multihop":
+        if fam == "multihop_st":
             multihop_offsets(it, tok)
         kept.append(it)
     if fam == "arithmetic_intermediates":  # null sets may only point at surviving items

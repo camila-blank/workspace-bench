@@ -129,7 +129,7 @@ KEYS: dict[str, set[str]] = {
     "kcutoff": {"stage", "llm", "cutoff", "limit", "regate", "pool"},
     # plan 0060 Phase E (wrong_intermediate.py, mhmt2.py)
     "wrong_intermediate": {"stage", "pool", "limit", "resolve", "llm"},
-    "multihop_mt": {"stage", "limit", "regate"},
+    "multihop": {"stage", "limit", "regate"},
     "mc": {"families", "stage"},
     "onecue": {"families", "stage", "out", "cache"},  # onecue.py (plan 0087)
     "dataround": {"stage", "run", "root", "history", "apply", "out", "llm", "only"},  # 0091
@@ -266,7 +266,7 @@ def main(argv: list[str] | None = None) -> None:
         wrong_intermediate.run(model, a.get("stage", "all"), pool=a.get("pool"),
                          limit=int(a.get("limit", 0)), llm=a.get("llm", "claude-opus-5-5"),
                          resolve=a.get("resolve", "local"))  # fmt: skip
-    elif cmd == "multihop_mt":  # plan 0060 Phase E
+    elif cmd == "multihop":  # plan 0060 Phase E
         from . import mhmt2
 
         regate = a.get("regate", "").lower() in ("1", "true", "yes")

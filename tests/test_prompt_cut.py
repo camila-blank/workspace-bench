@@ -212,7 +212,7 @@ def test_build_regression_reply_free(tmp_path, monkeypatch):
     from wsbench.produce.render import render
 
     fams = [
-        "basic_readout",
+        "basic_readout_st",
         "directed_modulation",
         "multi_concept_directed_modulation",
         "association",

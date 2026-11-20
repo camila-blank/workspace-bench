@@ -43,7 +43,7 @@ def restamp(family: str, item: dict, record: dict) -> dict:
     """Own-answer families: the subject's greedy answer becomes the readout's gold."""
     own = record["legs"][record.get("render") or "surface"].get("own")
     if not fams.get(family).own and not (
-        family == "basic_readout" and item.get("subfamily") == "implicit"
+        family == "basic_readout_st" and item.get("subfamily") == "implicit"
     ):
         return item
     item = copy.deepcopy(item)
@@ -64,7 +64,7 @@ def restamp(family: str, item: dict, record: dict) -> dict:
         if item.get("intermediates") and item["intermediates"][0] != own:
             item.setdefault("authored_rhyme", item["intermediates"][0])
         item["intermediates"] = [own]
-    elif family == "basic_readout":
+    elif family == "basic_readout_st":
         old = item.get("target")
         item["target"], item["intermediates"] = own, [own]
         for unit in item.get("units") or []:
@@ -297,8 +297,8 @@ QUOTA_KEYS = {"arithmetic_intermediates": "variant", "buggy_code": "src"}  # kee
 # written families whose scored latent is intermediates[0]: a new item repeating a selected
 # latent adds no coverage, so it is skipped (Opus repeats concepts across calls and waves)
 UNIQUE_LATENT = {
-    "association", "basic_readout_mt", "multihop", "multilingual",
-    "multilingual_mt", "multilingual_multihop", "multilingual_typo", "poetry", "typo", "typo_mt",
+    "association", "basic_readout", "multihop_st", "multilingual_st",
+    "multilingual", "multilingual_multihop", "multilingual_typo", "poetry", "typo_st", "typo",
 }  # fmt: skip
 
 
@@ -426,10 +426,10 @@ def _buggy_twins(items: list[dict]) -> list[str]:
 
 def _chain_mc(items: list[dict]) -> list[str]:
     """Freeze step (plan 0060 A2 chain): the per-slot ``mc`` of every adapted-only item, built by
-    ``evals/chain_intermediates/options.build_mc`` over the SHIPPED set (its distractor pool and
+    ``evals/computational/chain_intermediates/options.build_mc`` over the SHIPPED set (its distractor pool and
     rank balance are set-level, so it runs after ``select``); originals keep their registered
     options. A provisional block from before the gate is replaced."""
-    from wsbench.evals.chain_intermediates.options import build_mc, check_slot
+    from wsbench.evals.computational.chain_intermediates.options import build_mc, check_slot
 
     new = [it for it in items if (it.get("adapt") or {}).get("origin", "original") != "original"]
     if not new:
@@ -528,11 +528,11 @@ def restamp_tokens(model: str, family: str, items: list[dict]) -> tuple[list[dic
     if family == "arithmetic_intermediates":
         every = get_subject(model).arith_all_positions  # plan 0060 D8 (DeepSeek-V4)
         return _restamp_arith_cells(tok, items, all_positions=every)
-    if family not in MT and family != "multihop":
+    if family not in MT and family != "multihop_st":
         return items, []
     kept, lost = [], []
     for it in items:
-        if family == "multihop":
+        if family == "multihop_st":
             ids = tok(it["prompt"], add_special_tokens=False)["input_ids"]
             bare = tok.decode(ids[-1:]) == " "
             it["readout"] = {"kind": "last_word_token", "offsets": [-2 if bare else -1]}
@@ -697,7 +697,7 @@ def has_path(item: Any, path: str) -> bool:
 
 
 def bank_rel(family: str) -> str:
-    """The registered bank of record, repo-relative (``evals/association/items_v3.json``)."""
+    """The registered bank of record, repo-relative (``evals/basic/association/items_v3.json``)."""
     from wsbench.registry import REPO_ROOT, frozen_bank_path
 
     return frozen_bank_path(family).relative_to(REPO_ROOT).as_posix()
@@ -723,7 +723,7 @@ def _bank_rows(model: str, family: str, originals: list[dict]) -> list[dict]:
 
 # REGENERATE families whose originals are rebuilt on the subject but whose registered `mc`
 # blocks are judge-side data keyed to the gold (plan 0072, critique 1: #303 / #328's lists)
-REGISTERED_MC_CARRY = frozenset({"multihop_mt"})
+REGISTERED_MC_CARRY = frozenset({"multihop"})
 
 
 def carry_registered_mc(item: dict, reg_item: dict) -> int:
@@ -807,7 +807,7 @@ def build_original(family: str, reg_item: dict, row: dict, native: list[str] | N
     src = row["item"]
     fam = fams.FAMILIES.get(family)
     own = (fam is not None and fam.own) or (
-        family == "basic_readout" and it.get("subfamily") == "implicit"
+        family == "basic_readout_st" and it.get("subfamily") == "implicit"
     )
     if own and row["gate"].get("legs"):
         it = restamp(family, it, row["gate"])
@@ -815,7 +815,7 @@ def build_original(family: str, reg_item: dict, row: dict, native: list[str] | N
         if key in src:
             it[key] = copy.deepcopy(src[key])
     for p in fams.SUBJECT_FIELDS.get(family, ()):
-        if family == "basic_readout" and p == "mc" and not own:
+        if family == "basic_readout_st" and p == "mc" and not own:
             # an entity / processing original's `mc` IS the registered block (``rebuild.
             # subject_fields`` copies it verbatim): take today's, so a registered list edit
             # (#301's Big Ben) reaches a row marked before it (plan 0072, critique 2)
@@ -1422,7 +1422,7 @@ STATUSES = ("full", "partial", "untried", "ooc", "blocked", "absent")
 
 # plan 0072 D6: the originals-only families with no refill driver, whose refill is profiling the
 # new registered items; only these may record a refill block by hand (`note refill=`)
-NOTE_REFILL_FAMILIES = frozenset({"user_modeling", "multihop"})
+NOTE_REFILL_FAMILIES = frozenset({"user_modeling", "multihop_st"})
 
 
 def note(model: str, family: str, status: str | None = None, text: str | None = None,
@@ -1724,7 +1724,7 @@ def fill(model: str, family: str, llm: str | None = "claude-opus-5-5", max_waves
             onecue.repair_pending(model, family)
         with _rb_strict(family):
             lint_and_gate(model, family, runner, DEFAULT_DRAWS, None, _llm(llm))
-        if family == "basic_readout":
+        if family == "basic_readout_st":
             rebuild.subject_fields(model)  # stage=subject after every gate (implicit golds)
         post_gate(model, family, llm)  # plan 0075 §2.5 / §2.7 (poetry, role_bound)
         new = set(store.gated(model, family)) - before
