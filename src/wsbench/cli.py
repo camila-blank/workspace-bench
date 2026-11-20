@@ -1612,20 +1612,23 @@ class TextInversion(Command):
 
 class Unpack(Command):
     """Write the banks' plaintext under ``evals/`` and ``adapted/`` from their zips (plan 0097;
-    ``data/README.md``). ``units=`` takes units or prefixes; ``force=True`` overwrites local
-    edits."""
+    ``data/README.md``). ``units=`` takes units or prefixes. ``force=True`` overwrites local
+    edits, only in the units that are behind their sidecar or that ``units=`` names.
+    ``verify=True`` also re-hashes every listed file (exit 2 on a difference)."""
 
     def __init__(self) -> None:
         super().__init__()
         self.units = None
         self.force = False
+        self.verify = False
 
     def finalize(self) -> None:
         self.units = _strs(self.units)
         self.force = _bool(self.force)
+        self.verify = _bool(self.verify)
 
     def execute(self) -> int:
-        datapack.unpack(self.units, force=self.force)
+        datapack.unpack(self.units, force=self.force, verify=self.verify)
         return 0
 
 
@@ -1822,6 +1825,9 @@ def main(argv: list[str] | None = None) -> int:
         command = COMMANDS[argv[0]]()
     if data_command:
         argv = [argv[0], *_merge_repeats(argv[1:])]
+    elif datapack.DEFERRED is not None:  # plan 0097: this process's import-time unpack failed
+        print(f"{argv[0]}: {datapack.DEFERRED}", file=sys.stderr)
+        return EXIT_USAGE
     if any(a in ("--help", "-h") for a in argv[1:]):
         print(_defaults(command))
         return 0
@@ -1843,9 +1849,6 @@ def main(argv: list[str] | None = None) -> int:
         except datapack.DataError as e:
             print(f"{argv[0]}: {e}", file=sys.stderr)
             return EXIT_USAGE
-    if datapack.DEFERRED is not None:  # the import-time unpack of this process failed
-        print(f"{argv[0]}: {datapack.DEFERRED}", file=sys.stderr)
-        return EXIT_USAGE
     registry.load_all()
     return command.execute()
 

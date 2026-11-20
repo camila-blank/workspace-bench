@@ -276,7 +276,8 @@ PYTHONPATH = gw `src` + the cf_influence scripts dir + this repo's `src`.
      repo=<your fork>` and a maintainer re-runs `publish` before the merge), THEN `git add
      data/` and commit: publish may rewrite a sidecar.
   A packed zip exists only in that machine's `$WSB_CACHE/data/` until it is published, and a
-  sidecar committed without its published zip fails CI's `wsbench unpack` step.
+  sidecar committed without its published zip fails CI (the test session unpacks the banks
+  automatically, `tests/conftest.py`, and cannot fetch a zip that was never uploaded).
 - `pytest -q` and `ruff` pass locally. Push, open the PR (`Closes #<set issue>`), then run
   `scripts/gated_merge.sh <pr>`.
 
@@ -893,7 +894,21 @@ Every step writes its own entry (agentic, carry included); writes are atomic and
   sidecar change into a tree with a running job (the pull's unpack rewrites the files under
   it), and merge main into a run tree with bank edits as: copy the edited files aside, merge,
   `wsbench unpack`, copy them back, `wsbench pack`. `wsbench unpack` refuses to overwrite an
-  edited file (it reports a conflict); `force=True` discards the edit.
+  edited file: it reports a conflict and prints the command that discards the edit, `wsbench
+  unpack units=<the conflicting units> force=True` (only those units; every overwritten or
+  deleted file is printed).
+- The unpacked bank files are git-IGNORED, not tracked. `git clean -fdX` / `git clean -fdx`
+  and `git worktree remove` delete them, un-packed edits included, and git cannot restore
+  them: `wsbench pack` (or copy the run tree's set aside) before removing a run tree. A
+  packed change that is not published exists only in that machine's `$WSB_CACHE/data/`.
+  Checking out a pre-cutover commit, tag or branch silently OVERWRITES the unpacked banks with
+  that commit's tracked files (git treats ignored files as expendable; it refuses with
+  "untracked working tree files would be overwritten" only under
+  `checkout.overwriteIgnore=false`), and checking out the newer commit again deletes them
+  until the next `wsbench` command re-unpacks. Pack or copy aside every bank edit first. To
+  clear the unpacked files by hand: `git ls-files -z --others --ignored --exclude-standard --
+  evals adapted | xargs -0 rm -f` (it removes work products under `adapted/` too, so archive
+  them first); `wsbench unpack` re-creates the banks.
 - Merge only through `scripts/gated_merge.sh` (fail closed). Bench data stays local until the set
   is frozen and audited.
 

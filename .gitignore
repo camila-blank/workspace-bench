@@ -27,3 +27,6 @@ adapted/*/jlens_concept_pr.UNVALIDATED/
 adapted/*/introspection/job.json
 adapted/*/introspection/sweep.json
 adapted/*/introspection/vectors/
+
+# plan 0097: the local record of what `wsbench unpack` wrote
+/data/.unpacked.json

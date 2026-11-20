@@ -3,13 +3,16 @@ every tracked bank file into sidecars + cached zips; ``verify`` unpacks into a d
 compares ``git hash-object`` with ``git ls-tree``. Neither publishes nor changes git state.
 
     python scripts/datapack_cutover.py build
-    python scripts/datapack_cutover.py verify --dir <scratch or clone> --ref <commit> [--no-unpack]
+    python scripts/datapack_cutover.py verify --dir <empty dir> --ref <commit> [--from-release]
+    python scripts/datapack_cutover.py verify --dir . --ref HEAD --no-unpack   # pre-pack self-check
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -61,35 +64,83 @@ def build() -> int:
     return 0 if n_files == len(paths) else 1
 
 
-def verify(directory: Path, ref: str, unpack: bool) -> int:
-    directory = directory.resolve()
-    want = tracked(ref)
-    if unpack:
-        if directory != REPO:
-            for scope in datapack.SCOPES:  # sidecars only; the stamp is the directory's own
-                src, dst = REPO / "data" / scope, directory / "data" / scope
-                if dst.exists():
-                    shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-            for name in ("INDEX.json", "README.md"):
-                shutil.copy2(REPO / "data" / name, directory / "data" / name)
-        t0 = time.time()
-        print(f"unpack: {datapack.unpack(root=directory)} in {time.time() - t0:.0f} s")
+def _packable_on_disk(directory: Path) -> list[str]:
     found = [
         p.relative_to(directory).as_posix()
         for scope in datapack.SCOPES
         for p in sorted((directory / scope).rglob("*"))
         if p.is_file()
     ]
-    found = [p for p in found if not datapack.never_packed(p)]
-    stdin = "".join(f"{directory / p}\n" for p in found).encode("utf-8")
-    got = dict(
-        zip(
-            found,
-            _git(["hash-object", "--no-filters", "--stdin-paths"], stdin).decode().split(),
-            strict=True,
+    return [p for p in found if not datapack.never_packed(p)]
+
+
+def _unpack_into(directory: Path, n_expected: int, from_release: bool) -> None:
+    """Unpack into ``directory``, which must hold no packable file beforehand, and require that
+    exactly the expected number of files was written: every compared byte came out of a zip."""
+    before = _packable_on_disk(directory)
+    if before:
+        sys.exit(
+            f"{directory} already holds {len(before)} packable file(s) under evals/ / adapted/ "
+            f"(e.g. {before[0]}): the check would compare files no zip produced. Remove them "
+            "first (the Markdown keepers may stay), or pass --no-unpack for the pre-pack "
+            "self-check."
         )
-    )
+    if directory != REPO:
+        for scope in datapack.SCOPES:  # sidecars only; the stamp is the directory's own
+            src, dst = REPO / "data" / scope, directory / "data" / scope
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst)
+        for name in ("INDEX.json", "README.md"):
+            shutil.copy2(REPO / "data" / name, directory / "data" / name)
+    (directory / datapack.STAMP).unlink(missing_ok=True)
+    saved = dict(os.environ)
+    scratch = None
+    try:
+        if from_release:
+            scratch = tempfile.mkdtemp(prefix="wsb-verify-cache-")
+            os.environ["WSB_CACHE"] = scratch
+            for key in datapack.TOKEN_ENVS:
+                os.environ.pop(key, None)
+            print(f"--from-release: empty cache {scratch}, no GitHub token in the environment; "
+                  "every zip is downloaded anonymously from the release")  # fmt: skip
+        else:
+            print(f"zips: the local cache {datapack.cache_dir()} (downloads only what it lacks)")
+        t0 = time.time()
+        done = datapack.unpack(root=directory)
+        print(f"unpack: {done} in {time.time() - t0:.0f} s")
+        if from_release:
+            n_zips = len(list(datapack.cache_dir().glob("*.zip")))
+            print(
+                f"downloaded {n_zips} zip(s) for {len(datapack.load_sidecars(directory))} unit(s)"
+            )
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+    if done["written"] != n_expected:
+        sys.exit(
+            f"unpack wrote {done['written']} file(s), {n_expected} expected: NOT VERIFIED "
+            "(a file that was not written by this unpack would be compared as if it were)"
+        )
+
+
+def verify(directory: Path, ref: str, unpack: bool, from_release: bool = False) -> int:
+    directory = directory.resolve()
+    want = tracked(ref)
+    if not want:
+        sys.exit(f"{ref}: no packable file under evals/ or adapted/; nothing to verify against "
+                 "(pass the last commit that still tracks the plaintext)")  # fmt: skip
+    if unpack:
+        _unpack_into(directory, len(want), from_release)
+    else:
+        print("--no-unpack: NO ZIP WAS READ. This compares the directory as it is with the ref "
+              "(the pre-pack self-check); it proves nothing about the zips.")  # fmt: skip
+    found = _packable_on_disk(directory)
+    stdin = "".join(f"{directory / p}\n" for p in found).encode("utf-8")
+    ids = _git(["hash-object", "--no-filters", "--stdin-paths"], stdin).decode().split()
+    got = dict(zip(found, ids, strict=True))
     missing = sorted(set(want) - set(got))
     extra = sorted(set(got) - set(want))
     differ = sorted(p for p in set(want) & set(got) if want[p] != got[p])
@@ -99,13 +150,18 @@ def verify(directory: Path, ref: str, unpack: bool) -> int:
         f"{ref}: {n_tree} files under evals/ + adapted/, {len(want)} packable "
         f"({n_tree - len(want)} Markdown keepers / .report.lock files are not packed)"
     )
-    print(f"equal {equal} / {len(want)}; missing {len(missing)}; extra {len(extra)}; "
-          f"differing {len(differ)}")  # fmt: skip
+    print(f"expected {len(want)}; found {len(found)}; equal {equal}; missing {len(missing)}; "
+          f"extra {len(extra)}; differing {len(differ)}")  # fmt: skip
     for label, rows in (("missing", missing), ("extra", extra), ("differing", differ)):
         for p in rows[:20]:
             print(f"  {label}: {p}")
-    ok = not (missing or extra or differ)
-    print("IDENTICAL" if ok else "NOT IDENTICAL")
+    ok = not (missing or extra or differ) and equal == len(want) > 0
+    if not ok:
+        print("NOT IDENTICAL")
+    elif unpack:
+        print("IDENTICAL" + (" (anonymous download from the release)" if from_release else ""))
+    else:
+        print("IDENTICAL TO THE REF, NO ZIP WAS READ")
     return 0 if ok else 1
 
 
@@ -116,12 +172,23 @@ def main() -> int:
     v = sub.add_parser("verify")
     v.add_argument("--dir", required=True, type=Path)
     v.add_argument("--ref", required=True)
-    v.add_argument("--no-unpack", action="store_true", help="compare the directory as it is")
+    v.add_argument(
+        "--no-unpack",
+        action="store_true",
+        help="pre-pack self-check only: compare the directory as it is (no zip read)",
+    )
+    v.add_argument(
+        "--from-release",
+        action="store_true",
+        help="fresh temp WSB_CACHE and no GitHub token: zips come from the release",
+    )
     args = ap.parse_args()
     try:
         if args.mode == "build":
             return build()
-        return verify(args.dir, args.ref, unpack=not args.no_unpack)
+        if args.no_unpack and args.from_release:
+            ap.error("--from-release unpacks; it cannot be combined with --no-unpack")
+        return verify(args.dir, args.ref, not args.no_unpack, from_release=args.from_release)
     except datapack.DataError as e:
         print(f"datapack_cutover: {e}", file=sys.stderr)
         return 2
