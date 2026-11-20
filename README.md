@@ -544,7 +544,7 @@ A third floor, **logit lens L63** (plan 0071 (logit-lens floor), `evals/baseline
 model's own next-token distribution) and judged by each family's summary instrument
 (`layers=63`), drawn beside a registered-bank summary row that ran its instrument (never beside an adapted
 subject's row); it never enters the macro
-(refrozen 2026-11-17 on main's instruments: full set 0.121 over 29 families, strict ATI 0.046
+(refrozen 2026-11-17 on main's instruments: full set 0.119 over 29 families (nyt_connections re-judged 2026-11-20, plan 0099), strict ATI 0.046
 over 7; `evals/baselines/README.md`).
 
 **Anti-text-inversion subset.** `anti_text_inversion=True` on `judge` / `run` scores each family
