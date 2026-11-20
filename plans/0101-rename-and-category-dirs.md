@@ -9,6 +9,12 @@ floor value, no fast subset file. Every results directory, readouts root, digest
 adapted set written before it keeps reading as the family it was written for, or is refused
 with a message that names this rename. Nothing is ever judged as the other family of a pair.
 
+Revision 2 (after critique 1, `/root/tmp/wsb-0101-critique1.md`): every one of its 15 findings
+was checked against the code and is fixed where the affected code is specified; the owner's
+rulings on the former open questions are §0.4; §2 is now a complete inventory of the
+name-embedding sites; §8 (the migration script) is redesigned around a KEEP list; §11 has the
+manifest; §15 is the commit order.
+
 ## 0. Decisions (the owner's, not open)
 
 ### 0.1 Key renames (A)
@@ -59,7 +65,7 @@ data tree, with NO compatibility shim (no re-export module at the old dotted pat
   is a `ModuleNotFoundError`. The move turns a silent hazard into a loud one. (3) The cost is
   mechanical: one regex table rewrites the 615 import lines (109 in `src`, 458 in `tests`, 48
   in `scripts`; 209 files).
-- Against: a larger diff; every in-flight branch must re-run the rewrite (§8.5); two names need
+- Against: a larger diff; every in-flight branch must run the branch procedure (§8.7); two names need
   care (§2 F8: the family `association` vs the category `association`; `wsbench.evals.basic`
   vs the shared judge package `wsbench.basic`).
 - Rejected: packages flat + data categorised (the hazard in (2) stays and the trees disagree);
@@ -69,6 +75,20 @@ data tree, with NO compatibility shim (no re-export module at the old dotted pat
 Code that needs a family's module by NAME (`tests/test_prompts_in_readme.py`,
 `basic.mcjudge_bank.strings_of`, `baselines.prompt_only`, `registry._spec_for_bank`,
 `adapt.run`) goes through one helper, `registry.family_module` (§4), never an f-string.
+
+### 0.4 Rulings on the former open questions (Camila, 2026-11-20)
+
+1. The category directory `association` stays, alongside the family at `basic/association`
+   (F8 handles the overlap, including in `repo_path`, §4).
+2. Introspection's plan rows keep the legacy string `evals/introspection/vectors/…` (hash
+   input, F3); the producer resolves it through `registry.repo_path`.
+3. Public artefacts keyed by family are NOT renamed: the pushed adapted sets on HF, viewer /
+   atlas exports, HallucinationBench's WSB method names. `README.md` says so, with the key
+   table of §0.1, and the code reads both vocabularies.
+4. No per-category README.
+5. The stderr notice for the four swapped bare keys is removed at the next version tag. Every
+   guard (`owner`, `RenamedKey`, the header / id / stamp checks) stays permanently.
+6. `tests/golden/` and `tests/fixtures/` files keep their pre-0101 names and bytes.
 
 ## 1. Size (measured on origin/main 030dd09b, 8,666 tracked files)
 
@@ -87,49 +107,82 @@ Code that needs a family's module by NAME (`tests/test_prompts_in_readme.py`,
 
 ## 2. Findings from the code (each is designed around below)
 
-Nothing found makes a hash-neutral rename impossible. Six places embed a family key or a
-family path in a hash, seed or cache key and WOULD move without the fixes named here:
+Nothing found makes a hash-neutral rename impossible, but sixteen sites embed a family key or
+a family path in a hash, seed, cache key or prompt and WOULD move without the fixes here.
 
-| # | where | what embeds the name | fix |
+### 2.1 Two frozen-name functions, and why one is not enough
+
+- `registry.hash_name(family)` (exists): the key a family hashes under at the sites converted
+  in v1.2.0 (`plan_sha`, ATI `bank_sha`, lucky-guessing seeds, `gate_sampling.seed`,
+  `qwen_seed`). For the multi-token multihop family it is `multihop_mt_v2`.
+- `registry.frozen_name(family)` (NEW): the key the family had on main just before this plan,
+  i.e. the inverse of §0.1 (`multihop` -> `multihop_mt`, `basic_readout` ->
+  `basic_readout_mt`, `multilingual` -> `multilingual_mt`, `typo` -> `typo_mt`, `<X>_st` ->
+  `<X>`; any other family -> itself). It is what every site that embeds the RAW key today must
+  embed afterwards.
+
+The two differ for exactly one family: the multi-token multihop family is `multihop_mt_v2`
+under `hash_name` and `multihop_mt` under `frozen_name`, because the 2026-11-04 rename
+converted only the v1.2.0 sites and let the raw-key sites move to `multihop_mt`. (Revision 1
+of this plan put `hash_name` at F2, F5 and F6; that would have moved those three for the
+multi-token multihop family. Corrected below.) Rule: a site already on `hash_name` stays on
+it; every site converted by THIS plan uses `frozen_name`. Neither result is ever a lookup key
+or a file name (F7), and each is applied once, to a current key.
+
+### 2.2 The complete inventory of name-embedding sites
+
+Method: every `random.Random(`, `hashlib.`, `seed`, `seeded_shuffle`, `seed_int`,
+`fingerprint(`, and every f-string or `.format` that interpolates a family variable
+(`family`, `fam`, `name`, `spec.name`, `FAMILY`, `NAME`, `row.family`, `cfg.name`) next to
+`|`, `:`, `/` or `#`, across `src/`, `scripts/`, `atlas/`, `viewer_app/`,
+`.claude/skills/**/*.py`, `tests/conftest.py` and `tests/summary_fakes.py`; plus a scan of
+every family's cleaned plan rows for key and path strings. 184 seed / hash lines in `src`
+were read; the ones that can see one of the eight families are below. A site that only ever
+sees another family (chain_intermediates, directed_modulation, MCDM, role-bound,
+user_modeling, wrong_intermediate, poetry, moral, msdm, kcutoff, introspection option / pool
+seeds) is out of scope and unchanged.
+
+| # | site | what embeds the name | disposition |
 |---|---|---|---|
-| F1 | `basic/mcjudge_bank.py:161` `options_of` | the option order of the single-token multihop judge is `mc.seeded_shuffle(content, f"{family}\|{item['id']}")`. Renaming `multihop` -> `multihop_st` would reshuffle every option list, change every MC prompt and miss every cached call. Pinned by `tests/golden/multihop_mc_options{,_v5}.json` | seed with `registry.hash_name(family)`; the docstring says so |
-| F2 | `split.py:16` `is_dev` | `seed_int(f"{family}:{key}")` picks the dev/test split of `extras.layer_protocols` (report-only, native runs; callers in `basic/family.py`, `basic/mcjudge_{bank,basic}.py`, `multitoken/family.py`) | `hash_name(family)` inside `is_dev` |
-| F3 | `evals/introspection/items_v2.json` `vectors.*.path` | the bank (frozen bytes) names `evals/introspection/vectors/{concept,gaussian}_vectors_L12.npy`; `readplan.vector_file` copies the string into `extra.steering.vector_file` of 1,750 plan rows, which `plan_sha` and the ATI `bank_sha` hash | the plan-row string is KEPT as written (it is hash input); the producer opens it through `registry.repo_path` (§4), which maps a pre-0101 layout path to its current location. Open question Q2 |
-| F4 | `basic/prompts.py:108` `DIGEST_TASK_NOTES_TEXT` | a printed record `"<family>: <note>"` per line, in `basic.prompts.PROMPTS["DIGEST_TASK_NOTES"]`; hashed only by the pin in `tests/test_basic_prompts.py` (`PINNED["bank-2026-10-30b"]`) and printed in `evals/typo/README.md`. Never sent to a model as a whole (each family is sent its own line) | keys renamed with the families; the pin's sha constant is re-pinned (the ONE sanctioned sha change, §9.2 V1; the precedent is the same constant's re-pins by plans 0050 and 0058). `PROMPT_VERSION` stays `bank-2026-10-30b` |
-| F5 | `capable/run.py:100,136,148,179` | cache keys `f"{family}\|{q.id}\|d{d}"`, `f"{family}\|{q_id}\|g…"` of the capable gate's reply / grade caches | `hash_name(family)` in the four keys (old caches keep hitting; the pair's ids are disjoint, so no key ever collides) |
-| F6 | `adapt/generate.py:295`, `adapt/author.py:1463` | `random.Random(f"{family}:{tier}:{seed}")`, `random.Random(f"{model}:{family}:{len(pool)}")`: candidate generation of a set that is mid-refill | `hash_name(family)` in both seeds. (`generate.py:306` builds ids from `family.split('_')[0]`, which is the same string before and after for all eight keys: no change) |
+| F1 | `basic/mcjudge_bank.py:161` `options_of` | option order of the single-token multihop judge: `mc.seeded_shuffle(content, f"{family}\|{item['id']}")`; pinned by `tests/golden/multihop_mc_options{,_v5}.json` | gets `frozen_name(family)` |
+| F2 | `split.py:16` `is_dev` | `seed_int(f"{family}:{key}")`, the dev/test split of `extras.layer_protocols` (callers: `basic/family.py:155`, `basic/mcjudge_bank.py:887`, `basic/mcjudge_basic.py:605`, `multitoken/family.py:887`) | gets `frozen_name` inside `is_dev` |
+| F3 | `evals/introspection/items_v2.json` `vectors.*.path` -> `readplan.vector_file` -> `extra.steering.vector_file` of 1,750 plan rows | a pre-0101 repo PATH inside `plan_sha` and the ATI `bank_sha` | the row string is kept as written; the producer opens it through `registry.repo_path` (§4; ruling 0.4.2) |
+| F4 | `basic/prompts.py:108` `DIGEST_TASK_NOTES_TEXT` | a printed record `"<family>: <note>"`, in `basic.prompts.PROMPTS["DIGEST_TASK_NOTES"]`; hashed only by the pin in `tests/test_basic_prompts.py`; printed in ONE README (`evals/typo/README.md`); never sent to a model as a whole | keys renamed with the families; the pin's sha constant is re-pinned (the one sanctioned sha change, §9.2 V1). `PROMPT_VERSION` stays `bank-2026-10-30b` |
+| F5 | `capable/run.py:100,136,148,179` | reply / grade cache keys `f"{family}\|{q.id}\|d{d}"`, `f"{family}\|{q_id}\|g…"` | gets `frozen_name` |
+| F6 | `adapt/generate.py:295`, `adapt/author.py:1463` | `random.Random(f"{family}:{tier}:{seed}")`, `random.Random(f"{model}:{family}:{len(pool)}")`: candidate generation of a set that is mid-refill | gets `frozen_name` |
+| F11 | `multitoken/options.py:101,126,134` | language-distractor seeds `f"{R4_LANG_SEED}\|{family}\|{gold}"`, `…\|balanced\|{family}`, `…\|balanced\|{family}\|{name}`; live caller `adapt/author.py:83-95`, builders `scripts/build_r4_mc_banks.py:101-122`, `scripts/build_r4b_mc_banks.py:75-109`; pinned against the frozen banks by `tests/test_r4b_mc_banks.py:96` and `tests/test_r4_bridge_ml.py:403,407` | gets `frozen_name` in all three seeds. `R4_LANG_POOLS` (`options.py:68`) keys are renamed (`multilingual` -> `multilingual_st`, `multilingual_mt` -> `multilingual`), values untouched. Both tests must pass with NO value change |
+| F12 | `adapt/author.py:1506` | the authoring prompt says "…WorkspaceBench family {family}: …"; authoring calls are cached by a hash of the prompt | gets `frozen_name(family)` in the prompt text, so a mid-refill set re-uses its authoring cache and authors from the same prompt bytes. Not a judge prompt; the manifest pins its sha (§11.1) |
+| F13 | `adapt/onecue.py:154,168` | option-order seed and cache key `f"{VERSION}\|{row.family}\|{row.id}\|{row.role}\|…"` (families: single-token multihop, the multi-token basic_readout and multilingual, two unaffected) | gets `frozen_name(row.family)` in both |
+| F14 | `scripts/lens_readouts_modal.py:617` `_job` | the producer's sampling seed `sha256(f"{arm}\|{fam}\|{row_sha}")` | gets `frozen_name(fam)`: a re-produced readouts file samples as before |
+| F15 | `scripts/r4b_mc_refine.py:369,773`, `scripts/common_confusers_r5.py:198,242,248,538,593` | builder cache key `f"{family}\|{source_bank}"`, seeded draw `draw(lists[k], f"{family}\|{k}", rnd)`, gate-row keys and `gate_r5.json` keys `f"{family}\|{id}"` (the gate key also feeds `gate_sampling.seed`). These builders are LIVE for adapted sets (`adapt/mcstage` runs them into `adapted/<m>/mc/<family>/build-<hash>/`) | get `frozen_name(family)` at every listed line |
+| — | `reads._clean_row` (`reads.py:98`), `text_inversion._row_dict` (1290), `qwen_seed` (943), `lucky_guessing._rng` (769) and its call keys (1474, 1512), `gate_sampling.seed` (33), `scripts/r4_mc_select.py:245,290` | family in plan_sha / bank_sha / seeds | uses `hash_name` already: unchanged |
+| — | `adapt/generate.py:306`, `adapt/author.py:1635` | item ids `f"{family.split('_')[0]}-{tier}-…"`, `…-au-…` | the first `_` segment is the same string before and after for all eight keys: unchanged. Consequence (note 12 of the critique): both members of a pair share the `multihop-au-` / `basic-au-` id prefix, so F10's disjointness is an observed fact, not a structural one; T5 runs over every set and `owner(ids=)` raises on "both" |
+| — | `baselines/text_inversion.py:896` `run_key(out)` | hashes the `out` PATH (the Modal answers volume key), not a family | not hash-relevant. A work dir path that contains a family key is the caller's choice |
+| — | `adapt/mcstage.py:232` `work_dir`, `adapt/mhmt2.py:1808` `_work_dir` | hash of the candidate items / ids; the family is only the parent directory (`family_dir`) | hash unchanged; the directory lookup is §5.5 |
+| — | `mcjudge.Call` fingerprint; every cache key of the eight families (`<item id>\|L<layer>[\|<role>]`, `digest:<id>\|<layer>`, `ntok:<id>\|…`); the digest fingerprint (`digest.py:1825`); `mcjudge_basic` option seeds (`<OPTIONS_VERSIONS stamp>\|<id>`); `multitoken/options.py:151-214` (`<MC_SEED>\|<item name>\|<role>`); `adapt/rebuild.py:67`; `scripts/build_multilingual_v2.py:182`, `build_r4_mc_banks.py:74`, `build_multihop_mc.py:661` (item names only) | no family key | not hash-relevant |
+| — | every result stamp (§3.2), the task note each family's digest is told (text only), `EvalSpec.title` (read by `wsbench list`, the README tests and the viewer; in no prompt) | no family key | not hash-relevant |
+| — | error and log messages (`f"{family}: …"`, `f"{family}/{id}: …"`), `scripts/mc_options_r5.py:1051,1130,1150,1519` lock labels `r5:{cfg.name}:…`, `text_inversion.py:1392` `supersede` keys (CLI input, current keys) | text only | not hash-relevant |
+| — | `tests/conftest.py`, `tests/summary_fakes.py` | no seed or hash over a family key (the one family use is the `iter_modules` walk, §4) | not hash-relevant |
 
-Checked and clean (no family key inside): the `mcjudge.Call` fingerprint
-`(prompt_version, model, reasoning, temperature, system, user)`; every cache key of the eight
-families (`<item id>|L<layer>[|<role>]`, `digest:<id>|<layer>`, `ntok:<id>|…`); the digest
-fingerprint; `mcjudge_basic` option seeds (`<OPTIONS_VERSIONS stamp>|<id>`); `multitoken/options`
-seeds (`<name>|<role>`); every result stamp (§3.3 lists them; none contains a key); the task
-note each family's digest is told (text only); `EvalSpec.title` (read only by `wsbench list`,
-the README tests and the viewer; in no prompt). A scan of every family's cleaned plan rows
-(`reads._clean_row`) finds a family key only in the `family` field (hashed through
-`hash_name`) and a repo path only in F3.
+The manifest (§11.1) records an output of EVERY row marked "gets" or "already", so the
+inventory is checked by a byte comparison, not by trust.
 
-Already hash-safe through `registry.hash_name`: `reads._clean_row` (`plan_sha`, fast plan sha),
-`text_inversion._row_dict` (ATI `bank_sha`) and `qwen_seed`, `lucky_guessing._rng` and its call
-keys, `gate_sampling.seed`, `scripts/r4_mc_select.py`.
-
-Four more facts that shape the design:
+### 2.3 Other facts that shape the design
 
 - F7. `baselines/logit_lens.py:146` uses `registry.HASH_FAMILY_NAMES[family]` as a FILE-NAME
-  fallback. After this plan `hash_name("multihop_st") == "multihop"`, which is another live
-  family's key, so a hash name must never again be used as a lookup key. That line becomes
-  `registry.lookup_names(family)`; a test asserts `HASH_FAMILY_NAMES` is referenced in
-  `registry.py` only (§9.3 T9).
+  fallback. After this plan `hash_name("multihop_st") == "multihop"`, another live family's
+  key. That line becomes `registry.lookup_names(family)` plus the content rule; a test asserts
+  `HASH_FAMILY_NAMES` and `FROZEN_KEY_NAMES` are referenced in `registry.py` only (T9).
 - F8. Name collisions between levels: the FAMILY `association` (category `basic`) and the
   CATEGORY `association` (families conjunctive_association, user_modeling). After the move
   `evals/association/` and `wsbench.evals.association` are the category; the family is
-  `evals/basic/association/`, `wsbench.evals.basic.association`. The migration must move the
-  family out before it creates the category dir (the two-phase move of §8.2 does). Also
+  `evals/basic/association/`, `wsbench.evals.basic.association`. Consequences handled below:
+  the move order (§8.3), `repo_path` (§4), the script's idempotence (§8.1). Also
   `wsbench.evals.basic` (category) is not `wsbench.basic` (the shared bank judge). Category
   packages export nothing, so a stale `from wsbench.evals.association import judge` fails.
-- F9. Every bank file of the eight families, registered and adapted (all 125 adapted files
-  checked), has a header `"family"` value from the SOURCE repo's vocabulary, which never
-  changed with our keys and is the reliable content label of a bank:
+- F9. Every bank file of the eight families, registered (36 files) and adapted (all 125), has
+  a header `"family"` value from the SOURCE repo's vocabulary, which never changed with our
+  keys and is the reliable content label of a bank:
 
   | header `"family"` | family (key after) |
   |---|---|
@@ -143,12 +196,13 @@ Four more facts that shape the design:
   | `typo-hard` | typo |
 
   Trap: three of these values (`multihop`, `multilingual`, `typo`) are spelled like the bare
-  keys and mean the `_st` family. They are bank bytes, are never rewritten, and are compared
-  only through this table (`Reused.live_header` / `other_header`, §3.2), never to a key.
+  keys and mean the `_st` family. They are bank bytes, are never rewritten (the migration
+  script's KEEP patterns, §8.2), and are compared only through this table (`Reused.live_header`
+  / `other_header`, §3.2), never to a key.
 - F10. Within each pair the two families share no item id, over every registered bank version
   AND every in-repo adapted bank (checked: basic_readout 606 vs 1,119 ids, multihop 657 vs 427,
   multilingual 123 vs 615, typo 223 vs 728; overlap 0 in all four). So item ids identify the
-  family of a readouts file or a cache. A test pins the disjointness (§9.3 T5).
+  family of a readouts file or a cache today. A test pins it over every set (T5).
 
 ## 3. `src/wsbench/registry.py`
 
@@ -202,6 +256,23 @@ lookup key or a file name (F7); `hash_name` is not idempotent across a pair
 is applied once, to a CURRENT key.
 
 ```python
+# The key each family had on main just before plan 0101: what every site that embedded the RAW
+# key then (option orders, the dev split, capable / onecue / builder cache keys, adapt seeds,
+# the authoring prompt, the producer's sampling seed; §2.2) embeds now. The inverse of §0.1.
+FROZEN_KEY_NAMES = {
+    "basic_readout": "basic_readout_mt", "multihop": "multihop_mt",
+    "multilingual": "multilingual_mt", "typo": "typo_mt",
+    "basic_readout_st": "basic_readout", "multihop_st": "multihop",
+    "multilingual_st": "multilingual", "typo_st": "typo",
+}
+def frozen_name(name: str) -> str: ...   # FROZEN_KEY_NAMES.get(name, name); never canonicalized
+```
+
+It differs from `hash_name` only for `multihop` (`multihop_mt` here, `multihop_mt_v2` there;
+§2.1). An import-time check asserts `FROZEN_KEY_NAMES` is exactly the inverse of
+`PRE_0101_KEYS` minus `multihop_mt_v2`.
+
+```python
 # The key every family had on main just before plan 0101 -> its key now: the map for files that
 # are frozen in the old vocabulary (evals/fast/*.json, the archived floor, goldens) and for
 # pre-0101 layout paths (repo_path). Never used for user input.
@@ -246,7 +317,7 @@ REUSED_FAMILY_KEYS: dict[str, Reused] = {
                        ("mh2-mc-", "mt-regex-2026-10-30+md+fz"), ("bank-",),
                        "multihop-hard", "multihop", "2026-11-20 (plan 0101)"),
     "multilingual": Reused("multilingual", "multilingual_st",
-                           ("mt-regex-", "mc-ml-", "mc-2026-"),
+                           ("mt-regex-",),
                            ("mcrx-", "bank-", "mt-regex-2026-10-30+leg-regex"),
                            "multilingual-hard", "multilingual", "2026-11-20 (plan 0101)"),
     "typo": Reused("typo", "typo_st", ("mt-regex-", "mc-2026-"), ("bank-",),
@@ -267,13 +338,18 @@ Stamp prefixes, as verified against every stamp in the repo's floors, ATI files,
 multi-token `mc-brmt-2026-10-31r…`, `mh2-mc-2026-11-01…`, `mt-regex-2026-09-23`,
 `mt-regex-2026-10-30+…`, `mc-2026-09-16`). The longest matching prefix over both tuples
 decides (so `mt-regex-2026-10-30+leg-regex`, the single-token multilingual family's
-`opts=judge=regex` diagnostic, beats `mt-regex-`). The implementer must confirm two things
-before freezing the tuples and add any stamp found: (a) `git log -S` over
-`basic/prompts.py`, `multitoken/prompts.py`, `multitoken/regex.py` for every historical value
-of the stamp constants; (b) whether the single-token multilingual family can emit a bare
-`mc-ml-…` or `mc-2026-…` stamp under `opts=judge=mc` (`multitoken/family.py:1958,2010,2194`);
-if it can, that prefix is removed from `live_stamps` and belongs to neither side (such a
-result is then refused, §3.3). Import-time invariant, also a test (T2): for each entry whose
+`opts=judge=regex` diagnostic, beats `mt-regex-`).
+
+Settled against the code (critique finding 4): `multitoken/family.py:1958` and `:2194` set
+`diag_pv = ML_MC_PROMPT_VERSION if v2 else PROMPT_VERSION` for ANY multilingual family under
+the unpinned `opts=judge=mc`, and both members of the multilingual pair are `mt_family`
+families on v2-shaped banks. So a `mc-ml-…` or `mc-2026-…` stamp under the key `multilingual`
+can be either member's diagnostic: both prefixes are in NEITHER tuple of that entry, and such
+a result is `RenamedKey` (refused, never guessed). For the other three pairs the single-token
+member is a `bank_family` and cannot emit an `mc-` or `mt-regex-` stamp, so `mc-2026-` stays
+in their `live_stamps`. The implementer still runs `git log -S` over `basic/prompts.py`,
+`multitoken/prompts.py`, `multitoken/regex.py` for every historical value of the stamp
+constants and adds any prefix found to the right tuple. Import-time invariant, also a test (T2): for each entry whose
 two holders are registered, each holder's registered `prompt_version` classifies as that
 holder.
 
@@ -309,9 +385,29 @@ class RenamedKey(SystemExit): ...   # exit 2; the message names the rename and b
   `live_header` / `other_header`. `ids`: `live` when the ids intersect only `family_ids(live)`,
   `other` when only `family_ids(other)`, None when neither, `RenamedKey` when both. Two kinds
   of evidence that disagree raise `RenamedKey`.
+- `attribute_rows(rows) -> rows`: each row's `family` re-keyed by its own id (§5.7a):
+  `canonical` for a non-reused key, `owner(key, ids=[row["id"]])` for a reused one,
+  `RenamedKey` when the id is in neither member's banks.
 - `family_ids(family) -> frozenset[str]`: every item id of every `items*.json` under
-  `family_root(family)` plus, under `$WSB_BANK_ROOT`, the set's bank of the family
-  (`bank_path`); cached per (family, root).
+  `family_root(family)` plus, under `$WSB_BANK_ROOT`, the set's bank of the family when the
+  set has one; cached per (family, root). It must NOT call the exiting `bank_path`: ten
+  in-repo sets have a multi-token typo bank and no single-token one, and asking for the
+  partner's ids there has to return the registered ids, not exit. It uses `root_bank(base,
+  family)` (below), which returns None for a missing bank.
+- `root_bank(base, family) -> Path | None`: THE rule for "which file under an adapted root is
+  this family's bank", used by `bank_path`, `family_ids`, `readplan.families`,
+  `adapt/run.py:774` and `:852-856`, `adapt/store.bank_file`: the first `lookup_names` file
+  that exists and passes the header rule (a file under a reused key: the multi-token family
+  takes it unless its header is `other_header`; an `_st` family takes it only when its header
+  IS `other_header`). No caller tests `(base / f"{k}.json").exists()` on its own any more, so
+  a pre-0101 set that holds only the single-token `multihop.json` no longer "has" the
+  multi-token family.
+- `bank_pins(family) -> list[str]`: THE list of `WSB_BANK_FILE_<NAME>` variables that pin a
+  family, used by `bank_path`, `runner.adapted_bank_stamp` (240-241), `fast.entry` (93) and
+  `reads.lineage_drops` (207), which today each build `(fam, *legacy_names(fam))` themselves:
+  the current key, its former keys, and for an `_st` family ALSO the bare key (so a pre-0101
+  `WSB_BANK_FILE_MULTIHOP` is seen, not ignored, by `multihop_st` and by the fast "pins fail
+  closed" check).
 - `stored_family(stored_key, prompt_version) -> str`. SIGNATURE CHANGE: it takes the key AS
   STORED (not canonicalized), because the two reused keys of the multihop family resolve
   differently. `stored_key` not in `REUSED_FAMILY_KEYS` -> `canonical(stored_key)`. Else, by
@@ -333,14 +429,19 @@ class RenamedKey(SystemExit): ...   # exit 2; the message names the rename and b
   config.prompt_version)`; else the item ids of the first 2,000 rows of `cells.jsonl` or (a
   digest store dir) `L*.jsonl`, each id = the row `key` minus a `digest:` / `ntok:` prefix, cut
   at the first `|` -> `owner(key, ids=…)`; else None.
-- `bank_path(family)`: `$WSB_BANK_FILE_<FAMILY>` as today (current key, then former keys), plus
-  a check: when the named file has a header `"family"` that is the partner's value, exit with
-  the rename message (a pre-0101 shell that sets `WSB_BANK_FILE_MULTIHOP` to a single-token
-  bank). Under `$WSB_BANK_ROOT`: the first `lookup_names` file that exists and, when its name
-  is a reused key, whose header does not say the partner (`_st` families: whose header SAYS
-  `other_header`, a positive match is required of them under the bare key). Otherwise the
-  existing "has no bank for" exit, with the rename named when a skipped partner file was seen.
-  Without overrides: `REPO_ROOT / spec.bank` as today.
+- `bank_path(family)`. Pins (`bank_pins`): a variable named for a BARE key
+  (`WSB_BANK_FILE_MULTIHOP`) is ambiguous by construction, so its file must carry a header
+  that POSITIVELY matches: for the multi-token family `live_header`, else exit ("the file's
+  header is `<value or none>`; `WSB_BANK_FILE_MULTIHOP` pins the multi-token family since
+  2026-11-20"); for the `_st` family, a bare-key variable whose file's header is
+  `other_header` exits with "rename the variable to `WSB_BANK_FILE_MULTIHOP_ST`" (never
+  silently used, never silently ignored); a header-less or list-shaped file under a bare-key
+  variable exits for both. A variable named for an unambiguous key (`…_MULTIHOP_ST`,
+  `…_MULTIHOP_MT`, `…_MULTIHOP_MT_V2`) is taken as today, with one check: a header that is the
+  partner's value exits. Under `$WSB_BANK_ROOT`: `root_bank`, else the existing "has no bank
+  for" exit, with the rename named when a skipped partner file was seen. Without overrides:
+  `REPO_ROOT / spec.bank` as today. (Tests that pin a toy bank through a bare-key variable
+  gain the header; listed in §9.2 V7.)
 - `overlay_path`: unchanged apart from `lookup_names` (overlays stay
   `adapted/<m>/<family>/<file>`; the only overlay dirs of the eight families are the 16
   `basic_readout_mt/` dirs, renamed to `basic_readout/`; an unmigrated set's
@@ -366,10 +467,17 @@ def family_root(family: str) -> Path           # REPO_ROOT / family_rel(family)
 def family_module(family: str, sub: str = "") -> ModuleType
     # importlib.import_module(f"wsbench.evals.{category}.{family}" + (f".{sub}" if sub else ""))
 def repo_path(rel: str | Path) -> Path
-    # REPO_ROOT / rel; a path of the pre-0101 layout, evals/<pre-0101 key>/<rest> with
-    # <pre-0101 key> not baselines|fast|hallucinationbench, resolves to
-    # family_root(from_pre_0101(<key>)) / <rest>. ONLY for path strings frozen inside data
-    # (F3 and the informational "bank" strings of adapted report.json). Never for user input.
+    # REPO_ROOT / rel, except a path of the pre-0101 layout. Order of the rule (F8: `association`
+    # is both a pre-0101 family key and a category):
+    #   1. evals/<seg1>/<seg2>/… where (seg1, seg2) is a (category, family) pair of _layout()
+    #      -> as written (a new-layout path, e.g. evals/association/conjunctive_association/…);
+    #   2. evals/<seg1>/… where seg1 is baselines | fast | hallucinationbench -> as written;
+    #   3. evals/<seg1>/<rest> where seg1 is a pre-0101 family key
+    #      -> family_root(from_pre_0101(seg1)) / <rest>;
+    #   4. anything else -> as written.
+    # ONLY for path strings frozen inside data (F3 and the informational "bank" strings of
+    # adapted report.json, which pre-0101 sets wrote in the old layout and post-0101 builds
+    # write in the new one). Never for user input.
 ```
 
 - `resource_path(family, name)` = `family_root(family) / name`. `frozen_bank_path` and
@@ -381,15 +489,33 @@ def repo_path(rel: str | Path) -> Path
   `for mod in pkgutil.iter_modules(<category path>)` -> `import_module(f"wsbench.evals.
   {category}.{mod}")`. `adapt/run.py:865-870` does the same walk through a new
   `registry.family_packages() -> list[str]` (dotted names) instead of its own `iter_modules`.
-- By-name imports replaced by `family_module`: `registry._spec_for_bank` (365),
-  `basic/mcjudge_bank.strings_of` (139), `baselines/prompt_only.py` (81, 99),
-  `tests/test_prompts_in_readme.py:29`.
+- By-name imports replaced by `family_module` (R1 of the script cannot match an f-string, so
+  each of these is a listed hand edit, §8.6):
+  - src: `registry._spec_for_bank` (365), `basic/mcjudge_bank.strings_of` (139),
+    `baselines/prompt_only.py` (81, 99). `adapt/run.py:863-870` walks the packages itself and
+    does `getattr(module, "SPEC", None)`: left one-level it would SILENTLY register nothing
+    (a category package has no `SPEC`), so it must use `registry.family_packages()`.
+  - tests: `tests/conftest.py:141-146` (the `real_families` fixture's one-level
+    `iter_modules` walk + `.SPEC`: becomes `registry.family_packages()`),
+    `test_prompts_in_readme.py:29`, `test_digest.py:517`, `test_lucky_guessing.py:23`,
+    `test_multilingual.py:50`, `test_multilingual_language_leg.py:37`,
+    `test_mt_regex.py:302,342`, `test_multitoken_family.py:205`,
+    `test_prompt_only_scorer.py:28`, `test_round5_leakage_standard.py:37`,
+    `test_round4_lucky_topic.py:21`, `test_runner.py:335`, `test_bank_judge_v2.py:54`,
+    `test_prompt_tool_names.py:37` (15 f-string imports in `tests/`). The literal ones
+    (`test_multilingual_multihop.py:115`, `test_multilingual_cited_case.py:55`,
+    `test_nyt_connections.py:228`) are covered by R1.
+  - not family-keyed, unchanged: `adapt/refill.py:319` (`wsbench.adapt.<name>`),
+    `evals/user_modeling/judge.py:601` (`import_module(__package__)`).
 - `readplan.frozen_lite_rule` (128), `nocot.OBSCURE` (16), `lucky_guessing.py:1128`,
   `evals/jlens_concept_pr/judge.BANK_DIR`, `evals/typo_mt` `BANK`, and every other
   `REPO_ROOT / "evals" / family / …` or `"evals/<family>/…"` literal in `src/wsbench` (72 lines
   in 65 files) -> `registry.family_root(...)` / `family_rel(...)` / `resource_path(...)`.
-- `readplan.families()` (1387-1392): iterates `registry._layout()` and keeps the families whose
-  `family_root` has `items*.json` or `manifest.json`, instead of `(REPO_ROOT / "evals").iterdir()`.
+- `readplan.families()` (1387-1404): iterates `registry._layout()` and keeps the families whose
+  `family_root` has `items*.json` or `manifest.json`, instead of `(REPO_ROOT / "evals").iterdir()`;
+  under `$WSB_BANK_ROOT` a family is kept when `registry.root_bank(base, f)` is not None (or its
+  `manifest.json` dir exists), not when any `lookup_names` file exists (§3.3: a pre-0101 set
+  with only the single-token `multihop.json` must not list the multi-token `multihop`).
 - `readplan.vector_file` keeps returning the bank's string unchanged (F3);
   `produce/producer.py` `_vector` opens `registry.repo_path(steer["vector_file"])` when the
   path is relative. `adapt/moral.py:992` and `adapt/mcstage.py:127` ("is this path under
@@ -403,14 +529,20 @@ Enforced by `tests/test_family_paths.py` (TP):
 
 1. an `ast` scan of `src/wsbench/**/*.py`, `atlas/*.py`, `viewer_app/*.py`,
    `.claude/skills/**/*.py`: no non-docstring string constant matches
-   `^evals/(<category>|<family or pre-0101 key>)(/|$)`; no `BinOp` chain `X / "evals" / Y` whose
-   next operand is anything but the literals `"baselines"`, `"fast"`, `"hallucinationbench"`;
-   no f-string or literal starting `wsbench.evals.` passed to `import_module`. `registry.py` is
-   the one exempt file.
+   `^evals/(<category>|<pre-0101 family key>)(/|$)` (one alternation over the union of both
+   name sets, so the `association` overlap is a single alternative, not two rules); no `BinOp`
+   chain `X / "evals" / Y` whose next operand is anything but the literals `"baselines"`,
+   `"fast"`, `"hallucinationbench"`. `registry.py` is the one exempt file.
+   In those files AND in `tests/**/*.py`: no f-string or literal starting `wsbench.evals.`
+   passed to `import_module` (the §4 list above).
 2. `scripts/*.py` are one-off builders that ran once; their literals are rewritten by the
    table and stay literals. The test holds the list of script files that contain such a
    literal (`tests/golden/script_path_literals_0101.txt`) and fails when a file NOT in the list
    gains one (the list may only shrink).
+   The layout checks here and in §8.5 ignore directories that hold nothing but `__pycache__`:
+   after a pull, a stale `src/wsbench/evals/multihop/__pycache__/` survives and Python treats
+   the directory as a namespace package (imports from it still fail). The PR body says to run
+   `git clean -fdX src/wsbench/evals`.
 3. every `evals/…` path written in `README.md`, `CLAUDE.md`, `AGENTS.md`, `NOTICE.md`,
    `docs/{producing_readouts,summarizer,adapt_judge_inputs}.md`, `.claude/skills/**/*.md`
    (audit records excluded), every family README, `tests/**/*.py` and the listed scripts
@@ -476,7 +608,9 @@ semantics (§5.5) instead of `lookup_names` membership alone. `_clean_row` is un
   partner under the family's own key is `RenamedKey`).
 - `fast.py`: `_file(version)` returns the file with `families` keys and `dropped_families`
   values passed through `registry.rekey_pre_0101` / `from_pre_0101` when `fast.KEY_ERA[version]
-  == "pre-0101"` (all three existing versions). The files are NOT edited
+  == "pre-0101"` (all three existing versions). `KEY_ERA` is TOTAL over `fast.VERSIONS`: an
+  import-time check raises when a version has no era (never a default), and the per-entry
+  `bank_sha` check (sha256 of the bank file) catches a wrong era. The files are NOT edited
   (`tests/test_fast_subset.py` keeps pinning their sha256). A future subset file is written in
   current keys and registered with era `"0101"`. Effect: fast-v2's `basic_readout` entry is
   served as `basic_readout_st`, its `basic_readout_mt` entry as `basic_readout`, its
@@ -508,6 +642,19 @@ until frozen), so reads must still work on them:
   set written under `multihop_mt_v2` is still read.
 - `gate_path` / `cand_path` (`adapted/<m>/gate|cand/<family>.jsonl`, untracked work files):
   same rule, ids as evidence.
+- `adapt/run.py:774` and `:852-856` (does the set have this family's bank): `registry.
+  root_bank`.
+- `adapt/floors.py:222-224`: `stems = {canonical(p.stem) for p in rd.glob("*.jsonl")}` would,
+  in a set whose `readouts/` still has pre-0101 names, canonicalize both `multihop.jsonl`
+  (single-token) and `multihop_mt.jsonl` to `multihop` and never produce `multihop_st`: the
+  single-token floor would be silently dropped. It becomes: each file is attributed with
+  `reads.owner_of(path, <candidate family>)` over the families whose `lookup_names` contain
+  the stem; a file under a bare key that cannot be attributed is `RenamedKey`.
+- `adapt/mcstage.py:233` and `adapt/mhmt2.py:1811` (`family_dir(model_dir / "mc", family)`):
+  the content-checked `family_dir` (§3.3) finds no `results.json` or `cells.jsonl` there, so
+  for these two callers `dir_owner` is given the ids of the `build-*/` / `refill-*/` work
+  files' rows (a `kind="mc_work"` argument that reads `*.jsonl` one level down); an
+  unattributable non-empty directory under a bare key is `RenamedKey`.
 - WRITES are fenced by a marker: `report.json` gains `"family_keys": "0101"` (written by the
   migration and by every new build). `adapt` subcommands that write (`build`, `refill`,
   `freeze`, `drop`, `floors`, `gate_adapted`, …) exit 2 on a set without the marker:
@@ -530,7 +677,7 @@ until frozen), so reads must still work on them:
     `basic_readout_mt`, `multilingual_mt`, `typo_mt`);
   - one of the four bare keys -> itself, and ONE line on stderr per key per process:
     `note: 'multihop' is the multi-token family since 2026-11-20 (was multihop_mt); the
-    single-token family is 'multihop_st'`. Printed while `registry.SWAP_NOTICE` is True
+    single-token family is 'multihop_st'`. Printed while `registry.SWAP_NOTICE` is True (ruling 0.4.5: the constant, this branch and its test are deleted at the next version tag; the guards are permanent). Printed
     (a constant with a removal note: delete it and the test after the transition); silenced by
     `WSB_NO_RENAME_NOTICE=1`, and never printed by `JudgeFamily` when `outcome=` is set (the
     process-mode child, which the parent calls with a current key).
@@ -561,6 +708,70 @@ until frozen), so reads must still work on them:
 - `capable/questions.py` (256-269, 317): table keys and their `_asked("<family>", …)` /
   `_with_bridges("<family>")` arguments renamed; `capable/run.py` keys: F5.
 
+### 5.7a ATI and prompt-only WORK DIRS (`out/prompts.jsonl`, `answers/`, `readouts/`, `judged/`)
+
+These readers take family keys as stored, and §5.7 did not cover them. What the code does
+today, traced (critique blocker 2):
+
+- `text_inversion._canon_rows` (911-916, used by `current_shas` 927, `answered` 998, `_prompts`
+  1004) sets `r["family"] = canonical(r["family"])`. After 0101 a pre-0101 `prompts.jsonl` row
+  `multihop_mt` would become `multihop` and sit beside single-token rows already stored as
+  `multihop`.
+- `latest_answers` (690) keys answers `(r["family"], r["id"])` raw; `draw_verdicts` (768) takes
+  `fam = d["family"]` raw; `_judged_paths` (1351) and `_check_not_pilot` (1358) build
+  `judged/<answerer>/draw<d>/<fam>/results.json`; the readouts stage (733) writes
+  `readouts/<answerer>/draw<d>/<fam>.jsonl` opened with `"w"`.
+- `prompt_only_opus.py` (296, 318, 455, 469) writes `root / f"{fam}.jsonl"` with `"w"`;
+  answers are matched by `(family, id)` AND `prompt_sha` (176-190).
+
+Does a downstream check stop a cross-family merge? Yes for verdicts, no for the damage:
+
+- `_answerer_draws` (1375-1403) assigns a verdict only for `i in ids` (the family's own bank
+  ids) when `usable(ans.get((fam, i)))` and `v.get(i) is not None`. With the pair's ids
+  disjoint (F10), no single-token answer or verdict is ever assigned to a multi-token item:
+  every draw stays `None`. `fresh` / `prompt_sha` are also keyed `(family, id)`.
+  `ROWLESS_IS_FAIL` holds none of the eight families, so a rowless item is not counted as a
+  fail. Result: NOT a silent cross-family verdict.
+- But `complete` is still True (a `results.json` exists under the family's directory), every
+  item is unverified, and the family then falls under "more than `MAX_REFUSED_SHARE`
+  unverified -> not gated": a re-gate or `scripts/ati_rederive.py` over a pre-0101 `out` would
+  silently DROP the ATI entries of the four gated families of the eight (the two
+  basic_readout and the two multilingual families), and the `"w"` opens would overwrite the
+  other member's `<bare>.jsonl`. The protection also rests on F10, which is not structural.
+
+So the behaviour is specified, not left to the id filter:
+
+- `_canon_rows` becomes `registry.attribute_rows(rows)`: a row's family is
+  `canonical(key)` for a non-reused key and `registry.owner(key, ids=[row["id"]])` for a
+  reused one (the row's own id decides: a pre-0101 `multihop` row with a single-token id
+  reads as `multihop_st`, a `multihop_mt` row as `multihop`); an id that neither member's
+  banks hold is `RenamedKey`. `latest_answers` and `prompt_only_opus.current_answers` /
+  `latest_fallback` use it too, so pre-0101 answers keep serving the right family (no
+  re-asking) and never the other.
+- `draw_verdicts(results_path, expect=<family>)`: the result's family is
+  `registry.stored_family(d["family"], d["config"].get("prompt_version"))` and must equal
+  `expect`, else `RenamedKey`.
+- `_judged_paths`, `_check_not_pilot` and the two readouts writers resolve the per-family path
+  with `registry.family_dir` / `runner.readouts_path` semantics (content-checked), and a WRITE
+  to `<dir>/<bare>.jsonl` or `<dir>/<bare>/` that exists and is owned by the partner is
+  `RenamedKey` before the file is opened.
+- `stage=gate`, `gate_adapted` and `scripts/ati_rederive.py`: a family whose every item ends
+  unverified while a judged directory exists is a `SystemExit` naming the directory (today it
+  degrades to "not gated"), for every family.
+- Test T12 (§9.3): a pre-0101 `out` fixture in BOTH layouts (panel `answers/<answerer>/draw<d>`
+  and the flat plan-0014 one) holding both members of a pair under pre-0101 keys.
+
+### 5.8 Viewers (`atlas/`, `viewer_app/`)
+
+`atlas/build.py:575,625` and `viewer_app/index.py:452` take the family from the DIRECTORY
+name (`fam = jd.name`, minus `_opus`), so an old run tree's `multihop/` would render as the
+multi-token "Multihop". Hand edit (§8.6): the family is `results.read_results(jd).family`
+when `results.json` exists, else `registry.dir_owner(jd)`, else the directory name only when
+it is not a reused key (a reused, unattributable directory is skipped with a logged line).
+Test T13: a pre-0101 tree with `multihop/` (single-token stamp) and `multihop_mt/` builds the
+two families under their current keys and titles. Public exports already published are not
+re-keyed (ruling 0.4.3).
+
 ## 6. Every in-repo artefact keyed by family
 
 "in place" = renamed by the script, value-preserving, checked by `json.loads(new) ==
@@ -577,7 +788,7 @@ change). "at read" = bytes untouched, translated by `rekey_pre_0101`. "history" 
 | resource files read by path (`basic_readout_mt/exonyms.json`, `multihop/derived_forms.json`, `multihop/split_subjects.json`, `*/lite_rule.json`, `*/r4*_distractors.json`, `knowledge_cutoff/obscure_items.json`, `introspection/vectors/`, `jlens_concept_pr/manifest.json`) | — | moved with their dir; every reader goes through `registry.resource_path` / `family_root` (§4) |
 | `evals/baselines/prompt_only.json`, `prompt_only_summary.json`, `logit_lens.json`, `lucky_guessing.json`, `anti_text_inversion.json` (incl. `_not_gated`) | 5 | in place: top-level family keys and inner `"family"` values (7, 7, 7 + 7, 7 and 8 occurrences). No value, stamp, `bank_sha`, id list or `_source` field changes |
 | `evals/baselines/lucky_guessing_moral_v5.json`, `_v7.json` | 2 | no key of the eight: untouched |
-| `evals/baselines/topics/{basic_readout_mt,multihop_mt,multilingual,multilingual_mt}.json` | 4 | renamed to `{basic_readout,multihop,multilingual_st,multilingual}.json` (two-phase, §8.2); inner `"family"` value in place |
+| `evals/baselines/topics/{basic_readout_mt,multihop_mt,multilingual,multilingual_mt}.json` | 4 | renamed to `{basic_readout,multihop,multilingual_st,multilingual}.json` (two-phase, §8.3); inner `"family"` value in place |
 | `evals/baselines/confusers/` (same four names) | 4 | same |
 | `evals/baselines/archive/prompt_only_summary.qwen-2026-10-29.json` | 1 | at read (an archive is a record); keys `basic_readout`, `multihop`, `multilingual`, `typo` there mean the `_st` families |
 | `evals/baselines/README.md`, `evals/fast/README.md` | 2 | rewritten (207 + 9 key hits); a dated note says what the keys were before |
@@ -585,7 +796,7 @@ change). "at read" = bytes untouched, translated by `rekey_pre_0101`. "history" 
 | `evals/hallucinationbench/index.json`, `methods.json` | 2 | hold no family key: untouched; `hbindex.py` unchanged |
 | `adapted/<m>/<family>.json` | 125 | renamed (two-phase): 17 `basic_readout` -> `basic_readout_st`, 17 `basic_readout_mt` -> `basic_readout`, 17 `multihop` -> `multihop_st`, 6 `multihop_mt` + 10 `multihop_mt_v2` -> `multihop`, 17 `multilingual` -> `multilingual_st`, 17 `multilingual_mt` -> `multilingual`, 7 `typo` -> `typo_st`, 17 `typo_mt` -> `typo`. Bytes identical. This also retires the last in-repo `multihop_mt_v2.json` files |
 | `adapted/<m>/basic_readout_mt/{exonyms,hidden_rivals}.json` | 32 in 16 dirs | dir renamed to `basic_readout/`; bytes identical |
-| `adapted/<m>/report.json` | 17 | in place: keys of `families`, `drops`, `patches` (272 keys), plus the marker `"family_keys": "0101"`. Per section the script asserts no two keys land on one (`multihop_mt` and `multihop_mt_v2` never share a section: checked) and, for `drops` / `patches` under `multihop_mt`, that the ids are `mh2-*` (-> `multihop`); `multihop_mt_regex` entries are left. The informational `"bank": "evals/<family>/items_vN.json"` strings (in 16 reports) are left as written and read through `repo_path` |
+| `adapted/<m>/report.json` | 17 | in place: keys of `families`, `drops`, `patches` (272 keys), plus the marker `"family_keys": "0101"`. Per section the script asserts no two keys land on one (`multihop_mt` and `multihop_mt_v2` never share a section: checked) and, for `drops` / `patches` under `multihop_mt`, that the ids are `mh2-*` (-> `multihop`); `multihop_mt_regex` entries are left. Every renamed `families` entry is also checked against the set's renamed bank FILE: the bank's header value is the family's (F9) and its item count equals the entry's recorded count (`n_items` / `n_final`, whichever the entry carries), so a key collision is not the only thing caught. The informational `"bank": "evals/<family>/items_vN.json"` strings (in 16 reports) are left as written and read through `repo_path` |
 | `adapted/<m>/floors/floors.json`, `floors/prompt_only_summary.json` | 17 + 16 | in place (494 + 107 keys) |
 | `adapted/<m>/floors/lucky_guessing.json` | — | holds none of the eight today; covered by the same rule if it gains one |
 | `adapted/<m>/anti_text_inversion.json`, `.with_qwen27b.json` | 6 + 1 | in place (64 keys); `bank_sha` values untouched and still valid (`hash_name`) |
@@ -601,7 +812,7 @@ change). "at read" = bytes untouched, translated by `rekey_pre_0101`. "history" 
 | `.claude/skills/**` | 20 | rewritten (351 key hits, 40 path hits), except `adapt-bank/SKILL_AUDIT.md` and `SKILL_AUDIT_RESPONSE.md` (history). `wsb-new-questions/scripts/*.py` are live code: under the §4 rule |
 | `docs/producing_readouts.md`, `summarizer.md`, `adapt_judge_inputs.md` | 3 | rewritten |
 | `docs/summary_mode_validation.md`, `plan0079_results.md`, `plan0012_results.md`, `summary_mode_audits/*` | 5 | history: not rewritten; each gains one line at the top pointing at the key table |
-| `atlas/` (`export_cb.py`, `build.py`, `normal_gate.py`, `normal_gated.py`, `run_normal_judge.sh`, `site/app.js`, `site/index.html`, `CB_EXPORT.md`) | 8 | python rewritten by the script; `site/*` and the shell script by hand (§8.4). Run trees are read through `registry.family_dir` + `read_results` |
+| `atlas/` (`export_cb.py`, `build.py`, `normal_gate.py`, `normal_gated.py`, `run_normal_judge.sh`, `site/app.js`, `site/index.html`, `CB_EXPORT.md`) | 8 | python rewritten by the script; `site/*` and the shell script by hand (§8.6). Run trees are read through `registry.family_dir` + `read_results` |
 | `viewer_app/index.py`, `README.md`; `src/wsbench/viewer/build.py` `GROUPS` | 3 | rewritten (keys); `GROUPS` keeps its family set |
 | `README.md`, `CLAUDE.md`, `AGENTS.md`, `NOTICE.md` | 4 | rewritten, by hand where prose (§10) |
 | `plans/*.md` | 75 | history: not rewritten. `plans/README.md` gains one line: "family keys and paths in plans before 0101 are the pre-0101 ones; see 0101 §0.1" |
@@ -654,7 +865,8 @@ adapted/<17 sets>/               125 bank renames, 16 overlay dir renames, 62 JS
 examples/readouts/               9 renames
 scripts/migrate_0101.py          (new)
 tests/test_rename_0101.py test_family_paths.py                               (new)
-tests/golden/rename_0101_pre.json  script_path_literals_0101.txt  bank_sha256_0101.txt  (new)
+tests/golden/manifest_0101_pre.json  script_path_literals_0101.txt            (new)
+scripts/manifest_0101.py  scripts/migrate_0101_residue.txt                   (new)
 tests/test_<family>*.py          about 20 renames; 212 files *
 README.md CLAUDE.md AGENTS.md NOTICE.md adapted/README.md evals/*/README.md
 docs/{producing_readouts,summarizer,adapt_judge_inputs}.md .claude/skills/**    *
@@ -662,113 +874,228 @@ docs/{producing_readouts,summarizer,adapt_judge_inputs}.md .claude/skills/**    
 
 ## 8. Execution: `scripts/migrate_0101.py` (run once; kept in the repo as the record)
 
-The implementer writes the script and the hand edits; the script does every move and every
-mechanical rewrite from literal tables at its top. Subcommands:
+The script does every move and every mechanical rewrite from literal tables at its top; it is
+committed BEFORE it is run (§15), and the migration commit is exactly its output.
 
 | subcommand | does |
 |---|---|
-| `snapshot` | BEFORE anything moves: writes `tests/golden/rename_0101_pre.json` (per pre-0101 key: `plan_sha`, fast `plan_sha` per subset version, ATI `bank_fingerprint`, `prompt_version`, call versions, a sha256 over every upper-case constant of the family's `prompts` module as `test_rename_multihop_mt.py` does, the shown option lists' sha per item for the MC families, `lucky_guessing` seeds of 3 probe items, `split.is_dev` of every id, `capable` cache keys of 3 probe items) and `tests/golden/bank_sha256_0101.txt` (sha256 of every file under `evals/`, `adapted/`, `examples/`, `tests/golden/`, `tests/fixtures/`, `src/wsbench/adapt/data/`, keyed by path) |
-| `plan` (dry run, the default) | prints every planned `git mv`, every file it would rewrite with its hit count per rule, every JSON key change, and the RESIDUE (below); changes nothing |
-| `apply` | refuses a dirty tree; runs phases 1-5 of §8.2; ends with `check` |
-| `check` | the post-checks of §8.3; exit 1 on any failure |
-| `set <dir>` | migrates one adapted set outside git (bank renames, overlay dir, `report.json` / floors / ATI / scores keys, `gate/` and `cand/` work files, the marker); `--dry-run` by default; refuses a set that already has the marker |
-| `rewrite <paths…>` | phase 3 only, on the given files: for rebasing an in-flight branch (§8.5) |
+| `plan` (dry run, the default) | prints the planned `git mv`s, the JSON key changes, and the text rewrites as unified diffs GROUPED BY RULE into `migrate_0101_plan/<rule>.diff` (§8.4), plus the residue; changes nothing |
+| `apply` | preconditions of §8.1; then the phases of §8.3; ends with `check` |
+| `check` | the post-checks of §8.5; exit 1 on any failure |
+| `set <dir>` | migrates one adapted set outside git (§8.3 "set scope"); `--dry-run` by default |
+| `branch <base>..<head>` | the open-branch procedure of §8.7 |
 
-### 8.1 Tables and rules
+### 8.1 The rewrite is NOT idempotent, so the script refuses to run twice
 
-- `KEYS` = `PRE_0101_KEYS` (a test asserts the script's literal equals `registry.PRE_0101_KEYS`).
-- `CATEGORY` = the family -> category map of §0.2 (a test asserts it equals the registry's
-  groups), giving `DIRS`: `evals/<old>` -> `evals/<category>/<new>` and
-  `src/wsbench/evals/<old>` -> `src/wsbench/evals/<category>/<new>` for all 32 families.
+A second pass would invert the result: R4 turns the new multi-token `"multihop"` into
+`"multihop_st"`; R1 / R2 read `wsbench.evals.association.user_modeling` and
+`evals/association/conjunctive_association/…` as "the family `association`" and move them
+under `basic/` (F8). Therefore:
+
+- `apply` refuses (exit 2, nothing changed) unless ALL hold: the tree is clean; `HEAD` is the
+  commit that added the script, or a descendant with no migration commit (the script checks
+  that `src/wsbench/evals/basic/` does not exist, that `evals/basic/` does not exist, and
+  that `tests/golden/manifest_0101_pre.json` exists and its embedded `base_sha` is an ancestor
+  of `HEAD`); no tracked file outside the KEEP list contains a `_st` key
+  (`(?<![A-Za-z0-9_])(basic_readout|multihop|multilingual|typo)_st(?![A-Za-z0-9_])`), an
+  `evals/<category>/<family>` path or a `wsbench.evals.<category>.` import.
+- The text-rewrite function refuses any single FILE that contains one of those three
+  post-migration marks (it raises; it never "skips and continues"), so a partly migrated file
+  cannot be half-inverted.
+- `apply` writes `.migrate_0101_applied` (untracked) as its first act and refuses when it
+  exists; a failed run is recovered with `git reset --hard && git clean -fd`, never by
+  re-running over the partial tree.
+- There is no general `rewrite <paths>` subcommand (revision 1 had one; it was the unsafe
+  entry point). Branches use `branch` (§8.7), which works only from a pre-migration base.
+
+### 8.2 The KEEP list (never touched by the text rewrite; hand-edited afterwards, each change reviewed)
+
+KEEP files (the script reads them only to hash them):
+
+- tests of the legacy / rename machinery, where a blind key substitution turns an assertion
+  into a vacuous pass (`canonical("multihop_mt_v2") == "multihop_mt"` would become
+  `canonical("multihop") == "multihop"`; `test_legacy_family_names.py:64`
+  `canonical("multihop") == "multihop" and legacy_names("multihop") == []` would become a
+  statement about `multihop_st`): `tests/test_rename_multihop_mt.py`,
+  `tests/test_legacy_family_names.py`, `tests/test_rename_wrong_intermediate.py`,
+  `tests/test_adapted_exclusions_alias.py`;
+- every test file that mentions `canonical`, `legacy_names`, `lookup_names`, `stored_family`,
+  `family_dir`, `hash_name`, `REUSED_FAMILY_KEYS`, `LEGACY_FAMILY_NAMES`, `multihop_mt_v2`,
+  `multihop_mt_regex` or `wrong_bridge` (the script computes this set by grep and prints it;
+  on 030dd09b it is the four above plus `test_adapt_floors_missing_only.py`,
+  `test_adapt_refreeze_registered_edits.py`, `test_basic_prompts.py`, `test_fast_subset.py`,
+  `test_logit_lens_floor.py`, `test_lucky_guessing.py`, `test_msdm_plan0034.py`,
+  `test_r5_adapted_mode.py`, `test_readplan.py`, `test_refill_fresh_pool.py`,
+  `test_refill_mh2.py`, `test_refill_wi.py`, `test_run_wait.py`,
+  `test_token_note_prompts.py`, `test_wi_r4.py`, `test_wi_r4_scrape.py`,
+  `test_wrong_intermediate.py`). For these the script applies ONLY R1 (imports) and R2 (data
+  paths), which cannot change what an assertion means, and leaves every key literal for a
+  line-by-line hand edit;
+- `src/wsbench/registry.py` (all of §3 is hand-written);
+- everything in the "must NOT touch" list of §8.3.
+
+KEEP patterns (never rewritten in ANY file; each occurrence goes to the residue, §8.4, and is
+classified by hand):
+
+- a `"family"` dict entry or comparison whose value is spelled like a key: `"family": "<key>"`,
+  `'family': '<key>'`, `["family"] == "<key>"`, `.get("family") == "<key>"`, `family="<key>"`
+  inside a `json.dumps` / bank-header literal. These are the bank-header vocabulary of F9 in
+  most places (`tests/test_multihop.py:52`, `tests/test_multilingual.py:64`,
+  `tests/test_typo.py:17`, `tests/test_mc_builders_bank.py:74,78`,
+  `tests/test_multihop_mc_bank_skip.py:31,55`, `tests/test_adapt_onecue.py:274,279`, the bank
+  builders under `scripts/`) and must stay byte-identical so a rebuilt bank is byte-identical;
+  in a few places they are a KEY (`tests/test_mc_builders_bank.py:241` writes
+  `"family": "basic_readout_mt"`; `scripts/build_basic_readout_v2.py:1064` and
+  `scripts/build_brmt_v2.py:623` are `gate_sampling` rows, whose seed goes through
+  `hash_name`). Only a human can tell which, so none is rewritten mechanically;
+- any string containing a stamp prefix of §3.2, a 64-hex sha, or a golden / fixture file name
+  (`multihop_mc_options_v5.json`, `basic_readout_mt_options_v2.json`, …).
+
+`check` (§8.5) asserts that every KEEP file's sha256 equals its pre-migration value except
+for R1 / R2 hunks in the grep-selected test files, and that no KEEP-pattern occurrence
+changed. The hand edits to KEEP files happen in a LATER commit (§15, commit 5), so the
+mechanical commit shows them untouched.
+
+### 8.3 Tables, rules and phases
+
+- `KEYS` = `PRE_0101_KEYS`; `CATEGORY` = the family -> category map of §0.2; both are literals
+  in the script, and a test asserts they equal the registry's.
+- `DIRS`: `evals/<old>` -> `evals/<category>/<new>` and `src/wsbench/evals/<old>` ->
+  `src/wsbench/evals/<category>/<new>` for all 32 families.
 - Text rewriting is ONE pass per file with ONE compiled alternation and a callback, so a swap
-  cannot chain (`multihop` -> `multihop_st` is never re-read as `multihop`), and alternatives
-  are ordered longest first. A key matches only with
-  `(?<![A-Za-z0-9_])<key>(?![A-Za-z0-9_])` AND inside one of these contexts; anything else is
-  left and reported:
+  cannot chain within a run, with alternatives ordered longest first. A key matches only with
+  `(?<![A-Za-z0-9_])<key>(?![A-Za-z0-9_])` AND inside one of these contexts:
 
   | rule | pattern (key = any of the 9 old keys unless stated) | becomes |
   |---|---|---|
   | R1 import | `wsbench.evals.<any family>` (dotted; also `from wsbench.evals import <family>`, `wsbench/evals/<family>` in paths) | `wsbench.evals.<category>.<new>` |
   | R2 data path | `evals/<any family>` not preceded by `wsbench/` or an identifier character, followed by `/`, a quote, whitespace or `)` | `evals/<category>/<new>` |
-  | R3 path join | `"evals" / "<family>"` | flagged for hand edit to `registry.family_root` in live code; rewritten to `"evals" / "<category>" / "<new>"` in `scripts/` |
-  | R4 quoted key | `"<key>"`, `'<key>'` (the whole string literal) | new key |
-  | R5 CLI | `family=<key>`, `families=…,<key>,…`, `opts`-free shell words in `.sh` / `.md` code spans | new key |
-  | R6 file stem | `<key>.jsonl`, `<key>.json`, `<key>.jsonl.meta.json`, `/<key>/` under `adapted/`, `readouts`, `runs` path text | new key |
+  | R3 path join | `"evals" / "<family>"` | NOT rewritten in live code (reported for the §4 hand edit); rewritten to `"evals" / "<category>" / "<new>"` in `scripts/` |
+  | R4 quoted key | `"<key>"`, `'<key>'` (the whole string literal), outside KEEP files and KEEP patterns | new key |
+  | R5 CLI | `family=<key>`, `families=…,<key>,…` | new key |
+  | R6 file stem | `<key>.jsonl`, `<key>.json`, `<key>.jsonl.meta.json`, `/<key>/` in `adapted/`, `readouts`, `runs` path text | new key |
   | R7 markdown | `` `<key>` `` (whole code span), `**<key>**` | new key |
-  | R8 env | `WSB_BANK_FILE_<KEY upper>` (5 spellings occur: `BASIC_READOUT`, `BASIC_READOUT_MT`, `MULTIHOP`, `MULTIHOP_MT_V2`; 7 files) | upper-case new key |
-  | R9 identifiers | python identifiers that embed a key in the listed files only (`_basic_readout_mt`, `test_typo_mt_…`): an explicit per-file list in the script | per list |
+  | R8 env | `WSB_BANK_FILE_<KEY upper>` (4 spellings occur, in 7 files) | upper-case new key |
+  | R9 identifiers | python identifiers that embed a key, from an explicit per-file list in the script (`_basic_readout_mt`, `test_typo_mt_…`) | per list |
 
-  The word-boundary rule alone already keeps `multilingual_multihop`, `multilingual_typo`,
+  The word-boundary rule alone keeps `multilingual_multihop`, `multilingual_typo`,
   `relational_multihop`, `model_multihop`, `multihop_mt_regex`, `multihop_mc_options`,
-  `basic_readout_mt_options_v2`, `typo_mt_v2_options` whole (an identifier character follows or
-  precedes the key). The context rules are needed because `typo`, `multilingual` and
-  `multihop` are also English words and field values: `producer.py:78` "so a typo fails fast",
-  `readplan.first_diff(typo, target)`, bank fields.
-- RESIDUE: every word-boundary hit that no rule rewrote. `plan` prints it; `check` compares it
-  to the committed allowlist `scripts/migrate_0101_residue.txt` (`path:line:text`, reviewed by
-  the implementer line by line: prose words, bank-header vocabulary of F9, golden file names,
-  historical stamps and messages inside `REMOVED_FAMILIES`). An unlisted residue line fails.
+  `basic_readout_mt_options_v2`, `typo_mt_v2_options` whole. The context rules exist because
+  `typo`, `multilingual` and `multihop` are also English words and field values.
 
-### 8.2 Phases of `apply`
+Phases of `apply`:
 
-1. `snapshot` must exist and match the current tree (re-computed and compared).
-2. Moves, two-phase to make every swap and the `association` case collision-free:
-   phase A `git mv <src> <staging>/<n>` for every source (dirs: `evals/`, `src/wsbench/evals/`;
-   files: adapted banks, overlay dirs, examples, topics, confusers, test modules) into
-   `.migrate_0101_staging/` (same filesystem, inside the repo, removed at the end);
-   phase B create the category dirs and `git mv <staging>/<n> <dest>`. Then write the 8
-   category `__init__.py`.
-3. Text rewrite (§8.1) over: `src/**/*.py`, `tests/**/*.py`, `scripts/**/*.{py,sh}`,
+1. Preconditions (§8.1). Record the sha256 of every tracked file (`.migrate_0101_before`,
+   untracked) for `check`.
+2. Moves, two-phase so that every swap and the `association` case is collision-free: phase A
+   `git mv <src> .migrate_0101_staging/<n>` for every source (dirs: `evals/`,
+   `src/wsbench/evals/`; files: adapted banks, overlay dirs, examples, topics, confusers, test
+   modules); phase B create the category dirs and `git mv` each staged entry to its
+   destination; write the 8 category `__init__.py`; remove the staging dir.
+3. Text rewrite over: `src/**/*.py`, `tests/**/*.py`, `scripts/**/*.{py,sh}`,
    `atlas/**/*.{py,sh}`, `viewer_app/*.py`, `.claude/skills/**/*.{py,md}` (minus the two audit
    records), the three live docs, every moved family `README.md`, `evals/baselines/README.md`,
-   `evals/fast/README.md`, `adapted/README.md`, `pyproject.toml` (package data globs, if any).
+   `evals/fast/README.md`, `adapted/README.md`; minus the KEEP list.
 4. JSON key rewrite (§6 "in place") with the per-file checks.
-5. `ruff format` + `ruff check --fix` on the rewritten python (import order changes when a
-   dotted path grows a segment).
+5. `ruff format` + `ruff check --fix --select I` on the rewritten python only (import order
+   changes when a dotted path grows a segment); the formatter's hunks are part of the
+   mechanical commit and are reproducible.
 
 The script must NOT touch: `plans/`; `evals/fast/*.json`; `evals/baselines/archive/`; any
 `items*.json`, `manifest.json`, `*.npy`, pool or resource file (bank bytes); `tests/golden/`
-and `tests/fixtures/` (except writing its own three new files); `src/wsbench/adapt/data/`;
-`adapted/*/AUDIT*.md`, `NOTES.md`, `AUDIT_RESPONSE.md`, set READMEs; the five results docs;
-the two skill audit records; `uv.lock`; `CITATION.cff`; `.github/`; `LICENSE`; any stamp,
-sha, number or id list anywhere.
+and `tests/fixtures/`; `src/wsbench/adapt/data/`; `adapted/*/AUDIT*.md`, `NOTES.md`,
+`AUDIT_RESPONSE.md`, set READMEs; the five results docs; the two skill audit records;
+`uv.lock`; `CITATION.cff`; `.github/`; `LICENSE`; `scripts/manifest_0101.py` and its output;
+itself; any stamp, sha, number or id list anywhere.
 
-### 8.3 `check`
+`set <dir>` scope (an adapted set outside git), two-phase like the in-repo moves: the bank
+files; the `basic_readout_mt/` overlay dir; `report.json` / `floors/*.json` /
+`anti_text_inversion*.json` / `lenses/scores.json` keys; and the per-family WORK files and
+directories that revision 1 left out: `gate/<family>.jsonl`, `cand/<family>.jsonl`,
+`readouts/<family>.jsonl[.meta.json]` and every `readouts/<arm>/<family>.jsonl`,
+`floors/readouts/**/<family>.jsonl[.meta.json]`, `floors/results/**/<family>/`,
+`mc/<family>/`, `judged/**/<family>/`; then the marker. Each file or directory under a bare
+key is attributed by content first (`registry.owner`: header, stamp, ids) and the run aborts
+before changing anything if any is unattributable. It refuses a set that has the marker.
 
-- every path in `bank_sha256_0101.txt`, mapped through `DIRS` / the rename tables, has the same
-  sha256 now (prints a manifest diff; any difference, missing or extra data file fails);
-- `git diff -M100% --diff-filter=R --stat` covers every moved data file (no data file shows as
+### 8.4 Reviewable dry run, and who reviews the residue
+
+- `plan` writes one diff file per rule (`R1.diff` … `R9.diff`, `json-keys.diff`,
+  `moves.txt`), each hunk tagged with the rule that produced it, plus `tests-values.diff`: the
+  subset of hunks that fall inside an `assert` statement, a `pytest.mark.parametrize`
+  argument list or a module-level constant of a file under `tests/`. A reviewer reads each
+  CLASS of rewrite on its own; R1 and R2 are checked by pattern, R4 / R9 hunk by hunk.
+- Rule for test values: every hunk in `tests-values.diff` must be one of (a) a key, path,
+  import or file-stem substitution from the tables, in a non-KEEP file, or (b) an entry of
+  §9.2. The PR body carries the count of each. Any other changed number, stamp, sha, id list,
+  count or expected string blocks the merge.
+- RESIDUE = every word-boundary hit that no rule rewrote: prose words, unquoted keys in `.sh`
+  loops (`for f in basic_readout multihop …`), markdown table cells (`| multihop |`), the
+  `DIGEST_TASK_NOTES` block printed in `evals/typo/README.md` (lines of the form
+  `multihop: the model reads …`, which `test_prompts_in_readme` compares verbatim and which
+  F4 changes), every KEEP-pattern occurrence, bank-header vocabulary, golden file names,
+  historical stamps and messages inside `REMOVED_FAMILIES`. `plan` prints it as
+  `residue.txt` (`path:line:text`). The residue is classified ("leave" / "hand edit to
+  <text>") by the FRESH-EYE diff reviewer of the PR, not by the implementer; the classified
+  file is committed as `scripts/migrate_0101_residue.txt`, its line count is reported in the
+  PR body, and `check` fails on any residue line that is not in it.
+
+### 8.5 `check`
+
+- every data file recorded before the run (`evals/`, `adapted/`, `examples/`, `tests/golden/`,
+  `tests/fixtures/`, `src/wsbench/adapt/data/`), mapped through `DIRS` and the rename tables,
+  has the same sha256 now, except the 75 JSON files of §6 "in place", which must satisfy
+  `json.loads(new) == translate(json.loads(old))`; the manifest diff is printed and must be
+  empty; a missing or extra data file fails;
+- `git diff -M100% --diff-filter=R --stat` covers every moved data file (none shows as
   modified); `git status` has no stray file; the staging dir is gone;
-- no directory other than the 8 categories and `baselines`, `fast`, `hallucinationbench` under
-  `evals/`; no module other than the 8 category packages under `src/wsbench/evals/`;
-- the residue equals the allowlist;
-- `python -c "from wsbench import registry; registry.load_all()"` registers 32 families whose
-  `group` equals their directory.
+- the KEEP assertions of §8.2;
+- no directory other than the 8 categories and `baselines`, `fast`, `hallucinationbench`
+  under `evals/`, and no package other than the 8 categories under `src/wsbench/evals/`
+  (`__pycache__`-only directories ignored);
+- the residue equals the committed, reviewer-classified file;
+- reproducibility: running `apply` in a fresh worktree of the script's commit (commit 3 of
+  §15) gives a tree with `git diff --quiet` against the migration commit (commit 4).
 
-### 8.4 Hand edits after `apply` (not mechanical)
+### 8.6 Hand edits (commit 5 of §15; not mechanical)
 
 1. `registry.py` (§3, §4): all of it.
 2. `reads.py`, `runner.py`, `results.py`, `cli.py`, `fast.py`, `digest.py`, `readouts.py`
-   (§5): the guards; `split.py`, `basic/mcjudge_bank.py`, `capable/run.py`,
-   `adapt/generate.py`, `adapt/author.py` (F1, F2, F5, F6); `baselines/logit_lens.py` (F7);
-   `produce/producer.py` (F3); `adapt/store.py`, `adapt/run.py`, `adapt/__main__.py` (§5.5).
-3. The R3 sites: `REPO_ROOT / "evals" / family / …` in live code -> helpers.
+   (§5); `baselines/text_inversion.py`, `baselines/prompt_only_opus.py` (§5.7a);
+   `baselines/logit_lens.py` (F7); `adapt/store.py`, `adapt/run.py`, `adapt/floors.py`,
+   `adapt/mcstage.py`, `adapt/mhmt2.py`, `adapt/__main__.py` (§5.5); `atlas/build.py`,
+   `viewer_app/index.py` (§5.8). (The `frozen_name` sites F1, F2, F5, F6, F11-F15 and the
+   `repo_path` / `family_root` conversions are done BEFORE the rename, commit 2.)
+3. The f-string imports of §4 (4 in `src`, `adapt/run.py`'s walk, `tests/conftest.py`, 14 test
+   files).
 4. The eight `__init__.py` of the renamed families: titles (§0.1), docstrings,
-   `superseded_by="typo"`, `bank=registry.family_rel(…) / …`. In `multilingual_st`,
-   `DIGEST_TASK_NOTES["multilingual_st"]` and `ML_BANK_TAGS["multilingual_st"]` must select the
-   SAME strings as today's `["multilingual"]` entries.
-5. The two earlier rename tests and the new tests (§9).
-6. Prose: `README.md` (family list regrouped paths, Judges table, the rename paragraph,
-   Quickstart examples), `CLAUDE.md` (§10), `AGENTS.md`, `NOTICE.md`, family README titles,
-   `atlas/site/*`, `atlas/run_normal_judge.sh`, `scripts/adapt_set.sh`.
+   `superseded_by="typo"`. In `multilingual_st`, `DIGEST_TASK_NOTES["multilingual_st"]` and
+   `ML_BANK_TAGS["multilingual_st"]` must select the SAME strings as today's
+   `["multilingual"]` entries.
+5. The KEEP files (§8.2), line by line, and the residue lines classified "hand edit".
+6. Prose: `README.md`, `CLAUDE.md`, `AGENTS.md`, `NOTICE.md`, family README titles,
+   `evals/basic/typo_st/README.md`'s `DIGEST_TASK_NOTES` block, `atlas/site/*`,
+   `atlas/run_normal_judge.sh`, `scripts/adapt_set.sh`.
 7. `tests/golden/README.md`, `adapted/README.md`, `plans/README.md`: the key table.
 
-### 8.5 In-flight branches
+### 8.7 Open branches (#510 plan 0097, #515 plan 0099, and any local branch)
 
-A branch cut before this PR rebases as: rebase onto the commit BEFORE the merge; run
-`scripts/migrate_0101.py rewrite $(git diff --name-only <base>)` plus the moves for files it
-adds; then rebase onto the merge. Stated in the PR body. Local adapted sets: `migrate_0101.py
-set <dir>`.
+Stated in the PR body and in `CLAUDE.md` §Workflow until the next tag:
+
+1. BEFORE rebasing, grep the branch's ADDED lines for the four bare keys and the old `_mt`
+   keys: `git diff <merge-base>..HEAD | grep -nE
+   '^\+.*\b(basic_readout|multihop|multilingual|typo)(_mt|_mt_v2)?\b'`. Every hit is read by
+   a person: a line that adds `"multihop"` meaning the single-token family rebases onto the
+   merge with NO textual conflict and would silently mean the multi-token family.
+2. Rebase the branch onto the commit just BEFORE the migration commit (tagged
+   `pre-0101-migration`; commits 1-3 of §15 are already there, so the helpers exist).
+3. Run `python scripts/migrate_0101.py branch pre-0101-migration..HEAD`: it applies the moves
+   and the rules of §8.3 to exactly the files the branch touches or adds, with the same KEEP
+   list and the same refusals (§8.1: it refuses any file already carrying a post-migration
+   mark), and commits the result as one commit.
+4. Rebase onto the merge; conflicts are now only real ones.
+5. Local adapted sets: `python scripts/migrate_0101.py set <dir>`.
+6. After pulling: `git clean -fdX src/wsbench/evals` (stale `__pycache__` directories).
 
 ## 9. Tests
 
@@ -791,7 +1118,18 @@ that tests both members of a pair or all four multilingual families keeps its na
 Review rule for the main session: `git diff -- tests/` is read separately. A changed line in a
 pre-existing test is acceptable only if it is (a) a key, path, import or module-name
 substitution from the tables, or (b) listed in §9.2. Any other changed number, stamp, sha, id
-list, count or expected string is a red flag and blocks the merge until explained.
+list, count or expected string is a red flag and blocks the merge until explained. The
+mechanical commit's `tests-values.diff` (§8.4) is the list of every rewritten assertion value;
+the KEEP files (§8.2) are absent from it by construction and are reviewed in the hand-edit
+commit, where each of their changed assertions must appear in §9.2 V2 / V3 / V8.
+
+Must pass with NO value change, named because they pin the sites of §2.2:
+`tests/test_r4b_mc_banks.py`, `tests/test_r4_bridge_ml.py` (F11), the option goldens
+`multihop_mc_options{,_v5}.json` (F1), `tests/test_capable*.py` against
+`tests/golden/capable_questions.json` (F5), `tests/test_adapt_onecue.py` (F13),
+`tests/test_lens_readouts_store.py` (F14), `tests/test_common_confusers_r5.py`,
+`tests/test_mc_builders_bank.py`, `tests/test_refill_mh2.py`, `tests/test_adapt_rebuild.py`,
+`tests/test_adapt_phase2_fixes.py` (F15).
 
 ### 9.2 Assertions whose VALUE changes (the complete list; anything else is a defect)
 
@@ -804,6 +1142,9 @@ list, count or expected string is a red flag and blocks the merge until explaine
 | V5 | `wsbench list` / README / viewer title assertions | titles per §0.1 | decision A |
 | V6 | tests asserting the exact `note: family … was renamed to …` line or `fast.families()` / `tiers` / `test_tiers.py` family-to-category literals | key names only | 0.1 |
 
+| V7 | tests that pin a toy bank through a BARE-key variable (`WSB_BANK_FILE_BASIC_READOUT`, `WSB_BANK_FILE_MULTIHOP`: 2 of the 7 files that set such a variable) or build a toy root with `<bare>.json` for an `_st` family | the toy bank gains the header `"family"` value of F9, or the variable is renamed to the `_ST` form | §3.3: a bare-key pin needs a positive header match. No assertion changes |
+| V8 | the other KEEP test files of §8.2 | hand edits, each either a key / path substitution or an assertion about `canonical` / `legacy_names` / `lookup_names` / `family_dir` restated for the new tables; listed one by one in the PR body | §3.1-§3.3 |
+
 No count, pass rate, floor, `plan_sha`, `bank_sha`, stamp, call key, option list or id list
 changes.
 
@@ -811,11 +1152,11 @@ changes.
 
 `tests/test_rename_0101.py` (parametrized over the four pairs unless noted):
 
-- T1 hash neutrality: for each family, by its PRE key in `rename_0101_pre.json`: `plan_sha`,
-  fast `plan_sha` per subset version, ATI `bank_fingerprint`, `prompt_version`, call versions,
-  prompts-module constants sha (V1's record excluded by name), shown option lists, lucky
-  seeds, `split.is_dev`, `capable` keys all equal the snapshot. Plus `plan_sha_pre_0090.json`
-  holds with keys through `rekey_pre_0101` and values unchanged.
+- T1 hash neutrality: `scripts/manifest_0101.py --check` in-process: the manifest of §11.1
+  computed now, with its family keys mapped back through `frozen_name`, is byte-identical to
+  the committed `tests/golden/manifest_0101_pre.json` (the only declared difference: the F4
+  record, which the manifest stores with its keys mapped back). Plus
+  `plan_sha_pre_0090.json` holds with keys through `rekey_pre_0101` and values unchanged.
 - T2 stamps: `stored_family(<bare key>, <st stamp>) == <_st>` and `… <mt stamp>) == <bare key>`
   for every historical stamp listed in §3.2 with and without `+digest-…`, `+reads-lite`,
   `+fast-…` suffixes; empty stamp -> the live family; an unknown stamp -> `RenamedKey`; old
@@ -848,28 +1189,67 @@ changes.
   note; a bare key prints the one-line notice once, not under `WSB_NO_RENAME_NOTICE=1`, not
   for `judge outcome=…`; `_st` keys are silent; `wsbench list` shows the 32 keys of §0.1 /
   §0.2 with the new titles.
-- T9 `HASH_FAMILY_NAMES` is referenced only in `registry.py` (source scan);
-  `hash_name` of each of the nine entries equals §3.1.
+- T9 `HASH_FAMILY_NAMES` and `FROZEN_KEY_NAMES` are referenced only in `registry.py` (source
+  scan); `hash_name` of each of the nine entries and `frozen_name` of each of the eight equal
+  §3.1; `frozen_name("multihop") != hash_name("multihop")` (the one difference, pinned).
 - T10 fast: `fast.subset(v)` for the three versions has the translated keys, the file sha pins
   still hold, and each translated entry's `bank_sha` equals `fast.bank_sha(<new key>)`.
 - T11 floors: every entry of the five `evals/baselines/*.json` files and of every adapted
   `floors/*.json` under a bare or `_st` key carries a stamp that `registry.owner` attributes
   to that key; the archive read through `rekey_pre_0101` has `_st` keys.
 
+- T12 ATI / prompt-only work dirs (§5.7a): a pre-0101 `out` fixture in both layouts (panel and
+  flat plan-0014) with `prompts.jsonl`, answers, readouts and judged results of BOTH members
+  of a pair under pre-0101 keys: `attribute_rows` gives each row its own family;
+  `_answerer_draws` for each member reads exactly its own verdicts; `draw_verdicts(expect=)`
+  on the partner's `results.json` is `RenamedKey`; the readouts writer refuses to overwrite
+  the partner's `<bare>.jsonl`; a gate in which every item of a family ends unverified beside
+  an existing judged directory exits (does not write `_not_gated`); `prompt_only_opus` reuses
+  pre-0101 answers for the right member and asks nothing.
+- T13 viewers (§5.8): a pre-0101 run tree with `multihop/` (single-token stamp) and
+  `multihop_mt/` yields the families `multihop_st` and `multihop` in `atlas.build` and
+  `viewer_app.index`.
+- T14 pins and existence (§3.3): `bank_pins("multihop_st")` contains
+  `WSB_BANK_FILE_MULTIHOP`; `WSB_BANK_FILE_MULTIHOP=<single-token bank>` makes
+  `bank_path("multihop_st")` exit naming `…_MULTIHOP_ST` and `bank_path("multihop")` exit; a
+  header-less file under a bare-key variable exits for both; `fast.entry` fails closed on it;
+  `readplan.families()` under a root holding only the single-token `multihop.json` lists
+  `multihop_st` and not `multihop`; `family_ids("typo_st")` under a root with no single-token
+  typo bank returns the registered ids without exiting; `adapt.floors` on a `readouts/` dir
+  with pre-0101 names finds both members.
+- T15 the migration script (unit tests on a synthetic mini-tree, no real data): `apply`
+  refuses a tree with `src/wsbench/evals/basic/`; the rewrite function raises on a file that
+  holds a `_st` key, an `evals/<category>/<family>` path or a `wsbench.evals.<category>.`
+  import; running the rules twice is impossible through the public entry points; a KEEP file
+  and every KEEP pattern (`"family": "multihop"`, `header["family"] == "typo"`) come out
+  byte-identical; `association` moves under `basic/` exactly once.
+- T16 `frozen_name` sites (§2.2), direct unit pins beside the manifest:
+  `r4_language_distractors("multilingual_st", "French")` equals the pre-0101
+  `("multilingual", "French")` list, and likewise `("multilingual", <gold>)` vs the pre-0101
+  `multilingual_mt`; `split.is_dev` of 20 ids per family; `mcjudge_bank.options_of` of 5
+  items.
+
 `tests/test_family_paths.py` (TP): the three scans of §4, plus `registry._layout()` equals the
 §0.2 table as a literal, plus `family_module` / `family_root` / `repo_path` unit cases
 (`repo_path("evals/introspection/vectors/concept_vectors_L12.npy")` exists;
-`repo_path("evals/baselines/prompt_only.json")` is unchanged).
+`repo_path("evals/baselines/prompt_only.json")` is unchanged; the F8 cases:
+`repo_path("evals/association/conjunctive_association/items_v4.json")` is returned AS WRITTEN
+(a new-layout path), `repo_path("evals/association/items_v5.json")` resolves to
+`evals/basic/association/items_v5.json` (a pre-0101 path of the family), and
+`repo_path("evals/basic/association/items_v5.json")` is as written).
 
 ## 10. Docs and conventions
 
 - `README.md`: each family entry's link becomes `](evals/<category>/<family>/README.md)`
   (`tests/test_readme.py:51` builds it from `registry.family_rel`); the eight entries get
   their new titles and keys; the "Renamed families" paragraph gains the table of §0.1 with
-  the date; Quickstart and Judges rows use the new keys.
+  the date; Quickstart and Judges rows use the new keys. It also states ruling 0.4.3 in one
+  paragraph: artefacts already published under the old keys (the adapted sets on HF, viewer /
+  atlas exports, HallucinationBench's WSB method names) are not renamed; read them with the
+  table; `wsbench` reads both.
 - Family README per directory: unchanged convention, one level deeper. `test_prompts_in_readme`
   reads `registry.family_root(family) / "README.md"` and `registry.family_module(family,
-  "prompts")`. No category-level README is added (Q4).
+  "prompts")`. No category-level README is added (ruling 0.4.4).
 - `tests/test_adapt_skill_docs.py`: unchanged logic (it checks subcommands, scripts and the
   registered-bank table against the registry); the skill's bank table is rewritten by the
   script, and scan 3 of §4 covers the skill's paths.
@@ -883,38 +1263,110 @@ changes.
   readouts.md` (keys; the note that `extra.steering.vector_file` is a pre-0101 layout string
   resolved by `registry.repo_path`, F3).
 
-## 11. Verification gates (all required before merge; run the long ones in tmux, e.g.
-`tmux new -s wsb0101` with output to `logs/migrate_0101_<timestamp>.log`)
+## 11. Verification gates (all required before merge; run the long ones in tmux, e.g. `tmux new -s wsb0101`, output to `logs/migrate_0101_<timestamp>.log`)
 
-1. `scripts/migrate_0101.py check` passes (§8.3), the manifest diff is empty.
-2. `uv run pytest -q` green; `uv run ruff check .`; `uv run ruff format --check .`.
-3. T1 (the golden hash-neutrality test) green, and `git diff --stat -- tests/golden
-   tests/fixtures` shows only the three new files.
-4. `scripts/ati_rederive.py --check` passes on `evals/baselines/anti_text_inversion.json` and
+### 11.1 The pre/post manifest (`scripts/manifest_0101.py`, committed FIRST)
+
+Provenance is the point: a snapshot retaken after hand edits proves nothing. So the script and
+its output are the PR's first commit, generated on pristine origin/main; the output embeds
+`"base_sha": "030dd09b…"` (the commit it was computed on) and the script's own sha256; the
+reviewer regenerates it in a clean worktree of that commit
+(`git worktree add /root/tmp/wsb-0101-pristine 030dd09b && cd /root/tmp/wsb-0101-pristine &&
+git show <commit 1>:scripts/manifest_0101.py > /root/tmp/manifest_0101.py &&
+WSB_NO_NYT=1 WSB_NO_NOCOT=1 PYTHONPATH=src python /root/tmp/manifest_0101.py --out
+/root/tmp/manifest_pristine.json`) and requires `cmp` with the committed
+`tests/golden/manifest_0101_pre.json`. The script imports only public `wsbench` functions and
+takes its family list from the registry, so the SAME file runs before and after; after the
+rename it maps each family's key through `registry.frozen_name` when writing, and the output
+must be byte-identical (`--check`).
+
+Per family (all 32; the extra rows only where they apply), offline, no API call:
+
+| entry | how |
+|---|---|
+| `plan_sha`; fast `plan_sha` per subset version that holds the family | `reads.plan_sha`, `reads.fast_plan_sha(declared=)` |
+| ATI `bank_fingerprint` | `text_inversion.bank_fingerprint` |
+| bank file sha256 and n items; sha256 of every other file in the family directory | file bytes |
+| result stamp, call versions, option-seed versions | `spec.judge.prompt_version`, `CALL_VERSIONS`, `OPTIONS_VERSIONS`, `mcjudge_bank.CALL_VERSIONS` |
+| sha256 over every upper-case constant of the family's `prompts` module (the F4 record stored with its keys mapped back through `frozen_name`) | as `test_rename_multihop_mt.PRE_PROMPTS_SHA` |
+| recorded call fingerprints: an offline run of the family over `examples/readouts/<family>.jsonl` (5 fixed items: the first 5 ids of the bank, sorted, that the example file holds) in native AND summary mode, with `mcjudge.run_calls` and the digest's call primitive patched to record, for every call, `(key, fingerprint, sha256(system), sha256(user), prompt_version)` and to return a canned answer | proves no rendered judge prompt, no call key and no fingerprint moves |
+| digest fingerprint (`digest.py:1825`) and the task note each of those items' digest is told | from the same patched run |
+| the shown option lists of 5 fixed items (MC families) | `mcjudge_bank.options_of` (F1), `mcjudge_basic.options_for`, `multitoken.options` |
+| `split.is_dev` of every item id (F2) | |
+| `capable` reply / grade cache keys of 3 probe items (F5) | |
+| adapt seeds: the first 5 values of the F6 `random.Random` objects for 2 (tier, seed) pairs | |
+| language-distractor lists of 3 probe golds per family in `R4_LANG_POOLS`, and `r4b_balanced_language_distractors` over the registered bank's golds (F11) | |
+| sha256 of the authoring prompt per tier (F12) | `adapt.author` prompt builder |
+| `onecue._order` of 3 probe rows and their cache keys (F13) | |
+| `lens_readouts_modal._job` seed for a fixed fake pack (F14) | |
+| `r4b_mc_refine` cache key and `draw` result on a fixed toy list; `common_confusers_r5` gate-row keys of 3 items (F15) | |
+| lucky-guessing seeds and call keys of 3 probe items; `gate_sampling.seed`; `qwen_seed` | the `hash_name` sites |
+| `wsbench list` row (n items, judge, calls per arm) minus key, title | |
+
+### 11.2 Gates
+
+1. Manifest: regenerated by the reviewer on pristine main, byte-identical to commit 1 (§11.1);
+   `manifest_0101.py --check` passes at commits 2, 5 and 6 (§15).
+2. `scripts/migrate_0101.py check` passes (§8.5); the data-file manifest diff is empty; the
+   reviewer re-runs `apply` on commit 3 in a fresh worktree and gets commit 4 exactly.
+3. `uv run pytest -q` green; `uv run ruff check .`; `uv run ruff format --check .`.
+4. `git diff --stat <base>..HEAD -- tests/golden tests/fixtures` shows only the new files
+   (`manifest_0101_pre.json`, `script_path_literals_0101.txt`).
+5. `scripts/ati_rederive.py --check` passes on `evals/baselines/anti_text_inversion.json` and
    on the adapted ATI files it covers.
-5. `uv run wsbench list` shows the new keys, titles, categories and tiers; `uv run wsbench plan
-   families=all` writes rows whose per-family sha equals the snapshot.
-6. Replay, zero new calls, identical values. BEFORE running `apply`, on main, copy these run
-   dirs and record each `results.json`'s `value`, `ci95`, `counts`, `n_items` and row passes:
+6. `uv run wsbench list` shows the new keys, titles, categories and tiers.
+7. Before/after `report` on a whole pre-0101 results root. On pristine main:
+   ```
+   cp -r /root/tmp/x3q11/judged/qglm-rl600-x4/all /root/tmp/wsb-0101-gate/all_pre
+   cp -r /root/tmp/wsb-fast-v2/runs/s3d-rl600      /root/tmp/wsb-0101-gate/fast_pre
+   uv run wsbench report dir=/root/tmp/wsb-0101-gate/all_pre  json=True > all_pre.json
+   uv run wsbench report dir=/root/tmp/wsb-0101-gate/fast_pre json=True --fast > fast_pre.json
+   ```
+   (copy first: `report` rewrites `summary.md`). After the rename, the same two commands on
+   fresh copies. Pass = every row's value, CI, n, completeness, floors and exclusion reason,
+   the macro value, the core macro and the "Not in macro" list are identical after mapping
+   keys and titles through §0.1 (a small comparison script prints the diff; it must be
+   empty). In particular the old `typo` row reads as `typo_st` (excluded `superseded`) and
+   the old `typo_mt` row as `typo` (in the macro).
+8. Cached-run replay, zero new calls, identical values. The dirs (all exist on this box):
 
-   | pre-0101 key | readouts | cached out dir |
-   |---|---|---|
-   | basic_readout | `/root/tmp/wsb-fast-v2/readouts/s3d-rl600/basic_readout.jsonl` | `/root/tmp/wsb-fast-v2/runs/s3d-rl600/basic_readout/` |
-   | basic_readout_mt | `…/readouts/s3d-rl600/basic_readout_mt.jsonl` | `…/runs/s3d-rl600/basic_readout_mt/` |
-   | multihop_mt | `…/readouts/s3d-rl600/multihop_mt.jsonl` | `…/runs/s3d-rl600/multihop_mt/` |
-   | multihop, multilingual, typo_mt | the `readouts_root` recorded in the run's `run.json` | `/root/tmp/x3q11/judged/qglm-rl600-x4/all/{multihop,multilingual,typo_mt}/` |
-   | multilingual_mt | as recorded in its `run.json` | `/root/tmp/wsb-0079/judged/qwen3.5-2b/qwen3.5-2b.sft/multilingual_mt/` (an adapted set: run with its `WSB_BANK_ROOT`) |
-   | typo | no cached run dir found on this box | make one on main first: `wsbench judge family=typo` over `examples/readouts/typo.jsonl` with a live `limit=3` smoke, then replay it |
+   | pre-0101 key | readouts | cached out dir | flags |
+   |---|---|---|---|
+   | basic_readout | `/root/tmp/wsb-fast-v2/readouts/s3d-rl600/basic_readout.jsonl` | `/root/tmp/wsb-fast-v2/runs/s3d-rl600/basic_readout/` | `--fast` |
+   | basic_readout_mt | `…/readouts/s3d-rl600/basic_readout_mt.jsonl` | `…/runs/s3d-rl600/basic_readout_mt/` | `--fast` |
+   | multihop_mt | `…/readouts/s3d-rl600/multihop_mt.jsonl` | `…/runs/s3d-rl600/multihop_mt/` | `--fast` |
+   | multihop, multilingual, typo_mt | the `readouts_root` in `/root/tmp/x3q11/judged/qglm-rl600-x4/all/run.json` | `/root/tmp/x3q11/judged/qglm-rl600-x4/all/{multihop,multilingual,typo_mt}/` | as in that `run.json` |
+   | multilingual_mt | as recorded in its `run.json` | `/root/tmp/wsb-0079/judged/qwen3.5-2b/qwen3.5-2b.sft/multilingual_mt/` | `WSB_BANK_ROOT` of that run (a pre-0101 adapted set outside git: also exercises `root_bank`) |
+   | typo | none cached on this box | on pristine main: `uv run wsbench judge family=typo readouts=examples/readouts/typo.jsonl out=/root/tmp/wsb-0101-gate/typo_pre limit=3` (live, 3 items), then replay it | |
 
-   AFTER, with the same flags (`--fast` for the fast-v2 dirs), judge each copy under the NEW
-   key (`family=basic_readout_st readouts=…/basic_readout.jsonl out=<copy>` etc., and once as
-   `run readouts_root=… out=<copy of the whole pre-0101 root>` to exercise the lookups) with
-   `dry_run` off. Pass = exit 0, the copy's `cells.jsonl` (append-only) gained ZERO rows, spend
-   is the preflight ping only, and every recorded number is identical; the only differences
-   allowed in `results.json` are `family` and timestamps. Also judge each
-   single-token file under its bare key and confirm the refusal of §5.2.
-7. `scripts/gated_merge.sh <pr>` (fail closed), after an independent review of the diff with
-   `git diff -M --stat` and `git diff -- tests/` read against §9.
+   Procedure, per row: on pristine main record `results.json` (value, CI, counts, per-row
+   passes) and `wc -l cells.jsonl`; copy the out dir; after the rename run, on the copy,
+   `uv run wsbench judge family=<NEW key> readouts=<same file> out=<copy> <same flags>`, e.g.
+   ```
+   uv run wsbench judge family=basic_readout_st \
+     readouts=/root/tmp/wsb-fast-v2/readouts/s3d-rl600/basic_readout.jsonl \
+     out=/root/tmp/wsb-0101-gate/replay/basic_readout --fast
+   ```
+   and once as a whole root, to exercise the lookups of §5.3 and `family_dir`:
+   ```
+   cp -r /root/tmp/wsb-fast-v2/runs/s3d-rl600 /root/tmp/wsb-0101-gate/replay_root
+   uv run wsbench run --fast readouts_root=/root/tmp/wsb-fast-v2/readouts/s3d-rl600 \
+     out=/root/tmp/wsb-0101-gate/replay_root
+   ```
+   Pass = exit 0; every copied `cells.jsonl` gained ZERO rows (`wc -l` equal; the cache is
+   append-only); spend is the preflight ping only; every recorded number identical; the only
+   differences in `results.json` are `family` and timestamps. Then the refusals: each
+   single-token file judged under its bare key exits 2 with the §5.2 message and adds no row.
+9. One `anti_text_inversion=True` replay (the fast-v2 root's `basic_readout_mt` out dir with
+   `anti_text_inversion=True` on main vs `family=basic_readout` after: same subset ids, same
+   value, zero new rows), and one `summ_store` reuse replay (a pre-0101 `summ_store=` directory
+   from the x3q11 run, if its `run.json` records one; else build one on pristine main from the
+   fast-v2 `basic_readout_mt` readouts at `layers=[<one layer>]`, then after the rename judge
+   `family=basic_readout` with the same `summ_store=` and require `adopted` > 0 and zero new
+   digest rows in the store).
+10. Independent fresh-eye review of the diff commit by commit (§15), including the residue
+    classification (§8.4) and `git diff -- tests/` against §9; then
+    `scripts/gated_merge.sh <pr>` (fail closed).
 
 ## 12. PR #510 (plan 0097, banks as password zips)
 
@@ -939,34 +1391,35 @@ that. Nothing else in #510 changes.
 | a stale import or path in an unmigrated branch, script or notebook | `ModuleNotFoundError` / missing file (§0.3); pre-0101 path messages name the move |
 | the stamp tables miss a historical stamp | `RenamedKey` (refused, never guessed); T2 pins the known ones; the implementer's `git log -S` check (§3.2) |
 | a hash name used as a lookup key (F7) | T9 forbids it |
-| option order of single-token multihop moves (F1) | `hash_name` in the seed; pinned by the existing option goldens and T1 |
-| the script rewrites an English word or a bank value | context rules + residue allowlist + untouched-bytes manifest (§8.3) |
+| a name-embedding site moves (§2.2: option orders, dev split, language distractors, capable / onecue / builder keys, adapt seeds, the authoring prompt, the producer seed) | `frozen_name` at each; every site has an output in the manifest (§11.1), compared byte for byte; T16 |
+| the multi-token multihop family's raw-key sites move from `multihop_mt` to `multihop_mt_v2` | `frozen_name`, not `hash_name`, at the sites this plan converts (§2.1); T9 pins the difference |
+| the migration is run twice, or over a partly migrated file or branch | the script refuses (§8.1); no public `rewrite` entry point; T15 |
+| a legacy-path test is rewritten into a vacuous pass, or a bank-header literal is rewritten | KEEP files and KEEP patterns, asserted byte-identical by `check` (§8.2) |
+| an open branch adds a bare key with its old meaning and rebases without conflict | the added-lines grep, mandatory in the PR body (§8.7) |
+| a re-gate over a pre-0101 ATI work dir silently un-gates a family or overwrites the partner's readouts | rows attributed by id, `draw_verdicts(expect=)`, write refusal, all-unverified is an exit (§5.7a); T12 |
+| a viewer shows an old `multihop/` directory as the multi-token family | the family comes from `read_results` / `dir_owner` (§5.8); T13 |
+| a pre-0101 `WSB_BANK_FILE_<BARE>` pin is ignored by the `_st` family or accepted header-less | `bank_pins` + positive header match (§3.3); T14 |
+| a new-layout path under the `association` category is "translated" by `repo_path` | rule order of §4; TP unit cases |
+| the script rewrites an English word or a bank value | context rules + reviewer-classified residue + untouched-bytes check (§8.4, §8.5) |
 | the `association` family / category collision (F8) | two-phase move; `_layout()` rejects a family in two categories; category packages export nothing |
 | fast files edited by mistake | sha pins in `test_fast_subset.py` unchanged and still asserted |
 | process-mode children spam the swap notice | suppressed under `outcome=` (§5.6), tested (T8) |
-| a published plan row names a vectors path that no longer exists (F3) | `Producer` resolves through `repo_path`; documented; Q2 |
-| external consumers (HF datasets, the viewer app's caches, HallucinationBench) keyed by old names | out of scope here; Q3 |
+| a published plan row names a vectors path that no longer exists (F3) | `Producer` resolves through `repo_path`; documented (ruling 0.4.2) |
+| external consumers (HF datasets, viewer / atlas exports, HallucinationBench) keyed by old names | not renamed (ruling 0.4.3); the README carries the key table |
 
 ## 14. Open questions for the owner
 
-- Q1. The category directory `association` now sits where the family `association` was, and
-  the family lives at `evals/basic/association/`. It is consistent with "category =
-  `EvalSpec.group` key" and fails loudly for stale paths, but it reads oddly. Default: keep
-  as specified (no category rename).
-- Q2. Introspection's steering-vector path (F3). Default: keep the plan-row string
-  `evals/introspection/vectors/…` (hash-neutral, zero golden changes) and resolve it in the
-  producer. Alternative: emit the real path in the row and map it back to the old string only
-  when hashing; rows are then self-describing for external producers, at the cost of a second
-  hashing rule and changed plan-row goldens. Does any external producer read `vector_file`
-  itself?
-- Q3. Public artefacts outside this repo that are keyed by family name (the pushed adapted
-  sets on HF, viewer / atlas exports, HallucinationBench's WSB method names): rename there
-  too, or leave and document the table? Default: leave, document; the code reads both.
-- Q4. A short `README.md` per category directory (title + its family list)? Default: no; the
-  README's grouped list is the index.
-- Q5. How long the bare-key notice stays (§5.6). Default: until the next tagged release, then
-  delete `registry.SWAP_NOTICE` and its test.
-- Q6. `tests/golden/` and `tests/fixtures/` file NAMES keep their pre-0101 keys (e.g.
-  `basic_readout_options.json` pins the single-token family) so that the pins show a zero
-  diff. Default: keep, with the key table in `tests/golden/README.md`. Rename them in a
-  follow-up if the names bother.
+None. The six questions of revision 1 are decided (§0.4).
+
+## 15. Implementation order (six commits, each checkable on its own)
+
+| # | commit | contains | must be green |
+|---|---|---|---|
+| 1 | manifest | `scripts/manifest_0101.py` and `tests/golden/manifest_0101_pre.json`, generated on pristine 030dd09b; nothing else | the reviewer's regeneration in a clean worktree is byte-identical (§11.1); full pytest (unchanged code) |
+| 2 | code that is valid BEFORE any rename | `registry.frozen_name` with an EMPTY `FROZEN_KEY_NAMES` (identity) and its use at F1, F2, F5, F6, F11-F15; `registry.family_root` / `family_rel` / `family_module` / `family_packages` / `repo_path` / `resource_path` over a layout scan that accepts the flat tree (a family directly under `evals/` has category `""`), with EVERY call site converted (§4, incl. the f-string imports in `src` and `tests`, `readplan.families`, `logit_lens.py:146` -> `lookup_names`); `root_bank`, `bank_pins`, `attribute_rows`, `owner`, `dir_owner`, the generalised `Reused` record holding only today's `multihop_mt` entry, the new `stored_family` signature; era-aware loaders (`fast.KEY_ERA` total, `rekey_pre_0101` with an EMPTY `PRE_0101_KEYS`); §5.7a's `draw_verdicts(expect=)` and the all-unverified exit; TP scans 1 and 3 | full pytest and ruff; `manifest_0101.py --check` byte-identical (no key has changed, so no mapping is involved: this proves the refactor alone moves nothing); no file moved, no key renamed; `git diff -- tests/` shows no changed assertion value |
+| 3 | the migration script | `scripts/migrate_0101.py`, its unit tests (T15), `scripts/migrate_0101_residue.txt` as classified by the fresh-eye reviewer from `plan`'s output; tag `pre-0101-migration` on this commit | full pytest; `migrate_0101.py plan` runs clean and its per-rule diffs and `tests-values.diff` are attached to the PR for review BEFORE commit 4 is made |
+| 4 | the mechanical migration | exactly the output of `migrate_0101.py apply` on commit 3: moves, rule rewrites, JSON keys, formatter hunks. Nothing hand-written | `migrate_0101.py check`; the reviewer's own `apply` on commit 3 reproduces this tree (`git diff --quiet`); KEEP files byte-identical. The test suite is NOT expected to pass here (the registry tables still describe the old keys); CI is not required green on this commit and the PR is not mergeable at it |
+| 5 | hand edits and new tests | `registry.py` tables (`LEGACY_FAMILY_NAMES`, `HASH_FAMILY_NAMES`, `FROZEN_KEY_NAMES`, `PRE_0101_KEYS`, the four new `REUSED_FAMILY_KEYS` entries), `register`'s category check, the layout scan made two-level only, the eight family `__init__.py`, the remaining §5 guards (`reads.load` block, `readouts_path`, `family_dir` content rule, `cli._family` notice, adapt marker fence, floors, viewers), the KEEP files, `tests/test_rename_0101.py` (T1-T14, T16), TP scan 2, V1-V8 | full pytest and ruff; `manifest_0101.py --check` byte-identical under the key mapping; gates 5-9 of §11.2; `git diff <commit 4>..<commit 5> -- tests/` contains only KEEP-file edits, new tests and V1-V8 |
+| 6 | docs | `README.md`, `CLAUDE.md`, `AGENTS.md`, `NOTICE.md`, family README prose, `adapted/README.md`, `tests/golden/README.md`, `plans/README.md`, the three live docs, skills | `tests/test_readme.py`, `test_prompts_in_readme.py`, `test_adapt_skill_docs.py`, TP scan 3; full pytest; manifest check once more |
+
+Commits 4 and 5 are pushed together (CI runs on the head); the review reads them separately.
