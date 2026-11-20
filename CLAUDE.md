@@ -637,13 +637,19 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   tests/golden/manifest_0101_pre.json` rebuilds every hash, seed, option order, prompt sha, call
   key and cache fingerprint of all 32 families and compares them with the manifest recorded on
   main before the rename (run it after any change to `registry.py`'s tables). The golden and the
-  script are never regenerated. Since then T1 (`tests/test_rename_0101.py`, `manifest_verdict`)
-  guarantees that **no instrument moves without declaring it by a stamp or bank version
-  change**: a family whose `prompt_version` or registered bank (file / sha256) differs from the
-  golden's is skipped and named in the test output; any other differing row fails ("instrument
-  moved without a stamp or bank change"), as does any change outside `families` (shared digest
-  prompts, the F4 record). So a deliberate judge or bank change must move the stamp or the bank
-  version, and `--check` then lists that family's rows only.
+  script are never regenerated. Since then T1 (`tests/test_rename_0101.py`; the rule is `verdict` in
+  `scripts/manifest_0101_declare.py`) guarantees that **every family's manifest rows equal the
+  golden's or the state declared for it in the ledger `tests/golden/manifest_0101_declared.json`**
+  (`{prompt_version, bank_file, bank_sha256, rows_sha256, plan, note}` per family): a family that
+  differs from the golden, or is new, needs an entry whose stamp, bank and row hash equal the
+  tree's, and the stamp or bank must differ from the golden's ("instrument moved without a stamp
+  or bank change" otherwise). A stamp-only declaration waives `stamps` and `run` alone (plan_sha,
+  file shas, seeds, option lists, tables and lens-store rows must still equal the golden's); a
+  new bank is covered by the ledger hash. Sections outside `families` (shared digest prompts,
+  the F4 record) never move without editing the check. So a deliberate judge or bank change =
+  bump the stamp or bank version, then `python scripts/manifest_0101_declare.py <family> --plan
+  <NNNN> --note '...' --write` (it refuses without a bump); a later edit of a declared family
+  needs another bump and another entry.
   - **Two frozen names, never interchangeable.** `registry.hash_name(key)`
     (`HASH_FAMILY_NAMES`) is what `plan_sha`, the ATI `bank_sha` and the lucky-guessing seeds
     hash: the key of the family's FIRST hashed life (`multihop` -> `multihop_mt_v2`,
