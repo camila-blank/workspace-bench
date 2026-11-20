@@ -1,12 +1,11 @@
 """Bank judge v2 (plan 0012 §2): the family rules, the forbidden answer, per-family PROMPTS."""
 
-import importlib
 import json
 from pathlib import Path
 
 from conftest import native_args
 
-from wsbench import mc
+from wsbench import mc, registry
 from wsbench.banks import load_bank
 from wsbench.basic import family as bfam
 from wsbench.basic import judge as bjudge
@@ -51,7 +50,7 @@ def test_family_rules_and_per_family_prompts():
     # plan 0038 poetry: its own blind MC judge;
     # plan 0054: multilingual left the basic bank judge (scorer mc+regex)
     for f in ["typo"]:
-        mod = importlib.import_module(f"wsbench.evals.{f}.prompts")
+        mod = registry.family_module(f, "prompts")
         extra = set(mod.PROMPTS) - set(P.PROMPTS)
         assert extra == ({own[f]} if f in own else set()), f
         assert set(P.PROMPTS) <= set(mod.PROMPTS)

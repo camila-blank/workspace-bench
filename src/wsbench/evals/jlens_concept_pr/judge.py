@@ -79,7 +79,7 @@ HEADLINE_LAYER = 44
 FOIL_SEED = 0
 MAX_TOKENS = 16000  # every stage: a 60-concept response echoes every concept back
 STAGE_P_TEMPERATURE = 0.0
-BANK_DIR = registry.REPO_ROOT / "evals" / FAMILY
+BANK_DIR = registry.family_root(FAMILY)
 REF_DIR = BANK_DIR / "gen-jlens-pr-jlens"
 
 

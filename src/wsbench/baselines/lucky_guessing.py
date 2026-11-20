@@ -20,7 +20,7 @@ from wsbench.cache import Cache
 from wsbench.judge_config import ResolvedJudge
 from wsbench.llm import Spend, schema_block
 from wsbench.mcjudge import Call, Preflighter, load_bank, run_calls
-from wsbench.registry import REPO_ROOT, bank_path, hash_name
+from wsbench.registry import REPO_ROOT, bank_path, family_root, hash_name
 
 PROMPT_VERSION = "lucky-2026-09-16"
 DEFAULT_DRAWS = 5
@@ -771,6 +771,12 @@ def _rng(seed: int, family: str, *key: object) -> random.Random:
     return random.Random(int.from_bytes(h, "big"))
 
 
+def call_key(family: str, variant: str, item_id: str, draw: int) -> str:
+    """The cache key of one guesser call; a renamed family keys as its former key
+    (``registry.hash_name``, v1.2.0), so its cached answers are kept."""
+    return f"{hash_name(family)}|{variant}|{item_id}|d{draw}"
+
+
 def pick_examples(items: list[Item], idx: int, family: str, seed: int, k: int = 3) -> list[Item]:
     """A seeded choice of ``k`` OTHER items shown as worked examples, never the item itself."""
     others = [i for i in range(len(items)) if i != idx]
@@ -1125,7 +1131,7 @@ def bank_directions(bank: str | Path | None) -> dict[str, str]:
         return {}
     path = Path(bank)
     if not path.exists():
-        path = REPO_ROOT / "evals" / "moral_rationale" / path.name
+        path = family_root("moral_rationale") / path.name
     if not path.exists():
         return {}
     items = json.loads(path.read_text(encoding="utf-8"))
@@ -1471,7 +1477,7 @@ def run_family(
                 ]
                 calls = [
                     Call(
-                        key=f"{hash_name(name)}|{variant}|{items[scored[j]].id}|d{d}",
+                        key=call_key(name, variant, items[scored[j]].id, d),
                         system=(
                             SYSTEM_CANDS
                             if cands
@@ -1509,7 +1515,7 @@ def run_family(
                 )
                 for j in js:
                     replies[j] = [
-                        results.get(f"{hash_name(name)}|{variant}|{items[scored[j]].id}|d{d}")
+                        results.get(call_key(name, variant, items[scored[j]].id, d))
                         for d in range(draws)
                     ]
 

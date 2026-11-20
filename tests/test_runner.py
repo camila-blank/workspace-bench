@@ -329,10 +329,9 @@ def test_mcrx_family_is_preflighted(offline, tmp_path):
     """Plan 0033 R7: scorer mc+regex leaves EvalSpec.scorer empty, so ``run`` preflights the judge
     of multilingual / multilingual_multihop; the regex family (multilingual_mt) makes no call."""
     import dataclasses
-    import importlib
 
     for name in ("multilingual", "multilingual_mt"):
-        spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+        spec = registry.family_module(name).SPEC
         register(dataclasses.replace(spec, run=lambda a, n=name: _ok(a, n)))
     assert registry.FAMILIES["multilingual"].scorer == ""
     assert registry.FAMILIES["multilingual_mt"].scorer == "regex"

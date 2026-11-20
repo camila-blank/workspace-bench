@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from wsbench import registry
 from wsbench.registry import REPO_ROOT
 from wsbench.results import decided_outcomes, read_results
 
@@ -73,12 +74,11 @@ def summary_bases(family: str, base: str | None) -> tuple[str, ...]:
     ``SUMMARY_STAMP_VERSION``: Stage C reads the digest, so ``summ-c3`` replaces the native
     narrative stage), that base too, and the stamp its judge gives the bank judged now
     (:func:`judged_bank_stamp`). Empty for a family the registry does not know."""
-    import importlib
 
     if base is None:
         return ()
     try:
-        mod = importlib.import_module(f"wsbench.evals.{family}.prompts")
+        mod = registry.family_module(family, "prompts")
     except ImportError:
         return (base,)
     extra = getattr(mod, "SUMMARY_STAMP_VERSION", None)
@@ -92,11 +92,10 @@ def judged_bank_stamp(family: str) -> str | None:
     its zero-argument ``judge.instrument()`` where it has one, else None. role_bound_association
     stamps ``CALL_VERSION`` alone on an adapted bank but ``+bank-v2`` on the registered one, so an
     adapted set's prompt-only floor is frozen on the adapted bank's own stamp."""
-    import importlib
     import inspect
 
     try:
-        judge = importlib.import_module(f"wsbench.evals.{family}.judge")
+        judge = registry.family_module(family, "judge")
     except ImportError:
         return None
     fn = getattr(judge, "instrument", None)

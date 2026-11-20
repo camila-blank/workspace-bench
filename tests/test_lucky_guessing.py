@@ -1,6 +1,5 @@
 """Lucky guessing: the lists are the judges' own, the scoring rules, a scripted run, freeze."""
 
-import importlib
 import json
 from pathlib import Path
 
@@ -20,7 +19,7 @@ FAMILIES = sorted(lg.BUILDERS)
 @pytest.fixture(autouse=True)
 def _all_families():
     for name in lg.BUILDERS:  # conftest resets the registry per test
-        spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+        spec = registry.family_module(name).SPEC
         registry.FAMILIES.setdefault(spec.name, spec)
 
 

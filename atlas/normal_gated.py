@@ -21,6 +21,8 @@ sys.path.insert(0, str(AGAM / "gw-olens/scripts/ola/ar_ablate"))
 sys.path.insert(0, str(WSB / "src"))
 import wsbench_spec as spec  # noqa: E402
 
+from wsbench import registry  # noqa: E402
+
 REGOLD = ("poetry", "basic_readout", "moral_rationale")
 UNGATED = {"directed_modulation", "multi_concept_directed_modulation"}  # no checkable answer
 MIN_ITEMS = 10
@@ -84,7 +86,7 @@ def prepare(subject: str) -> None:
     for fam in spec.HEADLINE_23:
         if fam in REGOLD or fam in UNGATED:
             continue
-        p = WSB / "evals" / fam / "items.json"
+        p = registry.family_root(fam) / "items.json"
         if not p.exists():
             continue
         g = read_gates(adir / "gate" / f"{fam}.jsonl")
@@ -104,7 +106,7 @@ def prepare(subject: str) -> None:
         src = jl(adir / f"{fam}.json")
         orig_ids = {
             str(i.get("id") or i.get("name"))
-            for i in items_of(jl(WSB / "evals" / fam / "items.json"))
+            for i in items_of(jl(registry.family_root(fam) / "items.json"))
         }
         keep = [
             i

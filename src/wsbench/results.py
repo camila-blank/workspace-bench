@@ -117,11 +117,11 @@ def read_results(out_dir: Path) -> FamilyResult:
     family) as the removed family's key, by its stamp."""
     from dataclasses import replace
 
-    from wsbench.registry import canonical, stored_family
+    from wsbench.registry import stored_family
 
     path = Path(out_dir) / "results.json"
     result = FamilyResult.from_json(json.loads(path.read_text(encoding="utf-8")))
-    family = stored_family(canonical(result.family), result.config.get("prompt_version"))
+    family = stored_family(result.family, result.config.get("prompt_version"))
     return result if family == result.family else replace(result, family=family)
 
 

@@ -22,7 +22,7 @@ from wsbench.judge_config import JudgeConfig
 from wsbench.llm import Spend
 from wsbench.mcjudge import Preflighter, item_scope, with_readout_count
 from wsbench.readouts import Cell
-from wsbench.registry import EvalSpec, JudgeArgs, bank_path
+from wsbench.registry import EvalSpec, JudgeArgs, bank_path, family_rel
 from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
 
@@ -58,7 +58,7 @@ def bank_family(
     one position per layer until a family spec widens its read span. ``task_note`` overrides the
     shared ``DIGEST_TASK_NOTES`` line; ``targets_judge=False`` for a family on the blind MC judge
     (``MC_FAMILIES``), whose token note is the OPTIONS form."""
-    bank = bank or Path("evals") / name / "items.json"
+    bank = bank or family_rel(name) / "items.json"
     return EvalSpec(
         name=name,
         title=title,

@@ -18,7 +18,7 @@ from wsbench.llm import Spend
 from wsbench.mc import classify, seed_int
 from wsbench.mcjudge import Call, Preflighter, item_scope, run_calls, with_readout_count
 from wsbench.readouts import Cell
-from wsbench.registry import REPO_ROOT, JudgeArgs, bank_path
+from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 
 from . import score
@@ -34,7 +34,7 @@ from .prompts import (
 
 FAMILY = "directed_modulation"
 # plan 0035 C2: a distractor never comes from the gold concept's relatedness group
-GROUPS_FILE = REPO_ROOT / "evals/directed_modulation/distractor_groups.json"
+GROUPS_FILE = registry.resource_path("directed_modulation", "distractor_groups.json")
 
 
 @dataclass(frozen=True)

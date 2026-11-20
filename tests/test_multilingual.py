@@ -45,9 +45,8 @@ KENTE = "mlmh-ar-kente-accra"
 
 
 def _spec(name):
-    import importlib
 
-    spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+    spec = registry.family_module(name).SPEC
     registry.FAMILIES.setdefault(spec.name, spec)
     return spec
 

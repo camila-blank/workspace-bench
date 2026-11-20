@@ -65,7 +65,7 @@ from wsbench.multitoken.prompts import (
 from wsbench.multitoken.regex import SCORER_VERSION
 from wsbench.nearquote import close_lines, continued, sample_end_prefix
 from wsbench.readouts import Cell, bulleted
-from wsbench.registry import REPO_ROOT, EvalSpec, JudgeArgs, bank_path
+from wsbench.registry import EvalSpec, JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 from wsbench.split import layer_protocols
 
@@ -297,7 +297,7 @@ def mt_family(
         name=name,
         title=title,
         group=group,
-        bank=bank or Path("evals") / name / "items.json",
+        bank=bank or registry.family_rel(name) / "items.json",
         # regex: the instrument is the contract; the JudgeConfig model is what opts=judge=mc uses
         judge=JudgeConfig(prompt_version=pv),
         metric="pass_rate",
@@ -1784,7 +1784,7 @@ def _gate(
 
 
 BRMT = "basic_readout_mt"
-EXONYMS_FILE = REPO_ROOT / "evals/basic_readout_mt/exonyms.json"
+EXONYMS_FILE = registry.resource_path("basic_readout_mt", "exonyms.json")
 
 
 def _adapted_entry(family: str, name: str, item_id: str) -> dict[str, Any]:

@@ -238,8 +238,7 @@ def adapted_bank_stamp(family: str, pv: str) -> str:
     if not os.environ.get(registry.BANK_ROOT_ENV) or "+bank-v" not in pv:
         return pv
     fam = registry.canonical(family)
-    names = [fam, *registry.legacy_names(fam)]
-    if any(os.environ.get(registry.BANK_FILE_ENV_PREFIX + n.upper()) for n in names):
+    if any(os.environ.get(pin) for pin in registry.bank_pins(fam)):
         return pv
     try:
         reg = _header_version(registry.frozen_bank_path(fam))

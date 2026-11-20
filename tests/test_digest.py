@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import native_args
 
-from wsbench import bpe, digest
+from wsbench import bpe, digest, registry
 from wsbench.cache import Cache
 from wsbench.judge_config import JudgeConfig, resolve
 from wsbench.llm import Spend
@@ -507,14 +507,13 @@ def test_digest_system_records_flat_lists():
 
 
 def test_no_rank1_exception_text(real_families):
-    import importlib
 
     from wsbench.basic import prompts as bp
 
     bad = "ranked first among the candidates of its type"
     texts = [*digest.PROMPTS.values(), *bp.PROMPTS.values()]
     for name in real_families:
-        texts += list(importlib.import_module(f"wsbench.evals.{name}.prompts").PROMPTS.values())
+        texts += list(registry.family_module(name, "prompts").PROMPTS.values())
     assert not any(bad in str(t) for t in texts)
 
 

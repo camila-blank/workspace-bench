@@ -58,6 +58,7 @@ from wsbench.adapt import moral as am
 from wsbench.adapt.gate import Ask, first_line, grade_contains
 from wsbench.banks import label_of
 from wsbench.llm import schema_block
+from wsbench.registry import frozen_name
 
 REPO = Path(__file__).resolve().parents[1]
 VERSION = "common-r5-2026-11-01"
@@ -174,6 +175,13 @@ def load(path: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     return {k: v for k, v in raw.items() if k != "items"}, raw["items"]
 
 
+def gate_key(family: str, item: str) -> str:
+    """The key of an item's gate request rows and of its ``gate_r5.json`` record: the family's
+    pre-0101 key (``registry.frozen_name``, plan 0101 F15), so a rename moves neither the stored
+    keys nor the sampling seed they feed."""
+    return f"{frozen_name(family)}|{item}"
+
+
 def in_scope(family: str, it: dict[str, Any]) -> bool:
     return family == "association" or it.get("subfamily") == "implicit"
 
@@ -195,7 +203,7 @@ def requests(out: Path) -> Path:
         for it in items:
             if not in_scope(family, it):
                 continue
-            base = {"key": f"{family}|{it['name']}", "family": family, "n": GATE_N,
+            base = {"key": gate_key(family, it["name"]), "family": family, "n": GATE_N,
                     "temperature": 0.7, "top_p": 1.0, "top_k": -1, "enable_thinking": False,
                     "greedy": False}  # fmt: skip
             if family == "basic_readout":
@@ -239,13 +247,13 @@ def gate(out: Path, samples: Path) -> dict[str, Any]:
         for it in items:
             if not in_scope(family, it):
                 continue
-            texts = by_key.get(f"{family}|{it['name']}") or []
+            texts = by_key.get(gate_key(family, it["name"])) or []
             if len(texts) != GATE_N:
                 raise SystemExit(f"{family}|{it['name']}: {len(texts)} samples, want {GATE_N}")
             ask = Ask(it["id"], "surface", tuple(gold_forms(it)))
             hits = [bool(grade_contains(ask, t)) for t in texts]
             answers = [norm_answer(t) for t in texts]
-            key = f"{family}|{it['id']}"
+            key = gate_key(family, it["id"])
             items_of[key] = it
             rec[key] = {
                 "family": family,
@@ -535,7 +543,7 @@ def build(family: str, out: Path) -> Path:
     for it in items:
         if not in_scope(family, it):
             continue
-        g = gate_rec[f"{family}|{it['id']}"]
+        g = gate_rec[gate_key(family, it["id"])]
         if g["verdict"] != "keep":
             continue  # re-key / drop handled below
         s = st.setdefault(it["id"], {"pool": {}, "order": [], "banned": [],
@@ -590,7 +598,7 @@ def write(family: str, header: dict[str, Any], items: list[dict[str, Any]], st: 
     for it in items:
         x = json.loads(json.dumps(it))
         if in_scope(family, it):
-            g = gate_rec[f"{family}|{it['id']}"]
+            g = gate_rec[gate_key(family, it["id"])]
             if g["verdict"] != "keep":
                 dropped[it["name"]] = {k: g[k] for k in ("correct", "answers", "verdict")}
                 continue

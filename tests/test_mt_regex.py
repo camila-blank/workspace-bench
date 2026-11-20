@@ -1,7 +1,6 @@
 """The multi-token regex scorer: the port is pinned to the SOURCE repo's verdicts (the goldens in
 ``tests/golden/mt_regex_*.json``), and ``run_regex`` applies the contract cell by cell."""
 
-import importlib
 import json
 from pathlib import Path
 
@@ -299,7 +298,7 @@ def test_dispatch_and_dry_run(tmp_path, capsys):
 
 @pytest.mark.parametrize("name", REGEX_SCORED)
 def test_cli_dry_run_on_the_toy_file_makes_no_call(name, tmp_path, capsys, monkeypatch):
-    spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+    spec = registry.family_module(name).SPEC
     registry.FAMILIES.setdefault(spec.name, spec)  # conftest resets the registry per test
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "")  # no key: a judge call would fail loudly
@@ -339,7 +338,7 @@ def test_cli_scores_the_toy_file_offline(name, tmp_path, monkeypatch):
     never does and is blank at one layer (a negative) — 0.5, offline, no key needed."""
     monkeypatch.delenv("WSBENCH_JUDGE_MODEL", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
-    spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+    spec = registry.family_module(name).SPEC
     registry.FAMILIES.setdefault(spec.name, spec)
     out = tmp_path / "out"
     example = REPO / "examples/readouts" / f"{name}.jsonl"

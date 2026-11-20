@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from wsbench import registry
 from wsbench.banks import load_bank as load_bank_file
 from wsbench.registry import (
     BANK_ROOT_ENV,
@@ -125,7 +126,7 @@ def frozen_lite_rule(family: str) -> dict[str, Any]:
     """The lite rule frozen by the pre-registered lite-site procedure (plan 0032 §2.6; gpu.md
     R4d: ``scripts/lite_site_table.py --write``) in ``evals/<family>/lite_rule.json``, else
     ``final_token``. A lite-rule edit never changes full cells, ``plan_sha`` or ``bank_sha``."""
-    path = REPO_ROOT / "evals" / family / "lite_rule.json"
+    path = REPO_ROOT / registry.family_rel(family) / "lite_rule.json"
     if not path.exists():
         return dict(FINAL)
     rule = json.loads(path.read_text(encoding="utf-8"))["lite_positions"]
@@ -1386,23 +1387,22 @@ def families() -> list[str]:
     """Every family with a bank; under ``$WSB_BANK_ROOT`` only those the adapted root actually
     has (an ooc family with no bank is skipped, not an error, when planning everything)."""
     names = sorted(
-        p.name
-        for p in (REPO_ROOT / "evals").iterdir()
-        if any(p.glob("items*.json")) or (p / "manifest.json").exists()  # incl. items_v<N>.json
+        f
+        for f in registry._layout()
+        if any((p := registry.family_root(f)).glob("items*.json"))  # incl. items_v<N>.json
+        or (p / "manifest.json").exists()
     )
     root = os.environ.get(BANK_ROOT_ENV)
     if not root:
         return names
     base = Path(root) if Path(root).is_absolute() else REPO_ROOT / root
     # a set written under a former key (``registry.lookup_names``: multihop_mt_v2.json after the
-    # 2026-11-04 rename) has the family too; ``bank_path`` reads it the same way
+    # 2026-11-04 rename) has the family too; ``registry.root_bank`` is the rule ``bank_path`` reads
     return [
         f
         for f in names
-        if any(
-            (base / f"{k}.json").exists() or (base / k / "manifest.json").exists()
-            for k in lookup_names(f)
-        )
+        if registry.root_bank(base, f) is not None
+        or any((base / k / "manifest.json").exists() for k in lookup_names(f))
     ]
 
 

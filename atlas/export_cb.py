@@ -41,6 +41,8 @@ SNAPS = OUT / "snap"
 sys.path.insert(0, str(WSB / "src"))
 sys.path.insert(0, str(AGAM / "gw-olens/scripts/ola/ar_ablate"))
 
+from wsbench import registry  # noqa: E402
+
 CB_MANIFEST = Path("/tmp/cbviewer/manifest.json")
 CB_URL = "https://safety-sahan-2-camila-blank--wsbench-viewer-web.modal.run"
 SKIP_FAMS = {
@@ -497,7 +499,7 @@ def export_model(key: str) -> dict:
             report[fam] = {"error": f"plan: {type(e).__name__}: {e}"}
             continue
         if gated:
-            bp = WSB / "evals" / fam / "items.json"
+            bp = registry.family_root(fam) / "items.json"
         else:
             bp = (
                 root / f"{fam}.json"

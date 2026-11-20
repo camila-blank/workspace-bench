@@ -21,6 +21,7 @@ from pathlib import Path
 AGAM = Path("/workspace/agam")
 WSB = AGAM / "workspace-bench"
 sys.path.insert(0, str(WSB / "src"))
+from wsbench import registry  # noqa: E402
 from wsbench.viewer.build import GROUPS, _items, view_item  # noqa: E402
 
 SITE = Path(__file__).parent / "site"
@@ -648,11 +649,11 @@ def bank_items(model: str, fam: str) -> tuple[list[dict], dict]:
         p = (
             NG / sk / "bank" / f"{fam}.json"
             if fam in NG_REGOLD
-            else WSB / "evals" / fam / "items.json"
+            else registry.family_root(fam) / "items.json"
         )
         return (_items(jload(p)) if p.exists() else []), {}
     if model == "qwen3.6-27b":
-        p = WSB / "evals" / fam / "items.json"
+        p = registry.family_root(fam) / "items.json"
         return (_items(jload(p)) if p.exists() else []), {}
     p = WSB / "adapted" / model / f"{fam}.json"
     if not p.exists() and (WSB / "adapted" / model / fam / "items.json").exists():

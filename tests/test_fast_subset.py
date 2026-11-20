@@ -66,7 +66,8 @@ def test_non_fast_plan_is_byte_identical_to_pre_0090():
     got = _non_fast_shas()
     if os.environ.get(WRITE_GOLDEN_ENV):
         GOLDEN.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    want = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    # the golden is keyed by the families' pre-0101 keys (plan 0101: translated, never rewritten)
+    want = registry.rekey_pre_0101(json.loads(GOLDEN.read_text(encoding="utf-8")))
     assert got == want
 
 

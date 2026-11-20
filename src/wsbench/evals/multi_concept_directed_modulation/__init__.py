@@ -2,10 +2,8 @@
 relation between two people) in mind while writing a dictated sentence; does the lens read them
 at the writing positions, and does the binding survive."""
 
-from pathlib import Path
-
 from wsbench.judge_config import JudgeConfig
-from wsbench.registry import EvalSpec, register
+from wsbench.registry import EvalSpec, family_rel, register
 
 from . import judge
 from .prompts import PROMPT_VERSION, TASK_NOTE
@@ -16,7 +14,7 @@ SPEC = register(
         title="Multi-concept directed modulation",
         group="basic",
         # plan 0034 (D9): bank v2 = the 100 v1 items + 16 entity relation items
-        bank=Path("evals/multi_concept_directed_modulation/items_v2.json"),
+        bank=family_rel("multi_concept_directed_modulation") / "items_v2.json",
         judge=JudgeConfig(prompt_version=PROMPT_VERSION),
         metric="pass_rate",
         higher_is_better=True,

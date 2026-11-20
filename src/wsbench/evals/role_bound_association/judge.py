@@ -26,7 +26,7 @@ from wsbench.mcjudge import (
     with_readout_count,
 )
 from wsbench.readouts import Cell, LoadReport, bulleted
-from wsbench.registry import REPO_ROOT, JudgeArgs, bank_path
+from wsbench.registry import JudgeArgs, bank_path
 from wsbench.results import FamilyResult
 
 from . import gate, prompts, score
@@ -177,7 +177,7 @@ def build_block_v2(it: dict, items: list[dict], lex: gate.Lexicon) -> Block:
     )
 
 
-DISPLAY_TERMS = REPO_ROOT / "evals/role_bound_association/display_terms_v1.json"
+DISPLAY_TERMS = registry.resource_path("role_bound_association", "display_terms_v1.json")
 MAX_SHOWN_TERMS = 6
 
 
@@ -249,7 +249,7 @@ def bare_label(shown: str) -> str:
 
 
 DISTRACTORS_FILE = "distractors_v3.json"
-DISTRACTORS_V3 = REPO_ROOT / "evals/role_bound_association" / DISTRACTORS_FILE
+DISTRACTORS_V3 = registry.resource_path("role_bound_association", DISTRACTORS_FILE)
 
 
 def distractors_v3() -> dict[str, dict[str, list[str]]]:

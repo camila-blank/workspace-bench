@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def _all_families():
     for name in lg.BUILDERS:
-        spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+        spec = registry.family_module(name).SPEC
         registry.FAMILIES.setdefault(spec.name, spec)
 
 

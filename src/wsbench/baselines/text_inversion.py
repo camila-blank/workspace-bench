@@ -15,7 +15,14 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from wsbench.registry import REPO_ROOT, RETIRED_FAMILIES, canonical, hash_name, legacy_names
+from wsbench.registry import (
+    REPO_ROOT,
+    RETIRED_FAMILIES,
+    attribute_rows,
+    canonical,
+    hash_name,
+    legacy_names,
+)
 
 UM_INFERRED = "inferred_characterization"  # user_modeling/score.py INFERRED
 
@@ -690,7 +697,7 @@ def usable(a: dict[str, Any] | None) -> bool:
 def latest_answers(path: Path) -> dict[tuple[str, str], dict[str, Any]]:
     """Last error-free answer per (family, id), else the last attempt."""
     best: dict[tuple[str, str], dict[str, Any]] = {}
-    for r in load_jsonl(path):
+    for r in attribute_rows(load_jsonl(path), canonicalize=False):
         k = (r["family"], r["id"])
         if k not in best or not r["error"] or best[k]["error"]:
             best[k] = r
@@ -758,14 +765,26 @@ def write_readouts(out: Path = OUT, draws: int = DRAWS) -> dict[str, list[int]]:
 # ---------------------------------------------------------------- stage 4: gate
 
 
-def draw_verdicts(results_path: Path) -> dict[str, bool | None]:
+def draw_verdicts(results_path: Path, expect: str | None = None) -> dict[str, bool | None]:
     """Per item: pass / fail / undecided for one judged draw. Rows are grouped by item (``id``,
     or ``name`` / ``item``); an item passes if any of its rows passes, is undecided if none
     passes and one is undecided. buggy_code rows pass at ``score >= BUGGY_PASS_SCORE``. For a
     pass-rate family the decided rate must equal the family's own value (adapter drift guard). A
-    summary-mode result is refused (ValueError): the gate is a native instrument."""
+    summary-mode result is refused (ValueError): the gate is a native instrument. ``expect``:
+    the family the caller reads the file for; a result that is another family's by its stored
+    key and stamp (``registry.stored_family``: a work dir written before a rename) is a
+    ``RenamedKey``, and the result is scored as ``expect``."""
     d = json.loads(results_path.read_text(encoding="utf-8"))
     fam = d["family"]
+    if expect is not None:
+        from wsbench.registry import RenamedKey, stored_family
+
+        fam = stored_family(fam, (d.get("config") or {}).get("prompt_version"))
+        if fam != expect:
+            raise RenamedKey(
+                f"{results_path} holds results of {fam!r}, not {expect!r} (written under "
+                f"another family key: plan 0101 §5.7a)"
+            )
     if (d.get("config") or {}).get("aggregate") == "summary":
         # the gate reads native row shapes and is stamped with the native instrument (plan 0024):
         # judge the prompt-only readers with opts=aggregate=native
@@ -911,10 +930,7 @@ def prompt_sha(content: str) -> str:
 def _canon_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Gate rows with a former family key (``registry.LEGACY_FAMILY_NAMES``, e.g. a pre-v1.2.0
     ``wrong_bridge`` out dir) read under the current key, so a re-gate reuses them."""
-    for r in rows:
-        if isinstance(r.get("family"), str):
-            r["family"] = canonical(r["family"])
-    return rows
+    return attribute_rows(rows)  # a plan-0101 bare key: by the row's own id (plan 0101 §5.7a)
 
 
 def current_shas(out: Path) -> dict[tuple[str, str], str]:
@@ -1353,6 +1369,15 @@ def _judged_paths(root: Path, answerer: str, fam: str, draws: int) -> list[Path]
     return [root / "judged" / answerer / f"draw{d}" / fam / "results.json" for d in range(draws)]
 
 
+def _judged_dirs(roots: list[Path], fam: str) -> list[Path]:
+    """The judged directories of ``fam`` under ``roots`` (any answerer, any draw)."""
+    return [
+        p.parent
+        for root in roots
+        for p in sorted((root / "judged").glob(f"*/draw*/{fam}/results.json"))
+    ]
+
+
 def _check_not_pilot(roots: list[Path], fam: str) -> None:
     for root in roots:
         for p in sorted((root / "judged").glob(f"*/draw*/{fam}/results.json")):
@@ -1383,7 +1408,7 @@ def _answerer_draws(
             if not p.exists():
                 continue
             any_root = True
-            v = draw_verdicts(p)
+            v = draw_verdicts(p, expect=fam)
             af = answers_file(root, answerer, d)
             ans = latest_answers(af) if af.exists() else {}
             for i in ids:
@@ -1507,6 +1532,14 @@ def _gate_panel(
         ati = [i for i in ati_all if i not in excl]
         inv = [i for i in ids if verdict[i] == "invertible"]
         unv = len(ids) - len(ati_all) - len(inv)
+        no_verdict = all(x is None for a in panel for i in ids for x in dp[a][i])
+        if ids and no_verdict and (held := _judged_dirs(roots, fam)):
+            # plan 0101 §5.7a: judged results that give NO item a verdict are a mis-keyed or
+            # stale work dir (e.g. one written before a family rename), never "not gated"
+            raise SystemExit(
+                f"{fam}: none of its {len(ids)} items has a verdict in any draw although "
+                f"{held[0]} holds judged results for it; stop and report"
+            )
         if not candidates and ids and unv / len(ids) > MAX_REFUSED_SHARE:
             why = f"unverified: {unv}/{len(ids)} items undecided under the panel (> 20%)"
             if fam in CRAFTED:
@@ -1642,7 +1675,7 @@ def _gate_legacy(
         for p, r in zip(paths, results, strict=True):
             if r["config"].get("items") or r["config"].get("limit"):
                 raise ValueError(f"gate: {p} is a subset (pilot) run, not a gate run")
-        verdicts = [draw_verdicts(p) for p in paths]
+        verdicts = [draw_verdicts(p, expect=fam) for p in paths]
         # An item with no usable answer in a draw had no readout rows; whatever its judge did
         # with the missing cell, that draw is undecided, never a fail.
         for v, ans in zip(verdicts, answers, strict=True):
@@ -1652,6 +1685,12 @@ def _gate_legacy(
         draw_pass = {i: [v.get(i) for v in verdicts] for i in ids}
         ati = [i for i in ids if all(x is False for x in draw_pass[i])]
         inv = [i for i in ids if any(x is True for x in draw_pass[i])]
+        if ids and all(x is None for i in ids for x in draw_pass[i]):
+            # plan 0101 §5.7a: never a silent all-unverified entry from a mis-keyed work dir
+            raise SystemExit(
+                f"{fam}: none of its {len(ids)} items has a verdict in any draw although "
+                f"{paths[0].parent} holds judged results for it; stop and report"
+            )
         cfg = results[0]["config"]
         frozen[fam] = {
             "answerer": answerer,

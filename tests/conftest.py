@@ -138,12 +138,9 @@ def real_families():
     package once, so after a test empties the registry it re-adds none (``_isolate_registry``
     restores this test's snapshot afterwards)."""
     import importlib
-    import pkgutil
 
-    import wsbench.evals as evals_pkg
-
-    for mod in pkgutil.iter_modules(evals_pkg.__path__):
-        spec = importlib.import_module(f"wsbench.evals.{mod.name}").SPEC
+    for name in registry.family_packages():
+        spec = importlib.import_module(name).SPEC
         registry.FAMILIES.setdefault(spec.name, spec)
     return registry.FAMILIES
 

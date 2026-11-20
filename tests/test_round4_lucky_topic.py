@@ -1,7 +1,6 @@
 """Round 4 (Camila r2 MC leakage standard): the lucky-guessing ``topic`` guesser and the
 conjunctive family rule recorded beside the per-draw mean."""
 
-import importlib
 import json
 from pathlib import Path
 
@@ -18,7 +17,7 @@ TOPIC_FAMILIES = ("conjunctive_association", "role_bound_association")
 @pytest.fixture(autouse=True)
 def _all_families():
     for name in lg.BUILDERS:
-        spec = importlib.import_module(f"wsbench.evals.{name}").SPEC
+        spec = registry.family_module(name).SPEC
         registry.FAMILIES.setdefault(spec.name, spec)
 
 

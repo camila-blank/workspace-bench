@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.banks import load_bank as load_wrapped
-from wsbench.registry import REPO_ROOT, lookup_names
+from wsbench.registry import REPO_ROOT, lookup_names, root_bank
 
 
 def model_dir(model: str, root: Path = REPO_ROOT) -> Path:
@@ -70,7 +70,8 @@ def _legacy_ok(base: Path, family: str, suffix: str = ".jsonl") -> Path:
 def bank_file(model: str, family: str) -> Path:
     """The set's bank of ``family`` (``<model dir>/<family>.json``, or one written under a former
     family key)."""
-    return _legacy_ok(model_dir(model), family, ".json")
+    base = model_dir(model)
+    return root_bank(base, family) or base / f"{family}.json"
 
 
 def report_key(section: dict[str, Any] | None, family: str) -> str:

@@ -2,7 +2,6 @@
 generally in other eval families as well) doesn't specifically mention the name of a particular
 tool"): THE one shared tool-name test over every prompt a judge or the summarizer can see."""
 
-import importlib
 import re
 
 import pytest
@@ -34,7 +33,7 @@ def _family_prompts() -> list[tuple[str, str, str]]:
     registry.load_all()
     out = []
     for fam in sorted(registry.FAMILIES):
-        mod = importlib.import_module(f"wsbench.evals.{fam}.prompts")
+        mod = registry.family_module(fam, "prompts")
         for name, text in getattr(mod, "PROMPTS", {}).items():
             out.append((fam, name, str(text)))
     return out
