@@ -346,3 +346,14 @@ plans/0098-tiers-categories.md
 ```
 
 Gates (what CI runs): `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`.
+
+## As built (deviations from the text above)
+
+- `run.json` `tier` is written for a bare `run`, `--core`, `--full` and a bare `--fast`; it is
+  omitted under `families=` and under an explicit `all=True` without a tier flag (two manifest
+  key-set tests use `all=True`).
+- `report json=True` carries `"core_macro"` only when the core macro averages at least one
+  family (a test pins the key set of a non-core report); `run json=True` always carries it.
+- The registry-dependent half of the tier invariant is `tiers.check()`, run by a test; only
+  the static half runs at import.
+- `tiers.tier_of(name)` feeds the `list` column and the report JSON.
