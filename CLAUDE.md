@@ -383,7 +383,14 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   rendered from nocot-bench's pinned zip by `wsbench.nocot` at plan time only (judge / run / ATI
   stay offline via `EvalSpec.item_ids`; `WSB_NO_NOCOT=1` drops the nocot rows from the plan, set
   by `atlas/export_cb.py`); `tests/conftest.py` stubs `nocot.questions` so tests never fetch. Never commit nocot question text or obscure items' real readouts / `cells.jsonl`.
-- nyt_connections (plan 0062, `nyt-mc-2026-11-02`, group model_specific): **ids-only bank**
+- nyt_connections (plan 0062; judge rule plan 0099, `nyt-mc-2026-11-20`, group model_specific):
+  **a candidate needs its connection STATED by a readout line (the label's words or a clear
+  paraphrase); a list of words alone is cannot tell**, so the continuation floor now measures how
+  often the judge breaks that rule on bare member words (gate at the 0099 re-vet: at most 0.05
+  on the 89 stable slots), and every number measured before 2026-11-20 is on the old instrument
+  (`nyt-mc-2026-11-02`, which also counted readouts that "group words under" a candidate) and
+  not comparable. `DIGEST_TASK_NOTE` and the digest cache keys did not change (digests replay;
+  the MC fingerprint keys the stamp and the system text, so old MC rows never answer). **ids-only bank**
   (`evals/logical_processing/nyt_connections/items.json`: puzzle ids, member indices into the shuffled 16, Qwen's
   own labels; every label that folds equal to an NYT group name is a `{role, nyt_group[, nyt_id]}`
   reference). `wsbench.nyt` fetches the pinned Eyefyre mirror (`connections.json`, commit + sha256
