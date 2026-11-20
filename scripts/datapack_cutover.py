@@ -49,6 +49,8 @@ def build() -> int:
     paths = sorted(tracked())
     if datapack.load_sidecars(REPO):
         sys.exit("data/ already holds sidecars: the cutover build runs once, on a tree without")
+    # a stamp left by an earlier build (or an unpack) describes sidecars that are gone
+    (REPO / datapack.STAMP).unlink(missing_ok=True)
     absent = [p for p in paths if not (REPO / p).is_file()]
     if absent:
         sys.exit(f"{len(absent)} tracked file(s) are not in the working tree, e.g. {absent[:3]}")
@@ -100,10 +102,13 @@ def _unpack_into(directory: Path, n_expected: int, from_release: bool) -> None:
         if from_release:
             scratch = tempfile.mkdtemp(prefix="wsb-verify-cache-")
             os.environ["WSB_CACHE"] = scratch
-            for key in datapack.TOKEN_ENVS:
+            # pin the source: no token, no mirror URL, no fork repo. What is left is
+            # data/INDEX.json's repo on datapack.BASE_URL.
+            for key in (*datapack.TOKEN_ENVS, "WSB_DATA_URL", datapack.DATA_REPO_ENV):
                 os.environ.pop(key, None)
-            print(f"--from-release: empty cache {scratch}, no GitHub token in the environment; "
-                  "every zip is downloaded anonymously from the release")  # fmt: skip
+            print(f"--from-release: empty cache {scratch}; no GitHub token, WSB_DATA_URL or "
+                  f"WSB_DATA_REPO in the environment; every zip is downloaded anonymously from "
+                  f"{datapack.BASE_URL}/{datapack.index_repo(directory)}")  # fmt: skip
         else:
             print(f"zips: the local cache {datapack.cache_dir()} (downloads only what it lacks)")
         t0 = time.time()
@@ -111,9 +116,13 @@ def _unpack_into(directory: Path, n_expected: int, from_release: bool) -> None:
         print(f"unpack: {done} in {time.time() - t0:.0f} s")
         if from_release:
             n_zips = len(list(datapack.cache_dir().glob("*.zip")))
-            print(
-                f"downloaded {n_zips} zip(s) for {len(datapack.load_sidecars(directory))} unit(s)"
-            )
+            n_units = len(datapack.load_sidecars(directory))
+            print(f"downloaded {n_zips} zip(s) for {n_units} unit(s)")
+            if n_zips != n_units:
+                sys.exit(
+                    f"{n_zips} zip(s) were downloaded for {n_units} unit(s): NOT VERIFIED (every "
+                    "unit's zip must come from the release in this mode)"
+                )
     finally:
         os.environ.clear()
         os.environ.update(saved)

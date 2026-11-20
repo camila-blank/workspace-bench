@@ -38,6 +38,12 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_release(monkeypatch):
+    """No test of this module can reach GitHub, whatever it does to the environment."""
+    monkeypatch.setattr(datapack, "BASE_URL", "file:///nonexistent/wsbench-test-release")
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A cache, an empty stand-in release directory and instant retries."""
@@ -701,17 +707,45 @@ def test_publish_retries_a_failed_batch_and_a_rerun_converges(tree, env, hub, mo
     assert len(gets) == 4  # the two uploaded before the failure were never verified: now they are
 
 
-def test_publish_refuses_a_draft_and_an_immutable_release(tree, env, hub):
+def test_publish_refuses_a_draft_and_rolls_past_an_immutable_release(tree, env, hub, capsys):
     hub.add_release(REPO, "data-0001", draft=True)
     with pytest.raises(datapack.DataError, match="DRAFT"):
         datapack.publish(root=tree)
+    # an immutable release takes no new asset: it counts as full, and publish moves on
     hub.repos[REPO]["data-0001"]["draft"] = False
     hub.repos[REPO]["data-0001"]["immutable"] = True
-    with pytest.raises(datapack.DataError, match="immutable"):
-        datapack.publish(root=tree)
+    done = datapack.publish(root=tree)
+    assert len(done["uploaded"]) == 4 and len(done["rewritten"]) == 4
+    assert hub.repos[REPO]["data-0001"]["assets"] == {}
+    assert len(hub.repos[REPO]["data-0002"]["assets"]) == 4
+    assert {s["release"] for s in datapack.load_sidecars(tree).values()} == {"data-0002"}
+    assert "release data-0001 on owner/bench is immutable" in capsys.readouterr().err
+    # what an immutable release already holds stays where it is
+    hub.repos[REPO]["data-0002"]["immutable"] = True
+    hub.calls.clear()
+    assert datapack.publish(root=tree) == {"uploaded": [], "rewritten": []}
+    _edit_and_pack(tree, "evals/fam/items.json", "[5]\n")
+    assert datapack.publish(root=tree) == {"uploaded": ["evals/fam"], "rewritten": ["evals/fam"]}
+    assert len(hub.repos[REPO]["data-0003"]["assets"]) == 1
+
+
+def test_publish_never_takes_a_size_from_an_unverified_cache_file(tree, env, hub):
+    datapack.publish(root=tree)
+    side = datapack.load_sidecars(tree)["evals/fam"]
+    datapack.cache_path(side["zip_sha256"]).write_bytes(b"a truncated download")
+    hub.calls.clear()
+    assert datapack.publish(root=tree) == {"uploaded": [], "rewritten": []}
     assert hub.uploads() == []
-    hub.repos[REPO]["data-0001"]["immutable"] = False
-    assert len(datapack.publish(root=tree)["uploaded"]) == 4
+
+
+def test_the_error_for_an_asset_that_only_a_fork_holds_names_the_variable(tree, env, hub):
+    datapack.publish(repo="fork/bench", root=tree)
+    _empty_cache(env)
+    clone = _clone(tree, env / "maintainer")  # nothing unpacked: the zips are on the fork only
+    with pytest.raises(datapack.DataError, match="set WSB_DATA_REPO=<owner>/<name> to that fork"):
+        datapack.publish(root=clone)
+    with pytest.raises(datapack.DataError, match="set WSB_DATA_REPO=<owner>/<name> to that fork"):
+        datapack.unpack(root=clone)
 
 
 def test_publish_replaces_a_half_uploaded_asset_and_compares_the_cached_size(tree, env, hub):
@@ -899,6 +933,97 @@ def test_head_falls_back_to_a_ranged_get_and_is_strict_on_request(monkeypatch):
 
 
 # ------------------------------------------------------- review round 1 (unpack / pack)
+def test_a_stamp_without_sidecars_deletes_nothing(tree, env, capsys):
+    """Review 2 A: redoing the cutover build, or checking out a commit that has data/INDEX.json
+    and no sidecars, leaves a stale stamp over banks that git tracks again."""
+    shutil.rmtree(tree / "data/evals")
+    shutil.rmtree(tree / "data/adapted")
+    assert set(datapack.load_stamp(tree)["units"]) and not datapack.load_sidecars(tree)
+    datapack.ensure(root=tree)
+    assert all((tree / rel).read_text() == text for rel, text in FILES.items())
+    capsys.readouterr()
+    assert datapack.unpack(root=tree) == {"units": 0, "written": 0, "deleted": 0}
+    assert datapack.unpack(force=True, root=tree) == {"units": 0, "written": 0, "deleted": 0}
+    assert all((tree / rel).read_text() == text for rel, text in FILES.items())
+    assert "nothing is deleted" in capsys.readouterr().err
+
+
+def test_the_import_time_path_never_deletes_a_unit_that_left_the_sidecars(
+    tree, env, capsys, monkeypatch
+):
+    (tree / "data/adapted/m1/AUDIT.md.json").unlink()
+    (tree / "data/adapted/m1/fam.json").unlink()  # the sidecar of the directory unit
+    datapack.ensure(root=tree)
+    assert (tree / "adapted/m1/AUDIT.md").is_file() and (tree / "adapted/m1/fam").is_dir()
+    err = capsys.readouterr().err
+    assert err.count("no longer have a sidecar") == 1 and "adapted/m1/AUDIT.md" in err
+    # the stamp is current again: the next import does not unpack, and says nothing
+    real = datapack.unpack
+    monkeypatch.setattr(datapack, "unpack", lambda **k: pytest.fail("no unpack expected"))
+    datapack.ensure(root=tree)
+    assert capsys.readouterr().err == ""
+    # the explicit command is what removes them (other sidecars exist)
+    monkeypatch.setattr(datapack, "unpack", real)
+    assert datapack.unpack(root=tree)["deleted"] == 2
+    assert not (tree / "adapted/m1/AUDIT.md").exists() and not (tree / "adapted/m1/fam").exists()
+    assert (tree / "adapted/m1/fam.json").is_file()
+
+
+def test_a_missing_file_does_not_turn_an_unpacked_edit_into_a_conflict(tree, env, capsys):
+    """Review 2 C: the unit's sidecar did not change, so a differing file is just an edit."""
+    (tree / "evals/fam/items.json").write_text("my un-packed edit\n")
+    (tree / "evals/fam/sub/extra.json").unlink()
+    datapack.ensure(root=tree)  # the probe sees nothing; the explicit / stale paths must agree
+    assert datapack.unpack(root=tree) == {"units": 1, "written": 1, "deleted": 0}
+    assert (tree / "evals/fam/sub/extra.json").read_text() == FILES["evals/fam/sub/extra.json"]
+    assert (tree / "evals/fam/items.json").read_text() == "my un-packed edit\n"
+    # the import-time path with a stale stamp behaves the same
+    (tree / "evals/fam/sub/extra.json").unlink()
+    (tree / "data/evals/fam.json").write_text((tree / "data/evals/fam.json").read_text() + "\n")
+    datapack.ensure(root=tree)
+    assert (tree / "evals/fam/sub/extra.json").is_file()
+    assert (tree / "evals/fam/items.json").read_text() == "my un-packed edit\n"
+    # force without units= restores, and still leaves the edit; naming the unit discards it
+    (tree / "evals/fam/sub/extra.json").unlink()
+    datapack.unpack(force=True, root=tree)
+    assert (tree / "evals/fam/items.json").read_text() == "my un-packed edit\n"
+    capsys.readouterr()
+    datapack.unpack(units=["evals/fam"], force=True, root=tree)
+    assert (tree / "evals/fam/items.json").read_text() == FILES["evals/fam/items.json"]
+    assert "force: overwrote evals/fam/items.json" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"zip_sha256": "a" * 64 + "\n"},
+        {"release": "data-0001\n"},
+        {"release": "data-\u0660\u0660\u0660\u0661"},  # Arabic-Indic digits
+        {"files": {}},
+        {"files": {"evals/fam/items.json": "\uff11" * 64}},  # fullwidth digits
+    ],
+)
+def test_sidecar_patterns_are_full_ascii_matches(tree, fields):
+    _doctor(tree, "evals/fam", **fields)
+    with pytest.raises(datapack.DataError, match=r"malformed sidecar data/evals/fam\.json"):
+        datapack.load_sidecars(tree)
+
+
+@pytest.mark.parametrize("repo", ["./bench", "../bench", "owner/..", "owner/.", "owner/bench\n"])
+def test_repo_owner_and_name_cannot_be_dots(repo):
+    with pytest.raises(datapack.DataError, match="not an <owner>/<name>"):
+        datapack.check_repo(repo, "test")
+    assert datapack.check_repo("camila-blank/workspace-bench", "test")
+    assert datapack.check_repo("a.b/c_d.e", "test")
+
+
+def test_markdown_under_evals_is_never_packed_in_any_case():
+    assert datapack.never_packed("evals/fam/README.MD") and datapack.never_packed("evals/f/a.Md")
+    assert not datapack.never_packed("adapted/m1/AUDIT.MD")
+    with pytest.raises(datapack.DataError):
+        datapack.cache_path("a" * 64 + "\n")
+
+
 def test_ensure_notices_plaintext_that_git_removed_under_a_current_stamp(tree, env):
     """Checking out a pre-cutover commit and coming back deletes the (then tracked) banks."""
     clone = _clone(tree, env / "clone")

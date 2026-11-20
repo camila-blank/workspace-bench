@@ -846,7 +846,12 @@ implements it. Not restated here.
   `wsbench unpack units=<the conflicting units> force=True` (`force` touches only units that
   are behind their sidecar, or exactly the units `units=` names, and prints every file it
   overwrites or deletes), and it never overwrites or deletes an unedited file whose own zip is
-  in neither the cache nor a release (R5). Sidecar, stamp and index fields are untrusted input
+  in neither the cache nor a release (R5). A file that differs from a path whose sidecar sha
+  equals its stamp sha is an un-packed edit, never a conflict (left alone unless its unit is
+  named under `force`). Deletion rules: `ensure()` does nothing when there is no sidecar,
+  whatever the stamp says, and never deletes a unit that left the sidecars (one stderr note);
+  only the explicit `wsbench unpack` does, and only while other sidecars exist. `publish`
+  treats an immutable release as full (rolls to the next `data-NNNN`). Sidecar, stamp and index fields are untrusted input
   (`_bad_fields`, `check_repo`: paths inside the unit, sha256s, `data-NNNN`, `owner/name`).
   The unpacked files are git-IGNORED: `git clean -fdX` / `-x` and `git worktree remove` delete
   un-packed edits; a packed, unpublished change exists only in the local cache; checking out a

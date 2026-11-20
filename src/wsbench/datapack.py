@@ -46,9 +46,10 @@ NO_UNPACK_ENV = "WSB_NO_UNPACK"
 DATA_REPO_ENV = "WSB_DATA_REPO"
 DATA_COMMANDS = ("unpack", "pack")
 TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN")
-_RELEASE_RE = re.compile(r"^data-(\d{4})$")
-_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+# always used with fullmatch (`$` would admit a trailing newline) and ASCII digits only
+_RELEASE_RE = re.compile(r"data-(\d{4})", re.ASCII)
+_SHA_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
+_REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", re.ASCII)
 _GLOB_CHARS = frozenset("*?[")
 
 # a DataError met by the import-time ensure() of a `wsbench` CLI process; cli.main reports it
@@ -70,7 +71,9 @@ def cache_dir() -> Path:
 
 
 def cache_path(sha: str) -> Path:
-    if not _SHA_RE.match(sha or ""):  # never build a path from an unchecked field
+    if not isinstance(sha, str) or not _SHA_RE.fullmatch(
+        sha
+    ):  # never build a path from an unchecked field
         raise DataError(f"not a sha256: {sha!r}")
     return cache_dir() / f"{sha}.zip"
 
@@ -79,7 +82,7 @@ def never_packed(path: str) -> bool:
     """The Markdown keepers that stay tracked, and the adapt store's lock files."""
     if path == "adapted/README.md" or PurePosixPath(path).name == ".report.lock":
         return True
-    return path.startswith("evals/") and path.endswith(".md")
+    return path.startswith("evals/") and path.lower().endswith(".md")  # README.MD too
 
 
 def unit_of(path: str) -> str:
@@ -107,12 +110,14 @@ def _bad_fields(unit: str, rec: object, sidecar: bool) -> str | None:
     become file paths to write and delete and URLs to fetch, so nothing unchecked is used."""
     if not isinstance(rec, dict) or not isinstance(rec.get("files"), dict):
         return "not an object with a `files` map"
+    if not rec["files"]:
+        return "its `files` map is empty"
     if sidecar and rec.get("unit") != unit:
         return f"`unit` is {rec.get('unit')!r}"
-    if not isinstance(rec.get("zip_sha256"), str) or not _SHA_RE.match(rec["zip_sha256"]):
+    if not isinstance(rec.get("zip_sha256"), str) or not _SHA_RE.fullmatch(rec["zip_sha256"]):
         return "`zip_sha256` is not a sha256"
     release = rec.get("release")
-    if not isinstance(release, str) or not _RELEASE_RE.match(release):
+    if not isinstance(release, str) or not _RELEASE_RE.fullmatch(release):
         return f"`release` {release!r} is not data-NNNN"
     if sidecar and (not isinstance(rec.get("zip_bytes"), int) or rec["zip_bytes"] < 0):
         return "`zip_bytes` is not a size"
@@ -127,13 +132,14 @@ def _bad_fields(unit: str, rec: object, sidecar: bool) -> str | None:
             return f"file path {path!r} is outside the unit"
         if never_packed(path):
             return f"file path {path!r} is never packed"
-        if not isinstance(sha, str) or not _SHA_RE.match(sha):
+        if not isinstance(sha, str) or not _SHA_RE.fullmatch(sha):
             return f"the sha256 of {path!r} is malformed"
     return None
 
 
 def check_repo(repo: object, where: str) -> str:
-    if not isinstance(repo, str) or not _REPO_RE.match(repo):
+    ok = isinstance(repo, str) and _REPO_RE.fullmatch(repo) is not None
+    if not ok or any(part in (".", "..") for part in repo.split("/")):
         raise DataError(f"{where}: {repo!r} is not an <owner>/<name> repository")
     return repo
 
@@ -290,7 +296,8 @@ def _write_stamp(root: Path, stamp: dict[str, Any], sides: dict[str, dict[str, A
     """Write the stamp, current only when every sidecar's unit is stamped as it is; False in a
     read-only checkout (the caller decides whether that matters)."""
     units = stamp["units"]
-    current = set(units) == set(sides) and all(not _differs(sides[u], units[u]) for u in sides)
+    # a stamped unit whose sidecar is gone does not make the stamp stale (unpack decides it)
+    current = all(u in units and not _differs(sides[u], units[u]) for u in sides)
     stamp["version"] = 1
     stamp["sidecars_sha256"] = sidecars_digest(root) if current else None
     try:
@@ -479,7 +486,8 @@ def get_zip(
     where = "; ".join(tried) or f"no repo in {INDEX} and no ${DATA_REPO_ENV}"
     raise DataError(
         f"{unit}: cannot get its zip {sha}.zip: {where}. If the sidecar was packed on another "
-        "machine and never published, run `wsbench pack publish` there. " + _ways_out(sha)
+        "machine and never published, run `wsbench pack publish` there; if it was published "
+        f"on a fork, set {DATA_REPO_ENV}=<owner>/<name> to that fork. " + _ways_out(sha)
     )
 
 
@@ -571,10 +579,18 @@ def _remove(root: Path, path: str) -> None:
 
 
 def _unpack_unit(
-    root: Path, unit: str, side: dict[str, Any] | None, old: dict[str, Any] | None, force: bool
+    root: Path,
+    unit: str,
+    side: dict[str, Any] | None,
+    old: dict[str, Any] | None,
+    force: bool,
+    discard: bool = False,
 ) -> dict[str, list[str]]:
     """One unit's three-way update: ``{edited, unpublished, written, deleted, forced}``; nothing
-    of the unit is written when ``edited`` or ``unpublished`` is non-empty."""
+    of the unit is written when ``edited`` or ``unpublished`` is non-empty. A local file that
+    differs from a path whose sidecar sha equals its stamp sha is an un-packed edit, not a
+    conflict: it is left alone (``discard`` overwrites it; only a unit named with ``units=``
+    under ``force`` gets that)."""
     files: dict[str, str] = side["files"] if side else {}
     old_files: dict[str, str] = (old or {}).get("files", {})
     writes: list[str] = []
@@ -586,9 +602,14 @@ def _unpack_unit(
         have = _sha_or_none(root / path)
         if have == want:
             continue
+        was = old_files.get(path)
         if have is None:
             writes.append(path)
-        elif have == old_files.get(path):
+        elif was == want:  # nothing changed upstream: the difference is the user's own edit
+            if discard:
+                writes.append(path)
+                forced.append(path)
+        elif have == was:
             writes.append(path)
             replaced.append(path)
         else:
@@ -612,7 +633,7 @@ def _unpack_unit(
         "forced": [],
     }
     if force:
-        forced = sorted(set(edited) | set(replaced))
+        forced = sorted(set(forced) | set(edited) | set(replaced))
         writes += [p for p in edited if p in files]
     elif edited:
         return out | {"edited": sorted(edited)}
@@ -650,24 +671,48 @@ def unpack(
     force: bool = False,
     root: Path | str | None = None,
     verify: bool = False,
+    auto: bool = False,
 ) -> dict[str, int]:
     """Bring the working tree to the sidecars (plan 0097 section 2 + rulings R5 / R7): every unit
-    whose sidecar differs from the stamp or that misses a listed file. ``force`` overwrites local
-    edits in THOSE units only, or in exactly the units ``units=`` names, and prints each file it
-    overwrites or deletes. ``verify`` then re-hashes every listed file against its sidecar and
-    raises on a difference."""
+    whose sidecar differs from the stamp or that misses a listed file. ``force`` overwrites
+    conflicting files in THOSE units only, and every local edit in exactly the units ``units=``
+    names; it prints each file it overwrites or deletes. ``verify`` then re-hashes every listed
+    file against its sidecar and raises on a difference.
+
+    Files are deleted only on the word of a sidecar that exists, or, for a unit whose sidecar
+    is gone, by the explicit command while other sidecars remain. With no sidecar at all
+    nothing is ever deleted (a stale stamp over a tree whose banks are tracked again), and
+    ``auto`` (the import-time path) leaves a unit that left the sidecars alone."""
     root = _root(root)
     units = list(units) if units else None
     sides = load_sidecars(root)
     stamp = load_stamp(root)
     done: dict[str, Any] = stamp["units"]
+    nothing = {"units": 0, "written": 0, "deleted": 0}
+    if not sides:
+        if done:
+            _note(
+                f"no sidecar under data/: nothing to unpack, and nothing is deleted "
+                f"({len(done)} unit(s) in {STAMP} are left untouched; delete that file if the "
+                "banks are tracked by git again)"
+            )
+        return nothing
+    gone = sorted(set(done) - set(sides))
+    if auto and gone:
+        more = f" (+{len(gone) - 3} more)" if len(gone) > 3 else ""
+        _note(
+            f"{len(gone)} unit(s) no longer have a sidecar ({', '.join(gone[:3])}{more}); their "
+            "files are left in place. `wsbench unpack` removes the unedited ones."
+        )
+    known = set(sides) if auto else set(sides) | set(done)
     todo = [
         u
-        for u in _select(units, set(sides) | set(done))
+        for u in _select(units, known)
         if (force and units is not None)
         or _differs(sides.get(u), done.get(u))
         or _has_missing(root, sides.get(u))
     ]
+    discard = force and units is not None
     edited: dict[str, list[str]] = {}
     unpublished: dict[str, list[str]] = {}
     errors: list[str] = []
@@ -679,7 +724,8 @@ def unpack(
 
     def one(unit: str) -> tuple[str, Any]:
         try:
-            return unit, _unpack_unit(root, unit, sides.get(unit), done.get(unit), force)
+            res = _unpack_unit(root, unit, sides.get(unit), done.get(unit), force, discard)
+            return unit, res
         except DataError as e:
             return unit, e
 
@@ -709,10 +755,8 @@ def unpack(
         if unit in done and done[unit]["zip_sha256"] == side["zip_sha256"]:
             refreshed |= done[unit].get("release") != side["release"]
             done[unit]["release"] = side["release"]
-    # before the cutover (no sidecar, nothing ever unpacked) no stamp file is written
-    tracked = bool(sides or done or todo)
     stale = stamp.get("sidecars_sha256") != sidecars_digest(root)
-    if tracked and (todo or refreshed or stale):
+    if todo or refreshed or stale:
         ok = _write_stamp(root, stamp, sides)
         if not ok and (written or deleted):
             errors.append(f"cannot write {STAMP} (read-only checkout?)")
@@ -776,7 +820,9 @@ def _stamp_current(root: Path) -> bool:
         stamp = json.loads((root / STAMP).read_text(encoding="utf-8"))
         if stamp["sidecars_sha256"] != sidecars_digest(root):
             return False
-        probes = [next(iter(e["files"]), None) for e in stamp["units"].values()]
+        data = root / "data"
+        live = {p.relative_to(data).as_posix()[: -len(".json")] for p in _sidecar_files(root)}
+        probes = [next(iter(e["files"]), None) for u, e in stamp["units"].items() if u in live]
         return all(p is None or (_safe_path(p) and (root / p).is_file()) for p in probes)
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return False
@@ -784,18 +830,20 @@ def _stamp_current(root: Path) -> bool:
 
 def ensure(root: Path | str | None = None) -> None:
     """Unpack when the stamp is not current. A no-op without ``data/INDEX.json`` (a wheel, a
-    Modal container with only ``src/``), under ``WSB_NO_UNPACK=1``, and before the cutover (no
-    sidecar, never unpacked). Raises ``DataError``, never ``SystemExit``."""
+    Modal container with only ``src/``), under ``WSB_NO_UNPACK=1``, and whenever there is no
+    sidecar, whatever a stamp says (before the cutover; a checkout of a commit without
+    sidecars; a cutover build being redone). It never deletes the files of a unit whose
+    sidecar is gone. Raises ``DataError``, never ``SystemExit``."""
     root = _root(root)
     if os.environ.get(NO_UNPACK_ENV) == "1" or not (root / INDEX).is_file():
         return
-    if not _sidecar_files(root) and not (root / STAMP).is_file():
+    if not _sidecar_files(root):
         return
     if _stamp_current(root):
         return
     with _lock(root):
         if not _stamp_current(root):  # another process may have finished meanwhile
-            unpack(root=root)
+            unpack(root=root, auto=True)
 
 
 def _is_cli() -> bool:
@@ -1166,7 +1214,7 @@ def _data_releases(repo: str) -> dict[str, dict[str, Any]]:
     """Tag -> release object (REST) of every ``data-NNNN`` release; a draft one is refused,
     since its assets cannot be downloaded anonymously."""
     rows = _pages(_gh(["api", "--paginate", f"repos/{repo}/releases?per_page=100"]))
-    out = {r["tag_name"]: r for r in rows if _RELEASE_RE.match(r.get("tag_name") or "")}
+    out = {r["tag_name"]: r for r in rows if _RELEASE_RE.fullmatch(r.get("tag_name") or "")}
     drafts = sorted(t for t, r in out.items() if _flag(r, "draft", "isDraft"))
     if drafts:
         raise DataError(
@@ -1246,7 +1294,7 @@ def _create_release(repo: str, tag: str, root: Path) -> dict[str, Any]:
 def _next_tag(tags: list[str]) -> str:
     if not tags:
         return FIRST_RELEASE
-    return f"data-{int(_RELEASE_RE.match(tags[-1]).group(1)) + 1:04d}"  # type: ignore[union-attr]
+    return f"data-{int(_RELEASE_RE.fullmatch(tags[-1]).group(1)) + 1:04d}"  # type: ignore[union-attr]
 
 
 def _unverified_path() -> Path:
@@ -1291,10 +1339,10 @@ def publish(repo: str | None = None, root: Path | str | None = None) -> dict[str
         return held[tag]
 
     def size_of(side: dict[str, Any]) -> int:
-        try:  # the zip that would be uploaded, when it is here; else what the sidecar records
-            return cache_path(side["zip_sha256"]).stat().st_size
-        except OSError:
-            return side["zip_bytes"]
+        # the zip that would be uploaded, when a sha-verified copy is here; else what the
+        # sidecar records. Never the size of an unverified cache file.
+        path = _cached(side["zip_sha256"])
+        return path.stat().st_size if path is not None else side["zip_bytes"]
 
     pending: list[str] = []
     upstream: set[str] = set()  # mirroring to another repo: already served by INDEX's repo
@@ -1328,9 +1376,13 @@ def publish(repo: str | None = None, root: Path | str | None = None) -> dict[str
             get_zip(unit, side["release"], side["zip_sha256"], root, also=[repo])
             continue
         if {p: _sha_or_none(root / p) for p in side["files"]} != side["files"]:
+            asked = ", ".join(sources)
             raise DataError(
-                f"{unit}: its zip is in neither the cache nor a release, and the working tree "
-                "differs from the sidecar, so it cannot be rebuilt: run `wsbench pack` first"
+                f"{unit}: its zip is in neither the cache nor a release of {asked}, and the "
+                "working tree differs from the sidecar, so it cannot be rebuilt. If the zip "
+                f"was published on a contributor's fork, set {DATA_REPO_ENV}=<owner>/<name> to "
+                "that fork and re-run: publish then mirrors it. Otherwise run `wsbench pack` "
+                "first."
             )
         sha, size, shas = _build_zip(root, unit, side["files"], canary(root))
         if shas != side["files"]:
@@ -1338,13 +1390,23 @@ def publish(repo: str | None = None, root: Path | str | None = None) -> dict[str
         sides[unit] = {**side, "zip_sha256": sha, "zip_bytes": size}  # AES: never the same zip
         rewritten.add(unit)
         _note(f"{unit}: zip rebuilt from the tree; its sidecar's zip_sha256 changed (commit it)")
+
+    def usable(tag: str, name: str) -> bool:
+        """Can ``name`` be uploaded to ``tag``? Not to a missing release, an immutable one (no
+        asset can be added or replaced: it counts as full) or one at the cap."""
+        if tag not in rels or _flag(rels[tag], "immutable", "isImmutable"):
+            return False
+        return name in assets(tag) or len(assets(tag)) < RELEASE_CAP
+
     uploads: dict[str, list[str]] = {}
     for unit in pending:
         side = sides[unit]
         name = f"{side['zip_sha256']}.zip"
         dest = side["release"]
-        if dest not in rels or (name not in assets(dest) and len(assets(dest)) >= RELEASE_CAP):
-            if tags and len(assets(tags[-1])) < RELEASE_CAP:
+        if not usable(dest, name):
+            if dest in rels and _flag(rels[dest], "immutable", "isImmutable"):
+                _note(f"release {dest} on {repo} is immutable: {unit} goes to another release")
+            if tags and usable(tags[-1], name):
                 dest = tags[-1]
             else:
                 dest = _next_tag(tags)
@@ -1352,12 +1414,6 @@ def publish(repo: str | None = None, root: Path | str | None = None) -> dict[str
                 rels[dest] = _create_release(repo, dest, root)
                 tags.append(dest)
                 held[dest] = {}
-        if _flag(rels[dest], "immutable", "isImmutable"):
-            raise DataError(
-                f"{repo}: release {dest} is immutable (no asset can be added or replaced). "
-                "Nothing was uploaded. Turn release immutability off for the data releases, or "
-                "create the next data-NNNN release by hand, then re-run."
-            )
         assets(dest)[name] = (side["zip_bytes"], "uploaded")
         uploads.setdefault(dest, []).append(unit)
         if dest != side["release"]:

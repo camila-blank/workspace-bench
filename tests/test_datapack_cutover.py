@@ -29,12 +29,21 @@ def _blob_id(path: Path) -> str:
     return r.stdout.strip()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_release(monkeypatch):
+    """No test of this module can reach GitHub, whatever it does to the environment."""
+    monkeypatch.setattr(datapack, "BASE_URL", "file:///nonexistent/wsbench-test-release")
+
+
 @pytest.fixture
 def cut(tmp_path, monkeypatch):
     """The script loaded against a temp "repo" whose two bank files are packed and published
     to a local stand-in release; ``tracked()`` answers for the ref ``PARENT``."""
     monkeypatch.setenv("WSB_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("WSB_DATA_URL", (tmp_path / "remote").as_uri())
+    # the stand-in release is the module's base URL, so no test of this file can reach GitHub
+    # even when verify drops WSB_DATA_URL from the environment
+    monkeypatch.setattr(datapack, "BASE_URL", (tmp_path / "remote").as_uri())
+    monkeypatch.delenv("WSB_DATA_URL", raising=False)
     monkeypatch.delenv("WSB_DATA_REPO", raising=False)
     monkeypatch.setattr(datapack, "BACKOFF", 0.0)
     repo = tmp_path / "repo"
@@ -78,16 +87,22 @@ def test_verify_from_the_cache_and_from_the_release(cut, capsys, monkeypatch):
     def spy(*a, **k):
         seen["cache"] = os.environ["WSB_CACHE"]
         seen["cached_before"] = list(datapack.cache_dir().glob("*.zip"))
-        seen["tokens"] = [k for k in datapack.TOKEN_ENVS if k in os.environ]
+        pinned = (*datapack.TOKEN_ENVS, "WSB_DATA_URL", "WSB_DATA_REPO")
+        seen["tokens"] = [k for k in pinned if k in os.environ]
         return real(*a, **k)
 
     monkeypatch.setattr(datapack, "unpack", spy)
     for key in datapack.TOKEN_ENVS:
         monkeypatch.setenv(key, "secret")
+    # a mirror URL or a fork repo in the environment must not be where the zips come from:
+    # this mirror holds nothing, so an unpack that honoured it would fail
+    monkeypatch.setenv("WSB_DATA_URL", (cut.tmp / "an-empty-mirror").as_uri())
+    monkeypatch.setenv("WSB_DATA_REPO", "someone/fork")
     home = os.environ["WSB_CACHE"]
     assert cut.verify(cut.tmp / "fresh", "PARENT", unpack=True, from_release=True) == 0
     assert seen["cache"] != home and seen["cached_before"] == [] and seen["tokens"] == []
     assert os.environ["WSB_CACHE"] == home and os.environ["GH_TOKEN"] == "secret"  # restored
+    assert os.environ["WSB_DATA_REPO"] == "someone/fork" and "WSB_DATA_URL" in os.environ
     out = capsys.readouterr().out
     assert "downloaded 2 zip(s) for 2 unit(s)" in out and "anonymous download" in out
     assert not Path(str(seen["cache"])).exists()
@@ -136,3 +151,39 @@ def test_verify_reports_a_differing_and_an_extra_file(cut, capsys):
     out = capsys.readouterr().out
     assert "expected 2; found 3; equal 1; missing 0; extra 1; differing 1" in out
     assert out.strip().endswith("NOT IDENTICAL")
+
+
+def test_from_release_requires_one_downloaded_zip_per_unit(cut, monkeypatch, capsys):
+    """Files that did not come out of freshly downloaded zips prove nothing about the release."""
+
+    def no_download(root=None, **k):
+        for rel, text in FILES.items():
+            (Path(root) / rel).parent.mkdir(parents=True, exist_ok=True)
+            (Path(root) / rel).write_text(text)
+        return {"units": 2, "written": 2, "deleted": 0}
+
+    monkeypatch.setattr(datapack, "unpack", no_download)
+    with pytest.raises(SystemExit, match=r"0 zip\(s\) were downloaded for 2 unit\(s\)"):
+        cut.verify(cut.tmp / "fresh", "PARENT", unpack=True, from_release=True)
+    assert "IDENTICAL" not in capsys.readouterr().out
+
+
+def test_build_drops_a_stale_stamp_and_deletes_nothing(cut, monkeypatch):
+    """Redoing the build: the sidecars were removed, the stamp of the first build was not."""
+    repo = cut.tmp / "repo"
+    shutil.rmtree(repo / "data/evals")
+    shutil.rmtree(repo / "data/adapted")
+    assert (repo / datapack.STAMP).is_file()
+    monkeypatch.setattr(cut, "tracked", lambda ref=None: dict(cut.want))
+    seen: dict[str, bool] = {}
+    real = datapack.pack
+
+    def spy(*a, **k):
+        seen["stamp_at_pack"] = (repo / datapack.STAMP).exists()
+        return real(*a, **k)
+
+    monkeypatch.setattr(datapack, "pack", spy)
+    assert cut.build() == 0
+    assert seen == {"stamp_at_pack": False}
+    assert all((repo / rel).read_text() == text for rel, text in FILES.items())
+    assert set(datapack.load_stamp(repo)["units"]) == set(datapack.load_sidecars(repo))

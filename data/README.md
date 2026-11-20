@@ -59,7 +59,12 @@ package needs `wsbench unpack` once.
   the exact command to get past it: copy your edits aside, run `wsbench unpack units=<the
   conflicting units> force=True`, copy them back and `wsbench pack`. `force=True` overwrites
   only units that are behind their sidecar, or exactly the units `units=` names, and prints
-  every file it overwrites or deletes; an edit in any other unit is left alone.
+  every file it overwrites or deletes; an edit in any other unit is left alone. A conflict
+  exists only where the sidecar changed AND your file equals neither the old nor the new
+  version; an edit to a file whose sidecar entry did not change is never a conflict and is
+  only discarded by naming its unit with `units=... force=True`.
+- Files are deleted only for a unit that left the sidecars, only by the explicit `wsbench
+  unpack` (never by the automatic step), and never when `data/` holds no sidecar at all.
 - `wsbench unpack verify=True` re-hashes every listed file against its sidecar, restores
   missing ones and reports differing ones (exit 2).
 
