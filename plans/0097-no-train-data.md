@@ -1,158 +1,221 @@
 # Plan 0097: the banks leave the plaintext tree (do-not-train protection)
 
-Status: draft. Owner: Camila (2026-11-18: "make it so that it's not allowed to train on this
-data, kind of like nocot bench"; her choices: **encrypted zip, like nocot**, no history
-rewrite; scope **registered banks + adapted sets**; examples, test fixtures and README example
-lines stay as they are).
+Status: draft v2 (critique round 1 applied). Owner: Camila (2026-11-18: "make it so that it's
+not allowed to train on this data, kind of like nocot bench"). Her choices: **encrypted zip,
+like nocot; no git-history rewrite; scope = registered banks (`evals/`) + adapted sets
+(`adapted/`)**; examples, test fixtures, README example lines, the agentic pools under
+`src/wsbench/adapt/data/` and audit Markdown under `evals/` stay as they are; **the zips live
+as GitHub release assets, not in git** (2026-11-20, after the review measured ~130 MB at
+cutover and ~180 MB a month of undeltable blobs if committed).
 
 ## What changes, in one paragraph
 
 Today `git ls-files evals adapted` is 7,626 plaintext files (646 MB) that any crawler of the
-repo page or of a raw URL reads. After this plan the git tree holds, for those two
-directories, only **password-protected zips** under `data/` plus Markdown docs; the plaintext
-is materialised into the working tree (the same paths as today, now git-ignored) by one
-command that also runs automatically. No loader, judge, script or test changes the path it
-reads or the bytes it gets. A do-not-train notice and a canary string are added. Git history
-before this commit keeps the plaintext (Camila: no rewrite).
+repo reads. After this plan the git tree holds, for those two directories, only Markdown docs
+and small **sidecars** under `data/` (file lists and sha256s, no item text); the content is in
+**password-protected zips published as release assets** of this repo, downloaded once, cached,
+and unpacked into the working tree at the same paths as today (now git-ignored). No loader,
+judge, script or test changes the path it reads or the bytes it gets. A do-not-train notice
+and a canary string are added.
 
-Why "unpack to the working tree" and not "read from the zip at runtime" (nocot's own reader
-does the latter for 43 items): about 350 loader call sites, 40 direct reads in `src/`, 70
-reads and 60 writes of `adapted/<m>/` intermediates in `src/wsbench/adapt/`, 95 scripts and
-130 test files open these paths, and the adapt pipeline writes there. A virtual filesystem
-would touch all of them; unpacking touches none, and the protection is the same: nothing a
-crawler fetches is plaintext.
+Why unpack to the working tree rather than read from zips at runtime: ~350 loader call sites,
+40 direct reads in `src/`, 130 reads / writes of `adapted/<m>/` intermediates in
+`src/wsbench/adapt/`, 95 scripts and 130 test files open these paths. Unpacking touches none
+of them and protects the same thing: no URL of the repo serves bank text.
 
 ## Invariants
 
-- **Byte-identical plaintext.** After `unpack`, every file that was tracked under `evals/` or
-  `adapted/` on the parent commit exists at the same path with the same bytes (a test
-  compares against a committed list of `(path, sha256)`). Hence no `bank_sha`, ATI
-  `bank_sha`, `plan_sha`, sha-pinned test or golden moves, and the full suite passes with no
-  test edited.
-- No judge prompt, call key, fingerprint or `prompt_version` moves.
-- The password is not a secret: it is printed in the README for people. The goal is that no
-  URL of the repo serves bank text to a crawler, not access control.
+- **Byte-identical plaintext.** After `unpack`, every file tracked under `evals/` or
+  `adapted/` on the parent commit, except the seven empty `adapted/*/.report.lock` files (lock
+  files the adapt store recreates; dropped from the data), exists at the same path with the
+  same bytes. Verified ONCE at cutover (section 5), not by a committed golden.
+- No `bank_sha`, ATI `bank_sha`, `plan_sha`, sha-pinned bank test, golden, judge prompt, call
+  key, fingerprint or `prompt_version` moves.
+- The password is not a secret (it is in `data/README.md`, for people, not for crawlers).
 
 ## 1. Layout
 
+In git:
 ```
-data/
-  README.md                 what this is, the password, the do-not-train request, the canary
-  MANIFEST.json             {version, canary, units: {<unit>: {zip, zip_sha256, files: {<path>: sha256}}}}
-  evals/<family>.zip        one unit per evals/<entry> (a family dir; also baselines, fast, hallucinationbench)
-  adapted/<model>/<entry>.zip   one unit per adapted/<model>/<entry> (a bank file or a subdirectory)
+data/README.md                       what this is, the password, the request, the canary, how to unpack / pack
+data/INDEX.json                      {"version": 1, "canary": "...", "repo": "camila-blank/workspace-bench"}
+data/evals/<entry>.json              one sidecar per unit
+data/adapted/<model>.json
 ```
+- A **unit** is `evals/<entry>` (each of the 35 second-level entries: a family dir,
+  `baselines`, `fast`, `hallucinationbench`) or `adapted/<model>` (16). 51 units; coarse units
+  are fine because zips are not in git.
+- A **sidecar** is `{"unit", "zip_sha256", "zip_bytes", "files": {"<repo-relative path>":
+  "<sha256>"}}`, keys sorted, one file per line of the map so a bank PR shows which files
+  changed. One sidecar per unit (no shared manifest to conflict on).
+- **The pack set is the sidecars' file lists** (as git's index is today), not a sweep of the
+  directory: `pack` updates files already listed; a new file is added only by `wsbench pack
+  add=<path or glob>`; a removal only by `wsbench pack rm=<path or glob>`. Unlisted files in
+  the working tree (work products such as `adapted/<m>/gate/`, `mc/`, caches) are never
+  packed and are reported by `wsbench pack status` like untracked files. No exclude-pattern
+  file exists.
+- Never packed, tracked as today: `evals/**/*.md` and `adapted/README.md`.
+  `adapted/<m>/**/*.md` (AUDIT files) ARE packed.
 
-- A **unit** is one second-level entry of `evals/` (`evals/<x>/`) or one third-level entry of
-  `adapted/` (`adapted/<model>/<x>`, file or directory). Small units keep a bank edit to one
-  small new blob in git instead of a 600 MB one, and every zip stays far below GitHub's
-  100 MB file limit (the largest plaintext unit today is ~15 MB; the implementer verifies the
-  largest zip and stops if any exceeds 50 MB).
-- **Packed:** every file under `evals/` and `adapted/` that is tracked on the parent commit,
-  EXCEPT `evals/**/*.md` and `adapted/README.md` (the family docs and the adapted index stay
-  plaintext and tracked: Camila left README example lines out of scope, and
-  `tests/test_prompts_in_readme.py` reads them). `adapted/<m>/**/*.md` (AUDIT files: they quote
-  items, golds and answers) ARE packed. Going forward "tracked" no longer defines the set, so
-  the rule is: every file under the two directories that is not excluded by
-  `data/PACK_EXCLUDE` (the work-product patterns that `.gitignore` lists today for `adapted/`,
-  moved there verbatim with the same semantics, plus `*.lock`, `__pycache__`), and is not one
-  of the plaintext Markdown keepers above. A test pins that this rule, applied to the unpacked
-  tree, yields exactly the manifest's file set.
-- **Encryption:** AES-256 zip via `pyzipper` (new core dependency: every user needs `unpack`).
-  Stdlib `zipfile` cannot write encrypted zips. Each zip also holds `CANARY.txt`.
-- Zips are not byte-deterministic (random salts), so `pack` rewrites a unit's zip only when its
-  plaintext file set or any file sha differs from the manifest; an untouched unit keeps its
-  committed zip byte for byte.
+Outside git:
+- Each unit's zip is the release asset `<zip_sha256>.zip` of release tag
+  `data-<first two hex digits of the sha>` of `INDEX.json`'s `repo` (256 buckets: GitHub caps
+  a release at 1,000 assets), URL
+  `https://github.com/<repo>/releases/download/data-<xx>/<sha>.zip`. Content-addressed and
+  never deleted, so every commit's sidecars stay resolvable.
+- Encryption: AES-256 zip via `pyzipper` (a new core dependency in `pyproject.toml` /
+  `uv.lock`), **imported lazily inside the pack / unpack functions only** (a dozen Modal
+  images install hand-picked dependencies and mount `src/wsbench`; they have no `data/` and
+  must keep importing `wsbench` without pyzipper). Each zip also holds `CANARY.txt`.
+- Local cache of downloaded / built zips: `$WSB_CACHE/data/` or `~/.cache/wsbench/data/`
+  (`<sha>.zip`, written to a temp name and `os.replace`d).
 
-## 2. `src/wsbench/datapack.py` and the CLI
+## 2. `src/wsbench/datapack.py`
 
-- `wsbench unpack [force=True]`: for each unit whose stamp is missing or stale, verify the
-  zip's sha256 against the manifest, extract to the plaintext path, verify each file's sha256.
-  A stamp file `data/.unpacked.json` (git-ignored) records `{unit: zip_sha256}` so a second
-  call is a no-op costing one small read. Files of a unit that are in the working tree but not
-  in the zip are left alone (work in progress); a plaintext file that DIFFERS from the zip's
-  is never overwritten without `force=True`: `unpack` reports it and exits 2 (local edits are
-  never silently lost).
-- `wsbench pack [units=a,b] [check=True]`: recompute the plaintext set and shas per unit,
-  rewrite the zips and manifest entries that changed, delete zips of units that no longer
-  exist. `check=True` writes nothing and exits 1 listing the units whose plaintext differs
-  from the manifest.
-- **Automatic unpack.** `wsbench.registry` (imported by every loader) calls
-  `datapack.ensure()` once per process: when `data/MANIFEST.json` exists and the stamp is
-  missing or stale it runs `unpack` (a file lock makes concurrent processes safe: `run`'s
-  per-family children, pytest); when the stamp is current it does nothing. `WSB_NO_UNPACK=1`
-  disables it. A wheel install has no `data/` beside `src/` and is unaffected (as today it
-  has no banks). Scripts that read `REPO/"evals"` without importing `wsbench.registry` need
-  `wsbench unpack` once; the README says so.
-- The password constant lives in `datapack.py` beside a comment like nocot's ("published in
-  data/README.md: for people, not for crawlers").
+State: `data/.unpacked.json` (git-ignored), `{unit: {"zip_sha256", "files": {path: sha256 as
+unpacked}}}`, plus the sha256 of the concatenated sidecars it was written for, so the no-op
+check is one small read and one hash of the sidecar files.
 
-## 3. The cutover commit
+**`unpack(units=None, force=False)`** per unit whose sidecar differs from the stamp: get the
+zip (cache, else download; its sha256 must equal the sidecar's, else a `DataError` naming the
+unit and URL); then per file, three-way:
+- working file absent, or its sha equals the STAMP's (unchanged since the last unpack):
+  write the zip's bytes (temp name + `os.replace`, so readers never see a partial file);
+- working file's sha equals the zip's: nothing;
+- otherwise it is a local edit: **conflict**. Nothing of that unit is written; `unpack`
+  raises `DataError` listing every conflicting path. `force=True` overwrites.
+- a path in the stamp that the new sidecar no longer lists, and whose working file is
+  unchanged since the stamp, is deleted (loaders glob these directories; a stale file changes
+  results). An edited one is a conflict.
+Then the stamp is rewritten for that unit. A pre-cutover checkout's first unpack has no
+stamp: files whose sha equals the zip's are adopted into the stamp; differing ones are
+conflicts.
 
-- `python -m wsbench.datapack pack` builds `data/` from the current tree; `git rm --cached`
-  every packed file; `.gitignore` gains `/adapted/*` with `!/adapted/README.md`, and for
-  `evals/`: ignore everything but directories and `*.md`. The existing `adapted/…`
-  work-product ignore lines move to `data/PACK_EXCLUDE`.
-- `tests/golden/data_files_0097.json`: the `(path, sha256)` list of the packed files, computed
-  from the parent commit's blobs (`git ls-tree`), not from the working tree; the invariant test
-  reads it.
-- `.github/workflows/ci.yml`: no new step is required (the registry unpacks), but an explicit
-  `uv run wsbench unpack` step before `pytest` makes a failure legible; add it.
-- Modal images that `add_local_dir("evals")` keep working from an unpacked checkout
-  (`scripts/lucky_guess_modal.py`, the wsb-new-questions skill scripts): each gets a guard
-  that calls `datapack.ensure()` before building the image. `atlas/` and `viewer_app/` read a
-  hard-coded external checkout and are not changed.
+**`pack(units=None)`**: refuses (a `DataError` saying "run `wsbench unpack` first") unless
+the stamp shows EVERY unit unpacked from the current sidecars: packing a tree that is not
+fully unpacked would read missing files as deletions. For each unit whose listed files'
+working shas differ from the sidecar (a listed file missing from disk is an error naming it,
+never a silent removal): build the zip into the cache, rewrite the sidecar, update the stamp.
+`pack add=` / `rm=` edit the lists first. `pack` never touches the network.
+- `pack status`: per unit, modified / missing listed files and unlisted files; exit 1 when
+  any listed file differs from its sidecar (the "forgot to pack" check).
+- `pack diff [ref=HEAD] [units=] [text=True]`: the files added / removed / changed between
+  the sidecars at `ref` and the working tree; with `text=True`, a unified diff of each changed
+  text file against the version in `ref`'s zip (fetched to the cache). This replaces `git
+  diff adapted/<m>/...` for bank review.
+- `publish`: uploads every zip named by a current sidecar that the release does not hold yet
+  (`gh release upload`, creating the bucket release when missing; needs `gh` and push rights),
+  then verifies each by an HTTP HEAD. A sidecar committed without its asset fails CI's unpack
+  step (section 4), which is the guard against a forgotten publish.
 
-## 4. Notice and canary
+**`ensure()`**: no-op when `data/INDEX.json` is absent (a wheel, a Modal container with only
+`src/`, the skill's shadow checkouts) or `WSB_NO_UNPACK=1`, or the stamp is current;
+otherwise `unpack()` under a lock file, with every file written atomically so correctness
+never depends on the lock (flock on network volumes is unreliable). It raises `DataError`
+(never `SystemExit`) and the CLI maps it to exit 2 with the message. In a read-only
+checkout: when the plaintext is present and matches, continue without writing the stamp;
+when it is absent, `DataError` saying so.
+- Called once per process from `wsbench.registry` (import time, so every loader is covered)
+  and explicitly from `tests/conftest.py` (session scope) and from the three Modal scripts
+  that `add_local_dir("evals")` (`scripts/lucky_guess_modal.py`, the wsb-new-questions
+  skill's `modal_gate.py` / `modal_script.py`) before they build their image. Scripts that
+  read `REPO/"evals"` without importing `wsbench.registry` need `wsbench unpack` once; README
+  says so.
+- CLI: `wsbench unpack [units=] [force=True]`, `wsbench pack [units=] [add=] [rm=]`,
+  `wsbench pack status`, `wsbench pack diff`, `wsbench pack publish`. `python -m
+  wsbench.datapack` is not an entry point (one way in).
 
-- A canary string, one fresh GUID for the benchmark: `WORKSPACEBENCH CANARY GUID <uuid4>`,
-  in `data/README.md`, `data/MANIFEST.json`, `CANARY.txt` inside every zip, README.md and
-  NOTICE.md. It is NOT added to any bank file (that would move every `bank_sha`).
-- README.md gets a short section "Do not train on this data" (above Quickstart) and NOTICE.md
-  the same request: the banks and adapted sets are evaluation data; please do not train on
-  them or republish them unpacked; the data is shipped in password-protected zips for that
-  reason; the password; the canary and what it is for. LICENSE stays MIT for code and in-house
-  items (the request is a request, as nocot's is; changing the licence is Camila's call and
-  is not made here). CITATION.cff untouched.
-- README §Quickstart: `wsbench unpack` happens automatically; `wsbench pack` before committing
-  a bank change. CLAUDE.md (Workflow + a "Data packing" bullet), AGENTS.md, `adapted/README.md`
-  and the two skills (`adapt-bank`, `wsb-new-questions`) get the pack-before-commit rule; the
-  adapt-bank push recipe ("copy the set's files into a fresh clone") becomes "copy, then
-  `wsbench pack`".
+## 3. `.gitignore` (patterns verified in a scratch repo by the critic)
 
-## 5. Not covered (stated in the PR)
+```
+/evals/**
+!/evals/**/
+!/evals/**/*.md
+/adapted/*
+!/adapted/README.md
+/data/.unpacked.json
+```
+The existing `adapted/*/...` work-product lines and the glm-5.3 negation are dead under
+`/adapted/*` and are deleted.
 
-- Git history before the cutover, forks and existing clones keep the plaintext.
-- `src/wsbench/adapt/data/*.json` (the agentic pools, 10.8 MB of scenario text, shipped in the
-  wheel and sha-pinned), `tests/fixtures/` and `tests/golden/` files that hold item text,
-  `examples/readouts/`, and the README / family README example lines: out of the scope Camila
-  chose.
-- Branches and local trees with unmerged bank edits (the running adapted-set rebuilds) will
-  conflict with the removal of the plaintext paths (modify / delete): keep the plaintext
-  files, take `data/` from main, run `wsbench pack`.
-- A crawler that runs code, or a person, can unpack: the protection is against scraping.
+## 4. CI and tests
 
-## Tests
+- `.github/workflows/ci.yml`: `actions/cache` on `~/.cache/wsbench/data` keyed by
+  `hashFiles('data/**')`; then `uv run wsbench unpack` (network; fails on a missing asset or
+  a sha mismatch) and `uv run wsbench pack status` before `pytest`. Tests themselves stay
+  offline: they read the unpacked tree.
+- `tests/test_datapack.py` (temp trees, a local directory standing in for the release via a
+  `file://`-style fetch seam; no network): round trip; the three-way rule (silent update of
+  an unedited file, no-op, conflict, `force`); stale-file deletion; `pack` refusing a
+  not-fully-unpacked tree; `add` / `rm`; a listed file missing; `status` exit codes; `diff`;
+  a corrupt or wrong-sha zip; the stamp no-op; two processes unpacking at once leave a
+  correct tree; `ensure()` with no `data/`, with `WSB_NO_UNPACK`, read-only; importing
+  `wsbench` with pyzipper absent (blocked in `sys.modules`) still works; the tracked-files
+  rule (`git ls-files evals adapted` = the Markdown keepers only; skipped outside a git
+  checkout); the canary placement.
+- **Three pre-existing tests whose guard would go silently blind once the plaintext is
+  git-ignored are edited, exactly so, and listed in the PR:**
+  `tests/test_r5_adapted_mode.py` (~l.61-65: "nothing under `evals/` changed" via `git status
+  --porcelain evals/`) compares `datapack` file shas of `evals/` before and after instead;
+  `tests/test_legacy_family_names.py` (~l.260-268) and `tests/test_adapt_refill.py`
+  (~l.139-149) scan `git ls-files` ∪ the sidecars' paths. Any other red pre-existing test is
+  a stop-and-report.
+- The whole existing suite otherwise passes unedited.
 
-- pack / unpack round trip on a temp tree (units, excludes, Markdown keepers, a deleted unit,
-  `check=True`, a locally modified file is not overwritten, `force=True`, the stamp no-op,
-  two processes racing on the lock, a corrupt zip or sha mismatch exits 2 with the unit named).
-- the committed `data/` reproduces `tests/golden/data_files_0097.json` exactly (path set and
-  sha256), and `pack check=True` is clean on a fresh unpack.
-- no file under `evals/` or `adapted/` other than the Markdown keepers is tracked
-  (`git ls-files`, skipped when not in a git checkout).
-- the canary is in the five places and in no bank file.
-- the whole existing suite passes unedited.
+## 5. The cutover (done by the main session, in this order)
+
+1. On the implementation commit (plaintext still tracked): `wsbench pack add='evals/**'
+   add='adapted/**'` restricted to tracked files minus the Markdown keepers and
+   `.report.lock` (a one-off `scripts/datapack_cutover.py` drives it from `git ls-files` and
+   is deleted in the same PR), producing sidecars and zips.
+2. **One-time identity check:** wipe a scratch copy, unpack it from the zips, and compare
+   `git hash-object` of every unpacked file with `git ls-tree -r <parent> evals adapted`
+   blob ids: all 7,619 equal (7,626 minus the seven lock files), none extra. The command and
+   its output go in the PR body.
+3. `wsbench pack publish` (creates the `data-xx` releases, uploads 51 assets, ~130 MB).
+4. `git rm --cached` the packed files, commit `data/` + `.gitignore`.
+5. CI must pass from a clean checkout (it downloads the assets): the real end-to-end test.
+
+## 6. Notice and canary
+
+- `WORKSPACEBENCH CANARY GUID <uuid4>` in `data/README.md`, `data/INDEX.json`, `CANARY.txt`
+  in every zip, README.md, NOTICE.md. NOT in any bank file (it would move every `bank_sha`).
+  Stated limit: the unpacked banks and all pre-cutover history carry no canary, so it marks
+  the release, it cannot by itself detect training on the items; a canary field in bank
+  headers can join at each family's next version bump (not done here).
+- README.md section "Do not train on this data" (above Quickstart), same request in
+  NOTICE.md and `data/README.md`: evaluation data; please do not train on it or republish it
+  unpacked; it ships in password-protected zips for that reason; the password; the canary.
+  LICENSE stays MIT (a request, as nocot's is; a licence change is Camila's call).
+- Docs: README §Quickstart and `README.md:154` (banks are unpacked beside `src/`),
+  CLAUDE.md (a "Data packing" bullet + Workflow), AGENTS.md, `adapted/README.md`, the
+  `adapt-bank` and `wsb-new-questions` skills: `wsbench pack` + `wsbench pack publish` before
+  committing a bank change; review with `wsbench pack diff`; the adapt-bank push recipe
+  becomes "copy the set's files into the clone, `pack add`, `pack`, `publish`"; never `git
+  pull` the cutover into a tree with a running job (the pull deletes the then-untracked
+  plaintext until the next unpack); a branch with bank edits merges main as: stash the
+  edited files aside, merge, `wsbench unpack`, copy the edits back, `pack`.
+
+## 7. Not covered (stated in the PR)
+
+- Git history before the cutover, the tags `v1.0.0` / `v1.1.0` (GitHub serves their
+  tarballs), other branches (`camila/judge-sweep`), open PR heads, forks and clones keep the
+  plaintext: Camila chose no rewrite.
+- `src/wsbench/adapt/data/*.json` (the agentic pools: source text of 716 of the 1,009
+  adapted agentic items, shipped in the wheel), `tests/fixtures/`, `tests/golden/`,
+  `examples/readouts/`, README example lines, `evals/multihop_mt/V1_AUDIT_2026-10-15.md`.
+- The public viewer apps listed in `atlas/CB_EXPORT.md` serve items and readouts.
+- A person, or a crawler that runs code, can unpack: this stops scraping, not access.
 
 ## Files
 
 ```
 plans/0097-no-train-data.md
-src/wsbench/datapack.py, src/wsbench/cli.py (pack / unpack), src/wsbench/registry.py (ensure)
-data/**                                   new (zips, MANIFEST.json, README.md, PACK_EXCLUDE)
-evals/**, adapted/** (non-Markdown)       removed from the index, git-ignored
-.gitignore, .github/workflows/ci.yml, pyproject.toml (+pyzipper), uv.lock
+src/wsbench/datapack.py, src/wsbench/cli.py, src/wsbench/registry.py
+data/README.md, data/INDEX.json, data/evals/*.json, data/adapted/*.json      new
+evals/**, adapted/** (all but the Markdown keepers)                          out of the index
+.gitignore, .github/workflows/ci.yml, pyproject.toml, uv.lock
 README.md, NOTICE.md, CLAUDE.md, AGENTS.md, adapted/README.md, .claude/skills/*/SKILL.md
-scripts/lucky_guess_modal.py, .claude/skills/wsb-new-questions/scripts/modal_*.py
-tests/test_datapack.py, tests/golden/data_files_0097.json
+scripts/lucky_guess_modal.py, .claude/skills/wsb-new-questions/scripts/modal_{gate,script}.py
+tests/test_datapack.py, tests/conftest.py, + the three sanctioned test edits
 ```
