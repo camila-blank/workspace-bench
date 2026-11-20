@@ -258,8 +258,8 @@ LEGACY_FAMILY_NAMES = {
     "directed_modulation_obscure": "model_specific_directed_modulation",
     "wrong_bridge": "wrong_intermediate",
     # plan 0101: the multi-token families took the plain keys
-    "multihop_mt_v2": "multihop",   # was -> "multihop_mt" (2026-11-04); single-step, so it
-    "multihop_mt": "multihop",      # now points straight at the current key
+    "multihop_mt_v2": "multihop",  # was -> "multihop_mt" (2026-11-04); single-step, so it
+    "multihop_mt": "multihop",  # now points straight at the current key
     "basic_readout_mt": "basic_readout",
     "multilingual_mt": "multilingual",
     "typo_mt": "typo",
@@ -278,7 +278,7 @@ multi-token family (§5.6).
 # The key a family hashes under in plan_sha / bank_sha / seeds / option orders: frozen.
 HASH_FAMILY_NAMES = {
     "wrong_intermediate": "wrong_bridge",
-    "multihop": "multihop_mt_v2",        # retained: was HASH_FAMILY_NAMES["multihop_mt"]
+    "multihop": "multihop_mt_v2",  # retained: was HASH_FAMILY_NAMES["multihop_mt"]
     "basic_readout": "basic_readout_mt",
     "multilingual": "multilingual_mt",
     "typo": "typo_mt",
@@ -301,12 +301,18 @@ is applied once, to a CURRENT key.
 # key then (option orders, the dev split, capable / onecue / builder cache keys, adapt seeds,
 # the authoring prompt, the producer's sampling seed; §2.2) embeds now. The inverse of §0.1.
 FROZEN_KEY_NAMES = {
-    "basic_readout": "basic_readout_mt", "multihop": "multihop_mt",
-    "multilingual": "multilingual_mt", "typo": "typo_mt",
-    "basic_readout_st": "basic_readout", "multihop_st": "multihop",
-    "multilingual_st": "multilingual", "typo_st": "typo",
+    "basic_readout": "basic_readout_mt",
+    "multihop": "multihop_mt",
+    "multilingual": "multilingual_mt",
+    "typo": "typo_mt",
+    "basic_readout_st": "basic_readout",
+    "multihop_st": "multihop",
+    "multilingual_st": "multilingual",
+    "typo_st": "typo",
 }
-def frozen_name(name: str) -> str: ...   # FROZEN_KEY_NAMES.get(name, name); never canonicalized
+
+
+def frozen_name(name: str) -> str: ...  # FROZEN_KEY_NAMES.get(name, name); never canonicalized
 ```
 
 It differs from `hash_name` only for `multihop` (`multihop_mt` here, `multihop_mt_v2` there;
@@ -318,14 +324,22 @@ It differs from `hash_name` only for `multihop` (`multihop_mt` here, `multihop_m
 # are frozen in the old vocabulary (evals/fast/*.json, the archived floor, goldens) and for
 # pre-0101 layout paths (repo_path). Never used for user input.
 PRE_0101_KEYS = {
-    "basic_readout": "basic_readout_st", "basic_readout_mt": "basic_readout",
-    "multihop": "multihop_st", "multihop_mt": "multihop", "multihop_mt_v2": "multihop",
-    "multilingual": "multilingual_st", "multilingual_mt": "multilingual",
-    "typo": "typo_st", "typo_mt": "typo",
+    "basic_readout": "basic_readout_st",
+    "basic_readout_mt": "basic_readout",
+    "multihop": "multihop_st",
+    "multihop_mt": "multihop",
+    "multihop_mt_v2": "multihop",
+    "multilingual": "multilingual_st",
+    "multilingual_mt": "multilingual",
+    "typo": "typo_st",
+    "typo_mt": "typo",
 }
-def from_pre_0101(key: str) -> str: ...   # PRE_0101_KEYS.get(key, canonical(key))
-def rekey_pre_0101(d: Mapping[str, V]) -> dict[str, V]: ...  # keys translated, order kept;
-                                           # two keys landing on one key -> ValueError
+
+
+def from_pre_0101(key: str) -> str: ...  # PRE_0101_KEYS.get(key, canonical(key))
+def rekey_pre_0101(d: Mapping[str, V]) -> dict[str, V]:
+    ...  # keys translated, order kept;
+    # two keys landing on one key -> ValueError
 ```
 
 ### 3.2 `REUSED_FAMILY_KEYS`, generalised (one mechanism, five entries)
@@ -336,33 +350,64 @@ EVERY key that two families have held to a record of both holders:
 ```python
 @dataclass(frozen=True)
 class Reused:
-    live: str                        # the family the key means when typed today (a current key)
-    other: str                       # the family that held it before (a current or removed key)
-    live_stamps: tuple[str, ...]     # result-stamp prefixes of `live`
+    live: str  # the family the key means when typed today (a current key)
+    other: str  # the family that held it before (a current or removed key)
+    live_stamps: tuple[str, ...]  # result-stamp prefixes of `live`
     other_stamps: tuple[str, ...] | None  # CLOSED list of the prefixes `other` ever wrote under
-                                     # this key; None = every stamp that is not live's
-    live_header: str | None = None   # bank header "family" value of `live`'s banks (F9)
+    # this key; None = every stamp that is not live's
+    live_header: str | None = None  # bank header "family" value of `live`'s banks (F9)
     other_header: str | None = None
-    since: str = ""                  # for messages: "2026-11-20 (plan 0101)"
+    since: str = ""  # for messages: "2026-11-20 (plan 0101)"
+
 
 REUSED_FAMILY_KEYS: dict[str, Reused] = {
     # 2026-11-04, retained unchanged in behaviour: `other_stamps=None`
-    "multihop_mt": Reused("multihop", "multihop_mt_regex",
-                          ("mh2-mc-", "mt-regex-2026-10-30+md+fz"), None,
-                          "multihop-hard", None, "2026-11-04"),
+    "multihop_mt": Reused(
+        "multihop",
+        "multihop_mt_regex",
+        ("mh2-mc-", "mt-regex-2026-10-30+md+fz"),
+        None,
+        "multihop-hard",
+        None,
+        "2026-11-04",
+    ),
     # plan 0101
-    "basic_readout": Reused("basic_readout", "basic_readout_st",
-                            ("mc-brmt-", "mt-regex-", "mc-2026-"), ("br-mc-", "bank-"),
-                            "basic-readout-hard", "basic-readout", "2026-11-20 (plan 0101)"),
-    "multihop": Reused("multihop", "multihop_st",
-                       ("mh2-mc-", "mt-regex-2026-10-30+md+fz"), ("bank-",),
-                       "multihop-hard", "multihop", "2026-11-20 (plan 0101)"),
-    "multilingual": Reused("multilingual", "multilingual_st",
-                           ("mt-regex-",),
-                           ("mcrx-", "bank-", "mt-regex-2026-10-30+leg-regex"),
-                           "multilingual-hard", "multilingual", "2026-11-20 (plan 0101)"),
-    "typo": Reused("typo", "typo_st", ("mt-regex-", "mc-2026-"), ("bank-",),
-                   "typo-hard", "typo", "2026-11-20 (plan 0101)"),
+    "basic_readout": Reused(
+        "basic_readout",
+        "basic_readout_st",
+        ("mc-brmt-", "mt-regex-", "mc-2026-"),
+        ("br-mc-", "bank-"),
+        "basic-readout-hard",
+        "basic-readout",
+        "2026-11-20 (plan 0101)",
+    ),
+    "multihop": Reused(
+        "multihop",
+        "multihop_st",
+        ("mh2-mc-", "mt-regex-2026-10-30+md+fz"),
+        ("bank-",),
+        "multihop-hard",
+        "multihop",
+        "2026-11-20 (plan 0101)",
+    ),
+    "multilingual": Reused(
+        "multilingual",
+        "multilingual_st",
+        ("mt-regex-",),
+        ("mcrx-", "bank-", "mt-regex-2026-10-30+leg-regex"),
+        "multilingual-hard",
+        "multilingual",
+        "2026-11-20 (plan 0101)",
+    ),
+    "typo": Reused(
+        "typo",
+        "typo_st",
+        ("mt-regex-", "mc-2026-"),
+        ("bank-",),
+        "typo-hard",
+        "typo",
+        "2026-11-20 (plan 0101)",
+    ),
 }
 ```
 
@@ -397,7 +442,7 @@ holder.
 ### 3.3 Functions (exact behaviour)
 
 ```python
-class RenamedKey(SystemExit): ...   # exit 2; the message names the rename and both keys
+class RenamedKey(SystemExit): ...  # exit 2; the message names the rename and both keys
 ```
 
 - `canonical(name)`: unchanged (`LEGACY_FAMILY_NAMES.get(name, name)`).
