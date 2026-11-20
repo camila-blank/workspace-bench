@@ -17,7 +17,12 @@ WSB = AGAM / "workspace-bench"
 sys.path.insert(0, str(WSB / "src"))
 from wsbench.viewer.build import GROUPS, _family_view, _header, _items, _read_gates  # noqa: E402
 from wsbench.viewer.build import view_item as view_item_full  # noqa: E402,F401
-from wsbench.registry import REMOVED_FAMILIES, RETIRED_FAMILIES  # noqa: E402
+from wsbench.registry import (  # noqa: E402
+    REMOVED_FAMILIES,
+    RETIRED_FAMILIES,
+    _layout,
+    family_root,
+)
 
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_FILE = CACHE_DIR / "index.pkl"
@@ -343,7 +348,7 @@ def discover() -> dict:
     banks: dict[str, dict] = {}
     # frozen 27B banks
     fams = {}
-    for d in sorted((WSB / "evals").iterdir()):
+    for d in sorted(family_root(f) for f in _layout()):  # either layout (plan 0101)
         if (d / "items.json").exists():
             fams[d.name] = {"bank": str(d / "items.json"), "gate": None}
         elif d.is_dir() and d.name in FAMILY_ORDER:

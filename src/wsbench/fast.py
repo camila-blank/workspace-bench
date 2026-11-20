@@ -107,8 +107,7 @@ def entry(family: str) -> dict[str, Any]:
     e = subset().get(fam)
     if e is None:
         raise NotInFast(f"{fam}: not in {VERSION}")
-    pins = registry.bank_pins(fam)
-    if os.environ.get(registry.BANK_ROOT_ENV) or any(os.environ.get(p) for p in pins):
+    if os.environ.get(registry.BANK_ROOT_ENV) or registry.bank_pin(fam) is not None:
         raise SystemExit(
             f"{fam}: {VERSION} is defined on the registered Qwen3.6-27B banks only (unset "
             f"{registry.BANK_ROOT_ENV} / {registry.BANK_FILE_ENV_PREFIX}{fam.upper()})"

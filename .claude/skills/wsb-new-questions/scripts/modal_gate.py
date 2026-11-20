@@ -44,7 +44,7 @@ image = (
         "pydra-config>=0.0.17",
     )
     .add_local_dir(REPO / "src", "/repo/src", ignore=["**/__pycache__"])
-    .add_local_dir(REPO / "evals", "/repo/evals", ignore=["jlens_concept_pr/gen-*"])
+    .add_local_dir(REPO / "evals", "/repo/evals", ignore=["**/jlens_concept_pr/gen-*"])
     .add_local_dir(
         REPO / ".claude" / "skills" / "wsb-new-questions" / "scripts",
         "/repo/.claude/skills/wsb-new-questions/scripts",

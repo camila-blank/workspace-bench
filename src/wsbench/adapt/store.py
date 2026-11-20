@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from wsbench.banks import load_bank as load_wrapped
-from wsbench.registry import REPO_ROOT, lookup_names, root_bank
+from wsbench.readouts import ids_in
+from wsbench.registry import REPO_ROOT, RenamedKey, lookup_names, owner, root_bank, shared_key
 
 
 def model_dir(model: str, root: Path = REPO_ROOT) -> Path:
@@ -61,10 +62,26 @@ def _legacy_ok(base: Path, family: str, suffix: str = ".jsonl") -> Path:
     """``base/<family><suffix>``, or the file under a former family key when only that exists
     (a pre-v1.2.0 ``wrong_bridge.jsonl``, a set's ``multihop_mt_v2.json`` written before the
     2026-11-04 rename; for a reused key the former key's file wins, ``registry.lookup_names``)."""
-    return next(
-        (p for key in lookup_names(family) if (p := base / f"{key}{suffix}").exists()),
-        base / f"{family}{suffix}",
-    )
+    bare = shared_key(family)
+    for key in lookup_names(family):
+        path = base / f"{key}{suffix}"
+        if not path.exists():
+            continue
+        if key == bare and suffix == ".jsonl":
+            # a work file under the bare key of a renamed pair (plan 0101 §5.5): by its row ids
+            ids = ids_in(path)
+            who = owner(key, ids=ids) if ids else None
+            if ids and who is None:
+                raise RenamedKey(f"{path}: its rows are in neither family of the renamed pair")
+            if who is not None and who != family:
+                if key == family:  # never the path a writer of this family appends to
+                    raise RenamedKey(
+                        f"{path} holds rows of {who!r}, written before the key {key!r} was "
+                        f"reused (plan 0101); move it to {who}{suffix}"
+                    )
+                continue
+        return path
+    return base / f"{family}{suffix}"
 
 
 def bank_file(model: str, family: str) -> Path:

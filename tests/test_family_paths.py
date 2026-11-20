@@ -75,6 +75,15 @@ def hand_built_paths(source: str) -> list[str]:
                 right = node.right
                 if not (isinstance(right, ast.Constant) and right.value in UNMOVED):
                     bad.append(f'line {node.lineno}: a `/ "evals" / ...` join')
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            # a one-level walk of evals/ finds categories, not families, after the move
+            walks = node.func.attr in ("iterdir", "glob", "rglob")
+            if (
+                walks
+                and _is_evals_root(node.func.value)
+                and not isinstance(node.func.value, ast.Constant)
+            ):
+                bad.append(f"line {node.lineno}: a walk of evals/ ({node.func.attr})")
     return bad
 
 
@@ -102,6 +111,9 @@ def test_scanners_see_the_patterns():
     assert hand_built_paths('x = Path("evals") / name')
     assert hand_built_paths('x = f"evals/{family}/items.json"')
     assert hand_built_paths('x = REPO_ROOT / "evals/poetry/items_v5.json"')
+    assert hand_built_paths('for d in (WSB / "evals").iterdir(): pass')
+    assert hand_built_paths('x = list((REPO / "evals").glob("*/README.md"))')
+    assert not hand_built_paths('x = list((REPO / "evals" / "baselines").glob("*.json"))')
     assert not hand_built_paths('x = REPO_ROOT / "evals" / "baselines" / "x.json"')
     assert not hand_built_paths('x = REPO_ROOT / "evals"')
     assert not hand_built_paths('"""evals/poetry/README.md is prose here."""')
@@ -136,6 +148,18 @@ def test_no_code_or_test_imports_a_family_by_built_name():
 
 _PATH = re.compile(r"(?<![\w./-])evals/[\w./*<>{}\[\]|$-]+")
 _SKILL_AUDITS = {"SKILL_AUDIT.md", "SKILL_AUDIT_RESPONSE.md"}
+# a file a README says does NOT exist; bank versions and directories tests assert are gone
+ABSENT_ON_PURPOSE = (
+    "evals/role_bound_association/lite_rule.json",
+    "evals/basic_readout_mt/hidden_rivals.json",
+    "evals/basic_readout_mt/items_v5.json",
+    "evals/multihop/items_v4.json",
+    "evals/multihop_mt/items_v5.json",
+    "evals/user_modeling/items_v2.json",
+    "evals/multihop_mt_v2",
+    "evals/wrong_bridge",
+    "evals/unverbalized_hint",
+)
 # Paths written on purpose that are not files of this checkout (the list may only shrink):
 KNOWN_MISSING = {
     # paths of the source repos (global-workspace, the J-lens repo), quoted in credits
@@ -146,16 +170,7 @@ KNOWN_MISSING = {
     "evals/chint_cutoff/frozen_v2.json",
     "evals/model_multihop/frozen_v2.json",
     "evals/diagnostic/misalignment_exhaustive_bank.json",
-    # a file a README says does NOT exist; bank versions and directories tests assert are gone
-    "evals/role_bound_association/lite_rule.json",
-    "evals/basic_readout_mt/hidden_rivals.json",
-    "evals/basic_readout_mt/items_v5.json",
-    "evals/multihop/items_v4.json",
-    "evals/multihop_mt/items_v5.json",
-    "evals/user_modeling/items_v2.json",
-    "evals/multihop_mt_v2",
-    "evals/wrong_bridge",
-    "evals/unverbalized_hint",
+    *ABSENT_ON_PURPOSE,
     # toy banks of test-registered families
     "evals/stub/items.json",
     "evals/old/items.json",
@@ -194,8 +209,8 @@ def test_every_written_evals_path_exists():
     missing: dict[str, list[str]] = {}
     seen: set[str] = set()
     for f in doc_files():
-        if f.name == "test_family_paths.py":
-            continue
+        if f.name in ("test_family_paths.py", "test_migrate_0101.py"):
+            continue  # these two hold both layouts' paths on purpose
         for path in written_paths(f.read_text(encoding="utf-8")):
             # docs name a family's code src-relative (`evals/<family>/judge.py`)
             here = (REPO / path).exists() or (REPO / "src/wsbench" / path).exists()
@@ -204,6 +219,10 @@ def test_every_written_evals_path_exists():
             seen.add(path)
     assert not missing, missing
     assert seen >= KNOWN_MISSING, sorted(KNOWN_MISSING - seen)  # no stale allowance
+    # a path a test asserts is ABSENT must still sit in a directory that exists, or a
+    # mis-rewritten path would make the assertion vacuous
+    for path in ABSENT_ON_PURPOSE:
+        assert (REPO / path).parent.is_dir(), path
 
 
 # ---------------------------------------------------------------- the helpers

@@ -201,10 +201,10 @@ def lineage_drops(family: str, have: str, want: str) -> list[str] | None:
     adapted set's ``report.json`` records under ``$WSB_BANK_ROOT``, else (no root, plan 0083) the
     registered bank header's ``plan_lineage``. None when no chain exists, a root has no report,
     or a ``WSB_BANK_FILE_<FAMILY>`` pin overrides the bank (fail-closed)."""
-    from wsbench.registry import bank_pins, canonical, lookup_names
+    from wsbench.registry import bank_pin, canonical, lookup_names
 
     fam = canonical(family)
-    if any(os.environ.get(pin) for pin in bank_pins(fam)):
+    if bank_pin(fam) is not None:
         return None
     if os.environ.get(BANK_ROOT_ENV):
         report = _root_report()
