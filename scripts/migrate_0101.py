@@ -176,6 +176,34 @@ SPELLING_METHODS = {
     "rsplit",
     "partition",
     "replace",
+    "find",
+    "rfind",
+    "index",
+    "count",
+    "fnmatch",
+    "fnmatchcase",
+}
+# `"<key>" in <name>`: these names hold a STRING (an id, a line, a path), not a collection of keys
+STRING_NAMES = {"name", "item_id", "iid", "ln", "line", "text", "path", "stem", "label"}
+STRING_ATTRS = {"stdout", "stderr", "name", "stem", "text"}
+# a name compared with a key-spelled literal that is NOT a family: `sub == "typo"`, `cfg.screen`
+FIELD_NAMES = re.compile(r"sub|screen|kind", re.I)
+# Sites no rule rewrites, (path BEFORE the move, text on the line); each is listed in the dry
+# run's kept-sites.txt with its reason (review c3):
+KEEP_SITES = {
+    # W3: one constant is both a read path and a string written into the bank header
+    ("scripts/introspection_build_v2.py", 'VEC = "evals/introspection/vectors"'),
+    # W4: meta written into the vendored (committed) Wikidata tables
+    ("scripts/build_wd_tables.py", '"items": "evals/wrong_intermediate/items_v4.json"'),
+    # W6: a SCREEN kind of multilingual_typo (`question | complete | describe | typo`)
+    ("scripts/mc_options_r5.py", '"typo",'),
+    ("scripts/mc_options_r5.py", '"typo": "A short text in another language'),
+    ("scripts/mc_options_r5.py", 'cfg.screen == "typo"'),
+    # W7: `_header` writes `v1_bank = evals/<this argument>/items.json` into the bank header
+    ("scripts/build_multilingual_v2.py", '_header(v1, "multilingual",'),
+    ("scripts/build_multilingual_v2.py", '_header(v1, "multilingual_mt",'),
+    # W9: the expectation of an input that sits inside a longer string (residue): edit both
+    ("tests/test_adapt_dataround.py", "families=multihop_mt waves=40"),
 }
 # `"<key>" in <name>` where <name> is a STRING, not a collection of keys (file, line text)
 IN_STRING = {("scripts/evidence_mh2.py", '"multihop" in ln')}
@@ -185,6 +213,7 @@ STAGING = ".migrate_0101_staging"
 MARKER = "migrate_0101_applied"
 RECORD = "migrate_0101_before"
 RESIDUE_FILE = "scripts/migrate_0101_residue.txt"
+RESIDUE_CLASSES = ("leave", "edit")  # what the reviewer writes in place of `?`
 MANIFEST = "tests/golden/manifest_0101_pre.json"
 SET_MARKER = ("family_keys", "0101")
 
@@ -204,7 +233,22 @@ R1_FROM_RE = re.compile(
 R2_RE = re.compile(rf"(?<![A-Za-z0-9_.-])(?<!wsbench/)evals/({_alt(OLD_DIR)}){END}")
 R3_RE = re.compile(rf'"evals"\s*/\s*"({_alt(OLD_DIR)})"')
 R4_TEXT_RE = re.compile(rf"([\"'])({_alt(KEYS)})\1")
-R5_RE = re.compile(rf"{B0}((?:--)?famil(?:y|ies)[= ])([A-Za-z0-9_,]+)")
+R5_RE = re.compile(rf"{B0}((?:--)?famil(?:y|ies)[= ])([A-Za-z0-9_,]+)(?![A-Za-z0-9_-])")
+# the `adapt` SUBCOMMAND that is named after its family (W10): `$A multihop_mt`, `adapt multihop_mt`
+R5_CMD_RE = re.compile(
+    r"((?:\$A|wsbench\.adapt|(?<![A-Za-z0-9_])adapt) )(multihop_mt)(?![A-Za-z0-9_-])"
+)
+# R2 never rewrites a string STORED in bank bytes / plan rows (W1-W3), nor a path of the
+# global-workspace checkout a builder reads (W4): the same spelling, another repository
+STORED_PATH_RE = re.compile(
+    r"evals/introspection/vectors/(?:concept|gaussian)_vectors_L\d+\.npy|"
+    r"evals/model_multihop/frozen_v2\.json"
+)
+FOREIGN_PREFIX_RE = re.compile(r"(?:<gw>/|gw-mmh/|global-workspace |/root/gw[\w-]*/)$")
+# a family README sits one level deeper after the move: its links to the repository root
+README_UP_RE = re.compile(r"(?<=\]\()\.\./\.\./(?!\.\.)")
+# a line about a stored FIELD whose values are spelled like keys (`subfamily`: `typo`)
+FIELD_LINE_RE = re.compile(r"subfamil")
 R6_RE = re.compile(rf"{B0}({_alt(KEYS)})(\.jsonl\.meta\.json|\.jsonl|\.json){B1}")
 R6_DIR_RE = re.compile(rf"(?<=/)({_alt(KEYS)})(?=/)")
 R7_RE = re.compile(rf"(?<!`)(`{{1,2}})({_alt(KEYS)})\1(?!`)|\*\*({_alt(KEYS)})\*\*")
@@ -216,8 +260,10 @@ FIXTURE_LINE_RE = re.compile(r"fixtures|golden|adapted_v1")
 # a line of prose about the HISTORY of a key: its keys are former ones by intent, so the prose
 # rules (R5 / R6 / R7) leave the line to the residue
 HISTORY_LINE_RE = re.compile(
-    r"multihop_mt_v2|multihop_mt_regex|wrong_bridge|\bkeyed\b|\bhash\b|key becomes|\bformer\b|"
-    r"\brenamed\b|\bremoved\b|\bdeleted\b|HASH_FAMILY_NAMES|REUSED_FAMILY_KEYS|LEGACY_FAMILY_NAMES"
+    r"multihop_mt_v2|multihop_mt_regex|wrong_bridge|HASH_FAMILY_NAMES|REUSED_FAMILY_KEYS|"
+    r"LEGACY_FAMILY_NAMES|\b(?:then|once|was|still|formerly|been|now) keyed\b|keyed `|"
+    r"\bhash (?:key|name)\b|\bhash(?:es)?\s+(?:as|under)\b|its hash$|key becomes|"
+    r"\bformer key|\brenamed\b|\b(?:was|were) (?:removed|deleted)\b|\bremoved (?:on|from)\b"
 )
 # in python prose (comments, docstrings) only the keys that are not also English words or
 # parameter names are rewritten as a code span: ``typo`` may be a variable
@@ -425,6 +471,26 @@ def _py_literals(text: str, path: str) -> tuple[list[Span], set[int], list[tuple
             return bool(n.args) and isinstance(n.args[0], ast.Constant)
         return False
 
+    def is_field_name(n: ast.AST) -> bool:
+        """A name that holds such a field's value: ``sub``, ``cfg.screen``, ``kind``."""
+        ident = n.id if isinstance(n, ast.Name) else getattr(n, "attr", "")
+        return isinstance(n, ast.Name | ast.Attribute) and bool(FIELD_NAMES.search(ident))
+
+    def collapses(lit: ast.Dict | ast.Set) -> bool:
+        """Two members of one literal would translate to the same key."""
+        keys = lit.keys if isinstance(lit, ast.Dict) else lit.elts
+        new = [KEYS[k.value] for k in keys if isinstance(k, ast.Constant) and k.value in KEYS]
+        pairs = zip(lit.keys, lit.values, strict=True) if isinstance(lit, ast.Dict) else ()
+        same = any(
+            isinstance(k, ast.Constant)
+            and isinstance(v, ast.Constant)
+            and k.value in KEYS
+            and v.value in KEYS
+            and KEYS[k.value] == KEYS[v.value]
+            for k, v in pairs
+        )
+        return same or len(set(new)) < len(new)
+
     def kept(node: ast.Constant) -> bool:
         up = parent.get(id(node))
         if isinstance(up, ast.Attribute) and up.attr in SPELLING_METHODS:
@@ -433,6 +499,23 @@ def _py_literals(text: str, path: str) -> tuple[list[Span], set[int], list[tuple
             base = up.func.value
             if up.func.attr in SPELLING_METHODS or (isinstance(base, ast.Name) and base.id == "re"):
                 return True
+        if any(f == path and snip in lines[node.lineno - 1] for f, snip in KEEP_SITES):
+            return True
+        if isinstance(up, ast.Call) and node in up.args:
+            fn = up.func
+            if (fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")) in SPELLING_METHODS:
+                return True  # fnmatch(name, "key")
+        if isinstance(up, ast.Dict | ast.Set) and collapses(up):
+            return True  # {"multihop_mt_v2": "multihop_mt"}: two members would become one
+        if isinstance(up, ast.Tuple | ast.List | ast.Set):
+            cmp = parent.get(id(up))
+            if (
+                isinstance(cmp, ast.Compare)
+                and up in cmp.comparators
+                and isinstance(cmp.ops[0], ast.In | ast.NotIn)
+                and (is_field(cmp.left) or is_field_name(cmp.left))
+            ):
+                return True  # it.get("subfamily") in ("typo", "novel")
         if isinstance(up, ast.Dict):
             for k, v in zip(up.keys, up.values, strict=True):
                 # a FIELD value ("family", "subfamily", "by", ...): bank or row vocabulary as
@@ -443,14 +526,18 @@ def _py_literals(text: str, path: str) -> tuple[list[Span], set[int], list[tuple
             return True  # x["subfamily"] = "typo"
         if isinstance(up, ast.Compare):
             sides = [up.left, *up.comparators]
-            if any(is_field(s) for s in sides if s is not node):
-                return True
+            if any(is_field(s) or is_field_name(s) for s in sides if s is not node):
+                return True  # x["subfamily"] == "typo", sub == "typo", cfg.screen == "typo"
             if up.left is node and isinstance(up.ops[0], ast.In | ast.NotIn):
                 right = up.comparators[0]
                 if isinstance(right, ast.JoinedStr) or (
                     isinstance(right, ast.Constant) and isinstance(right.value, str)
                 ):
                     return True
+                if (isinstance(right, ast.Name) and right.id in STRING_NAMES) or (
+                    isinstance(right, ast.Attribute) and right.attr in STRING_ATTRS
+                ):
+                    return True  # "multihop" in item_id
                 if (path, lines[node.lineno - 1].strip()) in IN_STRING or any(
                     f == path and snip in lines[node.lineno - 1] for f, snip in IN_STRING
                 ):
@@ -489,6 +576,10 @@ def _py_literals(text: str, path: str) -> tuple[list[Span], set[int], list[tuple
     return spans, keeps, prose
 
 
+# path -> the 0-based lines where a KEEP site, a stored string or a foreign path was left alone
+_KEPT_SITES: dict[str, list[int]] = {}
+
+
 def _identifiers(text: str, table: Mapping[str, str]) -> list[Span]:
     offs = _offsets(text)
     out = []
@@ -517,9 +608,34 @@ def find_spans(text: str, path: str) -> tuple[list[Span], list[int]]:
         cand.append(
             Span(m.start(), m.end(), f"{m.group(1)}.{CATEGORY[new]} import {new}{alias}", "R1")
         )
+    lines = text.split("\n")
+    offs = _offsets(text)
+    kept_sites: list[int] = []
+
+    def lineno(at: int) -> int:
+        lo, hi = 0, len(offs) - 1
+        while lo < hi:  # the last line start <= at
+            mid = (lo + hi + 1) // 2
+            lo, hi = (mid, hi) if offs[mid] <= at else (lo, mid - 1)
+        return lo
+
+    def site(at: int) -> bool:
+        line = lines[lineno(at)]
+        return any(f == path and snip in line for f, snip in KEEP_SITES)
+
     for m in R2_RE.finditer(text):
+        tail = text[m.start() : m.start() + 120]
+        before = text[max(0, m.start() - 24) : m.start()]
+        if STORED_PATH_RE.match(tail) or FOREIGN_PREFIX_RE.search(before) or site(m.start()):
+            kept_sites.append(m.start())
+            continue
         new = OLD_DIR[m.group(1)]
         cand.append(Span(m.start(), m.end(), f"evals/{CATEGORY[new]}/{new}", "R2"))
+    if re.fullmatch(rf"evals/({_alt(OLD_DIR)})/README\.md", path):
+        for m in README_UP_RE.finditer(text):
+            cand.append(Span(m.start(), m.end(), "../../../", "R2"))
+    if re.search(r"^\s*from wsbench\.evals import [^\n]*,", text, re.M):
+        raise Refused(f"{path}: a multi-name `from wsbench.evals import a, b` (split it first)")
     live_joins: list[int] = []
     for m in R3_RE.finditer(text):
         if path.startswith(LIVE_CODE):
@@ -531,57 +647,93 @@ def find_spans(text: str, path: str) -> tuple[list[Span], list[int]]:
         new = KEYS[m.group(2).lower()].upper()
         cand.append(Span(m.start(), m.end(), m.group(1) + new, "R8"))
     prose: list[tuple[int, int]] | None = None
+    strings: list[tuple[int, int]] = []
+    fenced: list[tuple[int, int]] = []
     if path.endswith(".py"):
-        r4, _keeps, prose = _py_literals(text, path)
+        r4, keeps, prose = _py_literals(text, path)
         cand += r4
+        kept_sites += [a for a in keeps if site(a)]
+        strings = [(a, b) for a, b in prose if text[a] != "#" and "\n" in text[a:b]]
         if path in IDENTIFIERS:
             cand += _identifiers(text, IDENTIFIERS[path])
     else:
-        for m in R4_TEXT_RE.finditer(text):
-            before = text[max(0, m.start() - 40) : m.start()]
-            if not FAMILY_FIELD_RE.search(before) and not HISTORY_LINE_RE.search(
-                text[text.rfind("\n", 0, m.start()) + 1 : m.start()]
-            ):
-                q = m.group(1)
-                cand.append(Span(m.start(), m.end(), q + KEYS[m.group(2)] + q, "R4"))
+        # an excerpt of a frozen file quoted in a ```json block stays verbatim (W8)
+        fenced = [m.span() for m in re.finditer(r"^```json\n.*?^```", text, re.M | re.S)]
 
     def in_prose(a: int, b: int) -> bool:
         return prose is None or any(s <= a and b <= e for s, e in prose)
 
-    def line_of(at: int) -> str:
-        a = text.rfind("\n", 0, at) + 1
-        b = text.find("\n", at)
-        return text[a : b if b >= 0 else len(text)]
+    def paragraph(at: int) -> str:
+        """The lines a history remark covers: the blank-line-delimited block around ``at``; in
+        python the docstring's own paragraph, a run of comment lines, or the one line."""
+        n = lineno(at)
+        doc = next(((a, b) for a, b in strings if a <= at < b), None)
+        comment = lines[n].lstrip().startswith("#")
+        if prose is not None and doc is None and not comment:
+            return lines[n]
+
+        def inside(k: int) -> bool:
+            if not 0 <= k < len(lines) or not lines[k].strip():
+                return False
+            if doc is not None:
+                return doc[0] <= offs[k] + len(lines[k]) and offs[k] < doc[1]
+            return prose is None or lines[k].lstrip().startswith("#")
+
+        lo = hi = n
+        while inside(lo - 1):
+            lo -= 1
+        while inside(hi + 1):
+            hi += 1
+        return "\n".join(lines[lo : hi + 1])
 
     def history(at: int) -> bool:
-        return bool(HISTORY_LINE_RE.search(line_of(at)))
+        return bool(HISTORY_LINE_RE.search(paragraph(at)))
 
+    def frozen_text(at: int) -> bool:
+        """No prose rule applies: a quoted frozen file, a stored-field line, a KEEP site."""
+        if any(a <= at < b for a, b in fenced) or FIELD_LINE_RE.search(lines[lineno(at)]):
+            return True
+        if site(at):
+            kept_sites.append(at)
+            return True
+        return False
+
+    if prose is None:
+        for m in R4_TEXT_RE.finditer(text):
+            before = text[max(0, m.start() - 40) : m.start()]
+            if FAMILY_FIELD_RE.search(before) or history(m.start()) or frozen_text(m.start()):
+                continue
+            q = m.group(1)
+            cand.append(Span(m.start(), m.end(), q + KEYS[m.group(2)] + q, "R4"))
     for m in R5_RE.finditer(text):
         parts = m.group(2).split(",")
         flag = m.group(1)
         if flag.endswith(" ") and not flag.startswith("--"):
             continue  # "family multihop" is prose; only `--family multihop` is a CLI form
-        if history(m.start()):
+        if not any(p in KEYS for p in parts) or not in_prose(m.start(), m.end()):
             continue
-        if any(p in KEYS for p in parts) and in_prose(m.start(), m.end()):
-            new = ",".join(KEYS.get(p, p) for p in parts)
-            cand.append(Span(m.start(2), m.end(2), new, "R5"))
-    for m in R6_RE.finditer(text):
-        line = line_of(m.start())
-        if FIXTURE_LINE_RE.search(line) or HISTORY_LINE_RE.search(line):
+        if history(m.start()) or frozen_text(m.start()):
             continue
-        if in_prose(m.start(), m.end()):
-            cand.append(Span(m.start(1), m.end(1), KEYS[m.group(1)], "R6"))
-    for m in R6_DIR_RE.finditer(text):
-        if in_prose(m.start(), m.end()) and not history(m.start()):
-            cand.append(Span(m.start(), m.end(), KEYS[m.group(1)], "R6"))
+        new = ",".join(KEYS.get(p, p) for p in parts)
+        cand.append(Span(m.start(2), m.end(2), new, "R5"))
+    for m in R5_CMD_RE.finditer(text):
+        if in_prose(m.start(), m.end()) and not history(m.start()) and not frozen_text(m.start()):
+            cand.append(Span(m.start(2), m.end(2), KEYS[m.group(2)], "R5"))
+    for m in [*R6_RE.finditer(text), *R6_DIR_RE.finditer(text)]:
+        if not in_prose(m.start(), m.end()) or FIXTURE_LINE_RE.search(lines[lineno(m.start())]):
+            continue
+        if history(m.start()) or frozen_text(m.start()):
+            continue
+        cand.append(Span(m.start(1), m.end(1), KEYS[m.group(1)], "R6"))
     for m in R7_RE.finditer(text):
         key = m.group(2) or m.group(3)
-        if history(m.start()) or (path.endswith(".py") and key not in PY_SPAN_KEYS):
+        if not in_prose(m.start(), m.end()) or (path.endswith(".py") and key not in PY_SPAN_KEYS):
             continue
-        if in_prose(m.start(), m.end()):
-            a = m.start(2) if m.group(2) else m.start(3)
-            cand.append(Span(a, a + len(key), KEYS[key], "R7"))
+        if history(m.start()) or frozen_text(m.start()):
+            continue
+        a = m.start(2) if m.group(2) else m.start(3)
+        cand.append(Span(a, a + len(key), KEYS[key], "R7"))
+    _KEPT_SITES[path] = sorted({lineno(at) for at in kept_sites})
     cand.sort(key=lambda s: (RULES.index(s.rule), s.start))
     taken: list[Span] = []
     for s in cand:
@@ -618,12 +770,38 @@ def residue_of(text: str, spans: list[Span], path: str) -> list[str]:
     return [rows[n] for n in sorted(rows)]
 
 
+DYNAMIC_RES = (
+    re.compile(r'"evals"\s*/\s*(?!"|\')[A-Za-z_(]'),  # ... / "evals" / family
+    re.compile(r"evals/\{"),  # f"evals/{family}/..."
+    re.compile(r"\b\w*EVALS\w*\s*/\s*"),  # EVALS / "multihop/x.json", EVALS / sub
+    re.compile(r'Path\("evals"\)\s*/'),  # Path("evals") / family
+    re.compile(
+        r"evals.*\.(?:glob|rglob|iterdir)\(|\.(?:glob|rglob)\([^)]*evals"
+    ),  # a walk of evals/
+)
+
+
 def dynamic_paths(text: str, path: str) -> list[str]:
-    """Lines that build a family path from a VARIABLE (``"evals" / fam``, ``f"evals/{fam}"``):
-    no rule can rewrite them; listed for the hand edits."""
+    """Lines no rule can rewrite and no key hit reveals: a family path built from a VARIABLE or
+    from a name bound to the evals root, and every walk (``glob`` / ``rglob`` / ``iterdir``)
+    of ``evals/`` or ``src/wsbench/evals``, which finds categories, not families, after the
+    move (a guard built on one would pass vacuously). Listed for the hand edits."""
     out = []
     for n, line in enumerate(text.split("\n"), 1):
-        if re.search(r'"evals"\s*/\s*(?!"|\')[A-Za-z_(]|evals/\{', line):
+        if any(rx.search(line) for rx in DYNAMIC_RES):
+            out.append(f"{path}:{n}:{line.strip()}")
+    return out
+
+
+def shell_words(text: str, path: str) -> list[str]:
+    """Shell lines with a family key as a bare WORD (a list, quoted or not, a case label, a loop
+    word): after the swap `multihop` names the other family, and no rule rewrites a bare word."""
+    if not path.endswith(".sh"):
+        return []
+    out = []
+    for n, line in enumerate(text.split("\n"), 1):
+        bare = re.sub(r"(?:^|\s)#.*$", "", line)  # a quoted word list is a list too
+        if KEY_RE.search(re.sub(r"famil(?:y|ies)=\S+", "", bare)):
             out.append(f"{path}:{n}:{line.strip()}")
     return out
 
@@ -880,7 +1058,7 @@ def write_plan(plan: Plan, out: Path) -> dict[str, int]:
     out.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = Counter()
     per_rule: dict[str, list[str]] = {r: [] for r in RULES}
-    values, proposed, live, dyn = [], [], [], []
+    values, proposed, live, dyn, shell, kept = [], [], [], [], [], []
     for path, text in plan.texts.items():
         dst = new_path(path, plan.moves)
         applied = plan.applied(path)
@@ -905,12 +1083,16 @@ def write_plan(plan: Plan, out: Path) -> dict[str, int]:
             n = next(i for i, o in enumerate(offs) if o > at) - 1
             live.append(f"{path}:{n + 1}:{lines[n].strip()}")
         dyn += dynamic_paths(text, path)
+        shell += shell_words(text, path)
+        kept += [f"{path}:{n + 1}:{lines[n].strip()}" for n in _KEPT_SITES.get(path, [])]
     for rule, diffs in per_rule.items():
         (out / f"{rule}.diff").write_text("".join(diffs), encoding="utf-8")
     (out / "tests-values.diff").write_text("".join(values), encoding="utf-8")
     (out / "keep-proposed.diff").write_text("".join(proposed), encoding="utf-8")
     (out / "R3-live-code.txt").write_text("".join(x + "\n" for x in live), encoding="utf-8")
     (out / "dynamic-paths.txt").write_text("".join(x + "\n" for x in dyn), encoding="utf-8")
+    (out / "shell-words.txt").write_text("".join(x + "\n" for x in shell), encoding="utf-8")
+    (out / "kept-sites.txt").write_text("".join(x + "\n" for x in kept), encoding="utf-8")
     (out / "moves.txt").write_text(
         "".join(f"{s} -> {d}\n" for s, d in plan.moves), encoding="utf-8"
     )
@@ -932,6 +1114,8 @@ def write_plan(plan: Plan, out: Path) -> dict[str, int]:
         "keep-tests": len(plan.keep),
         "R3-live-code": len(live),
         "dynamic-paths": len(dyn),
+        "shell-words": len(shell),
+        "kept-sites": len(kept),
     }
     (out / "counts.json").write_text(json.dumps(dict(sorted(counts.items())), indent=1) + "\n")
     return dict(counts)
@@ -987,7 +1171,10 @@ def apply(root: Path, strict: bool = True) -> int:
         "head": git(root, "rev-parse", "HEAD").strip(),
         "moves": plan.moves,
         "data": {f: sha256(root / f) for f in data_files(files)},
-        "keep": {f: sha256(root / f) for f in sorted(KEEP_FILES) if (root / f).is_file()},
+        # (the residue file is classified by a reviewer, possibly after `apply`: not pinned)
+        "keep": {
+            f: sha256(root / f) for f in sorted(KEEP_FILES - {RESIDUE_FILE}) if (root / f).is_file()
+        },
         "keep_tests": {
             f: dict(Counter(KEY_RE.findall(plan.new_text(f)))) for f in sorted(plan.keep)
         },
@@ -1090,15 +1277,21 @@ def check(root: Path) -> int:
         bad.append(f"{STAGING} is still there")
     stray = [ln for ln in git(root, "status", "--porcelain").split("\n") if ln.startswith("??")]
     bad += [f"stray file {ln[3:]}" for ln in stray[:20]]
-    classified = set()
+    classified: dict[tuple[str, str], str] = {}
     if (root / RESIDUE_FILE).is_file():
         for ln in (root / RESIDUE_FILE).read_text(encoding="utf-8").split("\n"):
             if ln and not ln.startswith("#"):
-                classified.add(_residue_key(ln.split("\t", 1)[-1]))
-    unclassified = [r for r in rec["residue"] if _residue_key(r) not in classified]
-    if unclassified:
-        bad.append(f"{len(unclassified)} residue line(s) not in {RESIDUE_FILE}, e.g. "
-                   f"{unclassified[0]!r}")  # fmt: skip
+                cls, _, row = ln.partition("\t")
+                classified[_residue_key(row.split("\t", 1)[0])] = cls
+    unlisted = [r for r in rec["residue"] if _residue_key(r) not in classified]
+    if unlisted:
+        bad.append(f"{len(unlisted)} residue line(s) not in {RESIDUE_FILE}, e.g. {unlisted[0]!r}")
+    open_rows = [
+        r for r in rec["residue"] if classified.get(_residue_key(r)) not in RESIDUE_CLASSES
+    ]
+    if len(open_rows) > len(unlisted):
+        n = len(open_rows) - len(unlisted)
+        bad.append(f"{n} residue line(s) not classified {' / '.join(RESIDUE_CLASSES)} (still `?`)")
     for b in bad:
         print(f"check: {b}", file=sys.stderr)
     verdict = f"FAILED ({len(bad)})" if bad else "ok"

@@ -170,24 +170,169 @@ def test_prose_rules_and_their_history_exception():
     md = (
         "Run `wsbench judge family=typo_mt readouts=examples/readouts/typo_mt.jsonl`.\n"
         "The family `multihop` reads one token; **typo** is superseded.\n"
+        "\n"
         "It was keyed `multihop_mt_v2` until 2026-11-04, then `multihop_mt`.\n"
+        "The same paragraph: `typo_mt` 0.46 -> 0.67 stays with it.\n"
+        "\n"
         "| typo | a table cell |\n"
+        "\n"
         "Set WSB_BANK_FILE_MULTIHOP_MT or WSB_BANK_FILE_TYPO; adapted/x/multihop_mt/y.json.\n"
     )
     spans, _live = mig.find_spans(md, "docs/summarizer.md")
     new = mig.apply_spans(md, spans).split("\n")
     assert new[0] == "Run `wsbench judge family=typo readouts=examples/readouts/typo.jsonl`."
     assert new[1] == "The family `multihop_st` reads one token; **typo_st** is superseded."
-    assert new[2] == "It was keyed `multihop_mt_v2` until 2026-11-04, then `multihop_mt`."
-    assert new[3] == "| typo | a table cell |"
+    # a history remark keeps its WHOLE paragraph (never half of one)
+    assert new[3] == "It was keyed `multihop_mt_v2` until 2026-11-04, then `multihop_mt`."
+    assert new[4] == "The same paragraph: `typo_mt` 0.46 -> 0.67 stays with it."
+    assert new[6] == "| typo | a table cell |"
     assert (
-        new[4] == "Set WSB_BANK_FILE_MULTIHOP or WSB_BANK_FILE_TYPO_ST; adapted/x/multihop/y.json."
+        new[8] == "Set WSB_BANK_FILE_MULTIHOP or WSB_BANK_FILE_TYPO_ST; adapted/x/multihop/y.json."
     )
     residue = mig.residue_of(md, spans, "docs/summarizer.md")
-    assert [r.split(":")[1] for r in residue] == ["3", "4"]
+    assert [r.split(":")[1] for r in residue] == ["4", "5", "7"]
     py = '"""``typo`` is a parameter here; ``typo_mt`` is the family."""\n'
     spans, _live = mig.find_spans(py, "src/wsbench/x.py")
     assert mig.apply_spans(py, spans) == py.replace("``typo_mt``", "``typo``")
+    # ordinary words are not history: "keyed by", "a hash of", "removed the option"
+    plain = "Tables are keyed by family; a hash of `typo_mt` rows; we removed the option.\n"
+    spans, _live = mig.find_spans(plain, "docs/summarizer.md")
+    assert "`typo`" in mig.apply_spans(plain, spans)
+
+
+def _rewrite(text, path="scripts/x.py"):
+    spans, _live = mig.find_spans(text, path)
+    return mig.apply_spans(text, spans)
+
+
+def test_stored_and_foreign_paths_are_never_rewritten():
+    # W1-W3: the introspection vector path is bank bytes carried in plan rows
+    stored = (
+        'assert steer["vector_file"] == "evals/introspection/vectors/concept_vectors_L12.npy"\n'
+    )
+    assert _rewrite(stored, "tests/test_introspection.py") == stored
+    gauss = 'reg = {"path": "evals/introspection/vectors/gaussian_vectors_L12.npy"}\n'
+    assert _rewrite(gauss, "tests/test_x.py") == gauss
+    vec = 'VEC = "evals/introspection/vectors"\nBANK = "evals/introspection/items_v2.json"\n'
+    out = _rewrite(vec, "scripts/introspection_build_v2.py")
+    assert 'VEC = "evals/introspection/vectors"\n' in out  # a KEEP site: two constants by hand
+    assert '"evals/model_specific/introspection/items_v2.json"' in out
+    assert mig._KEPT_SITES["scripts/introspection_build_v2.py"] == [0]
+    # the directory itself still moves where it is a plain path of this repository
+    assert "evals/model_specific/introspection/vectors" in _rewrite(
+        'OUT = REPO / "evals/introspection/vectors"\n', "scripts/introspection_export_vectors.py"
+    )
+    # W4: the same spelling in ANOTHER repository, or written into a sha-pinned header
+    for kept in (
+        'FROZEN_REL = "evals/model_multihop/frozen_v2.json"\n',
+        '"source_frozen": "global-workspace evals/model_multihop/frozen_v2.json",\n',
+        "    --frozen <gw>/evals/model_multihop/frozen_v2.json \\\n",
+        "python x.py --frozen /root/gw-mmh/evals/model_multihop/x.json\n",
+    ):
+        assert _rewrite(kept, "docs/summarizer.md") == kept, kept
+    stored = 'H = {"source_frozen": "evals/model_multihop/frozen_v2.json"}\n'
+    assert _rewrite(stored, "scripts/build_model_multihop_bank.py") == stored
+    ours = 'BANK = "evals/model_multihop/items.json"\n'
+    assert "evals/model_specific/model_multihop/items.json" in _rewrite(ours)
+    meta = 'reg_meta = {"items": "evals/wrong_intermediate/items_v4.json"}\n'
+    assert _rewrite(meta, "scripts/build_wd_tables.py") == meta
+
+
+def test_field_values_and_spelling_uses_are_kept():
+    code = (
+        "def f(it, sub, cfg, name, item_id, kind):\n"
+        '    a = it.get("subfamily") in ("typo", "novel")\n'
+        '    b = it["subfamily"] in {"typo"}\n'
+        '    c = sub == "typo" or cfg.screen == "typo" or kind != "multihop"\n'
+        '    d = "multihop" in item_id or "multihop" in name\n'
+        '    e = name.find("multihop") + name.count("typo") + name.index("multilingual")\n'
+        '    g = fnmatch(name, "multihop") or fnmatch.fnmatch(name, "typo")\n'
+        '    h = {"multihop_mt_v2": "multihop_mt"}\n'
+        '    i = {"multihop_mt", "multihop_mt_v2"}\n'
+        '    j = {"multihop_mt_v2": 1, "multihop_mt": 2}\n'
+        "    return a, b, c, d, e, g, h, i, j\n"
+    )
+    assert _rewrite(code) == code
+    # ... while identity uses next to them still translate
+    live = (
+        "def f(family, seen, row):\n"
+        '    x = Row(family="multihop")\n'
+        '    return family == "typo", "typo_mt" in seen, {"typo": "typo_mt"}, x\n'
+    )
+    out = _rewrite(live)
+    assert 'family == "typo_st", "typo" in seen, {"typo_st": "typo"}' in out
+    assert 'Row(family="multihop_st")' in out
+
+
+def test_keep_sites_hold_both_sides_of_a_pair():
+    # W6: a screen kind; W7: the argument a builder writes into a bank header; W9: an expectation
+    screen = 'C = Cfg(\n    "typo",\n)\nSYS = {"typo": "A short text in another language"}\n'
+    assert _rewrite(screen, "scripts/mc_options_r5.py") == screen
+    header = 'h = _header(v1, "multilingual", n=1)\nm = _header(v1, "multilingual_mt", n=1)\n'
+    assert _rewrite(header, "scripts/build_multilingual_v2.py") == header
+    assert _rewrite(header, "scripts/other.py") != header
+    pair = 'assert "families=multihop_mt waves=40" in r.stdout\n'
+    assert _rewrite(pair, "tests/test_adapt_dataround.py") == pair
+    assert "families=multihop waves" in _rewrite(pair, "tests/test_other.py")
+
+
+def test_frozen_excerpts_and_field_lines_stay_verbatim():
+    md = (
+        "Text `typo_mt`.\n\n```json\n"
+        '{"dropped_families": ["typo_mt", "..."], "families": {"multihop": {}}}\n'
+        "```\n\n| `name`, `subfamily` | `novel` (typo_mt), `typo` (multilingual_typo) |\n"
+    )
+    out = _rewrite(md, "evals/fast/README.md")
+    assert out.startswith("Text `typo`.") and '["typo_mt", "..."]' in out
+    assert '{"multihop": {}}' in out and "`typo` (multilingual_typo)" in out
+
+
+def test_cli_rules_have_boundaries_and_follow_the_subcommand():
+    for kept in (
+        "x --family multihop-hard --bank b.json\n",
+        "wsbench judge family=typo-hard\n",
+        "# see tests/golden/multihop/x.json\n",
+        "tests/fixtures/adapted_v1/multilingual/y.json\n",
+    ):
+        assert _rewrite(kept, "docs/summarizer.md") == kept, kept
+    sh = 'step multihop_mt $A multihop_mt model="$M"\n'
+    assert _rewrite(sh, "scripts/adapt_set.sh") == 'step multihop_mt $A multihop model="$M"\n'
+    assert mig.shell_words(sh, "scripts/adapt_set.sh") == [f"scripts/adapt_set.sh:1:{sh.strip()}"]
+    doc = "- **Code:** `$A multihop_mt model=<m>`; run `python -m wsbench.adapt multihop_mt`.\n"
+    assert _rewrite(doc, "docs/summarizer.md").count("multihop_mt") == 0
+    assert (
+        _rewrite("adapt multihop_mt_v2 files\n", "docs/summarizer.md").count("multihop_mt_v2") == 1
+    )
+
+
+def test_a_multi_name_family_import_is_refused():
+    with pytest.raises(mig.Refused):
+        mig.find_spans("from wsbench.evals import typo, poetry\n", "src/wsbench/x.py")
+
+
+def test_a_family_readme_keeps_its_links_to_the_repository_root():
+    md = "See [0063](../../plans/0063.md), [typo](../typo_mt/README.md), [x](../../../y).\n"
+    out = _rewrite(md, "evals/hinted_cutoff/README.md")
+    assert "](../../../plans/0063.md)" in out and "](../typo/README.md)" in out
+    assert "](../../../y)" in out and _rewrite(md, "docs/summarizer.md").count("../../plans") == 1
+
+
+def test_dynamic_paths_lists_what_no_rule_can_see():
+    code = (
+        'a = EVALS / "multihop/items.json"\n'
+        'b = (EVALS / sub).glob("*.json")\n'
+        'c = Path("evals") / family / "items.json"\n'
+        'd = [*(root / "evals").glob("*/README.md")]\n'
+        'e = REPO / "evals" / fam\n'
+        'f = f"evals/{name}/items.json"\n'
+        'g = sorted((SRC / "evals").iterdir())\n'
+        'h = REPO / "docs" / "x.md"\n'
+    )
+    got = mig.dynamic_paths(code, "tests/test_x.py")
+    assert [r.split(":")[1] for r in got] == ["1", "2", "3", "4", "5", "6", "7"]
+    sh = 'FAMS=basic_readout,multihop\nfor F in poetry typo; do\nP="a multihop_mt b"\nx=1 # typo\n'
+    assert [r.split(":")[1] for r in mig.shell_words(sh, "scripts/adapt_set.sh")] == ["1", "2", "3"]
+    assert mig.shell_words(sh, "scripts/x.py") == []
 
 
 def test_tables_agree_with_the_registry_and_the_plan():
@@ -270,6 +415,19 @@ def test_apply_refuses_a_dirty_tree_and_an_unclassified_residue(tree):
     assert (
         mig.main(["--root", str(tree), "--partial-tree", "apply"]) == 1
     )  # the residue file is empty: check fails
+
+
+def test_check_fails_while_a_residue_row_is_unclassified(tree):
+    plan = mig.build_plan(tree, strict=False)
+    rows = plan.residue()
+    assert rows
+    (tree / mig.RESIDUE_FILE).write_text("".join(f"?\t{r}\n" for r in rows))
+    _git(tree, "commit", "-q", "-am", "residue, not classified")
+    assert mig.main(["--root", str(tree), "--partial-tree", "apply"]) == 1
+    # a third column (the reviewer's replacement text) is accepted
+    done = "".join(f"{'edit' if i else 'leave'}\t{r}\tnew text\n" for i, r in enumerate(rows))
+    (tree / mig.RESIDUE_FILE).write_text(done)
+    assert mig.main(["--root", str(tree), "--partial-tree", "check"]) == 0
 
 
 def test_check_sees_a_changed_data_byte(tree):
