@@ -131,6 +131,29 @@ def test_t2_an_ambiguous_stamp_is_settled_by_the_result_rows(tmp_path):
         assert registry.dir_owner(d, "multilingual") == family
 
 
+@pairs
+def test_t2_an_empty_stamp_is_settled_by_the_result_rows(bare, tmp_path):
+    """Review c5: a result under a bare key with no stamp is its rows' family (a copied old
+    single-token result with the stamp blanked), and the live family only without rows."""
+    st = f"{bare}_st"
+    assert registry.stored_family(bare, "") == bare and registry.stored_family(bare, None) == bare
+    assert registry.stored_family(bare, "", _ids(st)) == st
+    assert registry.stored_family(bare, "", _ids(bare)) == bare
+    assert registry.stored_family(bare, "", ["an-id-in-no-bank"]) == bare
+    with pytest.raises(RenamedKey):
+        registry.stored_family(bare, "", [*_ids(st), *_ids(bare)])
+    for family in (st, bare):
+        d = tmp_path / family
+        r = FamilyResult(
+            family=bare, metric="pass_rate", value=1.0, ci95=None, n_items=2,
+            higher_is_better=True, chance=None, chance_label=None, complete=True,
+            pinned_instrument=True, config={}, counts={},
+            rows=[{"id": i, "pass": True} for i in _ids(family)],
+        )  # fmt: skip
+        write_results(d, r)
+        assert read_results(d).family == family and registry.dir_owner(d, bare) == family
+
+
 # ---------------------------------------------------------------- T3: readouts
 
 
@@ -230,7 +253,7 @@ def _sets() -> list[Path]:
 
 def test_t4_t5_every_in_repo_set_is_migrated_and_its_pairs_share_no_id(monkeypatch):
     sets = _sets()
-    assert len(sets) == 17
+    assert len(sets) >= 17  # every set, the ones built after the rename included
     ids: dict[str, set[str]] = {f: set(registry._family_ids(f, "")) for f in EIGHT}
     for d in sets:
         report = json.loads((d / "report.json").read_text(encoding="utf-8"))
@@ -278,27 +301,76 @@ def test_t6_a_pre_0101_report_is_read_entry_by_entry():
     assert store.report_key(drops, "multihop_st") == "multihop"
     assert store.report_key(drops, "multihop") == "multihop_mt"
     assert "multihop-au-t1-w0c0-x" not in store.report_entry(drops, "multihop")
-    # a migrated report: each member under its own key
-    new = {"multihop": {"n_items": 41}, "multihop_st": {"n_items": 80}}
-    assert store.report_key(new, "multihop") == "multihop"
-    assert store.report_key(new, "multihop_st") == "multihop_st"
 
 
-def test_t6_nothing_writes_into_a_set_that_was_never_migrated(tmp_path, monkeypatch):
+@pairs
+def test_t6_each_pair_is_found_in_a_report_of_either_vintage(bare):
+    st, mt = f"{bare}_st", f"{bare}_mt"
+    old = {bare: {_ids(st)[0]: "a drop"}, mt: {_ids(bare)[0]: "a drop"}}  # before the rename
+    assert store.report_key(old, st) == bare and store.report_key(old, bare) == mt
+    assert _ids(st)[0] in store.report_entry(old, st)
+    assert _ids(bare)[0] in store.report_entry(old, bare)
+    new = {bare: {_ids(bare)[0]: "a drop"}, st: {_ids(st)[0]: "a drop"}}  # migrated
+    assert store.report_key(new, bare) == bare and store.report_key(new, st) == st
+    lone = {bare: {_ids(st)[0]: "a drop"}}  # only the single-token family, pre-0101
+    assert store.report_key(lone, st) == bare and store.report_entry(lone, bare) == {}
+
+
+@pairs
+def test_t6_nothing_writes_into_a_set_that_was_never_migrated(bare, tmp_path, monkeypatch):
     monkeypatch.setattr(store, "model_dir", lambda m, root=None: tmp_path / m)
-    d = tmp_path / "old"
+    st = f"{bare}_st"
+    for name, write in (
+        ("old-report", lambda d: (d / "report.json").write_text(
+            json.dumps({"families": {bare: {}, f"{bare}_mt": {}}}))),
+        ("old-file", lambda d: (d / f"{bare}_mt.json").write_text("{}")),
+        ("old-header", lambda d: (d / f"{bare}.json").write_text(
+            json.dumps({"family": HEADERS[st], "items": []}))),
+    ):  # fmt: skip
+        d = tmp_path / name
+        d.mkdir()
+        write(d)
+        before = sorted((p.name, p.read_bytes()) for p in d.glob("*.json"))
+        assert store.pre_0101_evidence(name)
+        with pytest.raises(SystemExit, match=r"written before plan 0101.*migrate_0101\.py set"):
+            store.update_report(name, lambda r: r.update(x=1))
+        assert sorted((p.name, p.read_bytes()) for p in d.glob("*.json")) == before
+
+
+@pairs
+def test_t6_a_set_created_after_the_rename_is_marked(bare, tmp_path, monkeypatch):
+    """Review c5 S1: ``update_report`` stamps the marker on a set with no pre-rename key, so
+    ``migrate_0101.py set`` can never take its bare keys for the single-token families'."""
+    monkeypatch.setattr(store, "model_dir", lambda m, root=None: tmp_path / m)
+    d = tmp_path / "new"
     d.mkdir()
-    (d / "multihop.json").write_text(json.dumps({"family": "multihop", "items": []}))
-    (d / "report.json").write_text(json.dumps({"families": {"multihop": {}, "typo_mt": {}}}))
-    assert "typo_mt" in store.pre_0101_evidence("old")
-    with pytest.raises(SystemExit, match=r"written before plan 0101.*migrate_0101\.py set"):
-        store.update_report("old", lambda r: r.update(x=1))
-    assert "x" not in json.loads((d / "report.json").read_text())
-    (tmp_path / "new").mkdir()
-    (tmp_path / "new" / "multihop.json").write_text(
-        json.dumps({"family": "multihop-hard", "items": []})
+    (d / f"{bare}.json").write_text(json.dumps({"family": HEADERS[bare], "items": []}))
+    report = store.update_report("new", lambda r: r.setdefault("families", {}).update({bare: {}}))
+    assert (
+        report["family_keys"]
+        == "0101"
+        == json.loads((d / "report.json").read_text())["family_keys"]
     )
-    assert store.update_report("new", lambda r: r.update(x=1))["x"] == 1
+    assert store.pre_0101_evidence("new") == ""
+    assert store.update_report("new", lambda r: r.update(x=1))["x"] == 1  # and stays writable
+    # a marked set is never read as pre-0101, whatever is put beside it later
+    (d / f"{bare}_mt.json").write_text("{}")
+    assert store.pre_0101_evidence("new") == ""
+
+
+def test_t6_a_set_under_the_2026_11_04_former_key_is_written_but_not_marked(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "model_dir", lambda m, root=None: tmp_path / m)
+    for name, by_file in (("v2-file", True), ("v2-report", False)):
+        d = tmp_path / name
+        d.mkdir()
+        if by_file:
+            (d / "multihop_mt_v2.json").write_text(
+                json.dumps({"family": "multihop-hard", "items": []})
+            )
+        else:
+            (d / "report.json").write_text(json.dumps({"drops": {"multihop_mt_v2": {}}}))
+        report = store.update_report(name, lambda r: r.update(x=1))
+        assert report["x"] == 1 and "family_keys" not in report
 
 
 def test_t6_an_adapted_bank_keeps_the_registered_header_value():
@@ -309,23 +381,30 @@ def test_t6_an_adapted_bank_keeps_the_registered_header_value():
 # ---------------------------------------------------------------- T8: the command line
 
 
-def test_t8_former_keys_resolve_and_a_bare_key_is_announced_once(monkeypatch, capsys):
+def test_t8_former_keys_resolve_with_a_note(monkeypatch, capsys):
     monkeypatch.delenv(registry.NO_NOTICE_ENV)
-    for old, new in registry.PRE_0101_KEYS.items():
-        if old in BARE:
-            continue
+    former = {k: v for k, v in registry.PRE_0101_KEYS.items() if k not in BARE}
+    assert len(former) == 5
+    for old, new in former.items():
         assert _family(old) == new
         assert capsys.readouterr().err.strip() == f"note: family {old!r} was renamed to {new!r}"
-    assert _family("multihop") == "multihop"
+
+
+@pairs
+def test_t8_a_bare_key_is_announced_once(bare, monkeypatch, capsys):
+    monkeypatch.delenv(registry.NO_NOTICE_ENV)
+    monkeypatch.setattr(registry, "_NOTICED", set())
+    assert _family(bare) == bare
     assert capsys.readouterr().err.strip() == (
-        "note: 'multihop' is the multi-token family since 2026-11-20 (was multihop_mt); the "
-        "single-token family is 'multihop_st'"
+        f"note: '{bare}' is the multi-token family since 2026-11-20 (was {bare}_mt); the "
+        f"single-token family is '{bare}_st'"
     )
-    assert _family("multihop") == "multihop" and capsys.readouterr().err == ""  # once per key
-    assert _family("typo", notice=False) == "typo" and capsys.readouterr().err == ""
-    assert _family("multihop_st") == "multihop_st" and capsys.readouterr().err == ""
+    assert _family(bare) == bare and capsys.readouterr().err == ""  # once per key and process
+    assert _family(f"{bare}_st") == f"{bare}_st" and capsys.readouterr().err == ""
+    monkeypatch.setattr(registry, "_NOTICED", set())
+    assert _family(bare, notice=False) == bare and capsys.readouterr().err == ""
     monkeypatch.setenv(registry.NO_NOTICE_ENV, "1")
-    assert _family("basic_readout") == "basic_readout" and capsys.readouterr().err == ""
+    assert _family(bare) == bare and capsys.readouterr().err == ""
 
 
 def test_t8_list_shows_the_new_keys_titles_categories_and_tiers(capsys):
@@ -432,67 +511,71 @@ def test_t11_every_frozen_entry_under_a_renamed_key_carries_that_familys_stamp()
                 assert registry.stored_family(key, row["instrument"]) == row["family"], path
 
 
-def test_t11_a_floors_file_written_before_the_rename_is_refused(tmp_path):
+@pairs
+def test_t11_a_floors_file_written_before_the_rename_is_refused(bare, tmp_path):
     from wsbench.baselines import prompt_only as po
 
-    stale = {"multihop": {"instrument": "bank-mc-2026-11-01-v3+bank-gate-r11+bank-v5", "rate": 0.5}}
+    st_stamp = registry.FAMILIES[f"{bare}_st"].judge.prompt_version
+    stale = {bare: {"instrument": st_stamp, "rate": 0.5}}  # the single-token family's, pre-0101
     path = tmp_path / "prompt_only_summary.json"
     path.write_text(json.dumps(stale))
     with pytest.raises(RenamedKey, match="written before plan 0101"):
         po.summary_floors(path)
-    assert ti._by_family(stale, "multihop") is None  # never served to the multi-token family
+    assert registry.stale_floor_key(bare, st_stamp)
+    assert ti._by_family(stale, bare) is None  # never served to the multi-token family
 
 
 # ---------------------------------------------------------------- T12: ATI work directories
 
 
-def test_t12_a_pre_0101_work_dir_keeps_each_row_with_its_own_family(tmp_path):
-    st_id, mt_id = _ids("basic_readout_st")[0], _ids("basic_readout")[0]
+@pairs
+def test_t12_a_pre_0101_work_dir_keeps_each_row_with_its_own_family(bare, tmp_path):
+    st, mt = f"{bare}_st", f"{bare}_mt"
+    st_id, mt_id = _ids(st)[0], _ids(bare)[0]
     prompts = [
-        {"family": "basic_readout", "id": st_id, "prefix": "p", "token": "t"},
-        {"family": "basic_readout_mt", "id": mt_id, "prefix": "p", "token": "t"},
+        {"family": bare, "id": st_id, "prefix": "p", "token": "t"},
+        {"family": mt, "id": mt_id, "prefix": "p", "token": "t"},
     ]
     got = registry.attribute_rows([dict(r) for r in prompts])
-    assert [(r["family"], r["id"]) for r in got] == [
-        ("basic_readout_st", st_id),
-        ("basic_readout", mt_id),
-    ]
+    assert [(r["family"], r["id"]) for r in got] == [(st, st_id), (bare, mt_id)]
     path = tmp_path / "draw0.jsonl"
     write_jsonl(path, [{**r, "error": "", "answer": "a"} for r in prompts])
-    assert set(ti.latest_answers(path)) == {("basic_readout_st", st_id), ("basic_readout", mt_id)}
+    assert set(ti.latest_answers(path)) == {(st, st_id), (bare, mt_id)}
     # a judged directory of the partner under the bare key
-    d = tmp_path / "judged" / "basic_readout"
+    d = tmp_path / "judged" / bare
     d.mkdir(parents=True)
-    doc = {"family": "basic_readout", "rows": [{"id": st_id, "pass": True}],
-           "config": {"prompt_version": registry.FAMILIES["basic_readout_st"].judge.prompt_version},
+    doc = {"family": bare, "rows": [{"id": st_id, "pass": True}],
+           "config": {"prompt_version": registry.FAMILIES[st].judge.prompt_version},
            "numbers": {"metric": "pass_rate", "value": 1.0}}  # fmt: skip
     (d / "results.json").write_text(json.dumps(doc))
-    assert ti.draw_verdicts(d / "results.json", expect="basic_readout_st") == {st_id: True}
-    with pytest.raises(RenamedKey, match="holds results of 'basic_readout_st'"):
-        ti.draw_verdicts(d / "results.json", expect="basic_readout")
+    # (the verdict field is each family's own row shape: only the attribution is under test)
+    assert set(ti.draw_verdicts(d / "results.json", expect=st)) == {st_id}
+    with pytest.raises(RenamedKey, match=f"holds results of '{st}'"):
+        ti.draw_verdicts(d / "results.json", expect=bare)
 
 
 # ---------------------------------------------------------------- T13: viewers
 
 
-def test_t13_a_run_tree_directory_is_shown_as_the_family_that_wrote_it(tmp_path):
-    st, mt = registry.FAMILIES["multihop_st"], registry.FAMILIES["multihop"]
+@pairs
+def test_t13_a_run_tree_directory_is_shown_as_the_family_that_wrote_it(bare, tmp_path):
+    st, mt = registry.FAMILIES[f"{bare}_st"], registry.FAMILIES[bare]
     tree = tmp_path / "judged_opus"
-    for name, pv in (
-        ("multihop", st.judge.prompt_version),
-        ("multihop_mt_opus", mt.judge.prompt_version),
-    ):
+    for name, pv in ((bare, st.judge.prompt_version), (f"{bare}_mt_opus", mt.judge.prompt_version)):
         (tree / name).mkdir(parents=True)
         doc = {"family": name.removesuffix("_opus"), "config": {"prompt_version": pv}}
         (tree / name / "results.json").write_text(json.dumps(doc))
-    assert registry.dir_family(tree / "multihop") == "multihop_st"
-    assert registry.dir_family(tree / "multihop_mt_opus", "multihop_mt") == "multihop"
-    (tree / "typo").mkdir()
-    assert registry.dir_family(tree / "typo") is None  # unattributable: a viewer skips it
+    assert registry.dir_family(tree / bare) == st.name
+    assert registry.dir_family(tree / f"{bare}_mt_opus", f"{bare}_mt") == bare
+    (tmp_path / "empty" / bare).mkdir(parents=True)
+    assert registry.dir_family(tmp_path / "empty" / bare) is None  # unattributable: skipped
     assert registry.dir_family(tree / "poetry") == "poetry"
-    ro = write_jsonl(tmp_path / "s.multihop.jsonl", _rows("multihop_st"))
-    assert registry.file_family(ro, "multihop") == "multihop_st"
-    for viewer in ("atlas/build.py", "viewer_app/index.py"):  # both go through the helper
+    ro = write_jsonl(tmp_path / f"s.{bare}.jsonl", _rows(st.name))
+    assert registry.file_family(ro, bare) == st.name
+
+
+def test_t13_both_viewers_attribute_through_the_helper():
+    for viewer in ("atlas/build.py", "viewer_app/index.py"):
         text = (REPO / viewer).read_text(encoding="utf-8")
         assert "dir_family(jd, name)" in text and "fam = jd.name" not in text, viewer
 
@@ -500,15 +583,17 @@ def test_t13_a_run_tree_directory_is_shown_as_the_family_that_wrote_it(tmp_path)
 # ---------------------------------------------------------------- T14: floors readouts
 
 
-def test_t14_a_pre_0101_floors_readouts_dir_holds_both_members(tmp_path):
+@pairs
+def test_t14_a_pre_0101_floors_readouts_dir_holds_both_members(bare, tmp_path):
+    st = f"{bare}_st"
     rd = tmp_path / "readouts"
     rd.mkdir()
-    write_jsonl(rd / "multihop.jsonl", _rows("multihop_st"))
-    write_jsonl(rd / "multihop_mt.jsonl", _rows("multihop"))
+    write_jsonl(rd / f"{bare}.jsonl", _rows(st))
+    write_jsonl(rd / f"{bare}_mt.jsonl", _rows(bare))
     stems = {registry.file_family(p) or registry.canonical(p.stem) for p in rd.glob("*.jsonl")}
-    assert stems == {"multihop", "multihop_st"}
-    assert runner.readouts_path(rd, "multihop_st") == rd / "multihop.jsonl"
-    assert runner.readouts_path(rd, "multihop") == rd / "multihop_mt.jsonl"
+    assert stems == {bare, st}
+    assert runner.readouts_path(rd, st) == rd / f"{bare}.jsonl"
+    assert runner.readouts_path(rd, bare) == rd / f"{bare}_mt.jsonl"
 
 
 # ---------------------------------------------------------------- T16: the name-embedding sites
@@ -593,24 +678,40 @@ _WALK = re.compile(r"""\.(?:glob|rglob)\(\s*f?["']([^"']+)["']""")
 def test_every_walk_over_the_family_trees_matches_something():
     """A ``glob`` written for the flat layout (``evals/*/README.md``, ``adapted/*/typo_mt.json``)
     matches nothing after the move, and a guard built on it passes vacuously: every literal
-    glob over ``evals/``, ``adapted/`` or ``examples/`` in the tests, scripts and package must
-    match at least one path today (patterns with a placeholder are skipped)."""
+    glob over the repository's ``evals/``, ``adapted/`` or ``examples/`` trees in the tests, the
+    package, ``scripts/``, ``atlas/``, ``viewer_app/`` and the skills' scripts must match at
+    least one path today. Two spellings are recognised, ``(X / "evals").glob("...")`` and
+    ``REPO.glob("evals/...")``; a pattern with a placeholder is skipped, and so is a walk over
+    a run tree outside the repository (most of the viewers' and scripts' walks: there is no
+    such tree to match against here)."""
     absent_on_purpose = {
         "*/multihop_mt_v2.json", "*/multihop_mt.json", "*_mt.json",  # retired by plan 0101
         "*/hallucination*.json",  # the pre-rename key of a family renamed in v1.2.0
     }  # fmt: skip
-    empty = []
+    trees = ("evals", "adapted", "examples")
+    empty, seen = [], 0
     files = [*(REPO / "tests").glob("*.py"), *(REPO / "src/wsbench").rglob("*.py")]
+    for top in ("scripts", "atlas", "viewer_app", ".claude"):
+        files += (REPO / top).rglob("*.py")
     for path in sorted(files):
         for line in path.read_text(encoding="utf-8").split("\n"):
             m = _WALK.search(line)
-            if not m or "{" in m.group(1) or m.group(1) in absent_on_purpose:
+            if not m or "{" in m.group(1) or "..." in m.group(1):
+                continue  # a placeholder (or this docstring's own examples)
+            if m.group(1) in absent_on_purpose:
                 continue
-            for base in ("evals", "adapted", "examples"):
+            pattern, bases = m.group(1), []
+            if pattern.split("/")[0] in trees and re.search(r"\b(?:REPO|ROOT)\.r?glob\(", line):
+                bases.append(REPO)
+            for base in trees:
                 if re.search(rf'"{base}"\)?\s*\)?\.(?:glob|rglob)\(', line):
-                    hits = list((REPO / base).glob(m.group(1)))
-                    if not hits:
-                        empty.append(f"{path.relative_to(REPO)}: ({base}).glob({m.group(1)!r})")
+                    bases.append(REPO / base)
+            for base in bases:
+                seen += 1
+                if not list(base.glob(pattern)):
+                    where = base.relative_to(REPO).as_posix()
+                    empty.append(f"{path.relative_to(REPO)}: ({where}).glob({pattern!r})")
+    assert seen >= 10  # the scan itself is not vacuous
     assert not empty, empty
     # the two guards the move would have emptied: they cover the family directories again
     assert len([registry.family_root(f) / "README.md" for f in registry._layout()]) == 32

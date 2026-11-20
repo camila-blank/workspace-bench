@@ -216,6 +216,8 @@ RESIDUE_FILE = "scripts/migrate_0101_residue.txt"
 RESIDUE_CLASSES = ("leave", "edit")  # what the reviewer writes in place of `?`
 MANIFEST = "tests/golden/manifest_0101_pre.json"
 SET_MARKER = ("family_keys", "0101")
+BARE_KEYS = ("basic_readout", "multihop", "multilingual", "typo")
+APPLIED = "scripts/migrate_0101_applied.json"  # the committed record of `apply` (commit 4)
 
 
 def _alt(names: Iterable[str]) -> str:
@@ -1236,12 +1238,68 @@ def _only_pycache(d: Path) -> bool:
     return all(p.name == "__pycache__" or (p.is_dir() and _only_pycache(p)) for p in d.iterdir())
 
 
+def _applied(root: Path) -> dict[str, Any] | None:
+    """The committed record of the migration commit (``APPLIED``), None before it exists."""
+    path = root / APPLIED
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def _at_apply(root: Path, applied: dict[str, Any] | None) -> bool:
+    """Whether the checkout is the tree ``apply`` produced: no committed record yet (``apply``
+    is running, or a scratch tree), or HEAD's tree is the recorded one with nothing modified."""
+    if applied is None:
+        return True
+    tree = git(root, "rev-parse", "HEAD^{tree}", check=False).strip()
+    dirty = [ln for ln in git(root, "status", "--porcelain").split("\n") if ln.strip()]
+    return tree == applied["tree"] and not dirty
+
+
+def _base_record(root: Path, applied: dict[str, Any]) -> dict[str, Any]:
+    """The data half of the `apply` record, rebuilt from the committed record and the base
+    commit's blobs, for a checkout where `apply` never ran (a fresh clone)."""
+    base = applied["base"]
+    names = git(root, "ls-tree", "-r", "--name-only", "-z", base).split("\0")
+    data = {}
+    for f in data_files(n for n in names if n):
+        blob = subprocess.run(
+            ["git", "show", f"{base}:{f}"], cwd=root, check=True, capture_output=True
+        ).stdout
+        data[f] = hashlib.sha256(blob).hexdigest()
+    return {
+        "head": base,
+        "moves": applied["moves"],
+        "data": data,
+        "json": applied["json"],
+        "text": applied["text_data"],
+    }
+
+
 def check(root: Path) -> int:
-    """The post-checks of plan §8.5; prints every failure and returns 1 on any."""
+    """The post-checks of plan §8.5; prints every failure and returns 1 on any.
+
+    The FULL check (data, KEEP files, KEEP-test key counts, strays, residue) is a gate on the
+    migration commit alone: it holds at the tree ``apply`` produced, whose hash the committed
+    record ``APPLIED`` pins. Every later commit edits the KEEP files and tests by hand (plan §15
+    rows 5-6), so at any other tree only the DATA half runs: every data file of the base
+    commit is at its new path with its bytes (a rewritten JSON: its exact key translation), no
+    data file was added, the trees hold category directories only. Markdown under the data
+    trees is prose the later commits edit and is not compared there."""
     gd = git_dir(root)
-    if not (gd / RECORD).is_file():
+    applied = _applied(root)
+    full = _at_apply(root, applied)
+    if (gd / RECORD).is_file():
+        rec = json.loads((gd / RECORD).read_text(encoding="utf-8"))
+    elif applied is not None:
+        rec = _base_record(root, applied)
+    else:
         raise Refused(f"{gd / RECORD} is missing: `apply` has not run in this checkout")
-    rec = json.loads((gd / RECORD).read_text(encoding="utf-8"))
+    if not full:
+        assert applied is not None
+        rec = {**rec, "keep": {}, "keep_tests": {}, "residue": []}
+        print(
+            f"check: KEEP comparison skipped: recorded at apply ({APPLIED}: check "
+            f"{applied['check']!r} at tree {applied['tree'][:12]}); data half only"
+        )
     mv = [tuple(m) for m in rec["moves"]]
     bad: list[str] = []
     rewritten = set(rec["json"]) | set(rec["text"])
@@ -1256,6 +1314,8 @@ def check(root: Path) -> int:
             new = json.loads((root / dst).read_text(encoding="utf-8"))
             if new != _translate(str(json_kind(f)), old, f):
                 bad.append(f"{dst}: not the key translation of {f}")
+        elif not full and dst.endswith(".md"):
+            continue  # prose: edited by hand after the migration commit
         elif f not in rewritten and sha256(root / dst) != digest:
             bad.append(f"{dst}: bytes changed (was {f})")
     now_data = set(data_files(tracked(root)))
@@ -1276,7 +1336,7 @@ def check(root: Path) -> int:
     if (root / STAGING).exists():
         bad.append(f"{STAGING} is still there")
     stray = [ln for ln in git(root, "status", "--porcelain").split("\n") if ln.startswith("??")]
-    bad += [f"stray file {ln[3:]}" for ln in stray[:20]]
+    bad += [f"stray file {ln[3:]}" for ln in stray[:20] if full]
     classified: dict[tuple[str, str], str] = {}
     if (root / RESIDUE_FILE).is_file():
         for ln in (root / RESIDUE_FILE).read_text(encoding="utf-8").split("\n"):
@@ -1406,7 +1466,11 @@ SET_PATTERNS = (  # relative to a set directory; `{k}` = a pre-0101 key
 def migrate_set(root: Path, target: Path, do: bool) -> int:
     """An adapted set (or a lens cell store ``<store>/<subject>``) outside git: its bank files,
     overlay directory, per-family work files and JSON keys, two-phase, each bare-key path
-    attributed by content first. Dry run unless ``do``; refuses a set that has the marker."""
+    attributed by content first. Dry run unless ``do``; refuses a set that has the marker, and
+    a target that shows no pre-0101 evidence (no path or JSON key under a retired `_mt` key, no
+    bare-key path whose content is a single-token family's): such a set was written after the
+    rename, its bare keys already name the multi-token families, and translating them would
+    turn them into the `_st` ones."""
     target = target.resolve()
     report = target / "report.json"
     if report.is_file() and json.loads(report.read_text("utf-8")).get(SET_MARKER[0]):
@@ -1436,13 +1500,22 @@ def migrate_set(root: Path, target: Path, do: bool) -> int:
         raise Refused("cannot attribute " + ", ".join(str(p) for p in unknown[:5]))
     todo = list(dict.fromkeys(todo))
     jsons = {}
+    retired = re.compile('"(?:' + _alt(k for k in KEYS if k not in BARE_KEYS) + ')"')
+    evidence = bool(todo)
     for f in sorted(target.rglob("*.json")):
         kind = json_kind("adapted/set/" + f.relative_to(target).as_posix())
         if kind is not None:
+            evidence = evidence or bool(retired.search(f.read_text(encoding="utf-8")))
             doc, tail = _load_styled(f)
             jsons[f] = (
                 json.dumps(_translate(kind, doc, str(f)), indent=1, ensure_ascii=False) + tail
             )
+    if not evidence:
+        raise Refused(
+            f"{target} shows no pre-0101 evidence (nothing under a retired `_mt` key, no "
+            "bare-key file of a single-token family): its keys are taken to be today's, "
+            "nothing is translated"
+        )
     for src, dst in todo:
         print(f"{'mv' if do else 'would mv'} {src} -> {dst}")
     print(f"{len(todo)} renames, {len(jsons)} JSON files" + ("" if do else " (dry run)"))

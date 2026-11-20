@@ -782,9 +782,11 @@ def draw_verdicts(results_path: Path, expect: str | None = None) -> dict[str, bo
     d = json.loads(results_path.read_text(encoding="utf-8"))
     fam = d["family"]
     if expect is not None:
-        from wsbench.registry import RenamedKey, stored_family
+        from wsbench.registry import RenamedKey, row_ids, stored_family
 
-        fam = stored_family(fam, (d.get("config") or {}).get("prompt_version"))
+        fam = stored_family(
+            fam, (d.get("config") or {}).get("prompt_version"), row_ids(d.get("rows") or [])
+        )
         if fam != expect:
             raise RenamedKey(
                 f"{results_path} holds results of {fam!r}, not {expect!r} (written under "

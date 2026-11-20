@@ -73,7 +73,9 @@ def test_map_and_canonical(real_families):
     # a key no family ever gave up is not a former key; the four bare keys are not in the map
     # (typed today they mean the multi-token family, plan 0101)
     assert registry.canonical("poetry") == "poetry" and registry.legacy_names("poetry") == []
-    assert not {"basic_readout", "multihop", "multilingual", "typo"} & set(RENAMES)
+    assert not {"basic_readout", "multihop", "multilingual", "typo"} & set(
+        registry.LEGACY_FAMILY_NAMES
+    )
 
 
 # ---------------------------------------------------------------- (a) old names on the CLI

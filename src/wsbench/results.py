@@ -122,7 +122,9 @@ def read_results(out_dir: Path) -> FamilyResult:
     path = Path(out_dir) / "results.json"
     result = FamilyResult.from_json(json.loads(path.read_text(encoding="utf-8")))
     try:
-        family = stored_family(result.family, result.config.get("prompt_version"))
+        family = stored_family(
+            result.family, result.config.get("prompt_version"), row_ids(result.rows)
+        )
     except RenamedKey as e:
         # a stamp both members of a renamed pair can write (the multilingual pair's unpinned
         # opts=judge=mc diagnostic): the result's own item ids say whose it is, or it is refused

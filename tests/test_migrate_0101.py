@@ -486,3 +486,70 @@ def test_set_migrates_an_adapted_set_by_content(tree, tmp_path):
     assert report["family_keys"] == "0101"
     with pytest.raises(mig.Refused):
         mig.main(["--root", str(tree), "--partial-tree", "set", str(d), "--apply"])  # the marker
+
+
+def test_set_refuses_a_set_written_after_the_rename(tree, tmp_path, capsys):
+    """Review c5 S1: a set with today's keys and no marker (nothing under an `_mt` key, its
+    bare-key bank the multi-token family's) is not translated: `multihop` would become
+    `multihop_st`."""
+    d = tmp_path / "fresh"
+    d.mkdir()
+    bank = json.dumps({"family": "multihop-hard", "items": [{"id": "b"}]})
+    (d / "multihop.json").write_text(bank)
+    report = json.dumps({"families": {"multihop": {"n": 1}}}, indent=1) + "\n"
+    (d / "report.json").write_text(report)
+    for extra in ([], ["--apply"]):
+        with pytest.raises(mig.Refused):
+            mig.main(["--root", str(tree), "--partial-tree", "set", str(d), *extra])
+        assert "no pre-0101 evidence" in capsys.readouterr().err
+    assert (d / "report.json").read_text() == report and (d / "multihop.json").read_text() == bank
+    # one retired key in a report is evidence: the same set is then translated as a whole
+    (d / "report.json").write_text(
+        json.dumps({"families": {"multihop": {"n": 1}}, "drops": {"typo_mt": {}}}, indent=1) + "\n"
+    )
+    (d / "multihop.json").write_text(json.dumps({"family": "multihop", "items": [{"id": "a"}]}))
+    assert mig.main(["--root", str(tree), "--partial-tree", "set", str(d), "--apply"]) == 0
+    assert list(json.loads((d / "report.json").read_text())["families"]) == ["multihop_st"]
+
+
+def test_check_is_a_gate_on_the_migration_commit_only(tree, capsys):
+    """Review c5 S2: with the committed record of `apply`, `check` at any later tree runs the
+    data half only (hand edits to KEEP files and tests are the next commits' work), from the
+    local record or, in a fresh clone, from the base commit's blobs."""
+    _classify_residue(tree)
+    assert mig.main(["--root", str(tree), "--partial-tree", "apply"]) == 0
+    _git(tree, "commit", "-q", "-m", "migrated")
+    rec = json.loads((mig.git_dir(tree) / mig.RECORD).read_text())
+    applied = {
+        "base": rec["head"],
+        "tree": subprocess.run(
+            ["git", "rev-parse", "HEAD^{tree}"], cwd=tree, capture_output=True, text=True
+        ).stdout.strip(),
+        "check": "ok",
+        "moves": rec["moves"],
+        "json": rec["json"],
+        "text_data": [f for f in rec["text"] if f in rec["data"]],
+    }
+    assert mig._at_apply(tree, applied) and mig._at_apply(tree, None)
+    (tree / mig.APPLIED).write_text(json.dumps(applied))
+    keep = tree / "src/wsbench/registry.py"
+    keep.write_text(keep.read_text() + "\n# a hand edit of the next commit\n")
+    (tree / "tests/test_new.py").write_text("def test_new():\n    pass\n")  # an untracked file
+    assert not mig._at_apply(tree, applied)
+    capsys.readouterr()
+    assert mig.main(["--root", str(tree), "--partial-tree", "check"]) == 0
+    assert "KEEP comparison skipped: recorded at apply" in capsys.readouterr().out
+    (mig.git_dir(tree) / mig.RECORD).unlink()  # a fresh clone: no local record
+    assert mig.main(["--root", str(tree), "--partial-tree", "check"]) == 0
+    (tree / "evals/basic/typo_st/items.json").write_text("{}")  # the data half still gates
+    assert mig.main(["--root", str(tree), "--partial-tree", "check"]) == 1
+
+
+def test_the_committed_record_names_the_migration_commit():
+    doc = json.loads((REPO / mig.APPLIED).read_text(encoding="utf-8"))
+    assert doc["check"] == "ok" and len(doc["base"]) == 40 and len(doc["tree"]) == 40
+    assert doc["counts"] == {
+        "data_files": 7878, "moves": len(doc["moves"]), "text_files": 696,
+        "json_files": len(doc["json"]),
+    }  # fmt: skip
+    assert len(doc["moves"]) == 242 and len(doc["json"]) == 75

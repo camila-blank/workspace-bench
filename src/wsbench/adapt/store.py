@@ -152,8 +152,15 @@ def _entry_owner(key: str, entry: Any) -> str | None:
 
 def report_entry(section: dict[str, Any] | None, family: str) -> dict[str, Any]:
     """``section[family]`` of a set's ``report.json`` (``families``, ``drops``), or the entry
-    written under a former family key (``report_key``); ``{}`` when there is none."""
-    return (section or {}).get(report_key(section, family), {})
+    written under a former family key (``report_key``); ``{}`` when there is none, and when
+    the only entry under the family's bare key is its plan-0101 partner's (a pre-rename report
+    that holds the single-token family alone)."""
+    section = section or {}
+    key = report_key(section, family)
+    entry = section.get(key, {})
+    if key == shared_key(family) and _entry_owner(key, entry) not in (None, family):
+        return {}
+    return entry
 
 
 def report_slot(report: dict[str, Any], section: str, family: str) -> dict[str, Any]:
@@ -266,18 +273,35 @@ def clear_built_absent(model: str, report: dict[str, Any]) -> list[str]:
 def update_report(model: str, mutate: Callable[[dict[str, Any]], Any]) -> dict[str, Any]:
     """Locked read -> ``mutate(report)`` in place -> stale automatic absences cleared
     (``clear_built_absent``) -> atomic write (stamped with ``code_stamp``). Returns the new
-    report."""
+    report. Plan 0101: a set with pre-rename keys is refused (``require_migrated``); every other
+    set is stamped with ``SET_MARKER``, so a set created after the rename says that its keys
+    are today's and ``scripts/migrate_0101.py set`` never translates them."""
     with report_lock(model):
         report = read_report(model)
         require_migrated(model, report)
         mutate(report)
         clear_built_absent(model, report)
+        if not _former_key_left(model, report):
+            report[SET_MARKER[0]] = SET_MARKER[1]
         report["code"] = code_stamp()
         write_json(model_dir(model) / "report.json", report)
         return report
 
 
-SET_MARKER = ("family_keys", "0101")  # written into report.json by scripts/migrate_0101.py set
+# written into report.json by scripts/migrate_0101.py set, and by ``update_report`` for a set
+# that holds no pre-rename key
+SET_MARKER = ("family_keys", "0101")
+# the one former key the write fence lets through (below): a set still holding it is written
+# as before, and is NOT marked until `migrate_0101.py set` renames it
+UNFENCED_FORMER_KEY = "multihop_mt_v2"
+
+
+def _former_key_left(model: str, report: dict[str, Any]) -> bool:
+    if (model_dir(model) / f"{UNFENCED_FORMER_KEY}.json").exists():
+        return True
+    return any(
+        UNFENCED_FORMER_KEY in (report.get(sec) or {}) for sec in ("families", "drops", "patches")
+    )
 
 
 def pre_0101_evidence(model: str, report: dict[str, Any] | None = None) -> str:

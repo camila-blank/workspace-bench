@@ -365,18 +365,22 @@ def _renamed(key: str, r: Reused, what: str) -> RenamedKey:
     )
 
 
-def stored_family(stored_key: str, prompt_version: str | None) -> str:
+def stored_family(
+    stored_key: str, prompt_version: str | None, ids: Iterable[str] | None = None
+) -> str:
     """The family a stored result under ``stored_key`` (the key AS STORED, not canonicalized)
     stamped ``prompt_version`` belongs to. A key no two families held: ``canonical``. A reused
-    key: by stamp; an empty stamp is the live family's (for the 2026-11-04 key, whose other
-    holder is a removed family, every non-live stamp, empty included, is that family's); a
-    non-empty stamp of neither holder is a ``RenamedKey``."""
+    key: by stamp; an empty stamp is settled by the result's own item ids (``ids``, when given
+    and they identify a holder: ``owner``, which raises on ids of both) and is otherwise the
+    live family's (for the 2026-11-04 key, whose other holder is a removed family, every
+    non-live stamp, empty included, is that family's); a non-empty stamp of neither holder is a
+    ``RenamedKey``."""
     r = REUSED_FAMILY_KEYS.get(stored_key)
     if r is None:
         return canonical(stored_key)
     stamp = str(prompt_version or "")
     if r.other_stamps is not None and not stamp:
-        return r.live
+        return (owner(stored_key, ids=ids) if ids is not None else None) or r.live
     who = _stamp_holder(r, stamp)
     if who is None:
         raise _renamed(stored_key, r, f"a result stamped {stamp!r}")
@@ -597,7 +601,9 @@ def dir_owner(path: Path, key: str | None = None) -> str | None:
             d = json.loads(res.read_text(encoding="utf-8"))
             try:
                 return stored_family(
-                    str(d["family"]), (d.get("config") or {}).get("prompt_version")
+                    str(d["family"]),
+                    (d.get("config") or {}).get("prompt_version"),
+                    row_ids(d.get("rows") or []),
                 )
             except RenamedKey:  # a stamp both members can write: the rows' own ids
                 who = owner(str(d["family"]), ids=row_ids(d.get("rows") or []))
