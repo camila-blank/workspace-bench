@@ -629,7 +629,14 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   `<key>_st`. No instrument moved: `scripts/manifest_0101.py --check
   tests/golden/manifest_0101_pre.json` rebuilds every hash, seed, option order, prompt sha, call
   key and cache fingerprint of all 32 families and compares them with the manifest recorded on
-  main before the rename (run it after any change to `registry.py`'s tables).
+  main before the rename (run it after any change to `registry.py`'s tables). The golden and the
+  script are never regenerated. Since then T1 (`tests/test_rename_0101.py`, `manifest_verdict`)
+  guarantees that **no instrument moves without declaring it by a stamp or bank version
+  change**: a family whose `prompt_version` or registered bank (file / sha256) differs from the
+  golden's is skipped and named in the test output; any other differing row fails ("instrument
+  moved without a stamp or bank change"), as does any change outside `families` (shared digest
+  prompts, the F4 record). So a deliberate judge or bank change must move the stamp or the bank
+  version, and `--check` then lists that family's rows only.
   - **Two frozen names, never interchangeable.** `registry.hash_name(key)`
     (`HASH_FAMILY_NAMES`) is what `plan_sha`, the ATI `bank_sha` and the lucky-guessing seeds
     hash: the key of the family's FIRST hashed life (`multihop` -> `multihop_mt_v2`,

@@ -36,7 +36,14 @@ family key (`plan_sha_pre_0090.json`, the fast-subset row hashes) is reproduced 
 `registry.hash_name` / `frozen_name`. `manifest_0101_pre.json` is the manifest of every
 family's hashes, seeds, option orders, prompt shas and call keys recorded on main before the
 rename, in pre-0101 keys; `scripts/manifest_0101.py --check` compares the tree against it and
-neither file is ever regenerated. `tests/fixtures/` follows the same rule (`adapted_v1/` is a
+neither file is ever regenerated (the golden embeds the script's sha). `--check` itself reports
+every later instrument change as a difference; the permanent guard is T1 of
+`tests/test_rename_0101.py` (`manifest_verdict`): **no instrument moves without declaring it by
+a stamp or bank version change.** A family whose result stamp (`prompt_version`) or registered
+bank (file name or sha256) differs from the golden's has declared a change: its rows are not
+compared and the test output names it. Every other family's rows, and every section outside
+`families` (the shared digest prompts, the F4 record, the script's tables and imports), must
+equal the golden's; `shared.n_families` may grow only by families the golden does not have. `tests/fixtures/` follows the same rule (`adapted_v1/` is a
 set from before the rename, kept unmigrated on purpose).
 
 ## In-repo v2 pins (plan 0012, 2026-10-10)
