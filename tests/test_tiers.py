@@ -451,3 +451,17 @@ def test_report_of_non_core_families_prints_no_core_line(clean, tmp_path, capsys
         "multihop": ("basic", "full"),
         "basic_readout": ("basic", "full"),
     }
+
+
+def test_core_and_full_together_is_a_usage_error(capsys):
+    from wsbench.cli import main
+
+    assert main(["plan", "--core", "--full"]) == 2
+    assert "pick one" in capsys.readouterr().err
+
+
+def test_bare_plan_names_its_tier(tmp_path, capsys):
+    from wsbench.cli import main
+
+    assert main(["plan", f"out={tmp_path / 'p'}", "limit=1"]) == 0
+    assert "tier: core (17 families; --full for all" in capsys.readouterr().err

@@ -75,6 +75,13 @@ def _select_fast(cmd: "Command") -> None:
         fast.select(cmd.fast_variant)
 
 
+def _tier_notice() -> None:
+    """One stderr line when the core tier picked the families (plan 0098): a bare ``run`` /
+    ``plan`` does less than ``--full``, and says so."""
+    n, total = len(tiers.core()), len(tiers.full())
+    print(f"tier: core ({n} families; --full for all {total})", file=sys.stderr)
+
+
 def _tier_arg(cmd: "Command") -> str:
     """The ``tier`` key of ``run`` / ``plan`` (``--core`` / ``--full``): ``""``, ``core`` or
     ``full``; the fast tier is ``--fast``, never a value, and never combined with another."""
@@ -451,6 +458,7 @@ class RunFamilies(JudgeOptions):
         if self.families is None:  # a tier picks: core, or every family (full, and --fast)
             if self.tier == "core":
                 names = tiers.core()
+                _tier_notice()
             else:
                 names = sorted(registry.FAMILIES)
                 if not self.include_superseded:
@@ -1280,6 +1288,9 @@ class Plan(Command):
             names = registry.drop_superseded(readplan.families())
         elif self.families is None:  # the core tier; an adapted set plans the ones it has
             have = set(readplan.families())
+            _tier_notice()
+            if missing := [f for f in tiers.core() if f not in have]:
+                print(f"adapted set: skipping families with no bank: {', '.join(missing)}")
             names = [f for f in tiers.core() if f in have]
         else:
             names = self.families
@@ -1766,6 +1777,9 @@ def main(argv: list[str] | None = None) -> int:
     # plan 0098: `--core` / `--full` are `tier=core` / `tier=full` on run and plan
     flags = {"--fast": "fast=True", "--fast-safety": "fast=safety"}
     flags |= {"--core": "tier=core", "--full": "tier=full"}
+    if "--core" in argv[1:] and "--full" in argv[1:]:
+        print(f"{argv[0]}: --core and --full are different tiers; pick one", file=sys.stderr)
+        return EXIT_USAGE
     argv = [argv[0], *(flags.get(a, a) for a in argv[1:])]
     try:
         show = pydra.apply_overrides(command, argv[1:])
