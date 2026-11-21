@@ -722,8 +722,9 @@ def test_chance_on_v2(tmp_path, fake_llm, mk_args):
     fake_llm(_script(lambda u: {"choice": 0, "quote": ""}))
     res = judge.run(mk_args(path, items=ids))
     # bank v4: every list widened to 22 non-twin options + twins (q01 45 / q03 43 / q06 23 shown;
-    # v3: 25 / 23 / 11); bank v6: + 66 shared-axis distractors (q01 111 / q03 109; q06 unchanged)
-    assert res.chance == pytest.approx((1 / 111 + 1 / 109 + 1 / 23) / 3)
+    # v3: 25 / 23 / 11); bank v6: three more copies of the list, one per other value of the
+    # shared part (q01 177 / q03 169 shown; q06 unchanged)
+    assert res.chance == pytest.approx((1 / 177 + 1 / 169 + 1 / 23) / 3)
     assert "mean 1/n" in res.chance_label
 
 

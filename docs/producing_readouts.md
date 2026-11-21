@@ -222,12 +222,13 @@ uv run wsbench run --fast all=True readouts_root=outputs/readouts/mylens-fast ou
   / `--fast-safety` wrote), with `"reads": "full"`. A file that declares `fast` is judged only
   with `--fast` / `--fast-safety`, and code that predates plan 0090 refuses it on the sha
   mismatch. `wsbench produce family=F --fast` / `--fast-safety` does all of this.
-- A file declaring another version is judged when that version holds the family with the
-  identical entry (`fast.compatible`, per family). `fast-v3` and `fast-safety-v2` (2026-11-20)
-  are `fast-v2` and `fast-safety-v1` with `conjunctive_association` pinned to its bank v6, so a
-  FAST file of that family declaring `fast-v1`, `fast-v2` or `fast-safety-v1` is refused (judge
-  it from a full readouts file, or produce its 98 items again); for every other family the
-  five versions hold identical entries, and what follows for the three older versions holds
+- A file declaring another version is judged when that version reads the family's same items
+  at the same positions (`fast.same_reads`, per family: `read_ids` and the `positions` rule;
+  the declared `plan_sha` is still checked). `fast-v3` and `fast-safety-v2` (2026-11-20) are
+  `fast-v2` and `fast-safety-v1` with `conjunctive_association` pinned to its bank v6: its reads
+  are unchanged, so its FAST files declaring `fast-v1`, `fast-v2` or `fast-safety-v1` are judged
+  as they are (only its old RESULT rows are stale). The five versions read every family they
+  share the same way, and what follows for the three older versions holds
   for the two new ones too. The three versions `fast-v1`, `fast-v2` and `fast-safety-v1` hold
   identical entries for every
   family they share, so a file declaring any of them is judged under either flag for a family

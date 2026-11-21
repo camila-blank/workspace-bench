@@ -130,9 +130,9 @@ def fast_plan_sha(family: str, declared: str | None = None) -> str:
     fam = canonical(family)
     if declared not in fast.VERSIONS or fam not in fast.subset(declared):
         raise SystemExit(f"{fam}: not in fast subset {declared}")
-    if declared != fast.VERSION and not fast.compatible(declared, fam):
+    if declared != fast.VERSION and not fast.same_reads(declared, fam):
         raise SystemExit(
-            f"{fam}: its entry in fast subset {declared} is not {fast.VERSION}'s (re-frozen)"
+            f"{fam}: fast subset {declared} reads other items or positions than {fast.VERSION}"
         )
     for row in rows:
         if "fast" in (row.get("extra") or {}):
@@ -551,11 +551,15 @@ def load(
     # plan 0095: the declared version's own file must hold the family (with or without plan_sha)
     if fast_file and canonical(family) not in fast.subset(declared_fast):
         fail(f"{path}: {canonical(family)}: not in fast subset {declared_fast}")
-    # per family (2026-11-20): a family re-frozen since the declared version has another entry
-    if fast_file and not fast.compatible(declared_fast, family):
+    # per family (2026-11-20). A READOUTS file is what the active plan asks for when the declared
+    # version reads the same items at the same positions (`fast.same_reads`: read ids and
+    # positions rule; the plan_sha guard below still compares the file's sha with the active
+    # plan's as that version declared it), whatever the entry's `bank_sha`: a bank whose option
+    # lists changed leaves the readouts valid. RESULT rows keep the stricter `fast.compatible`.
+    if fast_file and not fast.same_reads(declared_fast, family):
         fail(
             f"{path}: readouts were produced for another fast subset ({declared_fast!r}, not "
-            f"{fast.VERSION!r}): {canonical(family)} was re-frozen in between"
+            f"{fast.VERSION!r}): {canonical(family)} reads other items or positions there"
         )
     fast_rule = dict(fast_entry.get("positions") or {}) if fast_entry is not None else {}
     if fast_rule and fast_rule.get("kind") not in readplan.FAST_KINDS:

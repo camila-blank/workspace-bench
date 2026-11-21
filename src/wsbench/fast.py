@@ -111,6 +111,25 @@ def compatible(version: Any, family: str, against: str | None = None) -> bool:
     return mine is not None and mine == theirs
 
 
+def same_reads(version: Any, family: str, against: str | None = None) -> bool:
+    """Do ``version`` and ``against`` (default: the active ``VERSION``) READ the family the same
+    way: both registered, both hold it, with the same ``read_ids`` (in order) and the same
+    ``positions`` rule. Weaker than ``compatible`` on purpose and for readouts files only: units
+    and ``bank_sha`` are not compared, since a readouts file holds what the model read, which a
+    new option list or judge does not change (the caller still checks the file's ``plan_sha``).
+    A result row needs ``compatible``."""
+    against = VERSION if against is None else against
+    if version not in VERSIONS or against not in VERSIONS:
+        return False
+    fam = registry.canonical(family)
+    mine, theirs = subset(version).get(fam), subset(against).get(fam)
+    if mine is None or theirs is None:
+        return False
+    return mine["read_ids"] == theirs["read_ids"] and mine.get("positions") == theirs.get(
+        "positions"
+    )
+
+
 @functools.cache
 def _file_sha(path: str) -> str:
     with open(path, "rb") as fh:

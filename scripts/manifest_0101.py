@@ -452,10 +452,11 @@ def plan_entry(name: str) -> dict[str, Any]:
                 fast.VERSION = version  # the plan of that subset, as `--fast[-safety]` selects it
                 try:
                     out["fast_plan_sha"][version] = reads.fast_plan_sha(name, declared=version)
-                except SystemExit as e:
+                except SystemExit:
                     # a version frozen before the family's bank changed has no plan for it any
-                    # more (`fast.entry` fails closed): recorded, never a crash of the manifest
-                    out["fast_plan_sha"][version] = f"unavailable: {e.code}"
+                    # more (`fast.entry` fails closed): recorded, never a crash of the manifest.
+                    # A constant: the error's wording must not reach a hashed row
+                    out["fast_plan_sha"][version] = "unavailable"
     finally:
         fast.VERSION = saved
     out["ati_bank_fingerprint"] = ti.bank_fingerprint(name)

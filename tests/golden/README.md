@@ -38,7 +38,7 @@ family's hashes, seeds, option orders, prompt shas and call keys recorded on mai
 rename, in pre-0101 keys; `scripts/manifest_0101.py --check` compares the tree against it and
 neither file is ever regenerated (the golden embeds the sha of the script that made it; the
 script has since gained one `try` in `plan_entry`, so that a family whose bank changed after an
-older fast version was frozen is recorded as `unavailable: ...` instead of ending the run, and
+older fast version was frozen is recorded as `unavailable` instead of ending the run, and
 T1 pins both shas and the golden's bytes). `--check` itself reports
 every later instrument change as a difference; the permanent guard is T1 of
 `tests/test_rename_0101.py`, whose rule is `verdict` in `scripts/manifest_0101_declare.py`:

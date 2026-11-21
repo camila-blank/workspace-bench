@@ -77,7 +77,7 @@ def _declare_mod():
 MANIFEST_SCRIPT_SHA256_OF_THE_GOLDEN = (
     "7cac34f978b31913e006c831c70d03b4da1c0f95a90905c700fa0ff49adf178a"
 )
-MANIFEST_SCRIPT_SHA256_NOW = "8bd67774b9804daf6501c26753448e7f54bd72dc6797fbbf4b0872765e7360cc"
+MANIFEST_SCRIPT_SHA256_NOW = "b970df0814eb57d5bff12b9e0c617b6f437e0ca9615b4dcc800730999b85ee4a"
 MANIFEST_GOLDEN_SHA256 = "30aedc244eefe776a989f5f4d58d6e4d5d3aa7e01abc0571598c4a7b5689eefb"
 
 
@@ -101,7 +101,8 @@ def test_t1_no_instrument_moves_without_a_declared_stamp_or_bank_change(tmp_path
     # Two pins. The golden names the script that MADE it; the script as it is now is that file
     # plus one `try` in `plan_entry` (2026-11-20: a family whose bank changed after an older
     # fast version was frozen made `fast.entry` exit the whole manifest; the row now reads
-    # "unavailable: ..."). Any further edit of the script moves the second pin on purpose.
+    # "unavailable", a constant, so no error wording is hashed). Any further edit of the script
+    # moves the second pin on purpose.
     assert doc["script_sha256"] == MANIFEST_SCRIPT_SHA256_OF_THE_GOLDEN
     assert hashlib.sha256(script.read_bytes()).hexdigest() == MANIFEST_SCRIPT_SHA256_NOW
     assert hashlib.sha256(golden.read_bytes()).hexdigest() == MANIFEST_GOLDEN_SHA256
@@ -279,10 +280,13 @@ def test_t1_rule_for_fast_versions_cut_after_the_golden():
     assert "its fast plan moved" in failures[0]
     # ... unless it is that row as the golden version would have declared it (rows that hash
     # the version string); the equivalence must give the GOLDEN row, not any value
-    as_old = {"fam_b": {"fast-v3": {"fast-v2": "B"}}}
+    as_old = {"fam_b": {"fast-v3": {"row": "X", "as": {"fast-v2": "B"}}}}
     assert dec.verdict(gold, moved, {}, fast_as=as_old) == ({}, [])
-    wrong = {"fam_b": {"fast-v3": {"fast-v2": "X"}}}
+    wrong = {"fam_b": {"fast-v3": {"row": "X", "as": {"fast-v2": "X"}}}}
     assert len(dec.verdict(gold, moved, {}, fast_as=wrong)[1]) == 1
+    # ... and only for the very row it was computed for (a stale equivalence covers nothing)
+    stale = {"fam_b": {"fast-v3": {"row": "another row", "as": {"fast-v2": "B"}}}}
+    assert len(dec.verdict(gold, moved, {}, fast_as=stale)[1]) == 1
     # a GOLDEN version's row never moves that way, and a golden version may not vanish
     old_moved = _with_fast(_mini_manifest(), {**same, "fam_b": {"fast-v2": "X", "fast-v3": "X"}})
     assert dec.verdict(gold, old_moved, {})[1][0].startswith("/families/fam_b/plan/fast_plan_sha")

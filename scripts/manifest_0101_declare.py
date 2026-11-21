@@ -96,7 +96,8 @@ def new_fast_rows(
     NO family is new; its row for a family is acceptable iff it equals the family's row under a
     golden version (the same plan rows under a new name), directly or, for a family whose rows
     hash the version string, as recomputed under that golden version's name
-    (``fast_as[fam][new][old]``, from ``fast_equivalents``). What this returns is what
+    (``fast_as[fam][new] = {"row": that row, "as": {old: sha}}``, from ``fast_equivalents``;
+    ignored unless ``row`` is this very row). What this returns is what
     ``verdict`` compares and what ``rows_sha256`` hashes for the ledger, so cutting a fast
     version later moves no family's declared state."""
     sec, key = FAST_ROWS
@@ -107,7 +108,9 @@ def new_fast_rows(
     bad = []
     for v in new:
         sha = have[v]
-        as_old = fast_as.get(fam, {}).get(v, {})
+        eq = fast_as.get(fam, {}).get(v, {})
+        # an equivalence counts only for the very row it was computed for
+        as_old = eq.get("as", {}) if eq.get("row") == sha else {}
         if any(sha == old_sha or as_old.get(old) == old_sha for old, old_sha in was.items()):
             del have[v]
         else:
@@ -120,7 +123,8 @@ def new_fast_rows(
 
 
 def fast_equivalents(golden: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
-    """``{family: {new version: {golden version: sha}}}``: for each row of a fast version the
+    """``{family: {new version: {"row": sha, "as": {golden version: sha}}}}``: for each row of
+    a fast version the
     golden does not have that equals none of the family's golden rows, the family's fast plan
     sha under the new version recomputed as each golden version would have declared it
     (``reads.fast_plan_sha(family, declared=old)``), for the golden versions whose entry for the
@@ -144,7 +148,8 @@ def fast_equivalents(golden: Mapping[str, Any], current: Mapping[str, Any]) -> d
                 for old in was:
                     if fast.compatible(old, by_frozen[fam], against=v):
                         as_old = reads.fast_plan_sha(by_frozen[fam], declared=old)
-                        out.setdefault(fam, {}).setdefault(v, {})[old] = as_old
+                        rec = out.setdefault(fam, {}).setdefault(v, {"row": sha, "as": {}})
+                        rec["as"][old] = as_old
     finally:
         fast.VERSION = saved
     return out
