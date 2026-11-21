@@ -340,7 +340,10 @@ def test_tables_agree_with_the_registry_and_the_plan():
     from wsbench import registry
 
     assert set(mig.CATEGORY.values()) == set(registry.CATEGORIES)
-    assert registry._layout() == mig.CATEGORY and len(mig.CATEGORY) == 32
+    # a family registered after the migration (plan 0106) was never moved by the script
+    since = {"user_modeling_hard"}
+    moved = {f: c for f, c in registry._layout().items() if f not in since}
+    assert moved == mig.CATEGORY and len(mig.CATEGORY) == 32 and since <= set(registry._layout())
     assert registry.PRE_0101_KEYS == mig.KEYS
     registry.load_all()
     for new, category in mig.CATEGORY.items():
