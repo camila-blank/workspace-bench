@@ -332,6 +332,56 @@ def unit_bootstrap(
     return (stats[round(0.025 * (N_RESAMPLES - 1))], stats[round(0.975 * (N_RESAMPLES - 1))])
 
 
+def ati_view(result: FamilyResult) -> FamilyResult | None:
+    """The strict-ATI row of a FAST row, with no new judging (plan 0104): the family's fast
+    units restricted to the ids of its registered ATI entry, as an ATI-scoped result the macro
+    reads by its ATI rules (``extras.ati_gate`` / ``ati_n_ids`` / ``ati_subset``, stamped as
+    ``runner`` stamps a real ``anti_text_inversion=True`` run). ``None`` for a family the ATI
+    scope leaves out, or one whose fast entry does not hold every gated id. The per-unit
+    outcomes are the family's own (``units``), so the value is what an ATI run over the same
+    readouts gives wherever a unit's verdict does not depend on which other items are judged;
+    ``n_items`` counts the gated ids, and a gated id without an outcome is out of the value."""
+    import dataclasses
+
+    from wsbench.baselines import text_inversion
+    from wsbench.results import ATI_SCOPE
+
+    fam = registry.canonical(result.family)
+    try:
+        ati = text_inversion.subset_entry(fam, text_inversion.FROZEN)
+    except text_inversion.NotInScope:
+        return None
+    ids = list(ati["ids"])
+    entry = subset().get(fam)
+    held = {u for us in (entry or {}).get("units", {}).values() for u in us}
+    if entry is None or not set(ids) <= held:
+        return None
+    groups, sign = units(fam, result)
+    kept = {g: {u: v for u, v in groups.get(g, {}).items() if u in set(ids)} for g in sign}
+    n_scored = sum(len(v) for v in kept.values())
+    extras = {
+        **{k: v for k, v in result.extras.items() if not k.startswith("fast_")},
+        "ati_n_bank": ati["n_bank"],
+        "ati_n_ids": len(ids),
+        "ati_judge_model": ati.get("judge_model"),
+        "ati_gate": ati.get("gate", "plan-0014"),
+        "ati_from_fast": result.config.get("fast_subset"),
+        "n_items_undecided": len(ids) - n_scored,
+    }
+    if extras["ati_gate"] == text_inversion.GATE_VERSION:
+        extras["ati_subset"] = text_inversion.SUBSET_VERSION
+    value = None if result.value is None else value_of(kept, sign)
+    return dataclasses.replace(
+        result,
+        value=value,
+        ci95=None if value is None else unit_bootstrap(kept, sign),
+        n_items=len(ids),
+        complete=result.complete and len(ids) - n_scored <= MAX_MISSING_SHARE * len(ids),
+        config={**result.config, "scope": ATI_SCOPE},
+        extras=extras,
+    )
+
+
 def rescore(family: str, result: FamilyResult) -> None:
     """The fast value of a family result, in place: value, CI and ``n_items`` over the entry's
     units; the family's own value kept in ``extras.fast_family_value``. The value recomputed over

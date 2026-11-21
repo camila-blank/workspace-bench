@@ -575,6 +575,8 @@ class ReportRuns(Command):
         self.fast = ""
         self.fast_variant = ""  # set by finalize from fast=, never a key
         self.fast_version = ""  # plan 0104: report under this registered version (old dirs)
+        # plan 0104: with --fast, the strict-ATI view of the fast rows (no new judging)
+        self.anti_text_inversion = False
         self.by_layer = False  # fold a layers=each run (<dir>/<family>/<all|L<k>>/results.json)
         self.hb_method = ""  # HallucinationBench method (plan 0040); else run.json / methods.json
         # opt-in judge column: a run of the same readouts with judge_model=<another judge>
@@ -601,6 +603,12 @@ class ReportRuns(Command):
             if self.fast is False:
                 raise ValueError("fast_version= reports fast rows; it contradicts fast=False")
             self.fast = True
+        self.anti_text_inversion = _bool(self.anti_text_inversion)
+        if self.anti_text_inversion and self.fast is not True:
+            raise ValueError(
+                "report anti_text_inversion=True is the ATI view of a FAST run: pass --fast (an "
+                "anti_text_inversion=True run's own directory needs no key)"
+            )
         self.by_layer = _bool(self.by_layer)
 
     def execute(self) -> int:
@@ -630,6 +638,15 @@ class ReportRuns(Command):
                 file=sys.stderr,
             )
             return EXIT_USAGE
+        ati_view = self.anti_text_inversion
+        if ati_view:
+            # plan 0104: the strict-ATI macro from a fast run. Each fast row of the active
+            # version becomes its family's ATI row (fast.ati_view: the fast units restricted to
+            # the gated ids); stale rows and families outside the ATI scope are left out
+            from wsbench.results import _stale_fast_subset
+
+            views = [fast.ati_view(r) for r in results if not _stale_fast_subset(r)]
+            results = [v for v in views if v is not None]
         m = macro(results)
         cm = core_macro(results)  # plan 0098; None for fast / ATI results
         # The frozen floors were measured on the full banks; on the ATI subset they do not apply
@@ -674,7 +691,13 @@ class ReportRuns(Command):
         hb_text, hb_json = self._hb_block(results)
         if hb_text:  # after the macro table; a separate number, never in the macro
             table += "\n" + hb_text
-        (self.dir / "summary.md").write_text(table, encoding="utf-8")
+        if ati_view:  # a view of the fast run: summary.md stays the fast report
+            table = (
+                f"scope: strict ATI view of the fast run ({fast.VERSION}): each family's fast "
+                "units restricted to its gated ATI ids, no new judging\n\n" + table
+            )
+        else:
+            (self.dir / "summary.md").write_text(table, encoding="utf-8")
         if self.json:
             raw = {
                 "lucky_guessing": lucky_guessing.floors(),
@@ -712,7 +735,8 @@ class ReportRuns(Command):
                 f"core macro: value={cm['value']} families={len(cm['families'])}/{cm['n_core']} "
                 f"missing={cm['missing']} excluded={cm['excluded']}"
             )
-        print(f"wrote {self.dir / 'summary.md'}")
+        if not ati_view:
+            print(f"wrote {self.dir / 'summary.md'}")
         return 0
 
     def _hb_block(self, results: list[FamilyResult]) -> tuple[str, dict | None]:
