@@ -230,7 +230,7 @@ def _config(*argv: str) -> cli.RunFamilies:
         ["opts=aggregate=native,summ_layers=union", "reads=lite", "sampling=prose1", "itpm=0"],
         ["anti_text_inversion=True", "ati_variant=v", "ati_opt_in=nyt_connections"],
         ["fast=True", "items=a,b", "wait=5", "settle=2", "family_workers=3", "json=True"],
-        ["fast=safety", "items=a,b", "limit=2"],
+        ["fast=True", "items=a,b", "limit=2"],  # plan 0104: fast=safety is retired
         ["hb_method=m", "include_superseded=True", "procs=True"],
     ],
 )
@@ -258,11 +258,14 @@ def test_child_argv_parses_back_to_the_runs_values(monkeypatch, argv):
 
 @pytest.mark.parametrize("namespace", [False, True])
 def test_child_argv_names_the_active_fast_subset(monkeypatch, namespace):
-    """Plan 0095: under fast the child is told the ACTIVE subset (``fast=safety`` by reverse
-    lookup of ``fast.VERSION`` in ``fast.VARIANTS``, with or without ``fast_variant`` on the
-    namespace) and selects it itself; the default and a test-patched fast-v1 stay ``fast=True``."""
-    run = _config("fast=safety")
-    assert run.fast is True and run.fast_variant == "safety"
+    """Under fast the child is told ``fast=True`` and runs the default subset itself. Plan 0104
+    retired the one variant (``fast=safety``): no subset but the default is selectable, so the
+    reverse lookup of ``fast.VERSION`` in ``fast.VARIANTS`` never names one, whatever version a
+    test or ``report fast_version=`` made active."""
+    with pytest.raises(ValueError, match="--fast-safety is retired"):
+        _config("fast=safety")
+    run = _config("fast=True")
+    assert run.fast is True and run.fast_variant == ""
     args = run
     if namespace:  # a Python caller's hand-built namespace: no fast_variant attribute
         keys = ("concurrency", "rpm", "judge_model", "layers", "items", "limit", "allow_missing")
@@ -272,17 +275,15 @@ def test_child_argv_names_the_active_fast_subset(monkeypatch, namespace):
         cmd = runner.judge_argv("fam", args, Path("r/fam.jsonl"), Path("o/fam"))
         return [a for a in cmd[4:] if a.split("=", 1)[0].startswith("fast")]
 
-    assert fast_arg() == ["fast=True"]  # finalize selected nothing: the default subset
-    assert fast.select("safety") == "fast-safety-v2"
+    assert fast_arg() == ["fast=True"]
     cmd = runner.judge_argv("fam", args, Path("r/fam.jsonl"), Path("o/fam"))
-    assert fast_arg() == ["fast=safety"]
     child = cli.JudgeFamily()
     pydra.apply_overrides(child, cmd[4:])
-    assert child.fast is True and child.fast_variant == "safety"
-    monkeypatch.setattr(fast, "VERSION", "fast-v1")
-    assert fast_arg() == ["fast=True"]
+    assert child.fast is True and child.fast_variant == ""
+    for version in ("fast-v1", "fast-safety-v2"):
+        monkeypatch.setattr(fast, "VERSION", version)
+        assert fast_arg() == ["fast=True"]
     args.fast = False
-    monkeypatch.setattr(fast, "VERSION", "fast-safety-v2")
     assert fast_arg() == []
 
 
