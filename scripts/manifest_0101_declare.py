@@ -65,6 +65,30 @@ def paths(a: Any, b: Any, path: str = "") -> list[str]:
     return [] if a == b else [f"{path}: {str(a)[:80]!r} != {str(b)[:80]!r}"]
 
 
+# Tier membership is not an instrument: which families `tiers.CORE` lists changes what a bare
+# `run` judges, never how a family is judged. The manifest records it per family (the `list`
+# row's `tier`, the `tiers.CORE` table), so those two rows are read as the GOLDEN has them
+# before a family is compared or hashed; the core list itself is pinned by tests/test_tiers.py.
+TIER_ROWS = (("list", "tier"), ("tables", "tiers.CORE"))
+
+
+def untiered(g: Mapping[str, Any] | None, c: Mapping[str, Any]) -> dict[str, Any]:
+    """``c`` with its tier rows as the golden entry ``g`` has them (``g`` None: unchanged)."""
+    out = dict(c)
+    if g is None:
+        return out
+    for sec, key in TIER_ROWS:
+        if not isinstance(c.get(sec), Mapping):
+            continue
+        rows = dict(c[sec])
+        if isinstance(g.get(sec), Mapping) and key in g[sec]:
+            rows[key] = g[sec][key]
+        else:
+            rows.pop(key, None)
+        out[sec] = rows
+    return out
+
+
 def triple(rows: Mapping[str, Any]) -> dict[str, Any]:
     """What declares a change: the result stamp and the registered bank's file name and sha."""
     return {key: rows[sec][key] for key, sec in TRIPLE}
@@ -95,7 +119,9 @@ def new_fast_rows(
     per row that is not acceptable (those stay in the entry). A fast version the golden has for
     NO family is new; its row for a family is acceptable iff it equals the family's row under a
     golden version (the same plan rows under a new name), directly or, for a family whose rows
-    hash the version string, as recomputed under that golden version's name
+    hash the version string, as recomputed under that golden version's name, or when the new
+    version reads the family differently from every golden version (``reselected``: a new
+    selection has a fast plan of its own)
     (``fast_as[fam][new] = {"row": that row, "as": {old: sha}}``, from ``fast_equivalents``;
     ignored unless ``row`` is this very row). What this returns is what
     ``verdict`` compares and what ``rows_sha256`` hashes for the ledger, so cutting a fast
@@ -110,8 +136,15 @@ def new_fast_rows(
         sha = have[v]
         eq = fast_as.get(fam, {}).get(v, {})
         # an equivalence counts only for the very row it was computed for
-        as_old = eq.get("as", {}) if eq.get("row") == sha else {}
-        if any(sha == old_sha or as_old.get(old) == old_sha for old, old_sha in was.items()):
+        mine = eq.get("row") == sha
+        as_old = eq.get("as", {}) if mine else {}
+        # a version that READS the family differently from every golden version (a re-selection,
+        # plan 0104) has a fast plan of its own: nothing in the golden to compare it with. Its
+        # row is the family's full plan (the `plan_sha` row, compared as ever) restricted to the
+        # frozen file's read ids, and the file's bytes are pinned by its own test
+        if (mine and eq.get("reselected")) or any(
+            sha == old_sha or as_old.get(old) == old_sha for old, old_sha in was.items()
+        ):
             del have[v]
         else:
             bad.append(
@@ -145,11 +178,12 @@ def fast_equivalents(golden: Mapping[str, Any], current: Mapping[str, Any]) -> d
                 if v in known or sha in was.values() or fam not in by_frozen:
                     continue
                 fast.VERSION = v
+                name = by_frozen[fam]
+                rec = out.setdefault(fam, {}).setdefault(v, {"row": sha, "as": {}})
+                rec["reselected"] = not any(fast.same_reads(old, name, against=v) for old in was)
                 for old in was:
-                    if fast.compatible(old, by_frozen[fam], against=v):
-                        as_old = reads.fast_plan_sha(by_frozen[fam], declared=old)
-                        rec = out.setdefault(fam, {}).setdefault(v, {"row": sha, "as": {}})
-                        rec["as"][old] = as_old
+                    if fast.compatible(old, name, against=v):
+                        rec["as"][old] = reads.fast_plan_sha(name, declared=old)
     finally:
         fast.VERSION = saved
     return out
@@ -193,7 +227,8 @@ def verdict(
         if fam not in cf:
             failures.append(f"/families/{fam}: in the golden, not in this tree")
             continue
-        c, g = cf[fam], gf.get(fam)
+        g = gf.get(fam)
+        c = untiered(g, cf[fam])
         if g is not None and c == g:
             continue
         now, entry = triple(c), ledger.get(fam)
@@ -279,7 +314,8 @@ def declare(
     """The ledger entry of ``family`` for the current tree, or :class:`Refused`."""
     if family not in current["families"]:
         raise Refused(f"{family}: not a family of this tree's manifest")
-    c, g, prev = current["families"][family], golden["families"].get(family), ledger.get(family)
+    g, prev = golden["families"].get(family), ledger.get(family)
+    c = untiered(g, current["families"][family])
     if g is not None:  # the basis `verdict` compares and hashes (acceptable new fast rows aside)
         sec, key = FAST_ROWS
         known = {v for x in golden["families"].values() for v in x.get(sec, {}).get(key, {})}
