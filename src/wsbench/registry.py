@@ -750,6 +750,8 @@ def _moved_hint(value: str) -> str:
     parts = Path(value).parts
     if len(parts) < 3 or parts[0] != "evals":
         return ""
+    if _layout().get(parts[2]) == parts[1]:
+        return ""  # already a path of today's layout: nothing moved
     if len(parts) >= 4 and LEGACY_FAMILY_CATEGORIES.get(parts[2]) == parts[1]:
         return (
             f"; the family {parts[2]!r} left the category {parts[1]!r} (plan 0107): "

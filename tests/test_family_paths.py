@@ -348,6 +348,9 @@ def test_repo_path():
         "evals/association/association/items_v5.json"
     )
     assert registry._moved_hint("evals/basic/poetry/items.json") == ""
+    # a path already in today's layout gets no hint (review of #525)
+    assert registry._moved_hint("evals/association/association/items_v9.json") == ""
+    assert registry._moved_hint("evals/association/user_modeling/items_v9.json") == ""
     # plan 0105: a path stored under the category's former name resolves into today's directory
     assert registry.repo_path("evals/precision/jlens_concept_pr/manifest.json") == (
         REPO / "evals/jlens_comparison/jlens_concept_pr/manifest.json"
