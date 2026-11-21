@@ -207,6 +207,21 @@ def score(
         "unverified_by_gate": by_gate,
         "unverified_gold_by_gate": gold_by_gate,
         "n_retried": tally["n_retried"],
+        "reasks": {
+            "max_per_draw": gate.MAX_REASKS,
+            "n_draws": sum(1 for _i, _k, r in landed if r.get("reasks")),
+            "n_draws_twice": sum(1 for _i, _k, r in landed if len(r.get("reasks") or ()) > 1),
+            "n_after_desc_rejected": tally.get("n_reasks_desc", 0),
+            "n_draws_passed_after": sum(
+                1 for _i, _k, r in landed if r.get("reasks") and r["credit"] == "description"
+            ),
+            "n_draws_passed_after_desc_rejected": sum(
+                1
+                for _i, _k, r in landed
+                if r["credit"] == "description"
+                and any(x["gate"] == "desc_rejected" for x in r.get("reasks") or ())
+            ),
+        },
         "n_near_quotes": sum(1 for _i, _k, r in landed if r["near_quote"]),
         "n_quote_checks": tally["n_quote_checks"],
         "n_mc_calls": tally["n_mc_calls"],
