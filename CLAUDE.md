@@ -656,6 +656,10 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   name for the two position-reduced families, `fast_equivalents`); any other new row fails
   ("its fast plan moved") unless the family is declared with a new bank. So cutting a fast
   version needs no entry from the families it leaves alone and stales no earlier entry.
+  A family the golden does NOT have (a new family, plan 0106) has no golden row to compare a
+  new fast row with, so its `plan.fast_plan_sha` rows are left out of what its entry compares
+  and hashes (`manifest_0101_declare.without_fast`, `g is None` only; its `plan_sha` row stays
+  in): a fast version cut after its declaration does not stale the entry.
   `scripts/manifest_0101.py` is the golden's script plus ONE `try` in `plan_entry` (a family
   whose bank changed after an older fast version was frozen made `fast.entry` exit the whole
   manifest; that row now reads `unavailable`); T1 pins the sha of the script that made
