@@ -1998,9 +1998,13 @@ def gate_adapted(
     prior = json.loads(dst.read_text(encoding="utf-8")) if (families and dst.exists()) else {}
     old_ng = {k: v for k, v in prior.get("_not_gated", {}).items() if k not in frozen}
     entries = {k: v for k, v in prior.items() if not k.startswith("_") and k not in not_gated}
+    # a registered family no adapted set carries (plan 0106) is not this set's to explain
+    from wsbench.adapt.families import NOT_ADAPTED
+
+    carried = {k: v for k, v in NOT_GATED.items() if k not in NOT_ADAPTED}
     merged = {
         "_source": source,
-        "_not_gated": {**NOT_GATED, **old_ng, **not_gated},
+        "_not_gated": {**carried, **old_ng, **not_gated},
         **entries,
         **frozen,
     }

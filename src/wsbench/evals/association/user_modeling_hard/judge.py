@@ -136,13 +136,24 @@ def _answer(r: Mapping[str, Any], u: Unit, chat: str) -> dict[str, Any]:
         "near_quote": loc.near,
         "token_statement": loc.tokens,
         "shown_quote": loc.shown,
+        "readings": [
+            {"statement": x.statement, "shown": x.shown, "near": x.near, "tokens": x.tokens}
+            for x in loc.readings()
+        ],
         "gate": loc.gate,
         "credit": "",
         "quote_check_choice": None,
         "quote_check_pick": None,
+        "quote_check_choices": [],
         "broader_suspect": False,
         "rationale": _str(r, "rationale"),
     }
+
+
+def quote_key(key: str, j: int) -> str:
+    """The call key of the quote check on a unit's ``j``-th holding statement: ``<key>|quote``
+    for the first (the single-statement key), ``<key>|quote<j+1>`` after it."""
+    return f"{key}|quote" if j == 0 else f"{key}|quote{j + 1}"
 
 
 def needs_quote_check(row: Mapping[str, Any]) -> bool:
@@ -195,7 +206,11 @@ def judge_units(
     same in both modes: the MC call; ONE re-ask for an answer gated ``quote`` / ``bullet`` /
     ``echo`` (the second answer replaces the first and is verified again, never re-asked; a
     failed re-ask leaves the gated first answer); then the blind quote check of a standing gold
-    pick with an inferred basis (keys ``<key>|retry1``, ``<key>|quote``). Also the call tally."""
+    pick with an inferred basis, one call per distinct statement that holds the quote
+    (``gate.MAX_STATEMENTS`` at most; keys ``<key>|retry1``, ``<key>|quote``, then
+    ``<key>|quote2`` ...): the pick stands when ANY of them returns the gold, is undecided when
+    none does and one did not land or gave no valid choice, and is ``desc_rejected`` when every
+    one is a valid other answer. Also the call tally."""
 
     def ask(calls: list[Call], schema: dict) -> dict[str, dict | None]:
         if not calls:
@@ -228,7 +243,7 @@ def judge_units(
             retries.append(Call(f"{u.key}|retry1", UMH_SYSTEM, u.user + text, u.meta))
     again = ask(retries, UMH_ATTRIBUTE_SCHEMA)
     checks: list[Call] = []
-    by_key = {u.key: u for u in units}
+    asked: list[tuple[Unit, list[str]]] = []
     for u in units:
         row = rows[u.key]
         r2 = again.get(f"{u.key}|retry1")
@@ -237,33 +252,47 @@ def judge_units(
             row = rows[u.key] = {**_answer(r2, u, chats[u.key]), "retry_of": was}
         if row is not None and needs_quote_check(row):
             part = u.item["parts"][u.k]
-            user = prompts.render_quote_check(
-                row["statement"],
-                row["shown_quote"],
-                part["options"],
-                part["judge_label"],
-                part["type"],
-                mixed=bool(u.item.get("mixed_state")),
-                tokens=row["token_statement"],
-            )
-            checks.append(Call(f"{u.key}|quote", UMH_QUOTE_SYSTEM, user, u.meta))
+            keys = []
+            for j, reading in enumerate(row["readings"]):
+                user = prompts.render_quote_check(
+                    reading["statement"],
+                    reading["shown"],
+                    part["options"],
+                    part["judge_label"],
+                    part["type"],
+                    mixed=bool(u.item.get("mixed_state")),
+                    tokens=reading["tokens"],
+                )
+                keys.append(quote_key(u.key, j))
+                checks.append(Call(keys[-1], UMH_QUOTE_SYSTEM, user, u.meta))
+            asked.append((u, keys))
     checked = ask(checks, UMH_QUOTE_SCHEMA)
-    for c in checks:
-        u = by_key[c.key.removesuffix("|quote")]
-        row, r = rows[u.key], checked.get(c.key)
+    for u, keys in asked:
+        row = rows[u.key]
         if row is None:
             continue
-        if r is None:  # the second reading did not land: the draw is undecided, never a pass
-            rows[u.key] = None
-            continue
         part = u.item["parts"][u.k]
-        pick, _value, _invalid = decode_choice(
-            r.get("choice"), part["options"], part["gold_position"]
+        picks: list[str] = []  # per reading: gold / distractor / cannot_tell / undecided
+        for key in keys:
+            r = checked.get(key)
+            choice = r.get("choice") if r is not None else None
+            pick, _value, invalid = decode_choice(choice, part["options"], part["gold_position"])
+            # a second reading that did not land or gave no valid choice decides nothing
+            picks.append("undecided" if r is None or invalid else pick)
+            row["quote_check_choices"].append(choice)
+        at = picks.index("gold") if "gold" in picks else 0
+        reading = row["readings"][at]
+        row["statement"], row["shown_quote"] = reading["statement"], reading["shown"]
+        row["near_quote"], row["token_statement"] = reading["near"], reading["tokens"]
+        row["quote_check_choice"], row["quote_check_pick"] = (
+            row["quote_check_choices"][at],
+            picks[at],
         )
-        row["quote_check_choice"], row["quote_check_pick"] = r.get("choice"), pick
-        if pick == "gold":
+        if "gold" in picks:
             row["credit"] = "description"
             row["broader_suspect"] = gate.broader_suspect(row["statement"], part, broader)
+        elif "undecided" in picks:  # the draw is undecided, never a pass and never a fail
+            rows[u.key] = None
         else:
             row["gate"], row["pick"] = "desc_rejected", "unverified"
     tally = {"n_mc_calls": len(units), "n_retried": len(retries), "n_quote_checks": len(checks)}
@@ -282,6 +311,7 @@ PART_SHOWN = (
     "gate",
     "credit",
     "quote_check_choice",
+    "quote_check_choices",
     "rationale",
     "retry_of",
     "broader_suspect",
@@ -522,6 +552,9 @@ def _run_native(
             continue
         parts = [native_part(k, p, per_part.get((i, k), [])) for k, p in enumerate(it["parts"])]
         item_rows.append(item_row(it, i, "judged", parts))
+    # as summary mode counts them: an item a failed call left undecided is unjudged, even in a
+    # cell whose other units landed (plus the cells of decided items where no unit landed)
+    undecided = {r["id"] for r in item_rows if r["state"] == "judged" and r["pass"] is None}
     return with_readout_count(
         score.score(
             args,
@@ -532,7 +565,8 @@ def _run_native(
             rep=rep,
             spend=spend,
             prompt_version=stamp,
-            n_unjudged=sum(1 for c in nonempty if c.key not in judged_cells),
+            n_unjudged=len(undecided)
+            + sum(1 for c in nonempty if c.key not in judged_cells and c.id not in undecided),
             n_empty=len(cells) - len(nonempty),
             tally=tally,
             config_extra={"aggregate": "native", "options": "bank order"},
