@@ -253,9 +253,11 @@ Two cases:
   a named family whose bank did not change, an unnamed family whose bank did, and read ids or
   units that are no longer the new bank's. Then register the two versions (above), add the
   family and the versions frozen before it to `REFROZEN` in `tests/test_fast_subset.py` with
-  the new files' sha256 pins, name it in `REFROZEN_SINCE_0101` (`tests/test_rename_0101.py`)
-  and in `POST_RENAME` / `POST_RENAME_FAST` of `scripts/manifest_0101.py`, and add a section
-  like the one at the top of this file. No compatibility code changes.
+  the new files' sha256 pins, declare the family's instrument change in the manifest ledger
+  (`python scripts/manifest_0101_declare.py <family> --plan <NNNN> --note '...' --write`; the
+  new versions' rows of every other family need nothing: T1 accepts a new fast version's row
+  that is the family's row under an older version), and add a section like the one at the top
+  of this file. No compatibility code changes.
 - **The family's items changed** (ids added, dropped or re-selected): re-select its units and
   read ids on the new bank by the rules of "How it was chosen", write the new files by hand
   from the current ones with that family's entry replaced, and register them the same way.

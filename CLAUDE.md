@@ -649,7 +649,17 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   the F4 record) never move without editing the check. So a deliberate judge or bank change =
   bump the stamp or bank version, then `python scripts/manifest_0101_declare.py <family> --plan
   <NNNN> --note '...' --write` (it refuses without a bump); a later edit of a declared family
-  needs another bump and another entry.
+  needs another bump and another entry. Fast versions cut after the golden
+  (`manifest_0101_declare.new_fast_rows`): a family's `plan.fast_plan_sha` row for a version
+  the golden has for no family is set aside, before the comparison and the ledger hash, when
+  it is the family's row under a golden version (directly, or recomputed under that version's
+  name for the two position-reduced families, `fast_equivalents`); any other new row fails
+  ("its fast plan moved") unless the family is declared with a new bank. So cutting a fast
+  version needs no entry from the families it leaves alone and stales no earlier entry.
+  `scripts/manifest_0101.py` is the golden's script plus ONE `try` in `plan_entry` (a family
+  whose bank changed after an older fast version was frozen made `fast.entry` exit the whole
+  manifest; that row now reads `unavailable: ...`); T1 pins the sha of the script that made
+  the golden, the sha of the script now and the golden's bytes.
   - **Two frozen names, never interchangeable.** `registry.hash_name(key)`
     (`HASH_FAMILY_NAMES`) is what `plan_sha`, the ATI `bank_sha` and the lucky-guessing seeds
     hash: the key of the family's FIRST hashed life (`multihop` -> `multihop_mt_v2`,
@@ -817,10 +827,8 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   declaring one of them is refused ("re-frozen in between"), and under one of them
   `fast.entry` fails closed. Never `functools.cache` `compatible` (it reads `fast.VERSION`).
   The next bank change that keeps a family's ids is the same script plus the pins it names
-  (`REFROZEN` in `tests/test_fast_subset.py`, `REFROZEN_SINCE_0101`, `POST_RENAME` /
-  `POST_RENAME_FAST` in `scripts/manifest_0101.py`; `evals/fast/README.md` "Re-freezing");
-  `manifest_0101.py --check` compares every family and row outside those declared tables byte
-  for byte and exits 1 on any undeclared difference.
+  (`REFROZEN` in `tests/test_fast_subset.py`; `evals/fast/README.md` "Re-freezing") and the
+  family's entry in the manifest ledger (`manifest_0101_declare.py`, the plan 0101 paragraph).
 
 - Summary mode (`aggregate=summary`, plan 0020, `digest.py`) is the benchmark DEFAULT since plan
   0024: `runner.parse_opts` fills `aggregate=summary` in unless `opts=aggregate=native`; a family

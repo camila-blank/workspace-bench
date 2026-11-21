@@ -450,7 +450,12 @@ def plan_entry(name: str) -> dict[str, Any]:
         for version in sorted(fast.VERSIONS):
             if name in fast.subset(version):
                 fast.VERSION = version  # the plan of that subset, as `--fast[-safety]` selects it
-                out["fast_plan_sha"][version] = reads.fast_plan_sha(name, declared=version)
+                try:
+                    out["fast_plan_sha"][version] = reads.fast_plan_sha(name, declared=version)
+                except SystemExit as e:
+                    # a version frozen before the family's bank changed has no plan for it any
+                    # more (`fast.entry` fails closed): recorded, never a crash of the manifest
+                    out["fast_plan_sha"][version] = f"unavailable: {e.code}"
     finally:
         fast.VERSION = saved
     out["ati_bank_fingerprint"] = ti.bank_fingerprint(name)
