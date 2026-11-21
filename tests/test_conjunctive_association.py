@@ -539,7 +539,10 @@ def test_quote_check_api_fail_is_undecided(tmp_path, fake_llm, mk_args):
 def test_system_requires_every_part():
     for system in (prompts.SYSTEM, prompts.SYSTEM_SUMMARY):
         assert "states EVERY part of that option" in system  # comp-v6: shared parts included
-        assert "differs" not in system and "need not be restated" not in system
+        # the comp-v5 exemption ("EVERY part in which that option differs ...") is gone; the word
+        # itself is in the qualifier rule ("no listed option differs from your pick only in ...")
+        assert "part in which that option differs" not in system
+        assert "need not be restated" not in system
         assert "each bullet is its own statement" in system
         assert "Never combine parts taken from different statements" in system
         assert system.startswith(f"You judge {mc.READOUT_PHRASE}")
