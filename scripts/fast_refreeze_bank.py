@@ -16,7 +16,13 @@ byte for byte instead). It refuses, naming the family, when
 - a named family's bank did not change, or an unnamed family's did (name every changed family:
   both subsets need a new version in the same PR);
 - a named family's units or read ids are no longer the new bank's (a changed id set needs a
-  re-selection on the new bank, not this script): read ids must be plan ids in plan order.
+  re-selection on the new bank, not this script): read ids must be plan ids in plan order;
+- a named family's plan rows of its read ids differ between the bank the source version froze
+  and the registered one (printed as ``plan sha <before> -> <after>``): the same ids are then
+  read differently, so existing fast readouts are not the new plan's. ``--allow-plan-change``
+  cuts the version anyway. The old bank is the file of the family's directory whose sha256 is
+  the source entry's ``bank_sha``; when no such file is left (a bank edited in place),
+  ``--old-bank FAMILY=PATH`` names a copy of it (sha-checked), else the cut is refused.
 
 The new file is written in today's family keys (``fast.KEY_ERA`` "0101"). After writing: add
 the version to ``fast.VERSIONS`` and ``fast.KEY_ERA``, point ``fast.DEFAULT`` / ``fast.VARIANTS``
@@ -25,18 +31,69 @@ to the tables of ``evals/fast/README.md``.
 """
 
 import argparse
+import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
-from wsbench import fast, readplan, registry
+from wsbench import fast, readplan, reads, registry
 
 
 def target_path(version: str) -> Path:
     return registry.REPO_ROOT / "evals/fast" / (version.replace("-", "_") + ".json")
 
 
-def build(src: str, dst: str, families: list[str]) -> str:
+def old_bank(src: str, family: str, given: Path | None = None) -> Path:
+    """The bank file ``src`` froze for ``family``: ``given`` or a file of the family's directory,
+    by the entry's ``bank_sha`` (sha256 of the file's bytes)."""
+    want = fast._file(src)["families"][family]["bank_sha"]
+    cands = [given] if given is not None else sorted(registry.family_root(family).glob("*.json"))
+    for path in cands:
+        if hashlib.sha256(path.read_bytes()).hexdigest() == want:
+            return path
+    raise SystemExit(
+        f"{family}: no file with the sha256 {src} froze ({want[:12]}): pass "
+        f"--old-bank {family}=<a copy of that bank>, or --allow-plan-change"
+    )
+
+
+def _rows_sha(family: str, read_ids: list[str], bank: Path | None) -> str:
+    """sha of the family's plan rows of ``read_ids`` with the family pointed at ``bank`` (None:
+    the registered bank)."""
+    env = registry.BANK_FILE_ENV_PREFIX + family.upper()
+    saved = os.environ.pop(env, None)
+    try:
+        if bank is not None:
+            os.environ[env] = str(bank)
+        reads._specs.cache_clear()  # the plan is cached per bank environment
+        keep = set(read_ids)
+        rows = [s.row() for s in readplan.plan(family, layers=None) if s.id in keep]
+        return reads.plan_sha_rows(rows)
+    finally:
+        os.environ.pop(env, None)
+        if saved is not None:
+            os.environ[env] = saved
+        reads._specs.cache_clear()
+
+
+def plan_shas(src: str, family: str, given: Path | None = None) -> tuple[str, str]:
+    """``(before, after)``: the plan rows of the family's fast read ids on the bank ``src``
+    froze and on the registered bank."""
+    read_ids = fast._file(src)["families"][family]["read_ids"]
+    return (
+        _rows_sha(family, read_ids, old_bank(src, family, given)),
+        _rows_sha(family, read_ids, None),
+    )
+
+
+def build(
+    src: str,
+    dst: str,
+    families: list[str],
+    allow_plan_change: bool = False,
+    old_banks: dict[str, Path] | None = None,
+) -> str:
     registry.load_all()
     doc = json.loads(json.dumps(fast._file(src)))  # the source, read in today's keys; a copy
     named = [registry.canonical(f) for f in families]
@@ -64,6 +121,17 @@ def build(src: str, dst: str, families: list[str]) -> str:
             stray = sorted(u for u in units if u not in set(read_ids) and u not in order)
             if stray:
                 raise SystemExit(f"{fam}: units not in the new bank, re-select: {stray[:5]}")
+        if allow_plan_change:
+            print(f"{fam}: plan sha not compared (--allow-plan-change)", file=sys.stderr)
+        else:
+            before, after = plan_shas(src, fam, (old_banks or {}).get(fam))
+            print(f"{fam}: plan sha {before[:12]} -> {after[:12]}", file=sys.stderr)
+            if before != after:
+                raise SystemExit(
+                    f"{fam}: its read ids are read differently on the new bank (plan sha "
+                    f"{before[:12]} -> {after[:12]}): fast readouts of {src} are not {dst}'s; "
+                    "pass --allow-plan-change to cut the version anyway"
+                )
         entry["bank_sha"] = fast.bank_sha(fam)
     doc["version"] = dst
     return json.dumps(doc, indent=1) + "\n"
@@ -75,9 +143,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("src", help="the version to start from, e.g. fast-v2")
     ap.add_argument("dst", help="the new version, e.g. fast-v3")
     ap.add_argument("families", nargs="+", help="every family whose registered bank changed")
+    ap.add_argument("--allow-plan-change", action="store_true", help="skip the plan sha check")
+    ap.add_argument("--old-bank", action="append", default=[], metavar="FAMILY=PATH")
     args = ap.parse_args(argv)
     path = target_path(args.dst)
-    text = build(args.src, args.dst, args.families)
+    old = {k: Path(v) for k, v in (x.split("=", 1) for x in args.old_bank)}
+    text = build(args.src, args.dst, args.families, args.allow_plan_change, old)
     if args.check:
         if not path.is_file() or path.read_text(encoding="utf-8") != text:
             print(f"{path}: not what {args.src} + {args.families} gives", file=sys.stderr)

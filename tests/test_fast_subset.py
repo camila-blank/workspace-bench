@@ -1648,6 +1648,22 @@ def test_a_refrozen_version_is_its_predecessor_with_only_the_refrozen_bank_sha(o
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.build(old, new, [CONJ]) == raw.decode()
+    # the family's plan rows of its read ids are the same on the bank the old version froze
+    # (found by its sha: items_v4.json) and on the registered one; an unknown old bank refuses
+    before, after = mod.plan_shas(old, CONJ)
+    assert before == after and len(after) == 64
+    assert mod.old_bank(old, CONJ).name == "items_v4.json"
+    # a bank change that moves the plan rows of the read ids is refused unless allowed
+    real = mod.plan_shas
+    mod.plan_shas = lambda *a: ("a" * 64, "b" * 64)
+    try:
+        with pytest.raises(SystemExit, match="read differently on the new bank"):
+            mod.build(old, new, [CONJ])
+        assert mod.build(old, new, [CONJ], allow_plan_change=True) == raw.decode()
+    finally:
+        mod.plan_shas = real
+    with pytest.raises(SystemExit, match="no file with the sha256"):
+        mod.old_bank(old, CONJ, given=ROOT / "evals/fast/README.md")
     with pytest.raises(SystemExit, match="exists: a frozen file is never edited"):
         mod.main([old, new, CONJ])
     with pytest.raises(SystemExit, match="poetry: its registered bank is the one"):
@@ -1713,11 +1729,22 @@ def test_a_refrozen_family_is_stale_under_the_old_stamp_and_the_others_are_not(
     path = write_jsonl(tmp_path / "conj.jsonl", [_cell(i, p) for i in ids for p in range(19)])
     for declared in (V1, V2, VS1, V3, VS):
         assert fast.same_reads(declared, CONJ) and reads.fast_plan_sha(CONJ, declared) == sha
-        for plan_sha in (sha, None):
-            meta = {"fast": declared, "layers": [20]} | ({"plan_sha": plan_sha} if plan_sha else {})
-            write_sidecar(path, **meta)
+        write_sidecar(path, fast=declared, plan_sha=sha, layers=[20])
+        cells, rep = reads.load(mk_args(path, scope=fast.SCOPE, layers=[20]), CONJ)
+        assert len(cells) == 19 * len(ids) and rep.reads_checked == "sidecar"
+        # without a plan_sha nothing ties the file to the active plan: accepted only when the
+        # declared version froze the same bank (fast-v3 / fast-safety-v2), refused across the
+        # bank change (`same_reads` compares frozen entries, not plans)
+        write_sidecar(path, fast=declared, layers=[20])
+        if declared in (V3, VS):
             cells, rep = reads.load(mk_args(path, scope=fast.SCOPE, layers=[20]), CONJ)
-            assert len(cells) == 19 * len(ids) and rep.reads_checked == "sidecar"
+            assert len(cells) == 19 * len(ids)
+        else:
+            with pytest.raises(SystemExit) as e:
+                reads.load(mk_args(path, scope=fast.SCOPE, layers=[20]), CONJ)
+            err = capsys.readouterr().err
+            assert e.value.code == 2 and "without a plan_sha" in err
+            assert f"{CONJ}'s bank changed since that version" in err
         write_sidecar(path, fast=declared, plan_sha="0" * 64, layers=[20])  # the sha guard holds
         with pytest.raises(SystemExit):
             reads.load(mk_args(path, scope=fast.SCOPE, layers=[20]), CONJ)

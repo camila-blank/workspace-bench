@@ -561,6 +561,21 @@ def load(
             f"{path}: readouts were produced for another fast subset ({declared_fast!r}, not "
             f"{fast.VERSION!r}): {canonical(family)} reads other items or positions there"
         )
+    # ... but `same_reads` compares the two frozen entries, not the plans: only the `plan_sha`
+    # guard below ties the file to the active plan. Across a bank change (the declared
+    # version's `bank_sha` for the family is not the active one's) a file that declares no
+    # `plan_sha` has nothing to check, so it is refused.
+    if (
+        fast_file
+        and declared_fast != fast.VERSION
+        and not (meta or {}).get("plan_sha")
+        and fast.subset(declared_fast)[canonical(family)]["bank_sha"] != fast_entry["bank_sha"]
+    ):
+        fail(
+            f"{path}: readouts declare fast subset {declared_fast!r} without a plan_sha, and "
+            f"{canonical(family)}'s bank changed since that version: nothing ties the file to "
+            f"{fast.VERSION!r}'s plan (re-produce the file, or judge a full readouts file)"
+        )
     fast_rule = dict(fast_entry.get("positions") or {}) if fast_entry is not None else {}
     if fast_rule and fast_rule.get("kind") not in readplan.FAST_KINDS:
         fail(f"{family}: unknown fast positions rule {fast_rule!r}")
