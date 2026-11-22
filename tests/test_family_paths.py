@@ -23,7 +23,7 @@ EXEMPT = {REPO / "src/wsbench/registry.py"}
 
 def code_files() -> list[Path]:
     out = [*(REPO / "src/wsbench").rglob("*.py"), *(REPO / "atlas").glob("*.py")]
-    out += [*(REPO / "viewer_app").glob("*.py"), *(REPO / ".claude/skills").rglob("*.py")]
+    out += (REPO / ".claude/skills").rglob("*.py")
     return sorted(f for f in out if f not in EXEMPT and "__pycache__" not in f.parts)
 
 
@@ -163,7 +163,6 @@ ABSENT_ON_PURPOSE = (
 # Paths written on purpose that are not files of this checkout (the list may only shrink):
 KNOWN_MISSING = {
     # paths of the source repos (global-workspace, the J-lens repo), quoted in credits
-    "evals/workspace-bench/hillclimbing_evals/multi_token/ttt/README.md",
     "evals/workspace-bench/hillclimbing_evals/multi_token/dm_category_default",
     "evals/workspace-bench/jlens_pr",
     "evals/chint_cutoff",
@@ -185,6 +184,17 @@ KNOWN_MISSING = {
 def doc_files() -> list[Path]:
     out = [REPO / n for n in ("README.md", "CLAUDE.md", "AGENTS.md", "NOTICE.md")]
     out += [REPO / "docs" / f"{n}.md" for n in ("producing_readouts", "summarizer")]
+    # the reference pages split out of the README (they hold its family paths now)
+    split = (
+        "running",
+        "tiers",
+        "fast_subset",
+        "baselines",
+        "judges",
+        "porting",
+        "evals",
+    )
+    out += [REPO / "docs" / f"{n}.md" for n in (*split, "results_contract", "hallucinationbench")]
     out.append(REPO / "docs/adapt_judge_inputs.md")
     out += [f for f in (REPO / ".claude/skills").rglob("*.md") if f.name not in _SKILL_AUDITS]
     out += [registry.family_root(f) / "README.md" for f in registry._layout()]
@@ -234,7 +244,7 @@ def test_every_written_evals_path_exists():
 
 # plan 0101 §0.2: every family's category directory
 LAYOUT = {
-    "association": "basic",
+    "association": "association",  # plan 0107: `basic` before
     "basic_readout": "basic",
     "basic_readout_st": "basic",
     "directed_modulation": "basic",
@@ -301,16 +311,57 @@ def test_repo_path():
     assert registry.repo_path("docs/summarizer.md") == REPO / "docs/summarizer.md"
     assert registry.repo_path("/abs/x.json") == Path("/abs/x.json")
     # F8: `association` is a pre-0101 family key AND a category. A pre-0101 path of the family
-    # resolves into the family's directory; a new-layout path is taken as written
+    # resolves into the family's directory (under the category `association` since plan 0107,
+    # hence the doubled segment); a new-layout path is taken as written
     assert registry.repo_path("evals/association/items_v5.json") == (
-        REPO / "evals/basic/association/items_v5.json"
+        REPO / "evals/association/association/items_v5.json"
     )
     for as_written in (
         "evals/association/conjunctive_association/items_v4.json",
-        "evals/basic/association/items_v5.json",
+        "evals/association/association/items_v5.json",
         "evals/basic/multihop_st/items_v5.json",
     ):
         assert registry.repo_path(as_written) == REPO / as_written and (REPO / as_written).exists()
+    # plan 0107: the family `association` left `basic` for the category `association`. A path
+    # stored under the category it left resolves into today's directory, at any depth
+    doubled = REPO / "evals/association/association"
+    assert registry.family_root("association") == doubled and doubled.is_dir()
+    assert registry.family_rel("association") == Path("evals/association/association")
+    assert registry.LEGACY_FAMILY_CATEGORIES == {"association": "basic"}
+    for stored, rest in (
+        ("evals/basic/association/items_v5.json", "items_v5.json"),
+        ("evals/basic/association/lite_rule.json", "lite_rule.json"),
+        ("evals/basic/association", ""),
+        ("evals/association/lite_rule.json", "lite_rule.json"),  # pre-0101
+        ("evals/association", ""),  # pre-0101: the bare name was the family's directory
+        ("evals/association/association/lite_rule.json", "lite_rule.json"),  # today
+    ):
+        assert registry.repo_path(stored) == (doubled / rest if rest else doubled), stored
+        assert registry.repo_path(stored).exists(), stored
+    # ... and nothing else: the category's other families (as written, never
+    # read as the pre-0101 family directory plus a subdirectory), another family under `basic`,
+    # an unknown family under `basic`, and the same family under a category it never sat in
+    for as_written in (
+        "evals/association/user_modeling/items_v3.json",
+        "evals/association/user_modeling/README.md",
+        "evals/association/conjunctive_association/items_v6.json",
+        "evals/basic/poetry/README.md",
+    ):
+        assert registry.repo_path(as_written) == REPO / as_written and (REPO / as_written).exists()
+    for as_written in ("evals/basic/no_such_family/x.json", "evals/safety/association/x.json"):
+        assert registry.repo_path(as_written) == REPO / as_written
+    assert not (REPO / "evals/basic/association").exists()
+    # a missing WSB_BANK_FILE_* path of the old directory is told where the family is now
+    assert registry._moved_hint("evals/basic/association/items_v5.json").endswith(
+        "evals/association/association/items_v5.json"
+    )
+    assert registry._moved_hint("evals/association/items_v5.json").endswith(
+        "evals/association/association/items_v5.json"
+    )
+    assert registry._moved_hint("evals/basic/poetry/items.json") == ""
+    # a path already in today's layout gets no hint (review of #525)
+    assert registry._moved_hint("evals/association/association/items_v9.json") == ""
+    assert registry._moved_hint("evals/association/user_modeling/items_v9.json") == ""
     # plan 0105: a path stored under the category's former name resolves into today's directory
     assert registry.repo_path("evals/precision/jlens_concept_pr/manifest.json") == (
         REPO / "evals/jlens_comparison/jlens_concept_pr/manifest.json"

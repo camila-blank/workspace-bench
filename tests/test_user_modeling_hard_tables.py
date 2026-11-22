@@ -123,11 +123,16 @@ def test_ati_scope_leaves_the_family_out(real_families):
     assert "user_modeling" not in ti.NOT_GATED  # the easy family's entry is as it was
 
 
-def test_viewer_groups_the_family_under_association():
-    from wsbench.viewer import build
+def test_viewer_groups_the_family_under_association(real_families):
+    # the viewer reads its groups from the 'The evals' entries of docs/evals.md
+    from wsbench.viewer import meta
 
-    groups = dict(build.GROUPS)
-    assert groups["Association"] == [
+    metas = meta.load_wsb(registry.REPO_ROOT)
+    assert metas[FAMILY].group == registry.CATEGORIES["association"] == "Association"
+    assert metas[FAMILY].title == registry.FAMILIES[FAMILY].title
+    in_group = sorted(metas.values(), key=lambda m: m.order)
+    assert [m.name for m in in_group if m.group == "Association"] == [
+        "association",
         "user_modeling",
         "user_modeling_hard",
         "conjunctive_association",
