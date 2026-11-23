@@ -57,7 +57,29 @@ def test_fast_subset_passes_and_fails_closed_on_a_changed_bank(monkeypatch, caps
     assert out.startswith("FAIL  fast_subset:") and f"bank changed since {fast.DEFAULT}" in out
 
 
-def test_ati_subset_passes(capsys, real_families):
+# A family whose bank changed and whose ATI entry awaits its re-gate
+# (``test_refilled_banks.PENDING_REGATE``), with the bank its entry was gated on: on the
+# registered bank the check fails closed and names it, on that bank it passes as before.
+ATI_GATED_ON = {"chain_intermediates": "evals/computational/chain_intermediates/items_v2.json"}
+
+
+@pytest.fixture
+def ati_gated_banks(monkeypatch):
+    from test_refilled_banks import PENDING_REGATE
+
+    assert set(ATI_GATED_ON) == set(PENDING_REGATE)
+    for family, bank in ATI_GATED_ON.items():
+        monkeypatch.setenv(f"WSB_BANK_FILE_{family.upper()}", str(registry.REPO_ROOT / bank))
+
+
+def test_ati_subset_fails_closed_on_a_pending_regate(capsys, real_families):
+    """Plan 0110: chain_intermediates is on bank v3 and its entry is bank v2's."""
+    assert cli.main(["check", "name=ati_subset"]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("FAIL  ati_subset: chain_intermediates:") and "re-gate" in out
+
+
+def test_ati_subset_passes(capsys, real_families, ati_gated_banks):
     assert cli.main(["check", "name=ati_subset"]) == 0
     assert "entries match their judge instrument and bank" in capsys.readouterr().out
 
@@ -164,11 +186,13 @@ def test_check_all_names_what_it_skips(monkeypatch, capsys):
     assert "SKIP  capable_gate: skipped (needs model=...)" in out and "fast_subset" not in out
 
 
-def test_the_offline_checks_name_things_by_role(capsys):
+def test_the_offline_checks_name_things_by_role(capsys, request):
     """A PASS line says what was checked, without the version id of a subset."""
     import re
 
     for name in ("fast_subset", "ati_subset"):
+        if name == "ati_subset":  # its PASS line: on the banks the pending entries were gated on
+            request.getfixturevalue("ati_gated_banks")  # (fast_subset refuses a bank pin)
         assert cli.main(["check", name]) == 0
         line = capsys.readouterr().out
         assert line.startswith(f"PASS  {name}:") and not re.search(r"\bv\d|-v\d", line), line
