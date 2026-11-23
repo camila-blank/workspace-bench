@@ -1415,6 +1415,16 @@ in a git worktree (prefix commands with `PYTHONPATH=src` when it shares the main
   `scripts/residuals_map.py`; never hand-edited). `capture check=True` says where cells are.
   `produce family=` reads the store by default (`Producer.store` / `.pull`, `_run_from_store`;
   `store=none` = a forward pass per item); `tests/test_produce_reads_store.py`.
+- `wsbench bundle` + `produce/served/` (`docs/producing_readouts.md` § A served engine): reference
+  code that reads slot-lens cells through a local SGLang server; the lens bundle folder
+  (`lens.json`) is all the engine reads. Needs `sglang` + `httpx` (not in the lock file) and is
+  never imported by the judge path (`tests/test_served_bundle.py`).
+- `wsbench read` (`produce/read.py`, `docs/fast_path.md`): evals read through a served engine from
+  the residual store, packed per server start, one readouts file + sidecar per eval (sidecar
+  last); `shard=`/`shards=` write parts that the last process joins; `judge=True` calls `run`;
+  `launcher=modal` is `produce/modal_launch.py` (imported only then). `tests/test_read_command.py`.
+  `read method=model_continuation model_dir=` (`served/continuation.py`): the layer-free baseline,
+  rows at one layer number (`layer=`, 44), judged with `layers=<that>`.
 - No absolute box path in `src` (`tests/test_paths.py`): a location outside the repo goes through
   `wsbench.paths` (`external(var, rel)` = `$var`, else `$WSB_DATA_ROOT/<rel>`, default root
   `/workspace`).
