@@ -54,8 +54,8 @@ def test_role_marker_reads_inkling_turns():
 def test_inkling_app_spec():
     spec = modal_spec(INK)
     assert spec["app"] == "adapt-inkling-2-mini" and spec["image"] == "inkling"
-    assert spec["gpu"] == ["B200"] and spec["tp"] == 1 and spec["replicas"] == 8
-    assert spec["max_containers"] == 16 and spec["volume"] == "inkling-2-mini"
+    assert spec["gpu"] == ["B200"] and spec["tp"] == 1 and spec["replicas"] == 16
+    assert "max_containers" not in spec and spec["volume"] == "inkling-2-mini"
     assert spec["weights"].endswith("/snapshots/b85c3cfa615fc413cc9af3379f491b963f3b586a")
 
 

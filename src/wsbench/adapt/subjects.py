@@ -464,8 +464,7 @@ SUBJECTS: dict[str, Subject] = {
             # B200 only: the image's inkling2 kernels have no sm90 build (H200: "no kernel image
             # is available for execution on the device", csrc/inkling2/conv_mix.cu, 2026-11-23)
             modal_gpu=("B200",),
-            modal_replicas=8,
-            modal_max_containers=16,
+            modal_replicas=16,
             modal_image="inkling",
             modal_volume="inkling-2-mini",
             modal_weights="hf/hub/models--thinkingmachines--Inkling-2-Mini/snapshots/"

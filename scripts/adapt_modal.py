@@ -62,7 +62,7 @@ Deploy (Camila's env; ``MODAL=/root/.cache/cfinf-modal-venv/bin/modal``, from th
     ADAPT_SUBJECT=deepseek-v4-pro $MODAL deploy scripts/adapt_modal.py  # adapt-v4-pro (B300:8 TP8)
     ADAPT_SUBJECT=kimi-k3 $MODAL deploy scripts/adapt_modal.py      # adapt-kimi-k3 (B300:8 TP8)
     ADAPT_SUBJECT=muse-spark-open $MODAL deploy scripts/adapt_modal.py  # B300:8|B200:8, TP8
-    ADAPT_SUBJECT=inkling-2-mini $MODAL deploy scripts/adapt_modal.py   # B200, 8 replicas (max 16)
+    ADAPT_SUBJECT=inkling-2-mini $MODAL deploy scripts/adapt_modal.py   # B200, 16 replicas
     # then every adapt command for that subject (backend="modal") uses its app transparently;
     # ADAPT_BACKEND=modal sends a box-sized subject to the shared app instead of the 4090
 
