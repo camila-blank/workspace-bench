@@ -2094,12 +2094,12 @@
       "token_cap": 920000,
       "decode": true,
       "overflow": "hierarchical",
-      "fallback": "none",
+      "fallback": "default+claude-sonnet-5-5",
       "layer_mode": "union"
      },
      "decided": {},
      "digest_unserved": [],
-     "written": "2026-11-23T03:44:29+00:00",
+     "written": "2026-11-23T07:03:58+00:00",
      "value": 1.0,
      "n": 51,
      "ci": [
