@@ -464,9 +464,9 @@ first duplicate `(id, layer, pos)`, counts empty readouts (a result, not a missi
   text, and an echo whose holding statement is not itself an echo gets
   `UMH_RETRY_REASON_ECHO_QUOTE`, which must never say "not from that bullet" (review r4 F3).
   Floors are frozen (`PENDING_FLOOR` in `tests/test_po_floors_r3.py` is empty; prompt-only
-  0.703, logit lens L63 0.019, lucky blind 0.114; the lucky `described` variant is NOT in the
-  entry: its prompts change with the bank and it was not re-measured, run and freeze it;
-  `fine` misses the per-kind lucky bar on blind, owner decision open) and the bank's sha256 is
+  0.703, logit lens L63 0.019, lucky blind 0.114, described 0.093; the lucky `described`
+  guesser's prompts show examples from the whole bank, so a bank change means new calls for
+  it even when every other call replays; `fine` misses the per-kind lucky bar on blind, owner decision open) and the bank's sha256 is
   pinned in the bank test: a bank edit now means bank v5, a new stamp, the floors re-measured
   (L63: re-read every item on the new plan, or a drop-only `plan_lineage`) and a new ledger
   entry. The judge's call keys hold `CALL_VERSION`, not the bank version, so a drop-only bank
