@@ -26,7 +26,7 @@ SPEC = register(
         full_contiguous=True,
         flat_types=prompts.FLAT_TYPES,
         multi_select=prompts.MULTI_SELECT,
-        calls_per_arm="≈ 0.8k MC + up to 0.8k quote checks summary; native ≈ 0.3M x k",
+        calls_per_arm="≈ 0.5k MC + up to 0.6k quote checks and re-asks summary; native ≈ 0.2M x k",
         sources="Choi et al. 2025",
     )
 )
