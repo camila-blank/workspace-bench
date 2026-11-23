@@ -305,7 +305,7 @@ Every set's `directed_modulation.json` is re-derived from the registered bank `i
 | dory-4b | 12 | 15 | 27 (12 + 15) | 9 | 15 | 51 | untried | 1.000 (51) |
 | gemma-4-31b-it | 35 | 37 | 72 (35 + 37) | 15 | 15 | 102 | full | 1.000 (102) |
 | glm-5.3 | 35 | 37 | 72 (35 + 37) | 15 | 15 | 102 | full | 1.000 (102) |
-| glm-5.3-flash | 32 | 36 | 68 (32 + 36) | 15 | 15 | 98 | untried | 1.000 (98) |
+| glm-5.3-flash | 32 | 36 | 69 (33 + 36) | 15 | 15 | 99 | untried | 1.000 (99) |
 | kimi-k2 | 21 | 23 | 44 (21 + 23) | 15 | 15 | 74 | untried | 1.000 (74) |
 | kimi-k3 | 35 | 37 | 72 (35 + 37) | 15 | 15 | 102 | full | 1.000 (102) |
 | muse-spark-open | 35 | 37 | 72 (35 + 37) | 15 | 15 | 102 | full | 1.000 (102) |
@@ -316,4 +316,4 @@ Every set's `directed_modulation.json` is re-derived from the registered bank `i
 | qwen3.5-2b | 15 | 22 | 37 (15 + 22) | 12 | 15 | 64 | untried | 1.000 (64) |
 | qwen3.5-4b | 32 | 35 | 67 (32 + 35) | 15 | 15 | 97 | untried | 1.000 (97) |
 | qwen3.5-9b | 35 | 37 | 72 (35 + 37) | 15 | 15 | 102 | full | 1.000 (102) |
-| qwen3.6-35b-a3b | 33 | 36 | 69 (33 + 36) | 15 | 15 | 99 | untried | 1.000 (99) |
+| qwen3.6-35b-a3b | 33 | 36 | 70 (34 + 36) | 15 | 15 | 100 | untried | 1.000 (100) |
