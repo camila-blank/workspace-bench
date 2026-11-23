@@ -164,6 +164,34 @@ def same_reads(version: Any, family: str, against: str | None = None) -> bool:
     )
 
 
+def not_in_run(stamps: Mapping[str, Any], against: str | None = None) -> list[str]:
+    """The families of ``against`` (default: the active ``VERSION``) that a run cut under an
+    earlier version cannot hold (plan 0114): ``stamps`` = ``{family: the version its fast row
+    is stamped with}``. When some row is of another registered version whose entry for its
+    family is ``compatible`` (so the row counts under ``against``), the families ``against``
+    holds that none of those versions holds and that have no row; else ``[]``. A note only:
+    it changes no row's compatibility and no score."""
+    against = VERSION if against is None else against
+    if against not in VERSIONS:
+        return []
+    older = {v for f, v in stamps.items() if v != against and compatible(v, f, against)}
+    if not older:
+        return []
+    held = {registry.canonical(f) for f in stamps} | {f for v in older for f in subset(v)}
+    return sorted(f for f in subset(against) if f not in held)
+
+
+def not_in_run_note(stamps: Mapping[str, Any], against: str | None = None) -> str:
+    """``not_in_run`` as the one sentence the report header and the viewer's set note print:
+    ``2 families of fast-v6 not in this run: a, b``; ``""`` when none is absent."""
+    absent = not_in_run(stamps, against)
+    if not absent:
+        return ""
+    noun = "family" if len(absent) == 1 else "families"
+    version = VERSION if against is None else against
+    return f"{len(absent)} {noun} of {version} not in this run: {', '.join(absent)}"
+
+
 @functools.cache
 def _file_sha(path: str) -> str:
     with open(path, "rb") as fh:

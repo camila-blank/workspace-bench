@@ -500,6 +500,54 @@ def test_macro_and_report_under_the_new_default_and_for_old_directories(tmp_path
     assert "stale fast subset" not in text
 
 
+def test_a_fast_v5_directory_under_the_default_names_the_families_it_lacks(tmp_path, capsys):
+    """Plan 0114: a 16-row fast-v5 directory reported under the fast-v6 default. Every row
+    still counts (``fast.compatible``) and no value moves; the header says which two families
+    of the default the run has no row for, since no stale row points at it."""
+    kept = sorted(set(TABLE) - set(JOINED))
+    old = [_row(fam, V5, value=0.25 + i / 100) for i, fam in enumerate(kept)]
+    line = "2 families of fast-v6 not in this run: association_hard, user_modeling_hard"
+    assert fast.not_in_run({r.family: V5 for r in old}) == sorted(JOINED)
+    assert fast.not_in_run_note({r.family: V5 for r in old}) == line
+    assert fast_header(old).splitlines() == [fast_header(), line]
+    m = macro(old)  # the rows and the macro are what they were: 16 rows, none excluded
+    assert m["families"] == [r.family for r in old] and m["excluded"] == []
+    assert m["value"] == pytest.approx(sum(r.value for r in old) / 16)
+    # nothing to say for a run of the default, for one that has the two rows (whatever the
+    # other rows are stamped), or for rows of a version the default does not count
+    assert fast.not_in_run(dict.fromkeys(kept, V6)) == []
+    assert fast_header([_row(f) for f in kept]) == fast_header()
+    both = [*old, *(_row(f) for f in JOINED)]
+    assert fast_header(both) == fast_header() and len(macro(both)["families"]) == 18
+    assert fast.not_in_run({"poetry": "fast-v3"}) == [] == fast.not_in_run({"poetry": None})
+    assert fast.not_in_run({}) == [] and fast.not_in_run_note({}) == ""
+    # fast-v4 (chain_intermediates stale): the note and the fast_version= hint, both
+    v4 = [_row(fam, V4) for fam in kept]
+    assert fast_header(v4).splitlines()[1:] == [
+        line,
+        "1 row(s) are fast-v4 rows; pass fast_version=fast-v4 for that subset's macro",
+    ]
+    # one family joined: singular; and under the old version itself nothing is absent
+    assert fast.not_in_run_note(dict.fromkeys([*kept, "association_hard"], V5)) == (
+        "1 family of fast-v6 not in this run: user_modeling_hard"
+    )
+    assert fast.not_in_run(dict.fromkeys(kept, V5), against=V5) == []
+    # the report of the directory: the line in the text, the same macro in the json
+    for r in old:
+        write_results(tmp_path / r.family, r)
+    assert main(["report", f"dir={tmp_path}", "--fast"]) == 0
+    text = capsys.readouterr().out
+    assert text.splitlines()[:2] == [fast_header(), line]
+    assert main(["report", f"dir={tmp_path}", "json=True"]) == 0
+    got = json.loads(capsys.readouterr().out)["macro"]
+    assert got["fast_subset"] == V6 and len(got["families"]) == 16 and got["excluded"] == []
+    assert got["value"] == pytest.approx(m["value"])
+    assert main(["report", f"dir={tmp_path}", "fast_version=fast-v5"]) == 0  # as it was
+    assert capsys.readouterr().out.splitlines()[0].startswith("scope: fast subset fast-v5 (16 ")
+    assert fast.VERSION == V5
+    fast.VERSION = fast.DEFAULT
+
+
 def test_fast_safety_is_retired_with_a_message(capsys, tmp_path):
     for argv in (["plan", "--fast-safety"], ["run", "--fast-safety", "readouts_root=r", "out=o"],
                  ["report", f"dir={tmp_path}", "fast=safety"]):  # fmt: skip
