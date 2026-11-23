@@ -1625,7 +1625,9 @@ class Capture(Command):
         # local folder holding a copy of it, or none
         self.dataset = "agu18dec/workspacebench_residuals"
         self.dataset_revision = ""  # default: the revision evals/residuals/map.json was built on
-        self.check = False  # only say where each eval's cells are; no download, no model
+        # only say where each eval's cells are: no vector is downloaded and no model loaded (the
+        # tokenizer is needed to render the plan, and is fetched once if it is not cached)
+        self.check = False
 
     def finalize(self) -> None:
         self.dataset = str(self.dataset or "none")
@@ -1738,6 +1740,337 @@ class Capture(Command):
             f"{n['dataset']} in the dataset + {neither} in neither "
             f"({len(rest) - len(there)} of {len(located)} items to capture)"
         )
+
+
+class Bundle(Command):
+    """Build a lens bundle, the folder the served engine reads (`produce/served`,
+    `docs/producing_readouts.md` § A served engine): a local PEFT LoRA adapter of the O-lens
+    folded into a copy of the subject's local snapshot, plus `lens.json`. Runs on the CPU and
+    never loads the model (needs torch, safetensors and transformers: the `gpu` extra)."""
+
+    def __init__(self) -> None:
+        from wsbench.produce.methods import OLens, Sampling
+
+        super().__init__()
+        self.adapter = ""  # a local PEFT adapter folder (adapter_config.json + the safetensors)
+        self.model = ""  # a local snapshot folder of the subject model
+        self.out = ""  # the bundle folder to write
+        self.name = ""  # the lens's name; default: the out folder's name
+        self.prompt = OLens.prompt  # the carrier prompt, with {layer} and {char}
+        self.alpha = OLens.alpha  # the slot vector is alpha * unit(h)
+        self.model_id = "Qwen/Qwen3.6-27B"
+        self.revision = ""  # the subject revision sha; default: the benchmark's for the default
+        self.temperature = Sampling.temperature
+        self.top_p = Sampling.top_p
+        self.top_k = Sampling.top_k
+        self.max_new_tokens = Sampling.max_new_tokens
+        self.samples = Sampling.k  # readouts per cell
+        self.bullet = False  # a single-bullet lens: 4 readouts per cell, sampling kind bullet4
+
+    def finalize(self) -> None:
+        from wsbench.produce.backend import DEFAULT_MODEL, DEFAULT_REVISION
+
+        for key in ("adapter", "model", "out"):
+            if not getattr(self, key):
+                raise ValueError(f"give {key}=<folder>")
+            setattr(self, key, _path(getattr(self, key)))
+        self.name = str(self.name or self.out.name)
+        self.prompt = str(self.prompt)
+        if "{char}" not in self.prompt:
+            raise ValueError("prompt= needs a {char} placeholder (the activation slot)")
+        self.alpha = float(self.alpha)
+        if self.alpha <= 0:
+            raise ValueError("alpha must be positive")
+        self.model_id = str(self.model_id)
+        self.revision = str(self.revision or "")
+        if not self.revision and self.model_id == DEFAULT_MODEL:
+            self.revision = DEFAULT_REVISION
+        if len(self.revision) < 12:
+            raise ValueError("revision=<sha> is required for this model_id")
+        self.temperature, self.top_p = float(self.temperature), float(self.top_p)
+        self.top_k, self.max_new_tokens = _int(self.top_k), _int(self.max_new_tokens)
+        self.bullet = _bool(self.bullet)
+        self.samples = 4 if self.bullet else _int(self.samples)
+        if min(self.top_k, self.max_new_tokens, self.samples) < 1:
+            raise ValueError("top_k, max_new_tokens and samples are at least 1")
+
+    def execute(self) -> int:
+        for key in ("adapter", "model"):
+            if not getattr(self, key).is_dir():
+                print(f"bundle: {key}={getattr(self, key)} is not a folder", file=sys.stderr)
+                return EXIT_USAGE
+        from wsbench.produce.served import bundle
+
+        try:
+            made = bundle.from_adapter(
+                self.model,
+                self.adapter,
+                self.out,
+                name=self.name,
+                model=self.model_id,
+                model_revision=self.revision,
+                prompt=self.prompt,
+                alpha=self.alpha,
+                sampling={
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "top_k": self.top_k,
+                    "max_new_tokens": self.max_new_tokens,
+                    "k": self.samples,
+                },
+                sampling_kind="bullet4" if self.bullet else "prose1",
+            )
+        except (bundle.BundleError, FileNotFoundError) as e:
+            print(f"bundle: {e}", file=sys.stderr)
+            return EXIT_USAGE
+        layers, meta = made.layers, made.meta
+        print(f"lens bundle -> {made.path}")
+        print(f"{made.name}: {meta['model']} @ {made.model_revision[:12]}, alpha {self.alpha:g}")
+        print(
+            f"{len(layers)} layers ({layers[0]}..{layers[-1]}), {made.k} readout(s) per cell "
+            f"({made.sampling_kind}), base vocabulary {meta['base_vocab']}"
+        )
+        return 0
+
+
+class Read(Capture):
+    """Read evals with a served lens, the fast path (`docs/fast_path.md`; needs the `gpu` and
+    `serve` extras): cells from the residual store, one engine decode per pack of evals, one
+    readouts file per eval under `out`. Evals come from `families=`, `--fast` or `plan=<file>`
+    as on `capture`; `judge=True` then runs `wsbench run` on the files."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lens = ""  # method=lens: a lens bundle folder (`wsbench bundle`)
+        # lens: a served lens over stored activations | model_continuation: the baseline, what
+        # the unmodified model says next after each read position (needs model_dir=, no lens=)
+        self.method = "lens"
+        self.model_dir = ""  # method=model_continuation: a local snapshot folder of the model
+        self.layer = 44  # method=model_continuation: the one layer number its rows carry
+        self.out = pydra.REQUIRED  # the readouts root: one <eval>.jsonl each, with its sidecar
+        self.engine = "sglang"
+        self.pack_cells = 60000  # cells decoded per server start; small evals share one
+        self.greedy = False  # greedy decoding (parity checks); default: the lens's sampling
+        self.sampler = "hf"  # hf: top-k, renormalise, top-p (as HF generate) | native: the server's
+        self.server_args = ""  # the server's flags as one quoted string; empty = the engine's own
+        self.in_flight = 4096  # request rows the client keeps in flight
+        self.work = ""  # scratch folder for the token bank; empty = a temporary folder
+        self.judge = False  # then judge and report: `wsbench run readouts_root=<out>`
+        self.judged = ""  # the judge's out folder; default <out>_judged
+        self.launcher = "local"  # local: this machine's GPU | modal: one container per GPU
+        self.gpus = 1  # launcher=modal: containers, each reading shard i of gpus
+        self.modal_gpu = "B200"
+        self.modal_volume = ""  # launcher=modal: the volume that holds store, lens and out
+        self.modal_mount = "/data"  # where that volume is mounted in the containers
+        self.modal_secret = ""  # a Modal secret with HF_TOKEN, if the dataset needs one
+        self.modal_app = "wsbench-read"
+        self.modal_timeout = 14400  # seconds per container
+        self.modal_sglang = "sglang[all]>=0.5"  # the pip requirement of the server in the image
+
+    def finalize(self) -> None:
+        super().finalize()
+        self.method = str(self.method)
+        if self.method not in ("lens", "model_continuation"):
+            raise ValueError(f"method is lens or model_continuation, got {self.method!r}")
+        self.layer = _int(self.layer)
+        if self.method == "lens":
+            if not self.lens or self.model_dir:
+                raise ValueError("method=lens needs lens=<bundle folder> (and no model_dir=)")
+            self.lens = _path(self.lens)
+        else:
+            if not self.model_dir or self.lens:
+                raise ValueError("method=model_continuation needs model_dir=<folder> and no lens=")
+            if self.greedy or self.sampler != "hf" or self.check:
+                raise ValueError("method=model_continuation takes no greedy=, sampler= or check=")
+            self.model_dir = _path(self.model_dir)
+            self.lens = None
+        self.out = _path(self.out)
+        self.engine = str(self.engine)
+        self.pack_cells = _int(self.pack_cells)
+        if self.pack_cells < 1:
+            raise ValueError(f"pack_cells must be >= 1, got {self.pack_cells}")
+        self.greedy = _bool(self.greedy)
+        self.sampler = str(self.sampler)
+        if self.sampler not in ("hf", "native"):
+            raise ValueError(f"sampler is hf or native, got {self.sampler!r}")
+        self.server_args = str(self.server_args or "")
+        self.in_flight = _int(self.in_flight)
+        self.work = _path(self.work) if self.work else None
+        self.judge = _bool(self.judge)
+        self.judged = _path(self.judged) if self.judged else Path(f"{self.out}_judged")
+        self.launcher = str(self.launcher)
+        if self.launcher not in ("local", "modal"):
+            raise ValueError(f"launcher is local or modal, got {self.launcher!r}")
+        self.gpus = _int(self.gpus)
+        if self.gpus < 1:
+            raise ValueError(f"gpus must be >= 1, got {self.gpus}")
+        for key in ("modal_gpu", "modal_volume", "modal_mount", "modal_secret", "modal_app"):
+            setattr(self, key, str(getattr(self, key) or ""))
+        self.modal_timeout = _int(self.modal_timeout)
+        self.modal_sglang = str(self.modal_sglang)
+        if self.launcher == "modal" and not self.modal_volume:
+            raise ValueError(
+                "launcher=modal needs modal_volume=<name> (store, lens and out live on it)"
+            )
+        if self.launcher == "modal" and (self.shards != 1 or self.shard != 0):
+            raise ValueError("launcher=modal sets shard= and shards= itself; give gpus=")
+        if self.judge and self.plan is not None:
+            raise ValueError(
+                "judge=True judges this benchmark's evals; a plan= file has no judge here"
+            )
+        if self.judge and self.launcher == "modal":
+            raise ValueError(
+                "judge=True runs here, but launcher=modal writes the readouts to the volume: "
+                "fetch them (modal volume get), then `wsbench run readouts_root=<dir>`"
+            )
+        if self.judge and (self.shards != 1 or self.check):
+            raise ValueError("judge=True needs the whole read in this call: drop shards= / check=")
+
+    def modal_argv(self) -> list[str]:
+        """This call's keys for the containers: everything but the launcher's own settings."""
+        skip = {"launcher", "gpus", "shard", "shards", "fast_variant", "judge", "judged"}
+        argv = []
+        for key, value in self.to_dict().items():
+            if key in skip or key.startswith("modal_") or value in (None, ""):
+                continue
+            argv.append(f"{key}={','.join(value) if isinstance(value, list) else value}")
+        return argv
+
+    def execute(self) -> int:
+        from wsbench.produce import dataset, read, store
+
+        if self.launcher == "modal":
+            from wsbench.produce import modal_launch
+
+            return modal_launch.launch(
+                self.modal_argv(),
+                gpus=self.gpus,
+                gpu=self.modal_gpu,
+                volume=self.modal_volume,
+                mount=self.modal_mount,
+                secret=self.modal_secret,
+                app_name=self.modal_app,
+                timeout=self.modal_timeout,
+                sglang=self.modal_sglang,
+            )
+        _select_fast(self)
+        plans = self.plans()
+        if plans is None:
+            return EXIT_USAGE
+        if self.plan is not None:
+            jobs = read.plan_file_jobs(self.plan)
+        else:
+            jobs = [
+                read.job(f, specs, reads=self.reads, fast=self.fast) for f, specs in plans.items()
+            ]
+        if self.method == "model_continuation":
+            return self._continuations(jobs)
+        options: dict[str, Any] = {
+            "greedy": self.greedy,
+            "sampler": self.sampler,
+            "in_flight": self.in_flight,
+        }
+        if self.server_args:
+            import shlex
+
+            options["server_args"] = shlex.split(self.server_args)
+        if self.work is not None:
+            options["work"] = self.work
+        try:
+            bundle, engine = read.open_engine(self.engine, self.lens, **options)
+        except (OSError, ValueError, RuntimeError) as e:
+            print(f"read: {e}", file=sys.stderr)
+            return EXIT_USAGE
+        if bundle.model_revision != self.revision:
+            print(
+                f"read: the lens was made for model revision {bundle.model_revision}, this "
+                f"call reads the store of {self.revision}; pass revision=",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        subject = store.Subject(self.model, self.revision, self.dtype, self.device)
+        tokenizer = getattr(engine, "tok", None) or subject.tokenizer
+        where = store.Store(self.store, self.revision, self.dtype)
+        pull = dataset.source(self.dataset, self.dataset_revision, self.dtype, self.revision)
+        if self.check:
+            for j in jobs:
+                part = store.shard(j.specs, self.shard, self.shards)[: self.limit or None]
+                print(self._where(j.family, part, where, pull, tokenizer))
+            return 0
+        try:
+            done = read.read_evals(
+                jobs,
+                engine,
+                where,
+                tokenizer,
+                self.out,
+                reader=bundle.name,
+                sampling=bundle.sampling_kind,
+                pull=pull,
+                subject=subject,
+                pack_cells=self.pack_cells,
+                shard=self.shard,
+                shards=self.shards,
+                limit=self.limit,
+            )
+        except store.NoPromptError as e:
+            print(f"read: {e}; leave that eval out", file=sys.stderr)
+            return EXIT_USAGE
+        finally:
+            engine.close()
+        n_read = sum(d["status"] == "read" for d in done)
+        print(
+            f"readouts -> {self.out}/<eval>.jsonl "
+            f"({n_read} read, {len(done) - n_read} already there)"
+        )
+        if not self.judge:
+            return 0
+        return self._judge(jobs)
+
+    def _judge(self, jobs: list[Any], layers: str = "") -> int:
+        argv = [f"readouts_root={self.out}", f"out={self.judged}"]
+        argv += ["fast=True"] if self.fast else []
+        argv += [f"families={','.join(j.family for j in jobs)}"]
+        argv += ["allow_missing=True"] if self.limit else []
+        argv += [f"layers={layers}"] if layers else []
+        print(f"\n== judge: wsbench run {' '.join(argv)}")
+        return _run_command(RunFamilies, argv)
+
+    def _continuations(self, jobs: list[Any]) -> int:
+        """method=model_continuation: no lens, no store; the served model continues each
+        prompt, and the rows are judged at their one layer number."""
+        import shlex
+
+        from wsbench.produce import read, store
+        from wsbench.produce.served import continuation
+
+        options: dict[str, Any] = {"in_flight": self.in_flight}
+        if self.server_args:
+            options["server_args"] = shlex.split(self.server_args)
+        if self.work is not None:
+            options["work"] = self.work
+        try:
+            engine = continuation.ContinuationEngine(self.model_dir, **options)
+            done = read.read_continuations(
+                jobs,
+                engine,
+                self.out,
+                reader=continuation.NAME,
+                layer=self.layer,
+                pack_prompts=self.pack_cells,
+                shard=self.shard,
+                shards=self.shards,
+                limit=self.limit,
+            )
+        except (OSError, store.NoPromptError) as e:
+            print(f"read: {e}", file=sys.stderr)
+            return EXIT_USAGE
+        n_read = sum(d["status"] == "read" for d in done)
+        print(
+            f"readouts -> {self.out}/<eval>.jsonl "
+            f"({n_read} read, {len(done) - n_read} already there)"
+        )
+        return self._judge(jobs, layers=str(self.layer)) if self.judge else 0
 
 
 class Freeze(Command):
@@ -2102,6 +2435,8 @@ COMMANDS: dict[str, type[Command]] = {
     "plan": Plan,
     "produce": Produce,
     "capture": Capture,
+    "bundle": Bundle,
+    "read": Read,
     "freeze": Freeze,
     "text-inversion": TextInversion,
     "convert-gen-dir": ConvertGenDir,
