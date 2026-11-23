@@ -137,11 +137,8 @@ def test_introspection_bank_unchanged_by_the_refill():
 PENDING_REGATE: dict[str, str] = {}
 # Plan 0110 (2026-11-23): chain_intermediates moved to bank v3 and its entry (panel-v2 on bank
 # v2, 0 gated ids of 120) is not re-gated: the ATI file is frozen until the full ATI audit
-# (issue #559). A stale entry with NO id gates nothing on any bank, so ``subset_entry`` still
-# serves it as "no ATI item" (``StaleNoItem``); exactly these entries may be in that state.
-STALE_NO_ITEM: dict[str, str] = {
-    "chain_intermediates": "plan 0110: bank v3; the entry is bank v2's (0 ids), audit #559",
-}
+# (issue #559). ``text_inversion.STALE_NO_ITEM_PENDING_AUDIT`` lists it by name: its stale entry
+# with no id is still served as "no ATI item"; any other family's stale entry fails this test.
 
 
 def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
@@ -154,7 +151,7 @@ def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
         if not f.startswith("_")
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
-        and e["ids"]  # plan 0110: a stale entry with no id is "no ATI item" (next test)
+        and f not in ti.STALE_NO_ITEM_PENDING_AUDIT  # plan 0110: listed by name (next test)
     ]
     # nothing is stale outside the family PRs that changed their bank / plan ...
     assert sorted(set(stale) - CHANGED_BY_FAMILY_PRS) == []
@@ -162,19 +159,20 @@ def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
     assert sorted(stale) == sorted(PENDING_REGATE)
 
 
-def test_a_stale_entry_without_ids_is_still_no_ati_item(frozen, real_families):
-    """Plan 0110: the entries stale by ``bank_sha`` that hold no id are exactly the recorded
-    ones, and each is left out of the ATI scope as a current zero-id entry is, not failed."""
-    stale_empty = [
-        f
+def test_the_stale_no_item_list_is_exactly_the_registered_stale_zero_id_entries(frozen):
+    """Plan 0110: the allow-list equals the registered entries that are stale by ``bank_sha``
+    and hold no id; each is left out of the ATI scope (not failed), and no listed family's
+    entry is stale with ids."""
+    stale = {
+        f: e
         for f, e in frozen.items()
         if not f.startswith("_")
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
-        and not e["ids"]
-    ]
-    assert sorted(stale_empty) == sorted(STALE_NO_ITEM)
-    for fam in stale_empty:
+    }
+    assert {f for f, e in stale.items() if not e["ids"]} == ti.STALE_NO_ITEM_PENDING_AUDIT
+    assert set(ti.STALE_NO_ITEM_PENDING_AUDIT) == {"chain_intermediates"}
+    for fam in ti.STALE_NO_ITEM_PENDING_AUDIT:
         with pytest.raises(ti.NotInScope, match=r"stale.*issue #559") as e:
             ti.subset_entry(fam, ti.FROZEN)
         assert isinstance(e.value, ti.StaleNoItem)

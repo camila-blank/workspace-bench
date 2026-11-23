@@ -158,7 +158,7 @@ def ati_subset() -> Outcome:
         try:
             ti.subset_entry(name)
             served.append(name)
-        except ti.StaleNoItem:  # gated on another bank, no id: no ATI item, not a failure
+        except ti.StaleNoItem:  # a listed family (plan 0110): no ATI item, not a failure
             stale.append(name)
         except ti.NotInScope:
             skipped.append(name)
