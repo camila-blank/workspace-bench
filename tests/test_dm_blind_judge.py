@@ -233,8 +233,9 @@ def test_dm_topic_guesser_is_measured_but_not_a_floor():
 
 
 def test_topic_stays_a_floor_for_every_other_family():
-    """NOT_A_FLOOR is DM-only: on the same synthetic entry (a topic guesser far above chance) every
-    other MC family's topic guesser still binds and sets the bar, DM's does not."""
+    """NOT_A_FLOOR holds DM and association_hard (plan 0108) only: on the same synthetic entry (a
+    topic guesser far above chance) every other MC family's topic guesser still binds and sets
+    the bar, DM's does not."""
     e = {"blind": {"mean": 0.10}, "described": {"mean": 0.15}, "topic": {"mean": 0.90}}
     for fam in ("association", "poetry", "conjunctive_association", "multihop_st"):
         assert lg.is_floor(fam, "topic")

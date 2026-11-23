@@ -54,9 +54,11 @@ def load_items() -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
 
 def instrument(header: Mapping[str, Any]) -> str:
-    """The result stamp of a bank: ``PROMPT_VERSION`` plus ``+bank-v<N>`` for bank v<N> >= 2."""
+    """The result stamp of a bank: the call version, the gate version and ``+bank-v<N>`` for
+    bank v<N> >= 2 (``PROMPT_VERSION`` for the registered bank)."""
     version = int(header.get("version", 1))
-    return prompts.PROMPT_VERSION + (f"+bank-v{version}" if version >= 2 else "")
+    stamp = f"{CALL_VERSION}+{gate.GATE_VERSION}"
+    return stamp + (f"+bank-v{version}" if version >= 2 else "")
 
 
 def majority_stamp(n: int) -> str:
@@ -71,8 +73,11 @@ def shown_options(it: Mapping[str, Any]) -> tuple[list[str], int]:
 
 
 def concepts(items: Sequence[Mapping[str, Any]]) -> list[list[str]]:
-    """The bank's concepts, one entry (its forms) each: every item's gold with its accepted
-    forms and every distractor with its own; entries that share a form are one concept."""
+    """The concepts of ``items``, one entry (its forms) each: every item's gold with its
+    accepted forms and every distractor with its own; entries that share a form are one
+    concept. The builder freezes this list into the header (``concepts``), and that frozen pool
+    is what :func:`run` judges with, so a successor bank that only drops items and carries the
+    list keeps every kept item's calls."""
     raw: list[list[str]] = []
     for it in items:
         raw.append(bk.gold_forms(it))
@@ -256,6 +261,7 @@ def judge_units(
         else:
             others = [o for i, o in enumerate(u.shown[:-1], start=1) if i != u.gold_pos]
             forms = bk.gold_forms(u.it)
+            grid = u.it["mc"].get("grid")
             v["outcome"] = gate.gate_gold(
                 quote,
                 u.lines,
@@ -264,6 +270,7 @@ def judge_units(
                 other_forms=other_forms(others, forms, pool),
                 sampling=sampling,
                 rivals=pool,
+                own_head=option_forms(grid["heads"][0], pool) if grid else (),
             )
             if v["outcome"] == "needs_rejudge":
                 rejudge.append(u)
@@ -311,7 +318,6 @@ def gate_extras(verdicts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             v["quote"] for v in verdicts if v["outcome"] == "gold_description"
         ],
         "n_gold_unverified": outcomes.count("gold_unverified"),
-        "n_gold_unlisted_script": outcomes.count("gold_unlisted_script"),
         "n_gold_desc_rejected": outcomes.count("gold_desc_rejected"),
         "n_flat_list_voided": outcomes.count("gold_flat_list"),
         "n_retried": sum(1 for v in verdicts if v.get("retried")),
@@ -383,7 +389,7 @@ def run(args: JudgeArgs) -> FamilyResult:
     expected = [(i, layer) for i in ids for layer in layers]
     missing = [] if prompt_only else [k for k in expected if k not in groups]
     require_cells(FAMILY, missing, len(expected), args)
-    pool = concepts(items)  # the whole bank, never the judged subset
+    pool = header["concepts"]  # frozen in the bank (V13), never the judged subset
     stamp = instrument(header)
     if digest.summary_mode(args):
         return _run_summary(

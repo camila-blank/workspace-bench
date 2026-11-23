@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.out.exists():
-        raise SystemExit(f"{a.out} exists; the forms pass is run once")
+        raise SystemExit(f"{a.out} exists; write to a fresh path")
     a.work.mkdir(parents=True, exist_ok=True)
     calls = Calls(a.work)
     options = kept_options(a.src, a.grid)
