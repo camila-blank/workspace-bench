@@ -134,12 +134,13 @@ def test_introspection_bank_unchanged_by_the_refill():
 # association (v5), basic_readout_st (v7), basic_readout (v5) and role_bound_association (v2) were
 # re-gated on their current banks; user_modeling bank v3 entered with its full-panel statuses; the
 # r5-rebuilt banks were re-gated on theirs from the cached panel answers.
-# Plan 0110 (2026-11-23): chain_intermediates moved to bank v3 (66 of bank v2's 120 items
-# replaced). Its entry (panel-v2 on bank v2: 0 gated ids of 120) is NOT re-gated: the ATI file is
-# frozen by the owner and the re-gate is her decision (plans/0110-chain-refill.md, "ATI"). Until
-# then the entry is a record of bank v2 and every ATI-scope use of the family fails closed.
-PENDING_REGATE: dict[str, str] = {
-    "chain_intermediates": "plan 0110: bank v3; the entry is bank v2's, re-gate not yet decided",
+PENDING_REGATE: dict[str, str] = {}
+# Plan 0110 (2026-11-23): chain_intermediates moved to bank v3 and its entry (panel-v2 on bank
+# v2, 0 gated ids of 120) is not re-gated: the ATI file is frozen until the full ATI audit
+# (issue #559). A stale entry with NO id gates nothing on any bank, so ``subset_entry`` still
+# serves it as "no ATI item" (``StaleNoItem``); exactly these entries may be in that state.
+STALE_NO_ITEM: dict[str, str] = {
+    "chain_intermediates": "plan 0110: bank v3; the entry is bank v2's (0 ids), audit #559",
 }
 
 
@@ -153,11 +154,30 @@ def test_every_panel_entry_is_gated_on_the_current_bank(frozen):
         if not f.startswith("_")
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
+        and e["ids"]  # plan 0110: a stale entry with no id is "no ATI item" (next test)
     ]
     # nothing is stale outside the family PRs that changed their bank / plan ...
     assert sorted(set(stale) - CHANGED_BY_FAMILY_PRS) == []
     # ... and exactly the recorded pending re-gates are stale (one leaves once re-gated)
     assert sorted(stale) == sorted(PENDING_REGATE)
+
+
+def test_a_stale_entry_without_ids_is_still_no_ati_item(frozen, real_families):
+    """Plan 0110: the entries stale by ``bank_sha`` that hold no id are exactly the recorded
+    ones, and each is left out of the ATI scope as a current zero-id entry is, not failed."""
+    stale_empty = [
+        f
+        for f, e in frozen.items()
+        if not f.startswith("_")
+        and e.get("gate") == ti.GATE_VERSION
+        and e["bank_sha"] != ti.bank_fingerprint(f)
+        and not e["ids"]
+    ]
+    assert sorted(stale_empty) == sorted(STALE_NO_ITEM)
+    for fam in stale_empty:
+        with pytest.raises(ti.NotInScope, match=r"stale.*issue #559") as e:
+            ti.subset_entry(fam, ti.FROZEN)
+        assert isinstance(e.value, ti.StaleNoItem)
 
 
 def test_knowledge_cutoff_nocot_retirements():

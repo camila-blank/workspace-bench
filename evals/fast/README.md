@@ -153,7 +153,8 @@ The first re-cut: **`fast-v4` -> `fast-v5`, 2026-11-23, plan 0110** (chain_inter
 v3: 66 of its 120 items replaced). The two files differ in `version` and in that family's entry
 alone (`bank_sha`, 60 units, 60 read ids: 23 kept and 37 new items); the totals are unchanged.
 The family has no strict-ATI id, so the cut never asks for its ATI entry, which is a record of
-bank v2 and was NOT re-gated (the ATI file is frozen; plan 0110).
+bank v2 and was NOT re-gated (the ATI file is frozen; plan 0110). With no id it is still served
+as "no ATI item", so the strict-ATI view of a fast run leaves the family out.
 
 **An alternative, measured and NOT adopted (plan 0104, open point).** Score each family on a
 seeded random half of ALL its units (ATI units in it only by chance), and read every strict-ATI
