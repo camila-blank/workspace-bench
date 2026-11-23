@@ -170,7 +170,10 @@ def test_the_stale_no_item_list_is_exactly_the_registered_stale_zero_id_entries(
         and e.get("gate") == ti.GATE_VERSION
         and e["bank_sha"] != ti.bank_fingerprint(f)
     }
-    assert {f for f, e in stale.items() if not e["ids"]} == ti.STALE_NO_ITEM_PENDING_AUDIT
+    # ... each recorded with the fingerprint of the bank registered today
+    assert {
+        f: ti.bank_fingerprint(f) for f, e in stale.items() if not e["ids"]
+    } == ti.STALE_NO_ITEM_PENDING_AUDIT
     assert set(ti.STALE_NO_ITEM_PENDING_AUDIT) == {"chain_intermediates"}
     for fam in ti.STALE_NO_ITEM_PENDING_AUDIT:
         with pytest.raises(ti.NotInScope, match=r"stale.*issue #559") as e:

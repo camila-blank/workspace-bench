@@ -823,9 +823,10 @@ def test_stale_entry_without_ids_is_no_ati_item_for_the_listed_family_only(
 ):
     """Plan 0110: an entry gated on another bank is "no ATI item" (``NotInScope``) only for a
     family listed in ``STALE_NO_ITEM_PENDING_AUDIT`` (chain_intermediates), on the registered
-    panel gate, with no id. Every other stale entry exits "re-gate" as before: one with an id,
-    one of an unlisted family with no id, one of an adapted set's gate; and so does an entry of
-    another instrument."""
+    panel gate, with no id, on the bank recorded there (bank v3). Every other stale entry exits
+    "re-gate" as before: one with an id, one of an unlisted family with no id, one of an
+    adapted set's gate, the listed family's on another bank; and so does an entry of another
+    instrument."""
     assert set(ti.STALE_NO_ITEM_PENDING_AUDIT) == {"chain_intermediates"}
     frozen = json.loads(ti.FROZEN.read_text(encoding="utf-8"))
     chain = frozen["chain_intermediates"]
@@ -870,6 +871,22 @@ def test_stale_entry_without_ids_is_no_ati_item_for_the_listed_family_only(
         ti.subset_entry("association", ti.FROZEN)
     assert not isinstance(e.value, ti.NotInScope)
     monkeypatch.delenv("WSB_BANK_FILE_ASSOCIATION")
+    # the listed family on any bank but the recorded one (review r2, S2): a pin to bank v1 ...
+    chain_dir = registry.REPO_ROOT / "evals/computational/chain_intermediates"
+    recorded = ti.STALE_NO_ITEM_PENDING_AUDIT["chain_intermediates"]
+    assert recorded == ti.bank_fingerprint("chain_intermediates")  # bank v3, the registered one
+    monkeypatch.setenv("WSB_BANK_FILE_CHAIN_INTERMEDIATES", str(chain_dir / "items.json"))
+    assert ti.bank_fingerprint("chain_intermediates") not in (recorded, chain["bank_sha"])
+    with pytest.raises(SystemExit, match=r"gated on a different bank .* re-gate") as e:
+        ti.subset_entry("chain_intermediates", ti.FROZEN)
+    assert not isinstance(e.value, ti.NotInScope)
+    monkeypatch.delenv("WSB_BANK_FILE_CHAIN_INTERMEDIATES")
+    # ... and a later bank: the registered bank is no longer the recorded one
+    monkeypatch.setitem(ti.STALE_NO_ITEM_PENDING_AUDIT, "chain_intermediates", "0" * 64)
+    with pytest.raises(SystemExit, match=r"gated on a different bank .* re-gate") as e:
+        ti.subset_entry("chain_intermediates", ti.FROZEN)
+    assert not isinstance(e.value, ti.NotInScope)
+    monkeypatch.setitem(ti.STALE_NO_ITEM_PENDING_AUDIT, "chain_intermediates", recorded)
     # the instrument check comes first and has no exception
     dst = tmp_path / "instrument.json"
     dst.write_text(json.dumps({**frozen, "chain_intermediates": {**chain, "instrument": "x"}}))

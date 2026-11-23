@@ -147,12 +147,14 @@ gate was run. The ATI subset is re-checked later in a full audit (issue #559).
   fast run, the family being core (review of PR #551, M1).
 - **The rule (the owner's decision, the narrowest form of option (b)): chain_intermediates
   only, listed by name.** `text_inversion.STALE_NO_ITEM_PENDING_AUDIT =
-  frozenset({"chain_intermediates"})`. In `subset_entry`, an entry whose `bank_sha` differs from
-  the registered bank's raises `text_inversion.StaleNoItem`, a subclass of `NotInScope`, only
-  when the family is in that list AND the entry's gate is the registered `panel-v2` AND its
+  {"chain_intermediates": <bank v3's bank_fingerprint>}`. In `subset_entry`, an entry whose
+  `bank_sha` differs from the bank in use raises `text_inversion.StaleNoItem`, a subclass of
+  `NotInScope`, only when the family is in that table AND the bank in use is the one recorded
+  there (bank v3: a `WSB_BANK_FILE_*` pin to bank v1, or a later bank v4, exits "re-gate"
+  again; review r2, S2) AND the entry's gate is the registered `panel-v2` AND its
   `ids` list is empty; the message says the entry is stale and awaits the audit (#559). *The
   stale check is retained unchanged for every other entry: one with at least one id, a zero-id
-  entry of any family not on the list (nine registered entries hold no id today), and any
+  entry of any family not on the list (eight other registered entries hold no id today), and any
   entry of an adapted set's gate (`adapted-panel-v1`) all still exit "gated on a different bank
   ... re-gate"; the instrument-mismatch and retired-gate exits, which come first, are retained
   with no exception.* What the rule does not say: that bank v3 has no ATI item. That is the
@@ -160,8 +162,8 @@ gate was run. The ATI subset is re-checked later in a full audit (issue #559).
   draw, so a survivor of the all-fail rule is unlikely).
 - So the family is skipped under `anti_text_inversion=True` and left out of the strict-ATI view
   of a fast run, as before the bank change. `wsbench check ati_subset` passes and its line ends
-  with `NOTE: chain_intermediates: entry gated on an earlier bank with no ATI id, served as no
-  ATI item until the ATI audit (issue #559)`. The strict-ATI macro, its eight families and
+  with `NOTE: chain_intermediates: entry gated on another bank with no ATI id, served as no ATI
+  item on the bank recorded for it until the ATI audit (issue #559)`. The strict-ATI macro, its eight families and
   their 350 ids are not touched.
 - Not done: (a) re-gating the entry on bank v3 (the panel of plan 0019), which the audit covers.
 
@@ -175,6 +177,11 @@ family-keyed table of `text_inversion`, which the manifest records as a row of
 chain_intermediates (`tables`), so the rows hash moved under the same stamp and bank. The tool
 refuses that for an entry already in the ledger, so the ledger file was taken from main (where
 the family has no entry) and the one entry written again by the tool; no stamp was bumped.
+That was clean only because the entry had never been on main. When the audit (#559) re-gates
+the entry and takes the name off the table, the row disappears and the rows hash moves again
+under the same stamp and bank, with the entry on main: the tool will refuse, and that change
+needs a stamp bump or a listed waiver in the tool (as plans 0104 / 0105 / 0107 added for tier
+and category rows), not a ledger restore.
 
 ## Not in this plan
 
@@ -235,6 +242,7 @@ are back in their form on main, except where noted:
 - `tests/test_association_v2.py`: unchanged (its bank-v2 pin still gets "re-gate").
 - New (`test_stale_entry_without_ids_is_no_ati_item_for_the_listed_family_only`): the listed
   family, stale + zero ids -> `StaleNoItem`; refused with "gated on a different bank": the
+  chain entry under a pin to bank v1 and with another recorded bank (a later bank), the
   chain entry given an id, the chain entry under `adapted-panel-v1`, poetry's entry with
   another `bank_sha` with and without ids, association's registered zero-id entry under its
   bank-v2 pin; the instrument mismatch still exits. `check ati_subset` passes on the registered

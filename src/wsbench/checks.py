@@ -163,8 +163,8 @@ def ati_subset() -> Outcome:
         except ti.NotInScope:
             skipped.append(name)
     note = (
-        f"; NOTE: {', '.join(stale)}: entry gated on an earlier bank with no ATI id, served as "
-        f"no ATI item until the ATI audit (issue #559)"
+        f"; NOTE: {', '.join(stale)}: entry gated on another bank with no ATI id, served as "
+        f"no ATI item on the bank recorded for it until the ATI audit (issue #559)"
         if stale
         else ""
     )
