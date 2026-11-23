@@ -97,7 +97,10 @@ def unroll(model: Any) -> Any:
     """Rewrite a loaded Inkling-2 loop model IN PLACE into the unrolled view: ``layers`` becomes
     N_ENTRIES thin entries (execution order), the physical blocks move to ``blocks``, and the
     text model's forward walks the entries with the stock forward's arithmetic (same ops, same
-    order; ``hidden_states`` = embeddings + every entry's output). Idempotent. Returns the model."""
+    order; ``hidden_states`` = embeddings + every entry's output, the last being entry 47's raw
+    output, not the stock's normed final mix). Idempotent. Returns the model. Not supported after
+    unrolling: ``output_attentions`` / ``output_router_logits`` (dropped, None), and anything that
+    relies on state-dict keys (``save_pretrained``, a PEFT attach): blocks move to ``blocks``."""
     tm = text_model(model)
     if getattr(tm, "_unrolled", False):
         return model
@@ -142,6 +145,7 @@ def _forward(
         cache = past_key_values
     if output_hidden_states is None:
         output_hidden_states = bool(getattr(self.config, "output_hidden_states", False))
+    output_hidden_states = output_hidden_states is not False  # a selection list keeps them all
     if use_cache is None:
         use_cache = bool(getattr(self.config, "use_cache", False))
     if (input_ids is None) ^ (inputs_embeds is not None):

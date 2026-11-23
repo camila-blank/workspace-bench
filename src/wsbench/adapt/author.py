@@ -1588,7 +1588,7 @@ def author(model: str, family: str, tier: str, n: int, steer: str = "", wave: in
     for call in range((n + per - 1) // per):
         k = min(per, n - wrote)
         brief = render_brief(model, family, tier, k, steer, made)
-        effort: str | None = os.environ.get(EFFORT_ENV) or None  # unset: the model default
+        effort: str | None = os.environ.get(EFFORT_ENV, "").strip().lower() or None
         drops = 0
         while True:
             seen = session.pushed

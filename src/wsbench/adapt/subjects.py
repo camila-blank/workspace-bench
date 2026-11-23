@@ -445,7 +445,9 @@ SUBJECTS: dict[str, Subject] = {
         # gated messages from the previous pass), every block's input is an attention mix over
         # 6-block "block states" (attention residuals). Layers are indices of the unrolled view
         # (adapt/inkling_loop.py, execution order: 0-5 pre-loop, 6-41 the three passes of blocks
-        # 6-17, 42-47 post-loop; entry L = output of that block call = stock hidden_states[L+1]).
+        # 6-17, 42-47 post-loop; entry L = output of that block call = stock hidden_states[L+1] for
+        # L <= 46; stock's LAST hidden state is the normed final_input mix, entry 47 is the raw
+        # output of block 23, so a lens at 47 does not see the pre-head state).
         # The checkpoint is the released mixed NVFP4 / MXFP8 one (Camila: it is the subject).
         # Served by the vLLM nightly image vllm/vllm-openai:inkling-2-mini (pinned by digest);
         # the hub template has no thinking-off mode, so a pinned template fixes effort "none"
@@ -472,7 +474,11 @@ SUBJECTS: dict[str, Subject] = {
             # the text message closes with <|end_message|>; the eos (<|content_model_end_sampling|>)
             # comes after it, and the model may open another message first: stop at the close
             reply_end="<|end_message|>",
-            thinking_mode=True,  # the hub template reasons in a <|content_thinking|> message
+            # the hub template reasons in a <|content_thinking|> message. Native langs are set by
+            # lab decision; the research-only measure route would need a thinking_template whose
+            # generation prompt opens <|content_thinking|> (the hub one has none, and the opener
+            # is all special tokens, invisible in decoded samples)
+            thinking_mode=True,
         ),
     ]
 }

@@ -102,7 +102,13 @@ image = image.env(
 ).add_local_dir(str(WSB / "src/wsbench"), "/root/wsb/src/wsbench", ignore=["**/__pycache__"])
 
 
-@app.function(image=image, gpu=GPU, volumes={"/hf": hf}, timeout=8 * 3600, memory=131072)
+@app.function(
+    image=image,
+    gpu=GPU,
+    volumes={"/hf": hf.read_only() if INKLING else hf},
+    timeout=8 * 3600,
+    memory=131072,
+)
 def measure(job: dict) -> bytes:
     from wsbench.adapt import introspection as ii
 
