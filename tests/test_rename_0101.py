@@ -146,6 +146,186 @@ def _restamped() -> dict:
     return cur
 
 
+def test_t1_category_move_waives_one_row_of_one_family(monkeypatch):
+    """Plan 0107: ONE family changing category (``CATEGORY_MOVES``: ``association``, ``basic``
+    -> ``association``) moves one row, ``list.category``, and is declared under the golden's own
+    stamp and bank. The waiver is that family's, that row's and that (old, new) pair's only."""
+    from wsbench import registry
+
+    dec = _declare_mod()
+    assert dec.CATEGORY_MOVES == {"association": ("basic", "association")}
+    assert {f: was for f, (was, _) in dec.CATEGORY_MOVES.items()} == (
+        registry.LEGACY_FAMILY_CATEGORIES
+    )
+    for fam, (was, now) in dec.CATEGORY_MOVES.items():
+        assert was != now and {was, now} <= set(registry.CATEGORIES)
+        assert registry.category_of(fam) == now  # the manifest keys this family by its own key
+        assert registry.frozen_name(fam) == fam
+    # the real golden and ledger: the entry declares exactly that row
+    golden = json.loads((REPO / "tests/golden/manifest_0101_pre.json").read_text("utf-8"))
+    g = golden["families"]["association"]
+    assert g["list"]["category"] == "basic"
+    entry = dec.load_ledger()["association"]
+    moved_rows = {**g, "list": {**g["list"], "category": "association"}}
+    assert {k: entry[k] for k in dec.triple(g)} == dec.triple(g)  # no stamp or bank bump
+    assert entry["rows_sha256"] == dec.rows_sha256(moved_rows) and entry["plan"] == "0107"
+    assert dec.category_renamed(g, moved_rows, "association") == moved_rows
+    assert dec.category_renamed(g, moved_rows, "poetry") is g
+    assert dec.category_renamed(g, moved_rows) is g
+
+    # synthetic manifests: fam_a is the listed family, fam_b another family of the same category
+    monkeypatch.setattr(dec, "CATEGORY_MOVES", {"fam_a": ("basic", "association")})
+    gold = _mini_manifest()
+    for fam in gold["families"].values():
+        fam["list"] = {"category": "basic", "metric": "pass_rate", "tier": "full"}
+
+    def tree(family: str = "fam_a", category: str = "association") -> dict:
+        cur = json.loads(json.dumps(gold))
+        cur["families"][family]["list"]["category"] = category
+        return cur
+
+    cur = tree()
+    declared, failures = dec.verdict(gold, cur, {})
+    assert not declared and len(failures) == 1 and "no ledger entry" in failures[0]
+    led = {"fam_a": dec.declare(gold, cur, {}, "fam_a", "0107", "test")}
+    assert {k: led["fam_a"][k] for k in dec.triple(gold["families"]["fam_a"])} == dec.triple(
+        gold["families"]["fam_a"]
+    )
+    declared, failures = dec.verdict(gold, cur, led)
+    assert not failures and declared == {
+        "fam_a": "category 'basic' -> 'association' (plan 0107: test)"
+    }
+    # another family making the same move, the listed family moving elsewhere or back to front,
+    # and both families moving: refused, with or without a (forged) ledger entry
+    both = tree()
+    both["families"]["fam_b"]["list"]["category"] = "association"
+    cases = [
+        ("fam_b", tree("fam_b")),
+        ("fam_a", tree("fam_a", "safety")),
+        ("fam_b", both),
+    ]
+    back = json.loads(json.dumps(gold))
+    back["families"]["fam_a"]["list"]["category"] = "association"
+    cases.append(("fam_a", {**tree("fam_a", "basic"), "_gold": back}))  # association -> basic
+    for fam, other in cases:
+        base = other.pop("_gold", gold)
+        rows = other["families"][fam]
+        forged = {fam: {**dec.triple(rows), "rows_sha256": dec.rows_sha256(rows)}}
+        for ledger in ({}, led, {**led, **forged}):
+            declared, failures = dec.verdict(base, other, ledger)
+            assert fam not in declared, (fam, ledger)
+            assert any(
+                f.startswith(f"{fam}: instrument moved without a stamp or bank change")
+                for f in failures
+            ), (fam, failures)
+        with pytest.raises(dec.Refused, match="its stamp and bank are the golden's"):
+            dec.declare(base, other, {}, fam, "0107", "test")
+    # the move covers its one row: any other row moving with it fails, entry or not
+    for sec, key in (
+        ("plan", "plan_sha"),
+        ("stamps", "prompts_sha256"),
+        ("files", "bank_sha256x"),
+        ("list", "metric"),
+        ("run", "native"),
+    ):
+        moved = tree()
+        moved["families"]["fam_a"][sec][key] = "moved"
+        rows = moved["families"]["fam_a"]
+        forged = {"fam_a": {**dec.triple(rows), "rows_sha256": dec.rows_sha256(rows)}}
+        for ledger in ({}, led, forged):
+            declared, failures = dec.verdict(gold, moved, ledger)
+            assert not declared and len(failures) == 1, (sec, key, ledger)
+            assert "instrument moved without a stamp or bank change" in failures[0]
+        with pytest.raises(dec.Refused, match="its stamp and bank are the golden's"):
+            dec.declare(gold, moved, {}, "fam_a", "0107", "test")
+    # plan 0104: `list.tier` is not an instrument row (it is read as the golden has it), so a
+    # tier change riding with the move changes nothing: still the declared category move, and
+    # still refused without its entry
+    tiered = tree()
+    tiered["families"]["fam_a"]["list"]["tier"] = "core"
+    declared, failures = dec.verdict(gold, tiered, led)
+    assert not failures and list(declared) == ["fam_a"]
+    declared, failures = dec.verdict(gold, tiered, {})
+    assert not declared and len(failures) == 1 and "no ledger entry" in failures[0]
+    # a later stamp change of the moved family: the category row is set aside, no other is
+    bumped = tree()
+    bumped["families"]["fam_a"]["stamps"] = {"prompt_version": "a-v2", "prompts_sha256": "p2"}
+    led2 = {"fam_a": dec.declare(gold, bumped, led, "fam_a", "9999", "test")}
+    declared, failures = dec.verdict(gold, bumped, led2)
+    assert not failures and "'a-v1' -> 'a-v2'; category 'basic'" in declared["fam_a"]
+    # (`list.metric`, not `list.tier`: tier rows are read as the golden's since plan 0104)
+    bumped["families"]["fam_a"]["list"]["metric"] = "moved"
+    led3 = {"fam_a": dec.declare(gold, bumped, led, "fam_a", "9999", "test")}
+    assert "declared by a stamp change only" in dec.verdict(gold, bumped, led3)[1][0]
+
+
+def test_t1_category_rename_is_the_only_bumpless_declaration():
+    """Plan 0105: a category rename listed in ``CATEGORY_RENAMES`` moves one row,
+    ``list.category``, and is declared under the golden's own stamp and bank; every other row
+    must still equal the golden's, and the rename must be the listed one."""
+    from wsbench import registry
+
+    dec = _declare_mod()
+    assert dec.CATEGORY_RENAMES == registry.LEGACY_CATEGORIES == {"precision": "jlens_comparison"}
+    assert set(dec.CATEGORY_RENAMES.values()) <= set(registry.CATEGORIES)
+    assert not set(dec.CATEGORY_RENAMES) & set(registry.CATEGORIES)
+    gold = _mini_manifest()
+    for fam in gold["families"].values():
+        fam["list"] = {"category": "precision", "metric": "precision"}
+
+    def tree(category: str = "jlens_comparison") -> dict:
+        cur = json.loads(json.dumps(gold))
+        cur["families"]["fam_a"]["list"]["category"] = category
+        return cur
+
+    def entry(cur: dict) -> dict:
+        return {"fam_a": dec.declare(gold, cur, {}, "fam_a", "0105", "test")}
+
+    # the listed rename: fails without an entry, passes with one, and is named in T1's output
+    cur = tree()
+    declared, failures = dec.verdict(gold, cur, {})
+    assert not declared and len(failures) == 1 and "no ledger entry" in failures[0]
+    led = entry(cur)
+    same = dec.triple(gold["families"]["fam_a"])  # the entry carries the golden's own triple
+    assert {k: led["fam_a"][k] for k in same} == same
+    declared, failures = dec.verdict(gold, cur, led)
+    assert not failures and declared == {
+        "fam_a": "category 'precision' -> 'jlens_comparison' (plan 0105: test)"
+    }
+    with pytest.raises(dec.Refused, match="already declared"):
+        dec.declare(gold, cur, led, "fam_a", "0105", "test")
+    # a rename that is not listed, or the metric row of the same spelling, is still refused
+    for other in (tree("something_else"), tree("precision")):
+        if other == gold:
+            other["families"]["fam_a"]["list"]["metric"] = "jlens_comparison"
+        declared, failures = dec.verdict(gold, other, led)
+        assert not declared and len(failures) == 1
+        assert failures[0].startswith("fam_a: instrument moved without a stamp or bank change")
+        with pytest.raises(dec.Refused, match="its stamp and bank are the golden's"):
+            dec.declare(gold, other, {}, "fam_a", "0105", "test")
+    # the rename covers its one row: any other row moving with it fails, entry or not
+    for sec, key in (("plan", "plan_sha"), ("stamps", "prompts_sha256"), ("list", "metric")):
+        moved = tree()
+        moved["families"]["fam_a"][sec][key] = "moved"
+        rows = moved["families"]["fam_a"]
+        forged = {"fam_a": {**dec.triple(rows), "rows_sha256": dec.rows_sha256(rows)}}
+        for ledger in ({}, led, forged):
+            declared, failures = dec.verdict(gold, moved, ledger)
+            assert not declared and len(failures) == 1, (sec, ledger)
+            assert "instrument moved without a stamp or bank change" in failures[0]
+        with pytest.raises(dec.Refused, match="its stamp and bank are the golden's"):
+            dec.declare(gold, moved, {}, "fam_a", "0105", "test")
+    # a later stamp change of the renamed family: the category row is set aside, no other is
+    bumped = tree()
+    bumped["families"]["fam_a"]["stamps"] = {"prompt_version": "a-v2", "prompts_sha256": "p2"}
+    led2 = {"fam_a": dec.declare(gold, bumped, led, "fam_a", "9999", "test")}
+    declared, failures = dec.verdict(gold, bumped, led2)
+    assert not failures and "'a-v1' -> 'a-v2'; category 'precision'" in declared["fam_a"]
+    bumped["families"]["fam_a"]["plan"]["plan_sha"] = "other"
+    led3 = {"fam_a": dec.declare(gold, bumped, led, "fam_a", "9999", "test")}
+    assert "declared by a stamp change only" in dec.verdict(gold, bumped, led3)[1][0]
+
+
 def test_t1_rule_on_synthetic_manifests():
     dec = _declare_mod()
     gold = _mini_manifest()
@@ -912,10 +1092,9 @@ def test_t13_a_run_tree_directory_is_shown_as_the_family_that_wrote_it(bare, tmp
     assert registry.file_family(ro, bare) == st.name
 
 
-def test_t13_both_viewers_attribute_through_the_helper():
-    for viewer in ("atlas/build.py", "viewer_app/index.py"):
-        text = (REPO / viewer).read_text(encoding="utf-8")
-        assert "dir_family(jd, name)" in text and "fam = jd.name" not in text, viewer
+def test_t13_the_viewer_attributes_through_the_helper():
+    text = (REPO / "src/wsbench/viewer/ingest/wsb.py").read_text(encoding="utf-8")
+    assert "registry.dir_family(p)" in text and "registry.file_family(p)" in text
 
 
 # ---------------------------------------------------------------- T14: floors readouts
@@ -1017,7 +1196,7 @@ def test_every_walk_over_the_family_trees_matches_something():
     """A ``glob`` written for the flat layout (``evals/*/README.md``, ``adapted/*/typo_mt.json``)
     matches nothing after the move, and a guard built on it passes vacuously: every literal
     glob over the repository's ``evals/``, ``adapted/`` or ``examples/`` trees in the tests, the
-    package, ``scripts/``, ``atlas/``, ``viewer_app/`` and the skills' scripts must match at
+    package, ``scripts/`` and the skills' scripts must match at
     least one path today. Two spellings are recognised, ``(X / "evals").glob("...")`` and
     ``REPO.glob("evals/...")``; a pattern with a placeholder is skipped, and so is a walk over
     a run tree outside the repository (most of the viewers' and scripts' walks: there is no
@@ -1029,7 +1208,7 @@ def test_every_walk_over_the_family_trees_matches_something():
     trees = ("evals", "adapted", "examples")
     empty, seen = [], 0
     files = [*(REPO / "tests").glob("*.py"), *(REPO / "src/wsbench").rglob("*.py")]
-    for top in ("scripts", "atlas", "viewer_app", ".claude"):
+    for top in ("scripts", ".claude"):
         files += (REPO / top).rglob("*.py")
     for path in sorted(files):
         for line in path.read_text(encoding="utf-8").split("\n"):

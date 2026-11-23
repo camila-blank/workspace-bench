@@ -15,7 +15,7 @@ change edits this table in the same PR.
 |---|---|
 | agentic_misalignment | `evals/safety/agentic_misalignment/items_v2.json` |
 | arithmetic_intermediates | `evals/computational/arithmetic_intermediates/items_v2.json` |
-| association | `evals/basic/association/items_v5.json` |
+| association | `evals/association/association/items_v5.json` |
 | basic_readout_st | `evals/basic/basic_readout_st/items_v8.json` |
 | basic_readout | `evals/basic/basic_readout/items_v7.json` |
 | buggy_code | `evals/computational/buggy_code/items_v2.json` |
@@ -25,7 +25,7 @@ change edits this table in the same PR.
 | hinted_cutoff | `evals/model_specific/hinted_cutoff/items_v2.json` |
 | introspection | `evals/model_specific/introspection/items_v2.json` |
 | jailbreak_recognition | `evals/safety/jailbreak_recognition/items_v2.json` |
-| jlens_concept_pr | `evals/precision/jlens_concept_pr/manifest.json` |
+| jlens_concept_pr | `evals/jlens_comparison/jlens_concept_pr/manifest.json` |
 | knowledge_cutoff | `evals/model_specific/knowledge_cutoff/items_v2.json` |
 | model_multihop | `evals/model_specific/model_multihop/items.json` |
 | model_specific_directed_modulation | `evals/model_specific/model_specific_directed_modulation/items.json` |
@@ -63,7 +63,7 @@ re-stamped (`references/porting.md`).
 
 ## Basic (single token) — association, basic_readout_st and multihop_st are now BLIND-MC judges
 ## (basic_readout_st / multihop_st: `basic/family.py` `MC_FAMILIES`; association: its own
-## `evals/basic/association/judge.py`): every item needs its frozen `mc` block, or the judge exits 2.
+## `evals/association/association/judge.py`): every item needs its frozen `mc` block, or the judge exits 2.
 ## No MC builder takes adapted items yet: SKILL.md §3 step 6.
 ## Plan 0087: every adapted-only multihop_st / basic_readout / multilingual_* list is one-cue screened
 ## and repaired before the gate (`adapt/onecue.py`; SKILL.md, the `fill` paragraph).
