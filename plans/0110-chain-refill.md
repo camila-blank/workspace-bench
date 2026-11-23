@@ -224,6 +224,13 @@ are back in their form on main, except where noted:
   `NotInScope` on the registered bank, as on main; `entry["bank_sha"] == bank_fingerprint` is
   asserted under a pin to `items_v2.json` (the entry is bank v2's, so the equality with the
   registered bank cannot hold).
+- `tests/test_association_v2.py::test_ati_entry_has_no_retired_ids` (a consequence of the rule
+  outside this family, NOT restored to main's form): the module pins association to bank v2,
+  where its registered entry (no id since plan 0071) is stale. Main asserted `SystemExit`
+  "re-gate"; under the rule a stale entry with no id is `StaleNoItem`, so the test asserts that
+  for an entry without ids and keeps "re-gate" for one with ids. The same holds for any
+  zero-id entry read under a `WSB_BANK_FILE_*` pin or in an adapted set
+  (`adapted-panel-v1` is a `BANK_SHA_GATES` gate): skipped, where it was refused.
 - New: stale + zero ids -> `NotInScope` (`StaleNoItem`); stale + one id -> `SystemExit` "gated
   on a different bank" (the chain entry given an id, and poetry's entry with another
   `bank_sha`); the instrument mismatch still exits with zero ids

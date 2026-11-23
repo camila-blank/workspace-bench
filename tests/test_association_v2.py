@@ -169,8 +169,14 @@ def test_ati_entry_has_no_retired_ids():
     # bank v2, so the current entry reads as stale here and must still be refused
     assert not set(entry["ids"]) & RETIRED
     if entry.get("bank_sha") != ti.bank_fingerprint("association"):
-        with pytest.raises(SystemExit, match="re-gate"):
-            ti.subset_entry("association")
+        # plan 0110: an entry of another bank is refused only while it holds an id; the current
+        # entry holds none (plan 0071), so here it is still "no ATI item", never served
+        if entry["ids"]:
+            with pytest.raises(SystemExit, match="re-gate"):
+                ti.subset_entry("association")
+        else:
+            with pytest.raises(ti.StaleNoItem):
+                ti.subset_entry("association")
 
 
 # ---------------------------------------------------------------- C3: options
