@@ -93,7 +93,7 @@ def _tier_arg(cmd: "Command") -> str:
     if tier not in ("", "core", "full"):
         raise ValueError(f"tier must be core or full (--core / --full), got {tier!r}")
     if tier and cmd.fast:
-        raise ValueError(f"--fast / --fast-safety and --{tier} are different tiers; pick one")
+        raise ValueError(f"--fast and --{tier} are different tiers; pick one")
     return tier
 
 
@@ -236,7 +236,7 @@ class JudgeOptions(Command):
         self.reads = ""  # full | lite (plan 0032 §2.6.7); alias opts=reads=lite
         self.sampling = ""  # bullet4 | prose1 | tokens10: overrides the sidecar (§2.9.2)
         self.each = False  # layers=each: set by finalize
-        # --fast: the frozen fast subset (plan 0090, evals/fast); fast=safety = --fast-safety
+        # --fast: the frozen fast subset (plan 0090, evals/fast); the retired fast=safety is refused
         self.fast = False
         self.fast_variant = ""  # set by finalize from fast= (plan 0095), never a key
 
@@ -595,7 +595,7 @@ class ReportRuns(Command):
         self.floors = True  # the frozen lucky-guessing floors (evals/baselines) beside each family
         self.reads = ""  # full | lite: keep that mode only (a table never mixes modes)
         # plan 0090, tri-state like reads: "" = unset, True = fast rows only, False = the rest;
-        # safety (--fast-safety, plan 0095) = True on the fast-safety subset
+        # the retired `safety` value is a usage error (plan 0104)
         self.fast = ""
         self.fast_variant = ""  # set by finalize from fast=, never a key
         self.fast_version = ""  # plan 0104: report under this registered version (old dirs)
@@ -1998,8 +1998,9 @@ def main(argv: list[str] | None = None) -> int:
     positional = getattr(command, "positional", "")
     if positional and len(argv) > 1 and "=" not in argv[1] and not argv[1].startswith("-"):
         argv[1] = f"{positional}={argv[1]}"
-    # plans 0090 / 0095: `--fast` is `fast=True` and `--fast-safety` is `fast=safety` on every
-    # command (one without the key fails as unknown)
+    # plan 0090: `--fast` is `fast=True` on every command (one without the key fails as
+    # unknown); the retired `--fast-safety` still maps to `fast=safety`, so that it reaches the
+    # usage error that says what to run instead (`fast.RETIRED_VARIANTS`)
     # plan 0098: `--core` / `--full` are `tier=core` / `tier=full` on run and plan
     flags = {"--fast": "fast=True", "--fast-safety": "fast=safety"}
     flags |= {"--core": "tier=core", "--full": "tier=full"}

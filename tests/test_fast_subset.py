@@ -131,12 +131,16 @@ REAL_RUN_CALLS = mcjudge.run_calls  # the `toy` fixture replaces it
 
 
 @pytest.fixture(autouse=True)
-def _the_frozen_predecessors(monkeypatch):
+def _the_frozen_predecessors(monkeypatch, _default_fast_subset):
     """Plan 0104: this file tests the machinery on the versions it was written for. The default
     is fast-v4 now (``tests/test_fast_core_half.py``); here every test starts on fast-v3, the
     last outcome-selected version, as it did while fast-v3 was the default, so the assertions
-    below keep their values. ``--fast`` runs the active subset, whatever made it active."""
+    below keep their values. ``--fast`` runs the active subset, whatever made it active.
+    Returns the version that was active when the test's setup reached this fixture, after
+    conftest's reset (``_default_fast_subset``, requested here so that it runs first)."""
+    before = fast.VERSION
     monkeypatch.setattr(fast, "VERSION", V3)
+    return before
 
 
 @pytest.fixture
@@ -1854,9 +1858,11 @@ def test_select_and_use():
     fast.use(VS)  # left active: the next test starts on its own subset all the same
 
 
-def test_every_test_starts_on_the_default_subset():
-    # conftest resets to fast.DEFAULT (fast-v4), then this file's fixture makes fast-v3 active
-    assert fast.DEFAULT == V4 and fast.VERSION == V3
+def test_every_test_starts_on_the_default_subset(_the_frozen_predecessors):
+    """The conftest reset: the test before this one leaves ``fast-safety-v2`` active
+    (``test_select_and_use``), and this one's setup still found the default. Only then does
+    this file's fixture make fast-v3 active."""
+    assert _the_frozen_predecessors == fast.DEFAULT == V4 and fast.VERSION == V3
 
 
 def test_cli_plan_fast_safety(tmp_path, capsys):

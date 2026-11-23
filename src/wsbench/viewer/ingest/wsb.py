@@ -900,7 +900,7 @@ def ingest(
         # a lens judged on the ATI subset only: its scores are ATI scores, never full or fast
         ingest_subset(cat, rid, model, judged, "ati")
     elif only is None and all(r.config.get("scope") == fast.SCOPE for r in results.values()):
-        # a --fast / --fast-safety run: its results.json values are that subset's scores
+        # a fast run (any version): its results.json values are that subset's scores
         # (never full-bench ones)
         fast_name = fast_subset_of(results)
         write_scores(cat, rid, judged, results, fast_name)

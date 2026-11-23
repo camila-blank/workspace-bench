@@ -708,6 +708,25 @@ def test_caller_env_and_hand_built_namespaces_keep_threads(offline, spawner, run
     assert list(rundirs.iterdir()) == []
 
 
+def test_process_mode_refuses_a_fast_version_only_this_process_made_active(
+    offline, spawner, rundirs, tmp_path, monkeypatch
+):
+    """A child is told ``fast=True`` and judges ``fast.DEFAULT``: when another version is
+    active in the parent (``fast.use``), process mode would judge another subset than the one
+    asked for, so it stops before any spawn; threads judge the active version as ever."""
+    root, out = tmp_path / "r", tmp_path / "o"
+    spec = _spec("a", lambda args: _ok(args, "a"))
+    _land(root, "a")
+    monkeypatch.setattr(fast, "VERSION", "fast-v3")
+    args = _config("procs=True", "fast=True")
+    with pytest.raises(SystemExit, match=r"judges fast-v4, but the active .* is fast-v3"):
+        runner.run_families([spec], args, readouts_root=root, out=out)
+    assert spawner.order == [] and list(rundirs.iterdir()) == []
+    args = _config("opts=aggregate=native", "procs=True")  # not a fast run: no part in it
+    _outcomes, code = runner.run_families([spec], args, readouts_root=root, out=out)
+    assert code == 0 and spawner.order == ["a"]
+
+
 # ---------------------------------------------------------------- judge outcome=
 
 
