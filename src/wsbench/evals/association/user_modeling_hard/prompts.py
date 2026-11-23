@@ -16,7 +16,8 @@ __all__ = ["option_lines", "render_user_turn"]
 CALL_VERSION = "umh-v3"
 # a bank v<N>, N >= 2, stamps +bank-v<N> (judge.instrument). Summary results add +maj<N>v
 # (judge.majority_stamp; draws=1 has no suffix) and the digest tail
-BANK_STAMP = "+bank-v3"  # the registered bank (plan 0112)
+# the registered bank (plan 0112; bank v3 was the plan's first build, judged and never merged)
+BANK_STAMP = "+bank-v4"
 PROMPT_VERSION = CALL_VERSION + BANK_STAMP  # the registered instrument
 
 # the option types that compete as a flat list (mc.token_note): a run of them singles out none

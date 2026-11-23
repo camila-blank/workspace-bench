@@ -173,9 +173,11 @@ def _answer(r: Mapping[str, Any], u: Unit, chat: str) -> dict[str, Any]:
 def retry_reason(row: Mapping[str, Any]) -> str:
     """The key of ``prompts.UMH_RETRY_REASONS`` for a rejected answer: its gate, except that an
     ``echo`` with a statement left outside ``row["echoed"]`` is ``echo_quote``. That statement
-    holds the copied quote AND states the gold in a word the chat lacks (``gate.states_beyond``
-    under the gold's forms), so it is not refused and the re-ask says so instead of "Do not
-    quote from that bullet again" (review r4 F3)."""
+    holds the copied quote and is not itself an echo (``gate.echoes`` under the gold's forms: it
+    is not mostly the chat's words). It may state the gold in a word the chat lacks, or be a long
+    own-worded bullet that merely contains the copied span; it is not refused either way, and the
+    reason text is conditional ("If the same bullet goes on to state ..."), so it is right in
+    both cases and never says "Do not quote from that bullet again" (review r4 F3)."""
     if row["gate"] == "echo" and len(row["echoed"]) < int(row.get("n_echo_statements", 0)):
         return "echo_quote"
     return str(row["gate"])
