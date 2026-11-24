@@ -217,3 +217,14 @@ without naming plan 0115; the plan number is in this file, `CLAUDE.md` and the f
 Gates: `pytest` (the known flake `tests/test_run_procs.py::test_second_interrupt_terminates_the_children`
 deselected), `ruff check`, `ruff format --check`, `fast_cut_core_half.py --check`,
 `readme_evals_table.py --write` leaving no diff.
+
+## The residual test (2026-11-24)
+
+`tests/test_residual_dataset.py::test_the_shipped_map_covers_the_core_set` now lists
+`association_hard` by name as `awaiting_capture` (the owner: "don't block things"). The
+published dataset holds the eval since its revision e312d946 (the 56 questions of bank v2), and
+the 99 questions of bank v3 are offered in the dataset's pull request 1, but
+`evals/residuals/map.json` still pins an earlier revision, so the map names no
+`full/association_hard` folder and reads of the eval run the model. The test also asserts that
+no listed eval is in the map, so the entry has to leave the list in the change that moves the
+map. Every sentence above that says this test fails describes the branch before this change.
