@@ -214,8 +214,8 @@ def _ingest_manifest(o: Ingest) -> int:
         if n and r["run_id"] not in said:  # once per run, not once per set entry
             said.add(r["run_id"])
             print(f"{r['run_id']}: removed {n} downloaded files from the cache ({_mb(freed)}): "
-                  "judge-call caches, cell and readout files, now in the run database; the "
-                  "result files stay (keep_downloads=True keeps all)")  # fmt: skip
+                  "judge-call caches, cell and readout files, now in the run database; what "
+                  "the score check reads stays (keep_downloads=True keeps all)")  # fmt: skip
         if r["status"] == "ingested":
             print(f"{head}: ingested as {r['run_id']}: {r['evals']} evals, sets "
                   f"{', '.join(r['sets'])}; database {_mb(r['db_bytes'])}, downloaded "
@@ -235,8 +235,8 @@ def _ingest_manifest(o: Ingest) -> int:
             from wsbench.viewer.query import is_earlier_fast, subset_title
 
             what = r.get("subset") or ""
-            said = f" ({subset_title(what)})" if is_earlier_fast(what) else ""
-            print(f"{head}: stored as a set of {r['run_id']}{said}")
+            note = f" ({subset_title(what)})" if is_earlier_fast(what) else ""
+            print(f"{head}: stored as a set of {r['run_id']}{note}")
         elif r["status"] == "unchanged":
             print(f"{head}: unchanged, skipped (force=True re-ingests)")
         elif r["status"] == "failed":

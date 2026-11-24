@@ -118,9 +118,9 @@ changes a cache key or a score. A family whose calls failed after their retries 
 `<family>: N judge call(s) failed after retries; ...` on stderr; rerun into the same `out=` to
 ask only those again.
 
-**Half-price judging.** `judge_backend=batches` sends the Claude calls through Message Batches
-instead of live requests: same requests, same caches, half the token price
-(`docs/judge_backends.md`).
+**Judging through Message Batches.** `judge_backend=batches` sends the Claude calls through
+Message Batches instead of live requests: same requests, same caches, outside the live rate
+limits (`docs/judge_backends.md`).
 
 **One process per family (`run procs=True`, the default).** `run` starts one `wsbench judge`
 process per family, `family_workers` at a time: one Python process is one CPU core, and eight
@@ -453,7 +453,9 @@ needs temperature 1.0; `sampler="native"` leaves top-k and top-p to the server. 
 texts in the readouts contract (§3) is the caller's job.
 
 **What it needs.** `sglang` and `httpx` beside the `gpu` extra (`uv pip install sglang
-httpx`; they are not in the lock file), and one GPU that holds the model. The default server
+httpx`; they are not in the lock file), and one GPU that holds the model. An image built from
+a serving stack alone also needs `accelerate`, which the `gpu` extra has: loading the subject
+model for a capture uses it. The default server
 flags (`engine.DEFAULT_SERVER_ARGS`) are scheduler settings chosen on one GPU type: a B200
 with 183 GiB, for Qwen3.6-27B at 768 running requests. A smaller GPU needs fewer running
 requests: pass your own flags with `server_args=[...]`. Other GPUs and other models were not
