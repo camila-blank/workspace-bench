@@ -755,7 +755,9 @@ def stamp_note(results: Mapping[str, Any]) -> str:
     stamps = sorted({v for r in results.values() if (v := _stamp(r))}, key=version_key)
     if not stamps:
         return ""
-    absent = fast.not_in_run_note({f: _stamp(r) for f, r in results.items()}, fast.DEFAULT)
+    absent = ""
+    if fast_subset_of(results) == FAST_SUBSETS[""]:  # filed under the default subset only
+        absent = fast.not_in_run_note({f: _stamp(r) for f, r in results.items()}, fast.DEFAULT)
     return f"scored on {', '.join(stamps)}" + (f"; {absent}" if absent else "")
 
 

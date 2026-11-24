@@ -219,8 +219,8 @@ Several GPUs are several processes (`shard=i shards=n`), or `launcher=modal gpus
 [docs/fast_path.md](docs/fast_path.md) explains the design, every key, and how to adapt it to
 another serving stack.
 
-Hardware and time. Measured with this code: `wsbench read fast=True launcher=modal gpus=8` (16
-evals, 1,441 questions, 438,790 cells; one trained slot lens at 11 layers, one sample per
+Hardware and time. Measured with this code: `wsbench read fast=True launcher=modal gpus=8` on the
+previous fast selection (16 evals, 1,441 questions, 438,790 cells; one trained slot lens at 11 layers, one sample per
 cell) on NVIDIA B200 GPUs took 1.52 GPU-hours, 14.0 minutes to the last part and 15.3 minutes
 to the joined readouts files. 425,513 cells were pulled from the dataset; the 13,277 cells of
 the 23 `knowledge_cutoff` questions the dataset leaves out were captured in 23 forward passes
