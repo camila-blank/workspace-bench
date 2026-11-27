@@ -20,8 +20,8 @@ NAMES = sorted(
 FAMILY_PATH = re.compile(rf"^evals/({'|'.join(map(re.escape, NAMES))})(/|$)")
 EXEMPT = {
     REPO / "src/wsbench/registry.py",
-    # HallucinationBench (plan 0120), imported unchanged: a path inside its pinned WorkspaceBench
-    # checkout (the pre-0101 layout), and its own bank under evals/hallucinationbench
+    # HallucinationBench (plan 0120), imported unchanged: each builds a path inside ANOTHER
+    # WorkspaceBench checkout (its pinned one, in the pre-0101 layout)
     REPO / "src/wsbench/hb/evals/benign_roleplay/bank.py",
     REPO / "src/wsbench/hb/evals/sibling_probe/bank.py",
 }

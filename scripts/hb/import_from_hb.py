@@ -4,6 +4,7 @@
 
 import argparse
 import difflib
+import hashlib
 import re
 import shutil
 import subprocess
@@ -218,6 +219,8 @@ M3: dict[str, list[tuple[str, str, int]]] = {
 # outputs/); `<another checkout> / "data" / "sibling_probe"` in um_ladder.py (HB_SIBLING_SRC_ROOT).
 
 # The residual of `--check`: files (paths here) that carry a hand edit of plan 0120, by name.
+# sha256 of the residual diff `--check` prints
+RESIDUAL_SHA256 = "99e3a6fb7119facde1628fafbc0f65a00d41222ac952bfde09c4d15a7630aef2"
 HAND_EDITS = {
     "src/wsbench/hb/cli.py": "H1",
     "src/wsbench/hb/final.py": "H2",
@@ -334,12 +337,18 @@ def check(root: Path, files: list[str], code: list[str]) -> int:
                 residual.append(dest)
             else:
                 bad.append(f"differs: {dest}")
+    text = ""
     for dest in residual:
         a = (root / dest).read_text(encoding="utf-8").splitlines(keepends=True)
         b = (REPO / dest).read_text(encoding="utf-8").splitlines(keepends=True)
-        sys.stdout.writelines(
+        text += "".join(
             difflib.unified_diff(a, b, f"import/{dest}", f"tree/{dest}  [{HAND_EDITS[dest]}]")
         )
+    sys.stdout.write(text)
+    # the hand edits are pinned as a whole: a further change to a hand-edited file fails here
+    got = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if got != RESIDUAL_SHA256:
+        bad.append(f"the residual diff is not the recorded hand edits (sha256 {got})")
     for dest in sorted(set(HAND_EDITS) - set(residual)):
         bad.append(f"listed as hand-edited but identical to the import: {dest}")
     print(

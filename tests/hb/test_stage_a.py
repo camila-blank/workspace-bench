@@ -121,3 +121,30 @@ def test_hb_dispatch_registers_nothing(monkeypatch, capsys) -> None:  # I1, I4
     assert (set(registry.FAMILIES), tuple(tiers.CORE), set(cli.COMMANDS)) == before
     assert "hb" not in cli.COMMANDS and "hallucination" in registry.REMOVED_FAMILIES
     assert not {n for n in registry._layout() if "hallucination" in n or n == "hb"}
+
+
+def test_wsbench_cli_does_not_import_hb() -> None:
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, wsbench.cli; "
+        "hb = [m for m in sys.modules if m.split('.')[:2] == ['wsbench', 'hb']]; "
+        "bad = hb or 'matplotlib' in sys.modules; "
+        "sys.exit(1 if bad else 0)"
+    )
+    assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def test_imported_tree_is_pinned() -> None:
+    """The imported code and banks equal the recorded import (no HallucinationBench checkout
+    needed): a deliberate change to one of them updates `import_pin_0120.json` in the same PR."""
+    repo = Path(__file__).resolve().parents[2]
+    pin = json.loads((Path(__file__).parent / "import_pin_0120.json").read_text())
+    here = {}
+    for root, pattern in (("src/wsbench/hb", "*.py"), ("evals/hallucinationbench", "*")):
+        for f in sorted((repo / root).rglob(pattern)):
+            rel = f.relative_to(repo).as_posix()
+            if f.is_file() and "__pycache__" not in rel and rel not in pin["not_pinned"]:
+                here[rel] = hashlib.sha256(f.read_bytes()).hexdigest()
+    assert here == pin["sha256"]

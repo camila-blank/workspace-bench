@@ -11,7 +11,7 @@ of its own. HB's code, banks and tests live in this repository, moved here uncha
 | the banks, the manifest of the frozen index and the method table | [`evals/hallucinationbench/`](../evals/hallucinationbench/README.md) |
 | tests | `tests/hb/` |
 | scripts (bank builders, Modal jobs, audits) | `scripts/hb/` |
-| HB's README, results and design history | [`docs/hb/`](hb/README.md), `plans/hb/` |
+| HB's README (kept as written in its own repository: where it says `hbench` and `data/`, read `wsbench hb` and `evals/hallucinationbench/`), results and design history | [`docs/hb/`](hb/README.md), `plans/hb/` |
 
 ## The index
 

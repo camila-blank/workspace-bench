@@ -2542,6 +2542,7 @@ gpu = [
 ]
 hb = [
     { name = "jinja2" },
+    { name = "matplotlib" },
     { name = "transformers" },
 ]
 viewer = [
@@ -2556,6 +2557,7 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'gpu'" },
     { name = "jinja2", marker = "extra == 'hb'", specifier = ">=3.1" },
     { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.11.2" },
+    { name = "matplotlib", marker = "extra == 'hb'", specifier = ">=3.11.2" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "openai", specifier = ">=1.40" },
     { name = "peft", marker = "extra == 'gpu'", specifier = ">=0.14" },
