@@ -58,14 +58,14 @@ scope, `DATA`, the pinned-checkout environment.
 | `data/<eval>/**` (38 MB) | `evals/hallucinationbench/<eval>/**` (`wsbench_chat`, `wsbench_chat_x3`, `story`, `agentic_misalignment`, `sibling_probe`, `overrefusal`, `benign_roleplay`, `calibration`), **bytes unchanged, never passed through the rewrite** |
 | `data/index/{v8_manifest.json,v8_persistent_failures.json,methods.json}` | `evals/hallucinationbench/index/`, bytes unchanged (manifest sha256 `3b0a3e9d…` stays). HB's `methods.json` (index method → arm per family) keeps its name; `evals/hallucinationbench/README.md` says in one line that it is the opposite direction of the existing `evals/hallucinationbench/methods.json` (readouts-root basename → index method), which stays |
 | `tests/**` (64 test files, about 649 tests, fixtures 652 KB, `conftest.py`, `index_helpers.py`, `v7_rebuild_fixture.py`) | `tests/hb/**` as a **package** (`tests/hb/__init__.py`, empty) |
-| every tracked `scripts/**/*.py` (20 files; tests load some by `spec_from_file_location`, and scripts import each other) | `scripts/hb/**`, same relative layout. No `.sh` file is moved |
+| every tracked `scripts/**/*.py` (23 files; tests load some by `spec_from_file_location`, and scripts import each other) | `scripts/hb/**`, same relative layout. No `.sh` file is moved |
 | `docs/results/*` (three files), HB `README.md` | `docs/hb/results/`, `docs/hb/README.md` |
 | HB `CLAUDE.md` | `src/wsbench/hb/CLAUDE.md` (paths rewritten by hand; it ships in the wheel, which is intended: it is the package's runbook) |
 | `plans/00NN-*.md` (20 files) | `plans/hb/` unchanged (history; HB's numbers collide with WSB's) |
 | `hbench` console script | `wsbench hb <args>` = `wsbench.hb.cli.main(args)`; the argparse CLI is unchanged except `prog="wsbench hb"` |
 
-Not moved: `plots/`, `outputs/`, HB's `uv.lock`, the other scripts (they stay in the archived
-HB repository, stage E).
+Not moved: `plots/`, `outputs/`, HB's `uv.lock`, the nine `.sh` drivers and every untracked
+file (they stay in the archived HB repository, stage E).
 
 Kept as they are here: `evals/hallucinationbench/{index.json,methods.json}`,
 `src/wsbench/hbindex.py`, `scripts/vendor_hb_index.py` (`HB_SHA` unchanged). The vendored
@@ -80,7 +80,9 @@ checkout is stage E.
 
 The import is made by a deterministic script committed in the PR,
 `scripts/hb/import_from_hb.py <hb checkout> [--check]`: it refuses a checkout whose `HEAD` is
-not `ecfae41`, copies **`git ls-files` only** (the checkout on the box has untracked scripts and
+not `ecfae41` or whose tracked files are modified (`git status --porcelain
+--untracked-files=no` non-empty), runs its format and import-sort steps with this repository's
+locked ruff, copies **`git ls-files` only** (the checkout on the box has untracked scripts and
 plots; they are not imported) for the trees of §1.1, and applies the mechanical rewrites
 M1–M5. `--check` re-runs it and diffs the result against the tree in the PR over the `*.py`
 files that came from HB; **that residual diff must be exactly the named hand edits H1–H7 and
@@ -122,9 +124,19 @@ Mechanical rewrites, applied **only to `*.py` under `src/wsbench/hb`, `tests/hb`
   `scripts/am_audit.py:34-35`, `scripts/main_x3/{build_bank,joint_bundle,seed_summaries,build_seeds,merge_readouts}.py`
   with their `sys.path.insert(REPO / "src")`, `main_x3/gen_modal.py:145`,
   `scripts/overrefusal/probe_modal.py:44-47`, `test_am_v8.py:396`) and the script handles each
-  by an explicit table, not a blanket regex.
+  by an explicit table, not a blanket regex. Two special cases: the **container-side** path
+  in `scripts/overrefusal/probe_modal.py:36-48`, `"/root/src/hallucination_bench"`, becomes
+  `"/root/src/wsbench/hb"` (the container imports `wsbench.hb…` after M1; `wsbench` is a
+  namespace package there because only the `hb` directory is mounted: never mount
+  `src/wsbench` whole); and script defaults of the form `REPO_ROOT / "outputs" / …`
+  (`um_lexicons.py:29`, `gen_items.py:55`, `um_ladder.py:35`) are left repository-root-relative
+  on purpose (this repository's gitignored `outputs/`).
 - **M4.** `ruff format` on the three trees after M1–M3 (shorter module names re-join wrapped
-  lines); the format diff may touch only statements that contain a rewritten token.
+  lines); the format diff may touch only statements that contain a rewritten token. HB's tree
+  was formatted with ruff 0.17.0 and this repository locks 0.16.7: G0(d) measures whether the
+  locked ruff reformats untouched HB statements. If it does, those files get a separate,
+  format-only step **M4b** (listed per file in the PR; no string value changes), and ruff is
+  not bumped repository-wide.
 - **M5.** `ruff check --select I --fix` on the three trees (M2's relative imports move to the
   end of their import block); it may touch only import blocks that hold a rewritten import.
 
@@ -146,7 +158,10 @@ Hand edits (each one named in the PR):
   `HBENCH_OR_READOUTS`, `HBENCH_SAFETY_*`) keep their names and meaning.
 - **H4.** `benign_roleplay/wsb.py` gets one helper `pinned_env()`: the caller's environment
   without `PYTHONPATH`, `UV_PROJECT_ENVIRONMENT` and every `WSB_*` / `WSBENCH_*` variable (which
-  includes the `WSB_BANK_FILE_*` it already strips). The module's two subprocess sites use it,
+  includes the `WSB_BANK_FILE_*` it already strips). The module's two subprocess sites that
+  pass an environment (`run_calls`, `bank_path`; `_git` passes none) use it, **and `run_calls`
+  keeps the order `{**pinned_env(), **c.env}`, so the `WSB_BANK_FILE_JAILBREAK_RECOGNITION` it
+  sets for the HB-only bank is applied after the strip**,
   and so does the test's own pinned-checkout subprocess environment
   (`tests/hb/test_benign_roleplay.py:104-140`). Reason: the caller is now a WSB process, and an inherited
   `PYTHONPATH=<this checkout>/src` would make the subprocess in the checkout pinned to
@@ -169,8 +184,9 @@ Hand edits (each one named in the PR):
   by hand, plus three notes: H4's hazard; that `git_sha` in an index written by `wsbench hb
   final` is now this repository's commit (so `vendor_hb_index.py`, which accepts only `HB_SHA`,
   cannot vendor it: stage E); and that the vendored v8 file is the record (I3).
-- **H9.** Skip marks for tests that G0's second environment shows to need box-only paths
-  (each listed in the PR with its reason); they must skip, not fail, in CI.
+- **H9.** For tests that G0(b) shows to need box-only paths: a `skipif` on the missing path or
+  variable (never an unconditional skip), each listed in the PR with its reason. On the box
+  every such test keeps its G0(a) outcome; in CI it skips instead of failing.
 
 New file, not from HB: `tests/hb/test_stage_a.py`: `prog` is `wsbench hb` (H1);
 `load_persistent` prefers `base / path` and falls back to `DATA` for a `data/` path (H2);
@@ -249,8 +265,12 @@ Environment: a `.venv` of this worktree (`uv sync --extra dev --extra hb`, local
   `paths.py` plus `HBENCH_OR_READOUTS`, `HBENCH_X3_BANK`, `HBENCH_SAFETY_*` set to a
   nonexistent directory (unset would select the box defaults), an empty `HF_HOME`,
   `HF_HUB_OFFLINE=1`, without the `sibling` group; tests that fail there are the H9 list.
-  (c) `hbench final` on the frozen outputs (the checkout's `outputs/v8-full` link exists) and
+  (c) `hbench final` on the frozen outputs (the checkout's `outputs/v8-full` link exists; pass
+  `--out <scratch> --plots <scratch>`, the default `--plots` overwrites tracked PNGs) and
   the G5 story rebuild, both with HB's own code: recorded whether each equals the frozen file.
+  (d) This repository's locked ruff, `format --check`, on HB's untouched `src`, `tests`,
+  `scripts`: result recorded (M4). Order: (a), (c), (d), then (b) in a throwaway environment
+  (it must not re-sync HB's `.venv`).
   The frozen index was written at `5a59f8c`, before plan 0030 trimmed `index.py`, and some
   `cache.jsonl` files were appended to after their `cells.jsonl` was written, so equality is
   measured, not assumed. **G1 and G5 compare against (c)**; where (c) itself differs from the
@@ -269,20 +289,27 @@ Environment: a `.venv` of this worktree (`uv sync --extra dev --extra hb`, local
   joint rows for the vendored methods (the vendoring script itself refuses any `git_sha` but
   `HB_SHA`, so it is not re-run and the vendored file is not regenerated).
 - **G3.** `pytest tests/hb -q`: every test has the outcome it had in G0(a); the only allowed
-  differences are H6's test, H9's marks and the three tokenizer tests if the HF cache is cold
-  under H5, each named in the PR. `tests/hb/test_stage_a.py` passes.
+  differences are H6's test and the three tokenizer tests if the HF cache is cold under H5,
+  each named in the PR. `tests/hb/test_stage_a.py` passes.
 - **G4.** `pytest -q` (whole suite; in tmux with a log, time recorded in the PR), `ruff check .`,
   `ruff format --check .` green; `scripts/hb/import_from_hb.py --check` leaves only H1–H7 and
-  H9; every `scripts/hb/**/*.py` passes `py_compile`, and each one that is not a Modal app
-  answers `--help` with exit 0.
+  H9; every `scripts/hb/**/*.py` passes `py_compile`, and each one that builds an `argparse`
+  parser and is not a Modal app answers `--help` with exit 0 (`build_dev_v2.py` has no parser
+  and **rewrites `calibration/dev_v2.jsonl` whenever it is run**: it and `v8/or_common.py` are
+  `py_compile` only). After G3, G4 and G5, `git status` shows no change under
+  `evals/hallucinationbench/`.
 - **G5 (cache lookup path).** G1 reads derived files, not caches, so it does not exercise
   fingerprints. The **story** eval is rebuilt from cache for all three arms with HB's existing
-  no-API replay (`wsbench hb run --eval story --rebuild`, and `--joint --rebuild`):
+  no-API replay:
+  `wsbench hb run --eval story --rebuild --readouts-root /root/tmp/hb29-pilot-in/story-readouts
+  --arms s3d-rl600-all11,mlnla-rl600-all11,jlens --out <scratch>`, and the same with
+  `--joint --rebuild` (the command needs the arms and a readouts root to start; the judge model
+  defaults to `claude-opus-5-5`, which is the directory level below `story/`):
   1. Readouts: the manifest's `provenance.readouts.story` paths
      (`/root/tmp/hb29-pilot-in/story-readouts/<arm>/hallucination.jsonl`) are restored from the
      archive (`/workspace/hb-v8-full/inputs/root/tmp/hb29-pilot-in/…`, a few MB per arm) and
      their sha256 checked against the manifest. The joint rebuild reads the absolute `sources`
-     recorded in `joint.json`, so the original paths are used, not a `--readouts` flag.
+     recorded in `joint.json`, which are these same paths.
   2. Scratch root `<scratch>/story/claude-opus-5-5/<arm>/` per arm: `arm.json` and `joint.json`
      **copied** from the frozen arm directory (the rebuild reads `map_prompt` and
      `excuse_verifier` from them), `cache.jsonl` **symlinked** (the rebuild opens it read-only).
