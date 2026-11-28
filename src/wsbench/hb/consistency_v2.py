@@ -35,7 +35,7 @@ from wsbench.hb.evals.wsbench_chat import bank
 from wsbench.hb.evals.wsbench_chat import run as wrun
 from wsbench.hb.evals.wsbench_chat.score_v2 import majority_leaf
 from wsbench.hb.judges import claimmap_v2 as cm
-from wsbench.hb.llm import LLM, Usage
+from wsbench.hb.llm import LLM, JudgeConfigError, Usage
 from wsbench.hb.readouts import Cell, decode_token
 from wsbench.hb.units import Unit, split_cell
 
@@ -534,6 +534,19 @@ def run(
     concurrency: int = 64,
 ) -> dict[str, Any]:
     targets = parse_arms(arms_spec)
+    # plan 0121 A10: consistency-v2 is interp-v1 only (cell_samples reads interp-v1 summaries)
+    if models.summ_prompt != summarizer.V1:
+        raise JudgeConfigError(
+            f"consistency-v2 is {summarizer.V1} only, got --summarizer-prompt {models.summ_prompt}"
+        )
+    for name, _layer in targets:
+        d = wrun.arm_dir(out_root, models, name)
+        got = wrun.recorded_summ_prompt(wrun._arm_record(d))
+        if got != summarizer.V1:
+            raise JudgeConfigError(
+                f"{d}: judged with --summarizer-prompt {got}; consistency-v2 is "
+                f"{summarizer.V1} only"
+            )
     opened: list[tuple[str, wrun.Arm, int]] = []
     for name, layer in targets:
         p = Path(readouts_root) / name / "hallucination.jsonl"

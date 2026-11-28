@@ -145,7 +145,8 @@ def blocking(fam: str, cell: str, r: dict[str, Any]) -> tuple[str, set[str], tup
         return "situation", {f"sit:{cell}"}, (), True
     if fam in (ix.MAIN, ix.STORY):
         st = r.get("stages") or {}
-        if st.get("summary") not in (None, "ok"):
+        # plan 0121: "junk" (interp-v2) is a settled summary, never the blocking stage
+        if st.get("summary") not in (None, "ok", "junk"):
             return "summary", {f"summ:{c}" for c in per}, (), False
         if st.get("map") != "ok":
             return "map", {f"{cell}:M"}, (), True

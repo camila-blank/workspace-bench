@@ -1,6 +1,13 @@
 """Import HallucinationBench (`camila-blank/hallucination-bench` @ ecfae41) into this repository
 (plan 0120 stage A): copy the tracked files and apply the mechanical rewrites M1-M5.
-`--check` rebuilds the import and diffs it against the tree; the residual is the hand edits."""
+`--check` rebuilds the import and diffs it against the tree; the residual is the hand edits.
+
+RETIRED (plan 0121 A4): `--check` described the tree only while it equalled the import. Plan
+0121 edits `src/wsbench/hb` on purpose (new registered versions beside the v8 ones), so its
+residual is no longer only the hand edits and it is not a gate any more. The tree is pinned by
+`tests/hb/test_stage_a.py::test_imported_tree_is_pinned` (`tests/hb/import_pin_0120.json`; each
+PR updates the entries of the files it edits or adds) and the v8 prompt constants by
+`tests/hb/test_v8_prompt_pins.py` and `tests/hb/test_registry_pins.py`."""
 
 import argparse
 import difflib
