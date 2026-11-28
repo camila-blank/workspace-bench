@@ -473,6 +473,21 @@ def agreement(rows: list[dict[str, Any]]) -> dict[str, tuple[int, int]]:
     return {k: (h, n) for k, (h, n) in out.items()}
 
 
+def missing_labels(rows: list[dict[str, Any]]) -> int:
+    """Label slots where a labeller gave no label (a call that failed or was refused). The agreed
+    rates drop such a slot from numerator and denominator, so any missing label makes the gate
+    INCOMPLETE rather than letting it pass on a shrunken denominator."""
+    n = 0
+    for r in rows:
+        names = ["bag"]
+        for ln in r["v9"]["lines"]:
+            names.append(f"line:{ln['line']}")
+            if ln["topic"] == "off_topic":
+                names.append(f"topic:{ln['line']}")
+        n += sum(v is None for name in names for v in pair(r, name))
+    return n
+
+
 THRESHOLDS = {
     "claims_decline": MIN_CLAIMS_DECLINE_PRECISION,
     "decline_recall": MIN_DECLINE_RECALL,
@@ -622,13 +637,16 @@ def cmd_report(args: argparse.Namespace) -> None:
     low = [k for k, (h, n) in agree.items() if n and h / n < MIN_LABELLER_AGREEMENT]
     checks = verdicts(ag)
     partial = len(rows) < len(sample)
-    verdict = overall(checks, bool(low), partial)
+    n_missing = missing_labels(rows)
+    verdict = overall(checks, bool(low), partial or n_missing > 0)
     too_few = [k for k in THRESHOLDS if ag[k][1] < MIN_ROWS_TO_GATE]
     why = []
     if verdict == INCOMPLETE and too_few:
         why.append(f"too few rows to gate {', '.join(too_few)} (n < {MIN_ROWS_TO_GATE})")
     if verdict == INCOMPLETE and partial:
         why.append(f"{len(rows)} of {len(sample)} sampled units labelled")
+    if verdict == INCOMPLETE and n_missing:
+        why.append(f"{n_missing} labels missing (failed or refused label calls)")
     sc = scores(sample, rows)
     L = [
         "# Gate `orj` (plan 0121 §4): the hindex-v9 J-lens off-topic-refusal chain",
@@ -670,6 +688,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         "partial": partial,
         "n_sampled": len(sample),
         "n_labelled": len(rows),
+        "n_missing_labels": n_missing,
         "checks": {
             k: {
                 "hits": ag[k][0],
