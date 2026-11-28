@@ -28,6 +28,22 @@ def _two_layer_grid(monkeypatch):
     monkeypatch.setattr(final, "EXPECTED_LAYERS", (20, 24))
 
 
+@pytest.fixture(autouse=True)
+def _or_roots_carry_the_v9_stamps(monkeypatch):
+    """Plan 0121 §4 (review fix 2): a hindex-v9 build refuses an overrefusal root without the
+    bank-v2 / interp-v2 stamps, so in this module the fixture roots are stamped as `export_v9`
+    stamps them (`index_helpers.or_v9_stamped`; a v8 build reads none of the stamps). The
+    refusals themselves are tested in `test_v9_or_review_fixes.py`."""
+    import sys
+
+    from . import test_final
+    from .index_helpers import or_v9_stamped
+
+    stamped = or_v9_stamped(test_final.v8_sources)
+    monkeypatch.setattr(test_final, "v8_sources", stamped)
+    monkeypatch.setattr(sys.modules[__name__], "v8_sources", stamped)
+
+
 def _load(name: str, rel: str):
     spec = importlib.util.spec_from_file_location(name, REPO / rel)
     mod = importlib.util.module_from_spec(spec)

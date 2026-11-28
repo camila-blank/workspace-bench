@@ -25,7 +25,11 @@ Plan 0121 §4 (hindex-v9, "Off-topic refusal"): :func:`export_v9` writes a separ
 v2 from records FILTERED to the bank's items before :func:`index_rows` -- the prose readers'
 frozen hindex-v8 records (no new judge call), the J-lens reader's summarise-first records
 (``sjudge.interp_unit``) -- and stamps the J-lens summariser version in ``index_meta.json``.
-The v8 exports above are unchanged.
+Its health block (report only; the rows keep the failure rules above) splits the failed units
+by kind: ``unjudged`` (no usable digest) apart from ``empty`` (the digest came back empty and
+the unit is not all-junk), also per reader (``failed_by_reader``), and counts the J-lens units
+voided by a failed summary (``n_units_voided_by_failed_summary``). The v8 exports above are
+unchanged (their ``unjudged`` still holds both kinds).
 """
 
 import hashlib
@@ -365,6 +369,32 @@ def check_summarized(recs: Iterable[Mapping[str, Any]], version: str | None, pat
             )
 
 
+FAILURE_KINDS = ("unjudged", "empty", "strict_judge_failed", "off_topic_failed")
+
+
+def failure_kind(r: Mapping[str, Any]) -> str | None:
+    """Why a record is a failed unit, with :func:`record_counts`'s ``unjudged`` split in two
+    (report only: the row and its ``n_failed_cells`` are :func:`record_counts`'s): ``empty`` =
+    the digest came back ``empty`` (every cell blank, or a digest with no entry; plan 0022
+    counts it as a failed unit) and ``unjudged`` = no usable digest (a failed or refused call,
+    a grounding failure, missing cells, a failed summary). An all-junk summarised unit is
+    neither (:func:`all_junk`: settled, a zero row)."""
+    why = record_counts(r)[2]
+    if why == "unjudged" and r["digest"]["status"] == "empty":
+        return "empty"
+    return why
+
+
+def failure_split(recs: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    """reader -> failed units per :data:`FAILURE_KINDS` (every kind listed, zeros included)."""
+    by: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(FAILURE_KINDS, 0))
+    for r in recs:
+        kinds = by[str(r["reader"])]
+        if (why := failure_kind(r)) is not None:
+            kinds[why] += 1
+    return {a: by[a] for a in sorted(by)}
+
+
 def _reader_health(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     by: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     for r in rows:
@@ -430,18 +460,34 @@ def export_v9(
         if missing := sorted(set(readers) - {r["arm"] for r in rows}):
             raise ValueError(f"no record of {missing} on bank {bank}")
         write_rows(rows, dest / (JOINT_COUNTS if joint else ITEM_COUNTS))
+        # report only (no row or count of index_counts*.jsonl moves): the failed units split
+        # by kind, `empty` digests apart from `unjudged` ones, in total and per reader
+        split = failure_split(recs)
+        kinds = {k: sum(by[k] for by in split.values()) for k in FAILURE_KINDS}
+        n_failed = sum(r["n_failed_cells"] for r in rows)
+        if (
+            sum(kinds.values()) != n_failed
+            or kinds["unjudged"] + kinds["empty"] != (fails["unjudged"])
+        ):
+            raise ValueError(f"failure tallies disagree: {kinds} vs {fails}, {n_failed} failed")
         health: dict[str, Any] = {
             "n_records": len(rows),
-            **fails,
-            "n_failed_cells": sum(r["n_failed_cells"] for r in rows),
+            **{**fails, "unjudged": kinds["unjudged"]},
+            "empty": kinds["empty"],
+            "n_failed_cells": n_failed,
             "n_decline_lines": sum(r["n_claims"] for r in rows),
             "n_off_topic_lines": sum(r["n_contradicted"] for r in rows),
             "by_reader": _reader_health(rows),
+            "failed_by_reader": split,
             "jlens_summaries": {
                 "n_junk_sites": sum(int(r.get("n_junk_sites") or 0) for r in recs_j),
                 "n_failed_summaries": sum(int(r.get("n_failed_summaries") or 0) for r in recs_j),
                 "n_all_junk_units": sum(all_junk(r) for r in recs_j),
             },
+            # units (not sites) left unjudged because at least one of their summaries failed
+            "n_units_voided_by_failed_summary": sum(
+                int(r.get("n_failed_summaries") or 0) > 0 for r in recs_j
+            ),
         }
         if joint:
             from . import sj_metrics

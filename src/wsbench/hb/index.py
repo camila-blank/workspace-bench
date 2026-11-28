@@ -48,6 +48,7 @@ and weights on v8 values, :data:`FAMILIES_V7` / :data:`FAMILY_WEIGHTS_V7`); ``ov
 v7 were removed in plan 0030.
 """
 
+import hashlib
 import json
 import math
 import os
@@ -693,6 +694,64 @@ def check_safety_units(sources: Mapping[str, Iterable[Path]], version: str) -> N
             )
 
 
+# plan 0121 §4: what a hindex-v9 overrefusal ("Off-topic refusal") root must be stamped with
+# (`offtopic_export.export_v9` writes the stamps into index_meta.json / index_meta_joint.json)
+SAFETY_META_JOINT = "index_meta_joint.json"
+OR_BANK_V9 = "v2"
+OR_JLENS_SUMMARIZER_V9 = "interp-v2"
+
+
+def or_bank_sha_v9() -> str:
+    """sha256 of the registered bank-v2 items file (``items_v2.json``), read at call time."""
+    from wsbench.hb.evals.overrefusal import data
+
+    return hashlib.sha256(data.bank_path(OR_BANK_V9).read_bytes()).hexdigest()
+
+
+def or_meta_problem_v9(meta: Mapping[str, Any] | None, bank_sha: str | None = None) -> str | None:
+    """Why an overrefusal ``index_meta.json`` / ``index_meta_joint.json`` is not a hindex-v9
+    root of record (plan 0121 §4), or ``None``: the bank must be v2 with the registered file's
+    sha256, the J-lens rows summarised with ``interp-v2``, and no ``comparison_only`` flag."""
+    if meta is None:
+        return "is missing"
+    if "comparison_only" in meta:
+        return "is a comparison-only export (comparison_only is set: not a root of record)"
+    bank = meta.get("bank")
+    name = bank.get("name") if isinstance(bank, Mapping) else None
+    if name != OR_BANK_V9:
+        return f"records bank {name!r}, not {OR_BANK_V9!r}"
+    want = bank_sha if bank_sha is not None else or_bank_sha_v9()
+    if (got := bank.get("sha256")) != want:
+        return f"records bank {OR_BANK_V9} sha256 {got!r}, not the registered file's {want!r}"
+    summ = meta.get("summarizer")
+    jl = summ.get("jlens") if isinstance(summ, Mapping) else None
+    if jl != OR_JLENS_SUMMARIZER_V9:
+        return f"records summarizer.jlens {jl!r}, not {OR_JLENS_SUMMARIZER_V9!r}"
+    return None
+
+
+def check_overrefusal_v9(sources: Mapping[str, Iterable[Path]]) -> None:
+    """Plan 0121 §4, hindex-v9 only (after :func:`check_safety_units`): every overrefusal
+    root's ``index_meta.json``, and ``index_meta_joint.json`` when the root holds joint rows,
+    carries the v9 stamps (:func:`or_meta_problem_v9`). ``ValueError``."""
+    roots = [Path(r) for r in sources.get(OVERREFUSAL, [])]
+    sha = or_bank_sha_v9() if roots else None
+    for root in roots:
+        names = [SAFETY_META]
+        if (root / SAFETY_COUNTS_JOINT).is_file():
+            names.append(SAFETY_META_JOINT)
+        for name in names:
+            p = root / name
+            meta = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+            if why := or_meta_problem_v9(meta, sha):
+                raise ValueError(
+                    f"{OVERREFUSAL}: {INDEX_VERSION_V9} needs an {DISPLAY_V9[OVERREFUSAL]} root on "
+                    f"bank {OR_BANK_V9} with the J-lens rows summarised by "
+                    f"{OR_JLENS_SUMMARIZER_V9} (`hbench overrefusal offtopic-export "
+                    f"--v9-dest`, plan 0121 §4), but {p} {why}"
+                )
+
+
 def default_sources(out: Path, judge_model: str, version: str = "v8") -> dict[str, list[Path]]:
     from wsbench.hb.evals.wsbench_chat.run import model_slug
 
@@ -1262,6 +1321,8 @@ def _build_index(
     # an unknown claim-map version fails before any work; hindex-v9 has its own note
     notes = (notes_v9 if version == "v9" else notes_v8)(prompt_version, excuse_verifier)
     check_safety_units(sources, version)
+    if version == "v9":  # plan 0121 §4: the bank / summariser stamps of the overrefusal root
+        check_overrefusal_v9(sources)
     am_roots = list(sources.get(AM_CLAIMS) or sources.get(AM) or [])
     claim_src = {MAIN: list(sources.get(MAIN, [])), AM_CLAIMS: am_roots}
     claim_src[STORY] = list(sources.get(STORY, []))

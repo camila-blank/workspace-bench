@@ -401,11 +401,17 @@ def summ_key(cell: Cell) -> str:
     return f"summ:{cell.id}:L{cell.layer}:p{cell.pos}"
 
 
+def bag_tokens(tokens: Sequence[str] | None) -> list[str]:
+    """The top ``BAG_K`` tokens of a site's bag, decoded with ``readouts.decode_token``: the one
+    decoder of :func:`bag_text` (gate ``orj`` shows its labellers these same tokens)."""
+    return [decode_token(t) for t in (tokens or ())[:BAG_K]]
+
+
 def bag_text(cell: Cell) -> str:
     """The summariser's bag, rendered as the chat / story / AM pipelines render it: the top
     ``BAG_K`` tokens decoded with ``readouts.decode_token``, with their scores when the readout
     row carries them (``summarizer.render_bag``)."""
-    toks = [decode_token(t) for t in (cell.tokens or ())[:BAG_K]]
+    toks = bag_tokens(cell.tokens)
     scores = None if cell.scores is None else list(cell.scores[:BAG_K])
     return summarizer.render_bag(toks, scores)
 
@@ -723,17 +729,31 @@ SETTINGS_FILE = "sj_settings.json"
 V8_SETTINGS: dict[str, Any] = {"bank": "v1", "jlens_summarizer": None}
 
 
+RECORDS_GLOB = "sj_records_*.jsonl"  # what sj_run.py writes (``--tag``)
+EXPORT_DIR = "offtopic_index"  # offtopic_export.OFFTOPIC_DIR (that module imports this one)
+
+
+def v8_outputs(root: Path) -> list[str]:
+    """What a root without ``sj_settings.json`` holds of a hindex-v8 run: its stage caches, its
+    record files, its ``offtopic_index/`` export. Empty for a new (or empty) folder."""
+    root = Path(root)
+    found = [d for d in (*CACHE_DIRS.values(), EXPORT_DIR) if (root / d).is_dir()]
+    return found + sorted(f.name for f in root.glob(RECORDS_GLOB) if f.is_file())
+
+
 def check_root(root: Path, bank: str, jlens_summarizer: str | None) -> None:
     """One (bank, J-lens summariser) per out root (plan 0121 I2: a v9 run never writes into a
     v8 root, and the other way round). A root with v9 settings records them in
-    ``sj_settings.json``; a root without the file is a v8 root (``bank v1``, no summariser),
-    and v8 runs write no file. ``ValueError`` on a mismatch."""
+    ``sj_settings.json``; a root without the file that holds any output (:func:`v8_outputs`:
+    a stage cache, an ``sj_records_*.jsonl``, an ``offtopic_index/``) is a v8 root (``bank
+    v1``, no summariser), and v8 runs write no file; a new or empty folder takes any settings.
+    ``ValueError`` on a mismatch."""
     want = {"bank": bank, "jlens_summarizer": jlens_summarizer}
     p = Path(root) / SETTINGS_FILE
     if p.is_file():
         have = json.loads(p.read_text())
-    elif want != V8_SETTINGS and any((Path(root) / d).is_dir() for d in CACHE_DIRS.values()):
-        have = V8_SETTINGS  # caches without a record: a hindex-v8 root
+    elif v8_outputs(root):
+        have = V8_SETTINGS  # outputs without a record: a hindex-v8 root
     else:
         have = want
     if have != want:

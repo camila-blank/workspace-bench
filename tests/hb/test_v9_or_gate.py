@@ -198,7 +198,7 @@ def test_label_and_report_on_a_toy_world(tmp_path: Path, capsys: pytest.CaptureF
     text = (args.out / "RESULT.md").read_text()
     assert "claims_decline precision" in text and "91.7% (11/12) | PASS" in text
     assert "75.0% (12/16) | PASS" in text and "TOO FEW (n < 10)" in text
-    assert "Verdict: PASS on the rates that can be gated" in text
+    assert "**Verdict: INCOMPLETE**" in text
     sheet = (args.out / "SHEET.md").read_text()
     assert "v9 off-topic line" in sheet and "a v9 decline line does not claim a decline" in sheet
     assert "refusal word in a bag, no v9 decline line" in sheet

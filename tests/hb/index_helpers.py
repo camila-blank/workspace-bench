@@ -34,6 +34,41 @@ def _or_row(layer: int, item: str, n: int, off: int, failed: int = 0) -> dict[st
     }
 
 
+# plan 0121 §4 (review fix 2): hindex-v9 needs its overrefusal root stamped as `export_v9` stamps
+# it. `stamp_or_v9` adds the stamps to a fixture root (nothing a v8 build reads changes);
+# `or_v9_stamped` wraps a sources builder so the v9 test modules build their v9 indexes from
+# stamped roots (their autouse fixtures swap it in; the v8 test modules never use it).
+
+
+def stamp_or_v9(root: Path, **over: Any) -> Path:
+    stamps = {
+        "bank": {"name": "v2", "file": "items_v2.json", "sha256": ix.or_bank_sha_v9()},
+        "summarizer": {"jlens": "interp-v2"},
+        "display_name": "Off-topic refusal",
+        **over,
+    }
+    for name, counts in (
+        (ix.SAFETY_META, ix.SAFETY_COUNTS),
+        (ix.SAFETY_META_JOINT, ix.SAFETY_COUNTS_JOINT),
+    ):
+        if not (root / counts).is_file():
+            continue
+        p = root / name
+        have = json.loads(p.read_text()) if p.is_file() else {"unit": "refusal_claims", "gates": {}}
+        p.write_text(json.dumps({k: v for k, v in {**have, **stamps}.items() if v is not None}))
+    return root
+
+
+def or_v9_stamped(sources_fn: Any) -> Any:
+    def stamped(*a: Any, **kw: Any) -> dict[str, list[Path]]:
+        src = sources_fn(*a, **kw)
+        for root in src.get(ix.OVERREFUSAL, []):
+            stamp_or_v9(Path(root))
+        return src
+
+    return stamped
+
+
 # ---------------------------------------------------------------- benign_roleplay summaries
 
 INST = {

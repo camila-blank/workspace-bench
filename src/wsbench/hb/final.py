@@ -49,8 +49,9 @@ labelled). Per-layer uses k = 3 samples (J-lens 1); the joint unit 1 per layer.
 Plan 0121 (hindex-v9, provisional): the manifest's ``index_version`` selects the index. A
 ``hindex-v9`` manifest passes every check above and :func:`check_v9` (the top-level stamp
 ``summarizer_prompt: interp-v2``; ``summ_prompt == interp-v2`` in the ``arm.json`` / ``joint.json``
-of every token-kind arm), and is built by :func:`wsbench.hb.index.build_index_v9`. The v8
-manifest is checked and built exactly as before.
+of every token-kind arm; :func:`check_v9_overrefusal`: the bank-v2 / ``interp-v2`` stamps of the
+overrefusal root's ``index_meta*.json``), and is built by
+:func:`wsbench.hb.index.build_index_v9`. The v8 manifest is checked and built exactly as before.
 """
 
 import hashlib
@@ -516,6 +517,33 @@ def check_v9(m: Mapping[str, Any], base: Path) -> None:
                     f"{_where(e)}: {path} records summ_prompt {sp!r}; {ix.INDEX_VERSION_V9} "
                     f"needs {V9_SUMMARIZER_PROMPT!r} for a token arm (plan 0121)"
                 )
+    check_v9_overrefusal(m, base)
+
+
+def check_v9_overrefusal(m: Mapping[str, Any], base: Path) -> None:
+    """Plan 0121 §4, the last v9 check: the stamps of every overrefusal ("Off-topic refusal")
+    root a hindex-v9 manifest lists -- ``index_meta.json`` for a per-layer entry,
+    ``index_meta_joint.json`` for an ``all`` entry -- are hindex-v9's
+    (:func:`wsbench.hb.index.or_meta_problem_v9`: bank v2 with the registered file's sha256,
+    ``summarizer.jlens == "interp-v2"``, no ``comparison_only``)."""
+    seen: set[Path] = set()
+    sha: str | None = None
+    for e in m["entries"]:
+        if e["family"] != ix.OVERREFUSAL:
+            continue
+        joint = e["unit"] == ix.JOINT_LABEL
+        path = (base / e["root"]).resolve() / (ix.SAFETY_META_JOINT if joint else ix.SAFETY_META)
+        if path in seen:
+            continue
+        seen.add(path)
+        sha = sha or ix.or_bank_sha_v9()
+        meta = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        if why := ix.or_meta_problem_v9(meta, sha):
+            raise ManifestError(
+                f"{_where(e)}: {path} {why}; {ix.INDEX_VERSION_V9} needs the off-topic refusal "
+                f"root on bank {ix.OR_BANK_V9} with summarizer.jlens "
+                f"{ix.OR_JLENS_SUMMARIZER_V9!r} (plan 0121 §4)"
+            )
 
 
 def stage_sources(
@@ -539,6 +567,13 @@ def stage_sources(
         files = [e["file"]]
         if fam in ix.SAFETY_FAMILIES_V8 and (root / ix.SAFETY_META).is_file():
             files.append(ix.SAFETY_META)
+        if (  # plan 0121 §4: the v9 build re-checks the joint stamps beside the joint rows
+            m.get("index_version") == ix.INDEX_VERSION_V9
+            and fam == ix.OVERREFUSAL
+            and e["file"] == ix.SAFETY_COUNTS_JOINT
+            and (root / ix.SAFETY_META_JOINT).is_file()
+        ):
+            files.append(ix.SAFETY_META_JOINT)
         for rel in files:
             dest = sroot / rel
             if dest.is_symlink() or dest.exists():
