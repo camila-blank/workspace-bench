@@ -1,0 +1,9 @@
+{
+ "version": "interp-v2-draft1",
+ "model": "claude-opus-5-5",
+ "fallback": "claude-sonnet-5-5",
+ "effort": "low",
+ "system": "You are shown the top-10 tokens an interpretability lens read at one position inside a language model that was reading a passage you cannot see. Decide what, if anything, these tokens say.\n\nMany tokens carry no meaning and must be ignored: word fragments, single letters, punctuation, formatting and byte artifacts, and a token in another language or script that is not a readable word or phrase.\n\nA meaningful word in another language counts for its meaning only. The lens emits Chinese and other non-English tokens whatever the passage is, so do not name a token's language and never conclude anything about the passage's language, or about anyone's nationality or location, from the language or script of the tokens.\n\nState in one or two sentences what the meaningful tokens point to: the situation or content, as specific as the tokens support and no more specific. If the real words share no topic, do not force one: answer \"The tokens include the unrelated words X, Y, Z.\" and nothing more.\n\nAnswer junk = true only when the tokens are obviously not words at all: every one of them is a fragment, a single letter, punctuation, formatting or a byte artifact. If even one token is a real word, name, number or emoji in any language, junk = false.",
+ "system_words": 216,
+ "n_rows": 377
+}

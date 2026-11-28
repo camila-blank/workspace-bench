@@ -122,6 +122,23 @@ def arms_of(args: argparse.Namespace) -> list[tuple[str, Path]]:
     return amrun.resolve_arms(None, args.readouts_root, args.arms)
 
 
+def check_interp_v1(args: argparse.Namespace) -> None:
+    """Plan 0121: the audits read ``summ:`` / ``:Dsum`` rows under the interp-v1 fingerprint and
+    know no junk summary, so a root judged with another summariser prompt (``arm.json``
+    ``summ_prompt``) is refused instead of being misread as unsummarised: ``SystemExit``."""
+    models = models_of(args)
+    for arm in filter(None, str(args.arms).split(",")):
+        p = amrun.arm_dir(Path(args.out), models, arm) / "arm.json"
+        if not p.is_file():
+            continue
+        sp = json.loads(p.read_text()).get("summ_prompt") or "interp-v1"
+        if sp != "interp-v1":
+            raise SystemExit(
+                f"am_audit: {p} records summ_prompt {sp!r}; the AM audits read interp-v1 roots "
+                "only (plan 0121: no junk-summary handling here)"
+            )
+
+
 def write_jsonl(p: Path, rows: list[dict[str, Any]]) -> None:
     with p.open("w", encoding="utf-8") as fh:
         for r in rows:
@@ -813,6 +830,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--concurrency", type=int, default=256)
     ap.add_argument("--no-rebuild", action="store_true", help="use the existing mentions.jsonl")
     args = ap.parse_args(argv)
+    check_interp_v1(args)
     if args.cmd == "sample":
         return cmd_sample(args)
     if args.cmd == "sample-headline":

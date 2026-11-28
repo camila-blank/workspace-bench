@@ -41,7 +41,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -85,6 +85,15 @@ V5C_SUBSAMPLE_SEED = 0
 V5C_SUBSAMPLE_FRACTION = 0.10
 
 
+def v5c_side_stage(models: "Models", stages: Collection[str], anchored: bool, item_id: str) -> bool:
+    """Whether a single-call map run also asks the v5c span judge for this cell: the fixed 10%
+    item subsample of the v5c comparison (a report-only side stage). Plan 0121 §2.2: never in a
+    root whose summariser is not interp-v1 (hindex-v9 roots); interp-v1 roots are unchanged."""
+    if anchored or "map" not in stages or models.summ_prompt != SUMM_PROMPT_V1:
+        return False
+    return in_v5c_subsample(item_id)
+
+
 def in_v5c_subsample(item_id: str, seed: int = V5C_SUBSAMPLE_SEED) -> bool:
     """The fixed, seeded 10% item subsample of the single-call v5c comparison."""
     h = hashlib.sha256(f"v5c-subsample:{seed}:{item_id}".encode()).digest()
@@ -115,6 +124,11 @@ HAL_K = v5c.HAL_K
 _LAYER_RE = re.compile(r"__L(\d{3})__p")
 
 
+# the default summariser prompt (a name of its own: `Models.summarizer` is a field, so the
+# module `summarizer` is shadowed inside the class body)
+SUMM_PROMPT_V1 = summarizer.V1
+
+
 @dataclass
 class Models:
     judge: str = "claude-opus-5-5"
@@ -135,6 +149,10 @@ class Models:
     # plan 0029 Amendment 2: the continuation verifier (cverify-v1) deciding the excuse; v2.9
     # roots only (the CLI turns it on by default there). In to_dict() / arm.json only when set.
     excuse_verifier: str | None = None
+    # plan 0121 §2: the J-lens summariser prompt (summarizer.VERSIONS key). In to_dict() /
+    # arm.json / joint.json only when it is not interp-v1, so every v8 output is unchanged; a
+    # missing record means interp-v1.
+    summ_prompt: str = SUMM_PROMPT_V1
 
     @property
     def summ(self) -> str:
@@ -163,6 +181,8 @@ class Models:
             d["situation_model"] = self.situation_model
         if self.excuse_verifier is not None:
             d["excuse_verifier"] = self.excuse_verifier
+        if self.summ_prompt != summarizer.V1:  # plan 0121: interp-v2 roots only
+            d["summ_prompt"] = self.summ_prompt
         return d
 
     @property
@@ -200,6 +220,27 @@ def check_map_prompt(arm_dir_: Path, models: Models) -> None:
             f"{arm_dir_}: judged with --excuse-verifier {got or 'off'}, this run asks for "
             f"{models.excuse_verifier or 'off'} (use another --out root)"
         )
+    sp = recorded_summ_prompt(_arm_record(arm_dir_))
+    if sp != models.summ_prompt:  # plan 0121: one summariser version per root
+        raise JudgeConfigError(
+            f"{arm_dir_}: judged with --summarizer-prompt {sp}, this run asks for "
+            f"{models.summ_prompt} (use another --out root)"
+        )
+
+
+def recorded_summ_prompt(rec: Mapping[str, Any] | None) -> str:
+    """Plan 0121: the summariser prompt an ``arm.json`` / ``joint.json`` record was judged with
+    (a missing key means interp-v1)."""
+    return str((rec or {}).get("summ_prompt") or summarizer.V1)
+
+
+def check_summ_prompt(models: Models) -> None:
+    """Plan 0121: an unregistered ``--summarizer-prompt`` is refused (exit 3) before anything
+    is opened."""
+    try:
+        summarizer.spec(models.summ_prompt)
+    except ValueError as e:
+        raise JudgeConfigError(str(e)) from None
 
 
 def check_verifier(models: Models) -> None:
@@ -252,6 +293,9 @@ def with_recorded_prompt(arm_dir_: Path, models: Models) -> Models:
     ev = rec.get("excuse_verifier")  # plan 0029 Amendment 2: replay the recorded setting
     if out.excuse_verifier != ev:
         out = _replace(out, excuse_verifier=ev)
+    sp = recorded_summ_prompt(rec)  # plan 0121: replay the recorded summariser prompt
+    if out.summ_prompt != sp:
+        out = _replace(out, summ_prompt=sp)
     if rec.get("map_prompt"):
         for f in RECORDED_MODEL_FIELDS:
             if getattr(out, f) is None and rec.get(f) is not None:
@@ -594,23 +638,31 @@ async def process_cell(
         decoded = [decode_token(t) for t in cell.tokens or ()]
         rec["tokens"] = decoded
         bag = summarizer.render_bag(decoded, cell.scores)
+        ssp = summarizer.spec(models.summ_prompt)
         out = await cached_call(
             arm,
             via("summary"),
             stage="summary",
             key=f"summ:{key}",
-            version=summarizer.SUMMARIZER_PROMPT_VERSION,
+            version=ssp.version,
             model=models.summ,
             effort=models.effort,
-            system=summarizer.INTERP_SYSTEM,
-            user=summarizer.render_user(bag),
-            schema=summarizer.INTERP_SCHEMA,
-            validate=lambda r: summarizer.interpretation_of(r) is not None,
+            system=ssp.system,
+            user=ssp.render_user(bag),
+            schema=ssp.schema,
+            validate=lambda r: ssp.read(r).valid,
             dump=dump,
             fallback=SUMMARY_FALLBACK_MODEL if models.v28 else None,
         )
         rec["stages"]["summary"] = out.status
-        text = summarizer.interpretation_of(out.result) if out.status == "ok" else None
+        reading = ssp.read(out.result) if out.status == "ok" else None
+        if reading is not None and reading.kind == summarizer.JUNK:
+            # plan 0121 §2.2 / A5: a junk summary is a settled answer that says nothing: today's
+            # empty record (no samples, no map call, no claims) plus the tokens and the marker
+            rec["stages"]["summary"] = summarizer.JUNK
+            rec["status"] = "empty"
+            return rec
+        text = reading.text if reading is not None else None
         if text is None:
             rec["status"] = "failed_summary" if out.status == "failed" else "pending"
             return rec
@@ -629,7 +681,7 @@ async def process_cell(
     # ---- 2. span stage (v5c, verbatim); single-call map runs also call it on the fixed 10%
     # item subsample for the v5c comparison
     span_llm = via("span")
-    if span_llm is None and not anchored and "map" in stages and in_v5c_subsample(cell.id):
+    if span_llm is None and v5c_side_stage(models, stages, anchored, cell.id):
         span_llm = llm
     system, user = v5c.judge_prompt(item, site, samples)
     out = await cached_call(
@@ -998,6 +1050,7 @@ async def run_arms_async(
     run_stages = expand_stages(stages, classify=classify, anchor=models.map_anchor)
     cm.spec(models.map_prompt)  # an unknown --map-prompt fails before anything is opened
     check_verifier(models)
+    check_summ_prompt(models)
     for n, _p in arms:  # plan 0029: never mix prompt versions (or banks) in one arm dir
         check_map_prompt(arm_dir(out_root, models, n), models)
         check_bank(arm_dir(out_root, models, n), models)
@@ -1143,7 +1196,7 @@ async def rebuild_arm_async(
         "k": arm.k,
         "models": models.to_dict(),
         "prompt_versions": {
-            "summary": summarizer.SUMMARIZER_PROMPT_VERSION if arm.kind == "tokens" else None,
+            "summary": models.summ_prompt if arm.kind == "tokens" else None,
             "span": v5c.PROMPT_VERSION,
             "verify": v5c.VERIFY_PROMPT_VERSION,
             "classify": tv1.PROMPT_VERSION,
@@ -1331,6 +1384,7 @@ async def process_joint_cell(
     }
     samples: list[str] = []
     st_summary = None
+    ssp = summarizer.spec(models.summ_prompt)
     for c in jc.cells:
         if c is None or c.empty:
             samples.append("")
@@ -1345,17 +1399,21 @@ async def process_joint_cell(
             llm if "summary" in stages else None,
             stage="summary",
             key=f"summ:{c.key}",
-            version=summarizer.SUMMARIZER_PROMPT_VERSION,
+            version=ssp.version,
             model=models.summ,
             effort=models.effort,
-            system=summarizer.INTERP_SYSTEM,
-            user=summarizer.render_user(summarizer.render_bag(decoded, c.scores)),
-            schema=summarizer.INTERP_SCHEMA,
-            validate=lambda r: summarizer.interpretation_of(r) is not None,
+            system=ssp.system,
+            user=ssp.render_user(summarizer.render_bag(decoded, c.scores)),
+            schema=ssp.schema,
+            validate=lambda r: ssp.read(r).valid,
             dump=dump,
             fallback=SUMMARY_FALLBACK_MODEL if models.v28 else None,
         )
-        text = summarizer.interpretation_of(out.result) if out.status == "ok" else None
+        reading = ssp.read(out.result) if out.status == "ok" else None
+        if reading is not None and reading.kind == summarizer.JUNK:
+            samples.append("")  # plan 0121 §2.2: a junk layer says nothing, like an empty one
+            continue
+        text = reading.text if reading is not None else None
         if text is None:
             st_summary = "failed" if out.status == "failed" else st_summary or "pending"
             samples.append("")
@@ -1455,6 +1513,7 @@ async def run_joint_async(
     ``sources`` (precedence order), then rebuild them. Per-layer cells are untouched."""
     _check_joint_models(models)
     check_verifier(models)
+    check_summ_prompt(models)
     sel = frozenset(stages) if stages else frozenset(JOINT_STAGES)
     if bad := sel - set(JOINT_STAGES):
         raise ValueError(f"joint stages are {JOINT_STAGES}, got {sorted(bad)}")
@@ -1543,6 +1602,7 @@ async def rebuild_joint_async(name: str, out_root: Path, models: Models) -> dict
         models,
         map_prompt=rec_j.get("map_prompt") or cm.PROMPT_VERSION,
         excuse_verifier=rec_j.get("excuse_verifier"),  # plan 0029 Amendment 2: replayed
+        summ_prompt=recorded_summ_prompt(rec_j),  # plan 0121: replayed
     )
     if models.map_model is None and rec_j.get("map_model"):  # replay the recorded map model
         models = _replace(models, map_model=rec_j["map_model"])
