@@ -1,7 +1,8 @@
 """Plan 0121 A1 / A2 / A7: the index versions are exactly v8 and v9 (default v8); hindex-v9 is
-the v8 code paths plus the junk-summaries count; ``hbench final`` selects by the manifest's
-``index_version`` and a v9 manifest needs its summariser stamps; the v8 manifest is accepted
-exactly as before."""
+the v8 code paths plus the junk-summaries count (and its own note, display names and the
+``am_situation`` junk rates: ``test_v9_review_fixups.py``); ``hbench final`` selects by the
+manifest's ``index_version`` and a v9 manifest needs its summariser stamps; the v8 manifest is
+accepted exactly as before."""
 
 import json
 from pathlib import Path
@@ -85,11 +86,22 @@ def _add(path: Path, rows: list[dict]) -> None:
         fh.writelines(json.dumps(r) + "\n" for r in rows)
 
 
+def _summarised_chat(item: str, layer: int) -> dict:
+    """A cell whose J-lens summary is a text (never mapped here, so it adds no claim)."""
+    return {**_junk_chat(item, layer), "status": "pending", "stages": {"summary": "ok"}}
+
+
 def _v9_sources(tmp: Path) -> dict:
     src = v8_sources(tmp)
-    _add(tmp / "main" / "jlens" / ix.CELLS, [_junk_chat("i0", 20), _junk_chat("i1", 20)])
+    rows = [_junk_chat("i0", 20), _junk_chat("i1", 20)]
+    rows += [_summarised_chat(i, 20) for i in ("i0", "i1", "i2")]
+    _add(tmp / "main" / "jlens" / ix.CELLS, rows)
     _add(tmp / "am" / "jlens" / ix.CELLS, [_junk_am("i0", 24)])
     return src
+
+
+# hindex-v9's own top-level keys (everything else is the hindex-v8 build of the same roots)
+V9_KEYS = {"junk_summaries", "am_situation_junk", "display_names"}
 
 
 def test_v9_is_the_v8_index_plus_junk_summaries(tmp_path):
@@ -103,29 +115,40 @@ def test_v9_is_the_v8_index_plus_junk_summaries(tmp_path):
     assert (v8["version"], v9["version"]) == ("hindex-v8", "hindex-v9")
 
     def strip(d: dict) -> dict:
-        return {k: v for k, v in d.items() if k not in ("version", "junk_summaries")}
+        return {k: v for k, v in d.items() if k not in ("version", "notes", *V9_KEYS)}
 
-    # v9 = the v8 build of the same roots, plus the count
-    assert strip(v9) == strip(v8b) and set(v9) - set(v8b) == {"junk_summaries"}
+    # v9 = the v8 build of the same roots, plus its own keys and its own note
+    assert strip(v9) == strip(v8b) and set(v9) - set(v8b) == V9_KEYS
+    assert set(v9["notes"]) == {"hindex-v9"} and set(v8b["notes"]) == {"hindex-v8"}
     # junk cells add no claim: every row, CI and macro is what the roots give without them
     assert v9["rows"] == v8["rows"] and v9["over_layers"] == v8["over_layers"]
+
+    def c(n_cells: int, n_summarised: int, n_junk: int) -> dict:
+        return {"n_cells": n_cells, "n_summarised": n_summarised, "n_junk": n_junk}
+
     assert v9["junk_summaries"] == {
-        "main": {"jlens": {"20": {"n_cells": 6, "n_junk": 2}, "24": {"n_cells": 4, "n_junk": 0}}},
-        "am_claims": {
-            "jlens": {"20": {"n_cells": 4, "n_junk": 0}, "24": {"n_cells": 5, "n_junk": 1}}
-        },
+        "main": {"jlens": {"20": c(9, 5, 2), "24": c(4, 0, 0)}},
+        "am_claims": {"jlens": {"20": c(4, 0, 0), "24": c(5, 1, 1)}},
     }  # story has no junk summary: not listed
     md = ix.render_md(v9)
     assert md.startswith("# Hallucination index (hindex-v9)")
     assert "## Junk summaries" in md
-    assert "| main | jlens | 20 | 2 | 6 | 33.3 |" in md
-    assert "| am_claims | jlens | 24 | 1 | 5 | 20.0 |" in md
+    # the share is junk / summarised (2 of 5), never junk / cells (2 of 9)
+    assert "| main | jlens | 20 | 2 | 5 | 40.0 | 9 |" in md
+    assert "| am_claims | jlens | 24 | 1 | 1 | 100.0 | 5 |" in md
     assert "Junk summaries" not in ix.render_md(v8)
-    assert ix.render_md(v8).replace("hindex-v8", "hindex-v9", 1) == md.split("\n## Junk")[0]
+    # above the v9 sections the table is hindex-v8's but for the name, the display name of the
+    # off-topic refusal column and the note
+    head8 = ix.render_md(v8).split("\n- hindex-v8: ")[0]
+    head9 = md.split("\n## Junk")[0].split("\n- hindex-v9: ")[0]
+    assert (
+        head8.replace("hindex-v8", "hindex-v9", 1).replace("overrefusal", "Off-topic refusal")
+        == head9
+    )
     # a text that merely contains the marker is not counted
     quoted = {**_chat_cell("i9", 20, ["correct"]), "samples": ['"summary": "junk"']}
     _w(tmp_path / "q.jsonl", [quoted])
-    assert ix.junk_summaries(tmp_path / "q.jsonl", ix.MAIN) == {20: {"n_cells": 1, "n_junk": 0}}
+    assert ix.junk_summaries(tmp_path / "q.jsonl", ix.MAIN) == {20: c(1, 0, 0)}
 
 
 def test_cli_index_v9(tmp_path, monkeypatch, capsys):
@@ -182,7 +205,11 @@ def test_v9_manifest_builds_hindex_v9(tmp_path):
     assert built["manifest"]["summarizer_prompt"] == "interp-v2"
     assert built["manifest"]["excuse_verifier"] == "cverify-v1"
     # the junk cell is dropped from the recount like an empty cell, and reported
-    assert built["junk_summaries"]["main"]["jlens"]["20"] == {"n_cells": 5, "n_junk": 1}
+    assert built["junk_summaries"]["main"]["jlens"]["20"] == {
+        "n_cells": 5,
+        "n_summarised": 1,
+        "n_junk": 1,
+    }
     assert "## Junk summaries" in (tmp_path / "final" / "index.md").read_text()
 
 
@@ -242,9 +269,10 @@ def test_v9_checks_joint_json_and_the_am_situation_entries(tmp_path, capsys):
         final.check_v9(final.load_manifest(m), tmp_path / "s")
 
 
-def test_v9_does_not_constrain_prose_arms(tmp_path):
+def test_v9_does_not_constrain_prose_arms(tmp_path, capsys):
     """A7: only arms whose arm.json has kind == "tokens" need interp-v2 (O-lens / NLA rows are
-    the frozen v8 files)."""
+    the frozen v8 files); an arm.json whose kind is neither "tokens" nor "prose" is refused
+    (review of PR a: no fail-open)."""
 
     def prep(roots: Path) -> None:
         for sub in CLAIM_DIRS.values():
@@ -252,8 +280,11 @@ def test_v9_does_not_constrain_prose_arms(tmp_path):
             a.write_text(json.dumps({**json.loads(a.read_text()), "kind": "prose"}))
 
     assert _main(tmp_path, _manifest(tmp_path, mutate=_v9, prep=prep)) == 0
-    # ... and an arm.json without `kind` is not a token arm either
-    assert _main(tmp_path / "n", _manifest(tmp_path / "n", mutate=_v9)) == 0
+    # ... but an arm.json without `kind` could be an unsummarised token arm: refused
+    assert _main(tmp_path / "n", _manifest(tmp_path / "n", mutate=_v9)) == 2
+    assert "records kind None (neither 'tokens' nor 'prose')" in capsys.readouterr().err
+    with pytest.raises(final.ManifestError, match="neither 'tokens' nor 'prose'"):
+        final.check_v9(final.load_manifest(tmp_path / "n" / "v8_manifest.json"), tmp_path / "n")
 
 
 def test_v8_manifest_is_accepted_exactly_as_before(tmp_path):

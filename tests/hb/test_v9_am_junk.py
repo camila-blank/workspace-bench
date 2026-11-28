@@ -132,7 +132,7 @@ def test_junk_cell_is_not_failed_not_reasked_and_adds_no_claims(tmp_path):
     assert again.calls == []
     # the index derives the count from the cells
     got = ix.junk_summaries(d / "cells.jsonl", ix.AM_CLAIMS)
-    assert got == {20: {"n_cells": bank.N_SITES, "n_junk": 1}}
+    assert got == {20: {"n_cells": bank.N_SITES, "n_summarised": 2, "n_junk": 1}}
     assert all(not v[ix.C_CLAIMS] for v in ix.claim_rows(d / "cells.jsonl", ix.AM_CLAIMS)[20][1:])
     # record, guard, replay
     assert json.loads((d / "arm.json").read_text())["summ_prompt"] == "interp-v2"

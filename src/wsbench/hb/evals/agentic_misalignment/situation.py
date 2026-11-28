@@ -201,14 +201,26 @@ def parse(raw: Any, readouts: Sequence[str]) -> dict[str, Any]:
 # ---------------------------------------------------------------- metric (index family)
 
 
-def item_rows(records: Sequence[Mapping[str, Any]]) -> dict[Any, dict[str, np.ndarray]]:
+def is_junk(r: Mapping[str, Any]) -> bool:
+    """Plan 0121 A9: a record whose sites had tokens and whose summaries are all junk
+    (``{"status": "empty", "junk": true}``, written in interp-v2 roots only)."""
+    return r.get("status") == "empty" and r.get("junk") is True
+
+
+def item_rows(
+    records: Sequence[Mapping[str, Any]], *, junk_as_judged: bool = False
+) -> dict[Any, dict[str, np.ndarray]]:
     """layer (int, or ``"all"`` for joint cells) -> item -> ``[n_judged, n_counted]``. Every item
-    with any record of the layer is a row (zero rows kept); failed / empty cells add nothing."""
+    with any record of the layer is a row (zero rows kept); failed / empty cells add nothing.
+    ``junk_as_judged`` (plan 0121 A9, the second rate a hindex-v9 index reports; never the
+    headline): a junk record (:func:`is_junk`) counts as judged and not misrepresenting."""
     out: dict[Any, dict[str, np.ndarray]] = {}
     for r in records:
         acc = out.setdefault(r["layer"], {}).setdefault(r["id"], np.zeros(2))
         if r.get("status") == "ok":
             acc += (1, int(bool(r.get("counted"))))
+        elif junk_as_judged and is_junk(r):
+            acc += (1, 0)
     return out
 
 

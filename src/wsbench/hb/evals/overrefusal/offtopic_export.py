@@ -10,7 +10,8 @@ per (reader, item, layer), each carrying ``population``, ``digest.status``, ``ve
 * Per (reader, layer): Σ off-topic decline lines / Σ decline lines over the 427 items.
 
 Failure rules (the item-layer is a row with every count 0 and ``n_failed_cells = 1``):
-unjudged (``digest.status != "ok"``), strict judge failed (status ok, ``verdict is None``),
+unjudged (``digest.status != "ok"``; plan 0121: except a summarised unit whose sites are all
+junk, :func:`all_junk`, a zero row), strict judge failed (status ok, ``verdict is None``),
 off-topic failed (non-empty ``decline_lines`` and ``r.get("off") is None``). A judged record with
 no decline lines is a zero row. ``off.topics`` keys are JSON strings, ``decline_lines`` entries are
 ints: their sets must agree on every record with a non-null ``off`` (else ``ValueError``).
@@ -19,6 +20,12 @@ Writes ``<out>/overrefusal/<model>/offtopic_index/{index_counts.jsonl,index_meta
 ``refusal_claims``) -- the plan-0020 ``index_counts.jsonl`` / ``index_meta.json`` /
 ``index_counts_claims.jsonl`` beside it are never touched -- and ``sj_offtopic_full.json`` (the
 index value + CI per (reader, layer) and the three secondary numbers).
+
+Plan 0121 §4 (hindex-v9, "Off-topic refusal"): :func:`export_v9` writes a separate root on bank
+v2 from records FILTERED to the bank's items before :func:`index_rows` -- the prose readers'
+frozen hindex-v8 records (no new judge call), the J-lens reader's summarise-first records
+(``sjudge.interp_unit``) -- and stamps the J-lens summariser version in ``index_meta.json``.
+The v8 exports above are unchanged.
 """
 
 import hashlib
@@ -28,7 +35,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import data, index_export, run
+from . import data, index_export, run, sjudge
+from . import wsb_digest as D
 
 UNIT = "refusal_claims"
 OFFTOPIC_DIR = "offtopic_index"
@@ -59,9 +67,23 @@ def check_keys(r: Mapping[str, Any]) -> None:
         )
 
 
+def all_junk(r: Mapping[str, Any]) -> bool:
+    """Plan 0121 §4: a summarised (J-lens, hindex-v9) unit whose sites were ALL answered junk:
+    a judged unit with zero decline lines, never a failed one. hindex-v8 records carry no
+    ``summarizer`` key, so their rule is unchanged."""
+    dg = r["digest"]
+    return (
+        r.get("summarizer") is not None
+        and dg["status"] == "empty"
+        and dg.get("reason") == sjudge.ALL_JUNK
+    )
+
+
 def record_counts(r: Mapping[str, Any]) -> tuple[int, int, str | None]:
     """(decline lines, off-topic decline lines, failure reason or None) of one record."""
     check_keys(r)
+    if all_junk(r):  # plan 0121 §4: settled, says nothing (summarised units only)
+        return 0, 0, None
     if r["digest"]["status"] != "ok":
         return 0, 0, "unjudged"
     if r.get("verdict") is None:
@@ -304,3 +326,178 @@ def export(out: Path, model: str) -> dict[str, Any]:
     }
     (root / SUMMARY).write_text(json.dumps(doc, indent=1) + "\n")
     return {"dest": str(dest), "summary": str(root / SUMMARY), **health}
+
+
+# ------------------------------------------------------------------ hindex-v9 (plan 0121 §4)
+
+DISPLAY_NAME_V9 = "Off-topic refusal"
+PROSE_READERS_V9 = ("s3d-rl600", "mlnla-rl600-all11")
+JLENS_READER = "jlens"
+FLAG_FAILED_SHARE = 0.01  # plan 0121 §4: a reader above 1% failed units is flagged
+
+
+def filter_records(
+    path: Path, readers: Iterable[str], item_ids: Iterable[str]
+) -> list[dict[str, Any]]:
+    """The records of ``readers`` on the bank's items (streamed: the per-layer file is large).
+    This is the filter that must run BEFORE :func:`index_rows`, which raises on a record of an
+    unknown item."""
+    keep_r, keep_i = set(readers), set(item_ids)
+    out = []
+    with Path(path).open(encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r["reader"] in keep_r and r["item"] in keep_i:
+                out.append(r)
+    return out
+
+
+def check_summarized(recs: Iterable[Mapping[str, Any]], version: str | None, path: Path) -> None:
+    """Every record of a summarised reader carries the expected ``summarizer`` (``None``: the
+    records must be hindex-v8's, without the key)."""
+    for r in recs:
+        if r.get("summarizer") != version:
+            raise ValueError(
+                f"{path}: {r['reader']} {r['item']} L{r['layer']} records summarizer "
+                f"{r.get('summarizer')!r}, expected {version!r}"
+            )
+
+
+def _reader_health(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    by: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for r in rows:
+        by[str(r["arm"])][0] += 1
+        by[str(r["arm"])][1] += int(r["n_failed_cells"])
+    return {
+        a: {
+            "n_units": n,
+            "n_failed": f,
+            "failed_share": f / n if n else None,
+            "flagged": bool(n) and f / n > FLAG_FAILED_SHARE,
+        }
+        for a, (n, f) in sorted(by.items())
+    }
+
+
+def export_v9(
+    dest: Path,
+    *,
+    prose_records: Path,
+    jlens_records: Path,
+    prose_records_joint: Path | None = None,
+    jlens_records_joint: Path | None = None,
+    bank: str = data.BANK_V2,
+    jlens_summarizer: str | None = "interp-v2",
+    prose_readers: Sequence[str] = PROSE_READERS_V9,
+) -> dict[str, Any]:
+    """The hindex-v9 overrefusal ("Off-topic refusal") root ``dest``: ``index_counts.jsonl`` /
+    ``index_meta.json`` and, with both joint record files, ``index_counts_joint.jsonl`` /
+    ``index_meta_joint.json``, on the items of ``bank``.
+
+    ``prose_records`` / ``prose_records_joint``: the O-lens and NLA records (the frozen
+    hindex-v8 ``sj_records_full.jsonl`` / ``sj_records_joint.jsonl``: no new judge call);
+    ``jlens_records`` / ``jlens_records_joint``: the J-lens records, every one of which must
+    record ``summarizer == jlens_summarizer`` (``None`` = hindex-v8 J-lens records, a
+    comparison only: the meta then says so and is not a v9 root of record). Per-item rule,
+    columns and failure rules are plan 0022's (:func:`index_rows`)."""
+    dest = Path(dest)
+    items = data.load_items(bank=bank)
+    ids = [it["id"] for it in items]
+    bank_file = data.bank_path(bank)
+    out: dict[str, Any] = {"dest": str(dest), "bank": bank, "n_items": len(items)}
+    for joint, prose, jl in (
+        (False, prose_records, jlens_records),
+        (True, prose_records_joint, jlens_records_joint),
+    ):
+        if prose is None and jl is None and joint:
+            continue
+        if prose is None or jl is None:
+            raise ValueError("the joint export needs both the prose and the J-lens joint records")
+        recs_p = filter_records(prose, prose_readers, ids)
+        recs_j = filter_records(jl, (JLENS_READER,), ids)
+        check_summarized(recs_p, None, prose)
+        check_summarized(recs_j, jlens_summarizer, jl)
+        recs = [*recs_p, *recs_j]
+        layers = {str(r["layer"]) for r in recs}
+        if joint and layers - {JOINT_LAYER}:
+            raise ValueError(f"not joint record files (layers {sorted(layers - {JOINT_LAYER})})")
+        if not joint and JOINT_LAYER in layers:
+            raise ValueError(f"{prose} / {jl}: joint records in the per-layer export")
+        readers = (*prose_readers, JLENS_READER)
+        rows, fails = index_rows(recs, items, readers)
+        if missing := sorted(set(readers) - {r["arm"] for r in rows}):
+            raise ValueError(f"no record of {missing} on bank {bank}")
+        write_rows(rows, dest / (JOINT_COUNTS if joint else ITEM_COUNTS))
+        health: dict[str, Any] = {
+            "n_records": len(rows),
+            **fails,
+            "n_failed_cells": sum(r["n_failed_cells"] for r in rows),
+            "n_decline_lines": sum(r["n_claims"] for r in rows),
+            "n_off_topic_lines": sum(r["n_contradicted"] for r in rows),
+            "by_reader": _reader_health(rows),
+            "jlens_summaries": {
+                "n_junk_sites": sum(int(r.get("n_junk_sites") or 0) for r in recs_j),
+                "n_failed_summaries": sum(int(r.get("n_failed_summaries") or 0) for r in recs_j),
+                "n_all_junk_units": sum(all_junk(r) for r in recs_j),
+            },
+        }
+        if joint:
+            from . import sj_metrics
+
+            health["truncation"] = sj_metrics.truncation_share(recs)
+        meta: dict[str, Any] = {
+            "eval": "overrefusal",
+            "display_name": DISPLAY_NAME_V9,
+            "plan": "plans/0121-hallucinationbench-v9-scoring.md §4 (index: hindex-v9; per-item "
+            "rule of plan 0022" + ("; joint unit of plan 0029)" if joint else ")"),
+            "population": "all",
+            "bank": {
+                "name": bank,
+                "file": bank_file.name,
+                "sha256": _sha256(bank_file),
+            },
+            "n_items": len(items),
+            "unit": UNIT,
+            "readers": sorted({r["arm"] for r in rows}),
+            "layers": [JOINT_LAYER] if joint else sorted({r["layer"] for r in rows}),
+            "versions": {
+                "digest": D.DIGEST_PROMPT_VERSION,
+                "wsbench_sha": D.WSBENCH_SHA,
+                "strict_judge": sjudge.SJ_VERSION,
+                "off_topic_judge": sjudge.OFF_VERSION,
+            },
+            # plan 0121 §10: the summariser stamp lives here (token readers only)
+            "summarizer": {JLENS_READER: jlens_summarizer},
+            "columns": (
+                "n_claims = decline lines (orsj-v3), n_false = n_contradicted = off-topic "
+                "decline lines (oroff-v1), n_unprobed = n_unresolved = 0, n_failed_cells = 1 "
+                "for an unjudged / strict-judge-failed / off-topic-failed unit (its counts 0), "
+                "unit columns 0, cluster = item, population"
+            ),
+            "gates": {},
+            "source": {
+                "prose": {
+                    "readers": list(prose_readers),
+                    "records": str(Path(prose).resolve()),
+                    "sha256": _sha256(Path(prose)),
+                    "note": "hindex-v8 records filtered to the bank's items (no new judge call)",
+                },
+                JLENS_READER: {
+                    "records": str(Path(jl).resolve()),
+                    "sha256": _sha256(Path(jl)),
+                },
+            },
+            "health": health,
+        }
+        if joint:
+            meta["layer"] = JOINT_LAYER
+        if jlens_summarizer is None:
+            meta["comparison_only"] = (
+                "J-lens rows are hindex-v8 records (raw token bags, no summariser) filtered to "
+                "the bank: not a hindex-v9 root of record"
+            )
+        (dest / (JOINT_META if joint else ITEM_META)).write_text(json.dumps(meta, indent=1) + "\n")
+        out["joint" if joint else "per_layer"] = health
+    return out

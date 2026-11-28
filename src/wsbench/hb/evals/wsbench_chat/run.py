@@ -41,7 +41,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -83,6 +83,15 @@ EXTRA_STAGES: tuple[str, ...] = (CVERIFY_STAGE,)
 STAGE_DEPS[CVERIFY_STAGE] = ("summary", "map")
 V5C_SUBSAMPLE_SEED = 0
 V5C_SUBSAMPLE_FRACTION = 0.10
+
+
+def v5c_side_stage(models: "Models", stages: Collection[str], anchored: bool, item_id: str) -> bool:
+    """Whether a single-call map run also asks the v5c span judge for this cell: the fixed 10%
+    item subsample of the v5c comparison (a report-only side stage). Plan 0121 §2.2: never in a
+    root whose summariser is not interp-v1 (hindex-v9 roots); interp-v1 roots are unchanged."""
+    if anchored or "map" not in stages or models.summ_prompt != SUMM_PROMPT_V1:
+        return False
+    return in_v5c_subsample(item_id)
 
 
 def in_v5c_subsample(item_id: str, seed: int = V5C_SUBSAMPLE_SEED) -> bool:
@@ -672,7 +681,7 @@ async def process_cell(
     # ---- 2. span stage (v5c, verbatim); single-call map runs also call it on the fixed 10%
     # item subsample for the v5c comparison
     span_llm = via("span")
-    if span_llm is None and not anchored and "map" in stages and in_v5c_subsample(cell.id):
+    if span_llm is None and v5c_side_stage(models, stages, anchored, cell.id):
         span_llm = llm
     system, user = v5c.judge_prompt(item, site, samples)
     out = await cached_call(

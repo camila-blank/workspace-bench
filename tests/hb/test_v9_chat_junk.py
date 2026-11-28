@@ -151,7 +151,9 @@ def test_junk_cell_is_the_empty_record_and_is_never_failed_or_reasked(tmp_path):
     # no claims: `hbench final` drops it like an empty cell, the index counts it as junk
     e = {"family": ix.MAIN, "method": "jlens", "unit": "L44"}
     assert final.recount(e, d / "cells.jsonl")[:2] == (1, 0)
-    assert ix.junk_summaries(d / "cells.jsonl", ix.MAIN) == {44: {"n_cells": 2, "n_junk": 1}}
+    assert ix.junk_summaries(d / "cells.jsonl", ix.MAIN) == {
+        44: {"n_cells": 2, "n_summarised": 2, "n_junk": 1}
+    }
     acc = ix.claim_rows(d / "cells.jsonl", ix.MAIN)
     assert len(acc[44]) == 1  # one item row, from the one mapped cell
 

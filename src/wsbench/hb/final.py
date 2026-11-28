@@ -83,6 +83,7 @@ V8_EXCUSE_VERIFIER = "cverify-v1"
 # (arm.json `kind == "tokens"`; its joint.json for an `all` entry) records it as `summ_prompt`
 INDEX_VERSIONS: dict[str, str] = {v: k for k, v in ix.VERSIONS.items()}
 V9_SUMMARIZER_PROMPT = "interp-v2"
+V8_SUMMARIZER_PROMPT = "interp-v1"  # a v8 root records no summ_prompt (missing = interp-v1)
 # the families whose token arms are summarised (the J-lens am_situation entries included)
 SUMMARISED_FAMILIES: tuple[str, ...] = (ix.MAIN, ix.STORY, ix.AM_CLAIMS, ix.AM_SITUATION)
 COLOURS: dict[str, str] = {
@@ -447,14 +448,43 @@ def check(m: Mapping[str, Any], base: Path, excluded: list[dict[str, Any]] | Non
                 )
     if m.get("index_version") == ix.INDEX_VERSION_V9:
         check_v9(m, base)
+    else:
+        check_v8_summariser(m, base)
     return v
+
+
+def check_v8_summariser(m: Mapping[str, Any], base: Path) -> None:
+    """Plan 0121 (review of PR a): a hindex-v8 manifest refuses any ``arm.json`` / ``joint.json``
+    of a summarised family that records a ``summ_prompt`` other than ``interp-v1`` (an
+    interp-v2 root is a hindex-v9 root). A v8 root records no such key (missing = interp-v1), so
+    the frozen manifest passes unchanged; a missing file is not this check's business."""
+    seen: set[Path] = set()
+    for e in m["entries"]:
+        if e["family"] not in SUMMARISED_FAMILIES:
+            continue
+        d = (base / e["root"] / e["file"]).resolve().parent
+        for path in (d / "arm.json", d / "joint.json"):
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            sp = (
+                json.loads(path.read_text(encoding="utf-8")).get("summ_prompt")
+                or V8_SUMMARIZER_PROMPT
+            )
+            if sp != V8_SUMMARIZER_PROMPT:
+                raise ManifestError(
+                    f"{_where(e)}: {path} records summ_prompt {sp!r}; {ix.INDEX_VERSION_V8} "
+                    f"needs {V8_SUMMARIZER_PROMPT!r} (plan 0121: an interp-v2 root belongs to a "
+                    f"{ix.INDEX_VERSION_V9} manifest)"
+                )
 
 
 def check_v9(m: Mapping[str, Any], base: Path) -> None:
     """Plan 0121 A7, on top of every v8 check: the manifest's top-level ``summarizer_prompt``
     is :data:`V9_SUMMARIZER_PROMPT`, and every token-kind arm dir of a summarised family
     (``arm.json`` ``kind == "tokens"``; for an ``all`` entry its ``joint.json`` too) records it
-    as ``summ_prompt`` (a missing record means interp-v1). Prose arms are not constrained."""
+    as ``summ_prompt`` (a missing record means interp-v1). An arm whose ``arm.json`` has
+    ``kind == "prose"`` is not constrained; any other ``kind`` (or none) is refused."""
     if (got := m.get("summarizer_prompt")) != V9_SUMMARIZER_PROMPT:
         raise ManifestError(
             f"the manifest declares summarizer_prompt {got!r}; {ix.INDEX_VERSION_V9} needs "
@@ -468,8 +498,14 @@ def check_v9(m: Mapping[str, Any], base: Path) -> None:
         if not a.is_file():
             raise ManifestError(f"{_where(e)}: no arm.json in {d} (cannot verify the summariser)")
         arm_rec = json.loads(a.read_text(encoding="utf-8"))
-        if arm_rec.get("kind") != "tokens":
+        kind = arm_rec.get("kind")
+        if kind == "prose":
             continue
+        if kind != "tokens":  # no fail-open: an unknown kind could be an unsummarised token arm
+            raise ManifestError(
+                f"{_where(e)}: {a} records kind {kind!r} (neither 'tokens' nor 'prose'): "
+                f"cannot tell whether the arm needs {V9_SUMMARIZER_PROMPT!r} (plan 0121)"
+            )
         recs = [(a, arm_rec)]
         j = d / "joint.json"
         if e["unit"] == ix.JOINT_LABEL and j.is_file():
@@ -631,7 +667,8 @@ def plot_index_per_layer(index: Mapping[str, Any], keep: Mapping, dest: Path) ->
                 label=f"{_label(method)} full_joint (all 11 layers, 1 sample each)",
             )
     axis.set_xlabel("layer")
-    axis.set_ylabel("hindex-v8 (% hallucinated)")
+    # the index version being built (hindex-v8 for a v8 manifest, as before)
+    axis.set_ylabel(f"{index.get('version', ix.INDEX_VERSION_V8)} (% hallucinated)")
     axis.set_title("Hallucination index per layer (per-layer k = 3, J-lens 1; joint 1 per layer)")
     axis.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()

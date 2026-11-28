@@ -44,17 +44,32 @@ def load(arm: str) -> dict[tuple[str, int, int], dict]:
     return out
 
 
+V1_ONLY = (
+    "joint_bundle.py reads interp-v1 summaries only (plan 0121: an interp-v2 answer can be "
+    "junk = true, which is a settled cell that says nothing, not a summary)"
+)
+
+
 def summaries(path: Path | None) -> dict[str, str]:
-    """Last valid interp-v1 ``summ:`` answer per cell key."""
+    """Last valid interp-v1 ``summ:`` answer per cell key. A cache of a root judged with another
+    summariser prompt (its ``arm.json`` records ``summ_prompt``, or a row carries the interp-v2
+    ``junk`` field) is refused: ``SystemExit``."""
     out: dict[str, str] = {}
     if path is None or not path.exists():
         return out
+    arm = path.parent / "arm.json"
+    if arm.is_file():
+        sp = json.loads(arm.read_text()).get("summ_prompt") or "interp-v1"
+        if sp != "interp-v1":
+            raise SystemExit(f"{path}: the root records summ_prompt {sp!r}; {V1_ONLY}")
     with path.open() as fh:
         for line in fh:
             if '"summ:' not in line[:40]:
                 continue
             r = json.loads(line)
             res = r.get("result")
+            if r["key"].startswith("summ:") and isinstance(res, dict) and "junk" in res:
+                raise SystemExit(f"{path}: {r['key']} is not an interp-v1 answer; {V1_ONLY}")
             if r["key"].startswith("summ:") and isinstance(res, dict) and res.get("interpretation"):
                 out[r["key"][5:]] = res["interpretation"]
     return out

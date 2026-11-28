@@ -204,6 +204,31 @@ def cmd_wsb_export(args: argparse.Namespace) -> int:
 def cmd_offtopic_export(args: argparse.Namespace) -> int:
     from . import offtopic_export
 
+    if getattr(args, "v9_dest", None):  # plan 0121 §4: the hindex-v9 root on bank v2
+        need = ("prose_records", "jlens_records")
+        if missing := [f"--{k.replace('_', '-')}" for k in need if not getattr(args, k)]:
+            print(f"hbench overrefusal offtopic-export: --v9-dest needs {missing}", file=sys.stderr)
+            return 2
+        summ = None if args.jlens_summarizer == "none" else args.jlens_summarizer
+
+        def opt(v: str | None) -> Path | None:
+            return Path(v) if v else None
+
+        try:
+            res = offtopic_export.export_v9(
+                Path(args.v9_dest),
+                prose_records=Path(args.prose_records),
+                jlens_records=Path(args.jlens_records),
+                prose_records_joint=opt(args.prose_records_joint),
+                jlens_records_joint=opt(args.jlens_records_joint),
+                bank=args.bank,
+                jlens_summarizer=summ,
+            )
+        except ValueError as e:
+            print(f"hbench overrefusal offtopic-export: {e}", file=sys.stderr)
+            return 2
+        print(json.dumps(res, indent=1))
+        return 0
     if getattr(args, "joint", False):  # plan 0029: the joint rows beside the per-layer ones
         res = offtopic_export.export_joint(Path(args.out), args.judge_model)
     else:
@@ -274,6 +299,23 @@ def register(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="plan 0029: sj_records_joint.jsonl (sj_run.py --joint) -> "
         "offtopic_index/index_counts_joint.jsonl (the hindex-v8 joint overrefusal rows)",
+    )
+    ox.add_argument(
+        "--v9-dest",
+        help="plan 0121 §4: write the hindex-v9 overrefusal ('Off-topic refusal') root here "
+        "instead: the prose readers' frozen v8 records and the J-lens summarise-first records, "
+        "filtered to --bank (ignores --out / --judge-model / --joint)",
+    )
+    ox.add_argument("--bank", default="v2", choices=("v1", "v2"), help="with --v9-dest")
+    ox.add_argument("--prose-records", help="with --v9-dest: the v8 sj_records_full.jsonl")
+    ox.add_argument("--prose-records-joint", help="with --v9-dest: the v8 sj_records_joint.jsonl")
+    ox.add_argument("--jlens-records", help="with --v9-dest: the v9 J-lens per-layer records")
+    ox.add_argument("--jlens-records-joint", help="with --v9-dest: the v9 J-lens joint records")
+    ox.add_argument(
+        "--jlens-summarizer",
+        default="interp-v2",
+        help="with --v9-dest: the summariser every J-lens record must carry ('none' = v8 "
+        "J-lens records, a comparison only)",
     )
     ox.set_defaults(fn=cmd_offtopic_export)
 
